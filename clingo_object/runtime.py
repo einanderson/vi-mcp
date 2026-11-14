@@ -1,7 +1,7 @@
 """Trusted client runtime for a complete VI instance: model, context, VIL programs and explicitly bound MCP devices.
 
 This package never imports vi_mcp. The memory stores declarative state; only registered local adapters execute device calls.
-Restored permissions are intersected with the host's current registry. Uncertain calls never retry automatically.
+A permission whose device the current host lacks or describes differently refuses the boot or run (never silently narrowed). Uncertain calls never retry automatically.
 """
 from __future__ import annotations
 

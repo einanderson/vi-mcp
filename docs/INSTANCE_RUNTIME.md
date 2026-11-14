@@ -11,7 +11,7 @@ one checkpoint captures both the symbolic instance and its neural token datastor
 | Persistent storage | Private VI objects, facts, imported knowledge, rules and experience receipts |
 | Programs | Safe clingo-object notation and VIL instructions |
 | Devices | Trusted client-side adapters for named MCP tools |
-| Permissions | An explicit per-instance allow-list intersected with the current host's capabilities |
+| Permissions | An explicit per-instance allow-list; every listed device must exist unchanged on the current host, otherwise boot and run are refused (never silently narrowed) |
 | Execution loop | Model plan → fixed validation → instruction/device → observed feedback → next plan |
 | Snapshot and clone | Private instance bundle plus immutable kNN shards; a new datastore and VI world on boot |
 
