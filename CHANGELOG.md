@@ -96,6 +96,11 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **Snapshot labels belonged to the owner, not to the machine.** Before, machine B could restore machine A's snapshot, and it
+  could not create its own `initial` once A had one. Agreed with Codex over the VI (frage:f5039a06…, 14.11.2026): a snapshot is
+  now (owner, machine, label), `restore`, `inspect` and `fork` look it up in their own machine, and copying across machines is an
+  explicit `fork`. Evidence: `tests/test_machine.py::test_snapshot_labels_belong_to_their_machine` (failed before: "machine or
+  snapshot already exists").
 - **`vi_stats` named the wrong reason for withholding a hint verdict** (statistics loop, 14.11.2026). Production showed
   "matched … lift +3.6 ± 1.5 points … no difference beyond 2 standard errors". But 3.6 is beyond 2 × 1.5; what held the
   verdict back was the 5-point minimum effect. The line now says "beyond 2 standard errors but below the 5-point minimum effect —

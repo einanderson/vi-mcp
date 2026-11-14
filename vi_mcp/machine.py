@@ -28,15 +28,20 @@ def _name(name):
     return name
 
 
-def _id(owner, name, snapshot=False):
-    return "maschine:" + g.hash_value(owner, "snapshot" if snapshot else "machine", _name(name))
+def _id(owner, name, snapshot=None):
+    """A machine is (owner, name); a snapshot is (owner, machine, label) — snapshot is the machine's name. Agreed with Codex over the
+    VI (frage:f5039a06…, 14.11.2026): labels were unique per owner, so machine B could restore A's snapshot and could not create its
+    own 'initial'. Copying across machines is an explicit fork."""
+    if snapshot:
+        return "maschine:" + g.hash_value(owner, "snapshot", _name(snapshot), _name(name))
+    return "maschine:" + g.hash_value(owner, "machine", _name(name))
 
 
 def state_hash(state):
     return hashlib.sha256(json.dumps(state, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def _load(owner, name, snapshot=False):
+def _load(owner, name, snapshot=None):
     o = g.load(_id(owner, name, snapshot))
     if o is None or o.instance != owner or o.kind != "maschine" or o.mode != "aktiv":
         raise ValueError("unknown machine or snapshot")
@@ -92,7 +97,7 @@ def _new(owner, name, state=None, parent=None, snapshot=False, *, commit=True, e
             raise ValueError("incomplete frozen reference evidence")
         n.translate(check["execution"].get("source", ""))
     data = {"vertrag": CONTRACT, "revision": 0, "zustand": state, **evidence,
-            "snapshots": [], "parent": parent, "snapshot": snapshot}
+            "snapshots": [], "parent": parent, "snapshot": bool(snapshot), **({"machine": snapshot} if snapshot else {})}
     from . import anonymize
     if anonymize.without_secrets(data) != data or len(json.dumps(data)) > g.DATA_MAX - 2000:
         raise ValueError("machine state exceeds limits or contains a credential pattern")
@@ -194,7 +199,7 @@ def call(owner: str, args: dict) -> dict:
         if args.get("expected_revision") is not None and args["expected_revision"] != o.data["revision"]:
             raise ValueError("stale machine revision; read status and retry")
         if action == "inspect":
-            obj = _load(owner, args["snapshot"], True) if args.get("snapshot") else o
+            obj = _load(owner, args["snapshot"], name) if args.get("snapshot") else o
             world = copy.deepcopy(obj.data["zustand"])
             for key, value in mr.defaults().items():
                 world.setdefault(key, value)
@@ -215,7 +220,7 @@ def call(owner: str, args: dict) -> dict:
                 raise ValueError("snapshot limit reached")
             # One transaction: a rejected/full parent must not leave an orphaned immutable snapshot.
             try:
-                frozen = _new(owner, snap, o.data["zustand"], _status(o), True, commit=False, evidence=_evidence(o))
+                frozen = _new(owner, snap, o.data["zustand"], _status(o), name, commit=False, evidence=_evidence(o))
                 o.data["snapshots"].append(snap)
                 _save(o, "snapshot created", commit=False)
                 g.db().commit()
@@ -224,10 +229,10 @@ def call(owner: str, args: dict) -> dict:
                 raise
             return {**_status(frozen), "name": snap}
         if action == "fork":
-            base = _load(owner, args["snapshot"], True) if args.get("snapshot") else o
+            base = _load(owner, args["snapshot"], name) if args.get("snapshot") else o
             return _status(_new(owner, _name(args.get("target")), base.data["zustand"], _status(base)))
         if action == "restore":
-            frozen = _load(owner, _name(args.get("snapshot")), True)
+            frozen = _load(owner, _name(args.get("snapshot")), name)
             o.data["zustand"] = copy.deepcopy(frozen.data["zustand"])
             _save(o, "snapshot restored")
             return _status(o)

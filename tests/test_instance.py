@@ -154,7 +154,7 @@ def test_snapshot_transaction_leaves_no_orphan_when_parent_save_fails(gd, monkey
     monkeypatch.setattr(machine, "_save", fail)
     with pytest.raises(tools.Rejected, match="parent full"):
         instance.call("snapshot", snapshot="orphan")
-    assert g.load(machine._id("instance-test", "orphan", True)) is None
+    assert g.load(machine._id("instance-test", "orphan", "test")) is None
     assert instance.inspect() == before
 
 

@@ -108,7 +108,7 @@ def test_machine_and_snapshot_are_never_network_exports(gd):
     call("create")
     fact()
     call("snapshot", snapshot="initial")
-    assert all(o.visibility == "privat" for o in g.load_many([machine._id("a", "test"), machine._id("a", "initial", True)]).values())
+    assert all(o.visibility == "privat" for o in g.load_many([machine._id("a", "test"), machine._id("a", "initial", "test")]).values())
     assert not dataset.build(agentic=False)["qa"]
 
 
@@ -245,3 +245,22 @@ def test_server_frontend_refuses_every_unattested_pinned_identity_before_commit(
     with pytest.raises(tools.Rejected, match="identity differs"):
         call("answer", question="Which port does the API use?")
     assert call() == before
+
+
+def test_snapshot_labels_belong_to_their_machine(gd):
+    """Agreed with Codex over the VI (14.11.2026): a snapshot is (owner, machine, label). Two machines of one owner each have their
+    own 'base'; B cannot restore A's snapshot; copying across machines is an explicit fork from A."""
+    call("create", name="a1")
+    fact(80, name="a1")
+    call("snapshot", name="a1", snapshot="base")
+    call("create", name="b1")
+    fact(8080, name="b1")
+    call("snapshot", name="b1", snapshot="base")   # used to fail: "machine or snapshot already exists"
+    fact(9090, name="b1")
+    call("restore", name="b1", snapshot="base")
+    assert run(name="b1")["answers"] == ['ans("8080")']   # its own base, not a1's
+    call("create", name="c1")
+    with pytest.raises(tools.Rejected, match="unknown machine or snapshot"):
+        call("restore", name="c1", snapshot="base")     # c1 has no 'base'; a1's is not reachable from c1
+    call("fork", name="a1", snapshot="base", target="copy")
+    assert run(name="copy")["answers"] == ['ans("80")']
