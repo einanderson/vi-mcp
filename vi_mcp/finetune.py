@@ -80,7 +80,8 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
 6. `evaluate.py` collects paired predictions; supply independent --judgments for correctness. For program writing use
    `program_evaluate.py --base URL --tuned URL`: full solver answers on frozen held-out worlds, not word overlap.
    The kit bundles the solver's Python sources, so it works without a VI checkout. Truncated model outputs cannot count as correct.
-   Adoption requires a positive conservative lower confidence bound over independent task families.
+   Adoption requires an exact one-sided sign-flip test over independent task families (clustered McNemar) at p < 0.05 with a
+   positive difference; the Hoeffding lower_95 is reported as the worst-case size bound.
 7. `vi-mcp finetune record DIR` — the run becomes a model object with its lineage in the VI.
 
 ## Rules
@@ -371,7 +372,7 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
     evaluation_path = d / "program_eval.jsonl" if ev and ev.get("evaluation_kind") == "program" else d / "split" / "test.jsonl"
     evaluation_hash = hashlib.sha256(evaluation_path.read_bytes()).hexdigest()
     better = bool(ev and ev.get("metric") == "verified_task_success" and ev.get("evaluation_set_sha256") == evaluation_hash
-                  and ev.get("n", 0) > 0 and ev.get("lower_95") is not None and ev["lower_95"] > 0)
+                  and ev.get("n", 0) > 0 and ev.get("decision") is True)
     verdict = ("not evaluated — run evaluate.py" if ev is None else
                f"fine-tuned {ev['tuned']} vs base {ev['base']} on {ev['n']} held-out questions ({ev['better']} better, {ev['worse']} worse)")
     oid = f"modell:finetune:{run['kit'][:19].replace(':', '').replace('-', '')}"

@@ -65,6 +65,20 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **The adoption gate for a fine-tuned model could not be passed with realistic data** (Claude's review, 14.11.2026, item 6).
+  The gate was the Hoeffding lower bound, which is valid but takes the worst case of every task and ignores ties. Measured with
+  `training_eval.summarize_judgments`:
+
+  | Independent tasks | Better / worse | Hoeffding lower bound | Exact sign test |
+  |---|---|---|---|
+  | 20 | 10 / 0 | −0.05 | p = 0.001 |
+  | 200 | 30 / 10 | −0.07 | p = 0.001 |
+
+  Showing +10 points needed about 600 independent tasks; the logic stage has 16 rule sets today. The gate is now an exact one-sided
+  sign-flip test over the independent group sums (clustered McNemar): exact up to 2^20 patterns, seeded Monte Carlo above that. It
+  makes the same independence assumption the bound did. `lower_95` stays reported as the worst-case size bound. Ten better tasks
+  from one source group still count as one piece of evidence (p = 0.5). Evidence:
+  `tests/test_training_audit.py::test_gate_has_power_where_hoeffding_has_none_and_respects_clusters`.
 - **Machine examples could carry evaluation targets into training** (Claude's review, 14.11.2026, item 4). QA, agentic and logic rows
   hold out the fixed question set's targets and their source pages; machine rows checked only their own id and question, not the
   frozen objects they put into the prompt. A machine that had imported an evaluation target published its id and text into the

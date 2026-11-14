@@ -67,7 +67,7 @@ def test_record_keeps_the_lineage_and_adopts_only_what_measured_better(vi):
     o = finetune.record(str(d))
     assert o.mode == "test"  # old word-overlap reports never authorize adoption
     import hashlib
-    ev = {"base": 0.31, "tuned": 0.52, "n": 25, "better": 14, "worse": 3, "metric": "verified_task_success", "lower_95": 0.05,
+    ev = {"base": 0.31, "tuned": 0.52, "n": 25, "better": 14, "worse": 3, "metric": "verified_task_success", "lower_95": -0.1, "decision": True, "p_one_sided": 0.006,
           "evaluation_set_sha256": hashlib.sha256((d / "split/test.jsonl").read_bytes()).hexdigest()}
     (d / "eval.json").write_text(json.dumps(ev))
     o = finetune.record(str(d))

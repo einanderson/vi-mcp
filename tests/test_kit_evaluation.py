@@ -35,7 +35,7 @@ def test_program_evaluator_runs_standalone_and_requires_exact_offline_coverage(e
     result = run_script(exported, "program_evaluate.py", "--base", "unused", "--tuned", "unused", "--predictions", str(predictions))
     assert result.returncode == 0, result.stderr
     report = json.loads((exported / "program_eval_result.json").read_text())
-    assert report["base"] == 0 and report["tuned"] == 1 and report["lower_95"] < 0
+    assert report["base"] == 0 and report["tuned"] == 1 and report["lower_95"] < 0 and not report["decision"]
     predictions.write_text("[]")
     result = run_script(exported, "program_evaluate.py", "--base", "do-not-contact", "--tuned", "do-not-contact", "--predictions", str(predictions))
     assert result.returncode != 0 and "cover exactly" in result.stderr

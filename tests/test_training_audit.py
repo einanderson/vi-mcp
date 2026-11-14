@@ -119,9 +119,32 @@ def test_correctness_needs_independent_judgment_and_uncertainty():
     with pytest.raises(ValueError, match="independent reference"):
         training_eval.summarize_judgments([{"base_correct": False, "tuned_correct": True}])
     one = training_eval.summarize_judgments([{"base_correct": False, "tuned_correct": True, "reference": "fixture"}])
-    assert one["lower_95"] < 0  # no 100% certainty from a single success
+    assert one["lower_95"] < 0 and one["p_one_sided"] == 0.5 and not one["decision"]  # no certainty from a single success
     many = training_eval.summarize_judgments([{"id": str(i), "base_correct": False, "tuned_correct": True, "reference": "fixture"} for i in range(100)])
-    assert many["lower_95"] > 0
+    assert many["lower_95"] > 0 and many["decision"]
+
+
+def rows(n, better, worse, per_group=1):
+    return [{"id": str(i), "group": str(i // per_group), "reference": "fixture",
+             "base_correct": better <= i < better + worse or (i >= better + worse and i % 2 == 0),
+             "tuned_correct": i < better or (i >= better + worse and i % 2 == 0)} for i in range(n)]
+
+
+def test_gate_has_power_where_hoeffding_has_none_and_respects_clusters():
+    """Review 14.11.2026 (Claude): 200 tasks, 30 better / 10 worse — Hoeffding lower bound -0.07 (no adoption), exact sign test
+    p = 0.001. The gate is now the clustered sign-flip test; Hoeffding stays reported as the worst-case size bound."""
+    s = training_eval.summarize_judgments(rows(200, 30, 10))
+    assert s["lower_95"] < 0 and s["decision"] and s["p_one_sided"] < 0.002
+    assert not training_eval.summarize_judgments(rows(200, 10, 10))["decision"]   # balanced discordance: no effect
+    assert not training_eval.summarize_judgments(rows(200, 10, 30))["decision"]   # worse model never passes
+    # Ten better tasks from ONE source group are one piece of evidence, not ten.
+    one_family = training_eval.summarize_judgments(rows(20, 10, 0, per_group=10))
+    assert not one_family["decision"] and one_family["p_one_sided"] == 0.5
+    assert training_eval.summarize_judgments(rows(20, 10, 0))["decision"]
+    # Monte Carlo path (more than SIGN_FLIP_EXACT non-zero groups) agrees with the exact path in direction and size.
+    p_mc = training_eval.sign_flip_p([1] * 20 + [-1] * 5 + [2])
+    p_ex = training_eval.sign_flip_p([1] * 15 + [-1] * 5)
+    assert 0 < p_mc < 0.05 and 0 < p_ex < 0.05
 
 
 def test_champion_does_not_count_repeated_hints_as_independent_actions(gd):
