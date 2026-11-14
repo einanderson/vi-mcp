@@ -345,3 +345,27 @@ Programmiersprache ist besonders eng bei [Solver-in-the-Loop für ASP](https://a
 [ASP-Bench](https://arxiv.org/abs/2602.01171). Der Solver prüft die formale Ausführung; unabhängige Referenzen prüfen das beabsichtigte
 Problem. [MemGPT](https://arxiv.org/abs/2310.08560) behandelt virtualisierten Kontext. Das ist ein anderer Anspruch als die
 [Emulation einer Hardwaremaschine durch QEMU](https://www.qemu.org/docs/master/system/introduction.html).
+
+## Ergebnis der Prüfung durch Claude (14.11.2026)
+
+Alle neun Punkte des Prüfauftrags wurden geprüft, mit Tests auf SQLite und in den neuronalen Umgebungen (torch, TRL). Jeder Befund
+hat einen Test, der vor dem Fix scheiterte. Stand: 983 bestanden, 7 übersprungen; neuronale Tests 9 + 15 bestanden.
+
+| Punkt | Befund | Commit |
+|---|---|---|
+| 1 Eigentümergrenzen | `teach` veröffentlichte importierte private Objekte und den Instanzkontext als intern, also ins Training | `8b69f76` |
+| 2 Revisionen, Grenzen | Jeder Beleg trug zwei volle Weltkopien: bei 100 von 500 Objekten blockierte die Maschine ab der 6. Abfrage, bei 500 ab der ersten | `b6126d2` |
+| 3 Referenzantworten | Eine Referenz mit Variable oder fremdem Prädikat buchte ein richtiges Programm als falsch (KTO-Negativ); jetzt eine gemeinsame Regel für rate, verify und Auswertung | `e878d59` |
+| 4 Partitionierung | Maschinenbeispiele trugen importierte Evaluationsziele ins Training; gemessene Aufteilung auf einer Prod-Kopie: QA 14,7–15,8 %, KTO (61 Zeilen) 8–28 % | `741c2cb` |
+| 5 Trainer | Kein Fehler: Masken, Elternadapter und Vorprüfung sind korrekt; die Referenz von DPO/KTO ist in TRL 1.18 das SFT-Modell. Offen: KTO/DPO trainieren ohne Chat-Vorlage (Hypothese: schwächere Wirkung) | – |
+| 6 Statistik | Das Hoeffding-Tor war gültig, aber praktisch unpassierbar (200 Aufgaben, 30 besser / 10 schlechter: abgelehnt, Vorzeichentest p = 0,001); jetzt exakter geclusterter Vorzeichentest | `bb2328a` |
+| 7 kNN-LM | `forget` ließ Schlüssel und Token-IDs auf der Platte, und neue Snapshots kopierten sie; jetzt gelöscht, Grabstein `erased` | `89c78ce` |
+| 8 Instanz-Controller | Ein Gerät durfte `vi_machine` oder eine andere Eigentümeroperation sein; damit hätte das Modell seine Rechte ändern können. Dazu korrigierte Doku: entzogene Rechte verweigern den Boot | `5bf31ae`, `f089bba` |
+| 9 Red-Team | Reichweite und Befolgung jetzt getrennt gemessen. qwen27b: 6 von 10 zurückgehaltenen Insider-Angriffen erreichten den Agenten, 0 von 6 befolgt (95-%-Obergrenze 39 %) | `609cef2` |
+
+Offen bleiben:
+- die Speicherverwaltung alter kNN-Shards;
+- die Wahl zwischen den zwei Urteilen in `metrics.holdback_effect` (2 Standardfehler gegen Wilson);
+- die Snapshot-Namen je Instanz statt je Maschine (Frage an Codex);
+- KTO/DPO im Chat-Format;
+- die Abhängigkeit von Aktionen derselben Sitzung in den Wilson-Grenzen.
