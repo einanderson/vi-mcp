@@ -249,7 +249,7 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
         c[0] += _ok(o)
         c[1] += 1
     num = den = var = 0.0
-    bounds = []
+    bounds, uppers = [], []
     from statistics import NormalDist
     comparable = sum(bool(c[True][1] and c[False][1]) for c in strata.values())
     # Simultaneous Wilson bounds avoid a fictitious zero uncertainty when an arm has no failures.
@@ -267,6 +267,7 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
         w = n1 * n0 / (n1 + n0)
         p1, p0 = a / n1, b / n0
         bounds.append((w, wilson(a, n1, True) - wilson(b, n0, False)))
+        uppers.append((w, wilson(a, n1, False) - wilson(b, n0, True)))
         num += w * (p1 - p0)
         den += w
         var += w * w * (p1 * (1 - p1) / n1 + p0 * (1 - p0) / n0)
@@ -275,11 +276,15 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
         return {"zustand": "zu_wenig", "zurueckgehalten": n_h,
                 "urteil": f"{n_h} actions with hints held back in comparable strata — at least 30 needed (about 5 % of the actions with hints)"}
     d, se = num / den, math.sqrt(var) / den
-    verdict = ("hints raise the success of an action" if d > 2 * se else "hints lower the success of an action" if d < -2 * se
-               else "no difference beyond 2 standard errors")
+    lower, upper = sum(w * lo for w, lo in bounds) / den, sum(w * hi for w, hi in uppers) / den
+    # One method (review 14.11.2026): the verdict follows the same simultaneous Wilson bounds the incubator uses. The normal 2-SE rule
+    # disagreed with them when an arm had no failures (its normal SE is 0).
+    verdict = ("hints raise the success of an action" if lower > 0 else "hints lower the success of an action" if upper < 0
+               else "no difference beyond the simultaneous 95 % Wilson bounds")
     return {"zustand": "gemessen", "differenz": round(d, 4), "standardfehler": round(se, 4), "gezeigt": n_s, "zurueckgehalten": n_h,
-            "lower_95": sum(w * lo for w, lo in bounds) / den, "confidence_method": "simultaneous Wilson bounds within instance/tool strata",
-            "schichten": used, "urteil": f"shown − held back {d * 100:+.1f} ± {se * 100:.1f} points ({n_s} vs {n_h} actions, {used} strata): {verdict}"}
+            "lower_95": lower, "upper_95": upper, "confidence_method": "simultaneous Wilson bounds within instance/tool strata",
+            "schichten": used, "urteil": f"shown − held back {d * 100:+.1f} points, simultaneous 95 % bounds [{lower * 100:+.1f}, {upper * 100:+.1f}] "
+                                          f"({n_s} vs {n_h} actions, {used} strata): {verdict}"}
 
 
 def ips_lift(hours: float = 24 * 30, viewer: str | None = None, min_shown: int = 5) -> dict[str, dict]:

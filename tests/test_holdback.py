@@ -64,3 +64,17 @@ def test_config_bounds_the_share(tmp_path, monkeypatch):
         assert config.load(p).hold_back == want
     p.write_text("{}")
     assert config.load(p).hold_back == 0.05
+
+
+def test_verdict_and_lower_bound_never_disagree(gd):
+    """Review 14.11.2026 (Claude): the verdict used 2 normal standard errors, the incubator the simultaneous Wilson bound — two ways
+    to one conclusion. With no failure in the shown arm the normal SE of that arm is 0 and the two disagreed. One method now."""
+    for i in range(1030):
+        held = i < 30
+        ok = (i >= 3) if held else True   # held back 27/30, shown 1000/1000
+        v = {"gezeigt": [] if held else ["erkenntnis:h"], "zurueckgehalten": ["erkenntnis:h"] if held else [], "haltewahrscheinlichkeit": 0.03}
+        g.new_object("erfahrung", f"rsync {i}", ["tool:rsync", f"ok:{'ja' if ok else 'nein'}"], {"vorher": v}, instance="a")
+    metrics._GRADES["db"] = None
+    e = metrics.holdback_effect()
+    assert e["lower_95"] > 0 and "hints raise the success" in e["urteil"]
+    assert e["lower_95"] <= e["differenz"] <= e["upper_95"]

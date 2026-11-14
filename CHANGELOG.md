@@ -101,6 +101,14 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **The hold-back verdict and the incubator's bound could disagree** (Claude's review, open point). Before:
+  - `metrics.holdback_effect` worded its verdict from 2 normal standard errors;
+  - the incubator decided on the simultaneous Wilson lower bound.
+  - With no failure in one arm, that arm's normal standard error is 0. Example: shown 1000/1000, held back 27/30. The text said
+    "no difference" while the Wilson lower bound was +0.031.
+
+  Now the verdict follows the same Wilson bounds (`lower_95`, new `upper_95`), and the line shows them instead of "± SE". Evidence:
+  `tests/test_holdback.py::test_verdict_and_lower_bound_never_disagree` (failed before).
 - **A held entry could be read by id.** The held message says "shown to nobody until … released". That was true for search and
   hints, but `vi_object` returned the full held content to any instance that knew the id. Found on 14.11.2026, when Codex read a
   diff the fixed rules had held. The id had been passed to Codex in a VI answer. Now an entry held by the fixed rules is readable
