@@ -23,6 +23,10 @@ def _set_state(o: g.MemoryObject, state: str) -> None:
     o.hashtags = [t for t in o.hashtags if not t.startswith("zustand:")] + [f"zustand:{state}"]
 
 
+ANSWER_MAX = 20000
+EVIDENCE_MAX = 2000
+
+
 def ask(from_: str, to: str, text: str, triggers: list[str], source: str) -> g.MemoryObject:
     if len((text or "").strip()) < 10:
         raise ValueError("text (the question, one sentence) is required")
@@ -32,9 +36,13 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str) -> g.M
     if to == from_:
         raise ValueError("a question to yourself is not a question to another instance — use vi_recall")
     tags = [t.strip() for t in triggers or [] if isinstance(t, str) and g.TAG.match(t.strip()) and not t.startswith(g.ADMIN_PREFIXES)]
-    o = g.new_object("frage", text.strip()[:1000], tags + [f"an:{to}", f"von:{from_}", "zustand:offen"],
+    text = text.strip()
+    if len(text) > ANSWER_MAX:
+        raise ValueError(f"a question has at most {ANSWER_MAX} characters — put longer material into an object (vi_learn) and name its id")
+    # 14.11.2026: the question used to be cut to 1000 characters without notice; the whole text is now kept in inhalt
+    o = g.new_object("frage", text[:1000], tags + [f"an:{to}", f"von:{from_}", "zustand:offen"],
                        {"von": from_, "an": to, "zustand": "offen", "quelle": (source or "").strip()[:500],
-                        "zugestellt_an": [], "antworten": [], "gemeldet": 0},
+                        "zugestellt_an": [], "antworten": [], "gemeldet": 0, **({"inhalt": text} if len(text) > 1000 else {})},
                        importance=2, who=f"ki@{from_}", reason="vi_ask", instance=from_)
     return o
 
@@ -53,7 +61,9 @@ def deliver(instance: str | None) -> list[str]:
             o = g.load(oid)
             d = o.data
             if d["von"] != instance and instance not in d["zugestellt_an"] and d["zustand"] != "abgelaufen":
-                hints.append(f"Question from {d['von']} [{o.id}]: {o.text[:400]} — answer with vi_answer(id, text, belege)")
+                full = str(d.get("inhalt") or o.text)
+                more = f" … (complete: vi_questions(id={o.id}))" if len(full) > 400 else ""
+                hints.append(f"Question from {d['von']} [{o.id}]: {full[:400]}{more} — answer with vi_answer(id, text, belege)")
                 d["zugestellt_an"] = d["zugestellt_an"] + [instance]
                 if d["zustand"] == "offen":
                     _set_state(o, "zugestellt")
@@ -62,6 +72,7 @@ def deliver(instance: str | None) -> list[str]:
             elif d["von"] == instance and len(d["antworten"]) > d.get("gemeldet", 0):
                 new = d["antworten"][d.get("gemeldet", 0):]
                 hints += [f"Answer from {a['instanz']} to your question [{o.id}] \"{o.text[:80]}\": {a['text'][:400]}"
+                          + (f" … (complete: vi_questions(id={o.id}))" if len(a["text"]) > 400 or len(a.get("belege") or "") > 160 else "")
                              + (f" [Evidence: {a['belege'][:160]}]" if a.get("belege") else "") for a in new]
                 d["gemeldet"] = len(d["antworten"])
                 g.save(o)
@@ -81,7 +92,12 @@ def answer_question(oid: str, instance: str, text: str, evidence_list: str) -> g
         raise ValueError(f"the question went to {d['an']}, not to {instance}")
     if len((text or "").strip()) < 10 or len((evidence_list or "").strip()) < 8:
         raise ValueError("text (the answer) and belege (command/URL/measurement) are required")
-    d["antworten"] = d["antworten"] + [{"instanz": instance, "text": text.strip()[:2000], "belege": evidence_list.strip()[:500], "zeit": g.now()}]
+    # 14.11.2026: answers were cut to 2000 and evidence to 500 characters without notice (a review ended mid-sentence). Stored whole
+    # now; longer is refused with the reason — nothing disappears silently.
+    if len(text.strip()) > ANSWER_MAX or len(evidence_list.strip()) > EVIDENCE_MAX:
+        raise ValueError(f"an answer has at most {ANSWER_MAX} characters and its evidence at most {EVIDENCE_MAX} — put longer material "
+                         "into an object (vi_learn) and name its id in the answer")
+    d["antworten"] = d["antworten"] + [{"instanz": instance, "text": text.strip(), "belege": evidence_list.strip(), "zeit": g.now()}]
     _set_state(o, "beantwortet")
     o.change(f"ki@{instance}", "answered", "vi_answer")
     return g.save(o)

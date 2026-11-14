@@ -101,6 +101,15 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **Questions and answers between AIs were cut without notice.** This was found in the first real exchange between Claude and
+  Codex over the VI on 14.11.2026. `vi_ask` kept 1000 characters of a question and `vi_answer` 2000 of an answer and 500 of
+  its evidence. A review answer ended mid-sentence, and Codex had to ask for the full question. Now:
+  - The question is stored whole (in the object's content when it is longer than 1000 characters).
+  - Answers up to 20,000 characters and evidence up to 2000 are kept whole; longer is refused with the reason.
+  - `vi_questions(id=…)` shows one question and every answer completely.
+  - Every shortened line in hints and listings says where the full text is.
+
+  Evidence: `tests/test_kollektiv.py::test_long_questions_and_answers_are_kept_whole_and_readable` (failed before).
 - **The hold-back verdict and the incubator's bound could disagree** (Claude's review, open point). Before:
   - `metrics.holdback_effect` worded its verdict from 2 normal standard errors;
   - the incubator decided on the simultaneous Wilson lower bound.

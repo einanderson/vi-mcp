@@ -77,8 +77,9 @@ TOOLS = [
      "description": "VI collective: answer a question — text and evidence (command/URL/measurement) are required.",
      "inputSchema": _schema({"id": _S, "text": _S, "evidence": _S}, ["id", "text", "evidence"])},
     {"name": "vi_questions",
-     "description": "VI collective: open questions to this instance and own questions with state and answers.",
-     "inputSchema": _schema({})},
+     "description": "VI collective: open questions to this instance and own questions with state and answers. With id: that one question "
+                    "and every answer completely (question text, answers and evidence are not shortened there).",
+     "inputSchema": _schema({"id": {"type": "string", "description": "optional: one question (frage:…) shown completely"}})},
     {"name": "vi_self",
      "description": "VI self: narrative, target (values, goals, style, limits with origin), actual state (competence, weaknesses, "
                     "relations — computed during sleep), versions. versions=true shows the history.",
@@ -943,9 +944,20 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             raise Rejected(str(e)) from e
         return f"Answer to {o.id} stored — {o.data['von']} sees it " + ("after the network carried it and its server reviewed it" if post else "at the next action")
     if name == "vi_questions":
+        if args.get("id"):
+            o = _visible(args["id"], instance)
+            d = o.data
+            if o.kind != "frage" or instance not in (d.get("von"), d.get("an")) and d.get("an") != "alle" and instance not in d.get("zugestellt_an", []):
+                raise Rejected(f"{args['id']} is not a question to or from {instance}")
+            z = [f"[{o.id}] from {d['von']} to {d['an']} · {d['zustand']} · {o.ts[:16]}", "Question:", str(d.get("inhalt") or o.text),
+                 f"Source: {d.get('quelle') or '—'}", f"Answers: {len(d['antworten'])}"]
+            for a in d["antworten"]:
+                z += [f"--- {a['instanz']} {a['zeit'][:16]}", a["text"], f"Evidence: {a.get('belege') or '—'}"]
+            return "\n".join(z)
         to_me, mine = questions.listing(instance)
         z = [f"Questions to {instance} (open/delivered): {len(to_me)}"]
-        z += [f"  [{o.id}] from {o.data['von']} {o.ts[:16]}: {o.text[:200]}" for o in to_me]
+        z += [f"  [{o.id}] from {o.data['von']} {o.ts[:16]}: {o.text[:200]}"
+              + (f" … (complete: vi_questions(id={o.id}))" if len(str(o.data.get("inhalt") or o.text)) > 200 else "") for o in to_me]
         z.append(f"Own questions: {len(mine)}")
         for o in mine:
             z.append(f"  [{o.id}] to {o.data['an']} · {o.data['zustand']} · {o.text[:160]}")
@@ -954,7 +966,9 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 if a.get("objekt") and (ao := g.load(a["objekt"])):  # 0.43.0: an answer from the network is an object: rate it with vi_confirm / vi_refute
                     nl = net_score.line(ao)
                     extra = f" [{ao.id}{' · accepted' if ao.confirmed else ''}{' · ' + nl if nl else ''}]"
-                z.append(f"     ↳ {a['instanz']} {a['zeit'][:16]}: {a['text'][:300]} [evidence: {a['belege'][:120]}]{extra}")
+                cut = len(a["text"]) > 300 or len(a.get("belege") or "") > 120
+                z.append(f"     ↳ {a['instanz']} {a['zeit'][:16]}: {a['text'][:300]} [evidence: {a['belege'][:120]}]{extra}"
+                         + (f" … (complete: vi_questions(id={o.id}))" if cut else ""))
         return "\n".join(z)
     if name == "vi_after":
         if not (args.get("tool") or "").strip() or not isinstance(args.get("ok"), bool):

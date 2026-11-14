@@ -57,7 +57,11 @@ VI collective: answer a question — text and evidence (command/URL/measurement)
 
 ### `vi_questions`
 
-VI collective: open questions to this instance and own questions with state and answers. **OPEN** · German alias `vi_fragen`
+VI collective: open questions to this instance and own questions with state and answers. With id: that one question and every answer completely (question text, answers and evidence are not shortened there). **OPEN** · German alias `vi_fragen`
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string |  | optional: one question (frage:…) shown completely |
 
 ### `vi_self`
 

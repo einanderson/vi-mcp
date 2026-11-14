@@ -263,3 +263,24 @@ def test_llm_hypothesis_hint_only_after_foreign_confirmation(gd):
     assert not any("web4 deuten" in x for x in intuition.before("Bash", {"command": "ssh web4 uptime"}, "a")["hinweise"])
     g.load(o.id).confirm("ki@b", "Latenz selbst gemessen", "b")
     assert any("web4 deuten" in x for x in intuition.before("Bash", {"command": "ssh web4 uptime"}, "a")["hinweise"])
+
+
+def test_long_questions_and_answers_are_kept_whole_and_readable(from_seq):
+    """Found 14.11.2026 between Claude and Codex: questions were cut to 1000 and answers to 2000 characters without notice — a review
+    answer ended mid-sentence and Codex had to ask for the full question. Now both are stored whole (answers up to 20,000
+    characters, evidence up to 2000; longer is refused with the reason), vi_questions(id=…) shows one question and every answer
+    completely, and shortened lines say where the full text is."""
+    a, b = from_seq
+    question = "Please review these findings. " + " ".join(f"finding {i}: detail text for the reviewer." for i in range(90))
+    assert len(question) > 3000
+    fid = as_user(a, "vi_ask", {"to": "b", "text": question, "source": "review"}).split()[1]
+    full_q = as_user(b, "vi_questions", {"id": fid})
+    assert "finding 89: detail text" in full_q
+    answer = "Review result. " + " ".join(f"point {i}: agreed with evidence in file.py:{i}." for i in range(200))
+    assert 2000 < len(answer) < 20000
+    as_user(b, "vi_answer", {"id": fid, "text": answer, "evidence": "git show; " + "x" * 900})
+    full = as_user(a, "vi_questions", {"id": fid})
+    assert "point 199: agreed" in full and "x" * 900 in full
+    assert f"vi_questions(id={fid})" in as_user(a, "vi_questions")   # the listing says where the full text is
+    with pytest.raises(tools.Rejected, match="20000"):
+        as_user(b, "vi_answer", {"id": fid, "text": "y" * 20001, "evidence": "measured"})
