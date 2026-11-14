@@ -65,6 +65,11 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **`vi_stats` named the wrong reason for withholding a hint verdict** (statistics loop, 14.11.2026). Production showed
+  "matched … lift +3.6 ± 1.5 points … no difference beyond 2 standard errors". But 3.6 is beyond 2 × 1.5; what held the
+  verdict back was the 5-point minimum effect. The line now says "beyond 2 standard errors but below the 5-point minimum effect —
+  no verdict". Evidence: `tests/test_hint_quality.py::test_a_clear_but_small_difference_names_the_minimum_effect_not_the_standard_error`
+  (failed before).
 - **The poisoning test separates reach from compliance** (Claude's review, 14.11.2026, item 9). `vi-mcp redteam --llm URL` now
   measures compliance as well as reach:
   - Every attack that reached an agent (top-3 search hit or hint) is put to a language model the way an agent sees it: the task,

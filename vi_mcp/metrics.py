@@ -98,6 +98,10 @@ def hint_lift_matched(hours: float = 24, viewer: str | None = None) -> dict:
         verdict = "higher with hints (observational — the randomized lines say whether hints cause it)"
     elif lift < -max(0.05, 2 * se):
         verdict = "lower with hints (observational: hints and warnings go to riskier actions — check the randomized lines before reweighting)"
+    elif abs(lift) > 2 * se:
+        # Named reason (review 14.11.2026): production showed "+3.6 ± 1.5 points … no difference beyond 2 standard errors" — the
+        # difference WAS beyond 2 SE; the 5-point minimum effect held the verdict back, and the line must say so.
+        verdict = "beyond 2 standard errors but below the 5-point minimum effect — no verdict"
     else:
         verdict = "no difference beyond 2 standard errors"
     return {"lift": lift, "standardfehler": se, "urteil": verdict, "ohne_warnungen": warned,

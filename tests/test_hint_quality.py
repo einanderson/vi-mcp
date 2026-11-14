@@ -181,3 +181,17 @@ def test_warned_actions_are_not_counted_as_hints(gd):
     m = metrics.hint_lift_matched(24)
     assert m["ohne_warnungen"] == 100 and m["mit_vergleichbar"] == 20 and abs(m["lift"]) < 1e-9
     assert "100 actions with a warning left out" in metrics.matched_line(m)
+
+
+def test_a_clear_but_small_difference_names_the_minimum_effect_not_the_standard_error(gd):
+    """Production 14.11.2026: "+3.6 ± 1.5 points … no difference beyond 2 standard errors" — 3.6 IS beyond 2 × 1.5; the 5-point
+    minimum effect held the verdict back, and the line must name that reason."""
+    for ok, n in ((True, 970), (False, 30)):   # 97 % with hints
+        for _ in range(n):
+            _exp("claude", "Bash", ok, True)
+    for ok, n in ((True, 935), (False, 65)):   # 93.5 % without
+        for _ in range(n):
+            _exp("claude", "Bash", ok, False)
+    m = metrics.hint_lift_matched(24)
+    assert 0.03 < m["lift"] < 0.05 and m["lift"] > 2 * m["standardfehler"]
+    assert m["urteil"] == "beyond 2 standard errors but below the 5-point minimum effect — no verdict"
