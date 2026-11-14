@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import random
+from collections import Counter
 from pathlib import Path
 
 from . import __version__
@@ -35,7 +36,11 @@ model's size). **QLoRA** loads the frozen model in 4 bit so it fits into little 
 stays in the house; only the base model is downloaded once.
 
 ## Training formats of `vi-mcp dataset export`
-- **SFT** — `qa.jsonl`: question → knowledge with source. Imported or title-derived examples are not automatically verified answers; the manifest reports their evidence and question source.
+- **SFT** — `qa.jsonl`: a real question (doc2query) → knowledge with source; imported examples are not automatically verified
+  answers, the manifest reports their evidence and question source. Knowledge without a real question is in `documents.jsonl`
+  and is never trained as its own question: the first production run (14.11.2026) did that for 96 % of its rows and learned to
+  echo and continue documents (no gain on real questions, loops). The kit's `synth_qa.py` turns documents into grounded
+  question-answer pairs (`qa_synth.jsonl`); diverse QA pairs inject knowledge better than raw text (arXiv 2409.07431, 2412.14964).
 - **KTO** — `kto.jsonl`: an answer was good or not (binary). Exactly the VI's helped/not-helped signal (Ethayarajh et al., arXiv 2402.01306).
 - **DPO** — `dpo.jsonl`: in the same situation this answer was better than that one (Rafailov et al., arXiv 2305.18290).
 - **agentic** — `agentic.jsonl`: the model asks the VI with `vi_recall` in VIL and answers from what it found (tool-use SFT).
@@ -66,7 +71,9 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
 
 ## The steps
 1. The VI is mature enough: `vi-mcp incubator status` (a run before is a trial).
-2. `vi-mcp finetune kit DIR` — data, test split, scripts.
+2. `vi-mcp finetune kit DIR` — data, test split, scripts. Then `python synth_qa.py --url http://HOST/v1 --model NAME [--limit N]`
+   (an instruction model writes up to 3 grounded pairs per document; resumable; report in synth_report.json) and
+   `vi-mcp finetune split DIR` so the pairs join the shared split. Check `run.json` → split → qa_question_sources.
 3. On the training host install its hardware-appropriate PyTorch, then `python -m pip install -r requirements-train.txt`.
    First run `python train.py --stage logic --tokenizer-only --from-base` (no model weights), then
    `python train.py --stage logic --preflight --from-base` (real trainer, one no-grad loss, zero optimizer steps).
@@ -206,6 +213,129 @@ else:
 '''
 
 
+SYNTH_QA_PY = r'''"""Question-answer pairs for documents that have no real question yet (dataset/documents.jsonl -> dataset/qa_synth.jsonl).
+
+Why (14.11.2026): training "question = the document's own text, answer = the document" taught a model to echo and continue documents
+and to loop; it answered no real question better. Knowledge injection works better from diverse question-answer pairs than from raw
+text (Yang et al., Synthetic continued pretraining, arXiv 2409.07431; Kujanpaeae et al., arXiv 2412.14964).
+A language model writes up to 3 pairs per document through an OpenAI-compatible API. Each pair is kept only if it is grounded: most
+answer words occur in the document, the question names its subject instead of "the document", nothing is copied from the document's
+beginning. Rejections are counted per reason. Resumable: documents already in qa_synth.jsonl or synth_rejected.jsonl are skipped.
+No token cap (the model ends its own answer); thinking is switched off. Then run `vi-mcp finetune split KIT` (or rerun the kit) so the
+pairs join the shared split. The pairs are model output checked for word overlap, not verified by a person.
+"""
+import argparse, concurrent.futures as cf, hashlib, json, random, re, threading, time, urllib.request
+
+SYSTEM = ("You write training questions for a company knowledge base. You get one document. Write up to 3 questions that an employee "
+          "would really ask and that this document answers, each with a short answer of one to three sentences. Use only facts stated "
+          "in the document; copy names, paths, hosts, commands and numbers exactly. Each question must make sense without seeing the "
+          "document: name the system, host or topic, never write 'the document', 'this page' or 'the text'. Write in the language of "
+          "the document. If the document states no answerable fact (an empty table, only a title), return an empty list. "
+          'Reply with JSON only: {"pairs": [{"question": "...", "answer": "..."}]}')
+PROMPT_SHA256 = hashlib.sha256(SYSTEM.encode()).hexdigest()
+DOC_CHARS = 6000
+GROUNDED = 0.8
+META = re.compile(r"\b(the|this|that) (document|page|text|article)\b|\b(dieses?|das|der|die|im) (dokument|seite|text|artikel)\b", re.I)
+WORD = re.compile(r"[\w./:-]{3,}")
+
+
+def words(text):
+    return {w.lower().strip(".:/-") for w in WORD.findall(text)} - {""}
+
+
+def check(pair, document):
+    q, a = (pair.get("question") or "").strip(), (pair.get("answer") or "").strip()
+    if not 15 <= len(q) <= 300 or not 2 <= len(a) <= 800:
+        return "length"
+    if META.search(q):
+        return "refers to the document instead of its subject"
+    head = re.sub(r"\s+", " ", document[:200]).lower()
+    if re.sub(r"\s+", " ", q).lower()[:60] in head:
+        return "copied from the document's beginning"
+    aw, dw = words(a), words(document)
+    if not aw or len(aw & dw) / len(aw) < GROUNDED:
+        return "not grounded in the document"
+    return None
+
+
+def ask(url, model, document):
+    body = {"model": model, "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": document[:DOC_CHARS]}],
+            "temperature": 0.3, "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(url.rstrip("/") + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=600) as r:
+        choice = json.load(r)["choices"][0]
+    text = choice["message"].get("content") or ""
+    m = re.search(r"\{.*\}", text, re.S)
+    return json.loads(m.group(0))["pairs"] if m else None, choice.get("finish_reason")
+
+
+def main():
+    a = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    a.add_argument("--url", required=True, help="OpenAI-compatible base URL, e.g. http://host:8080/v1")
+    a.add_argument("--model", required=True)
+    a.add_argument("--limit", type=int, default=0, help="at most this many documents in this run (seeded random order); 0 = all")
+    a.add_argument("--workers", type=int, default=4)
+    a.add_argument("--seed", type=int, default=1114)
+    o = a.parse_args()
+    docs = [json.loads(l) for l in open("dataset/documents.jsonl", encoding="utf-8") if l.strip()]
+    done = set()
+    for name in ("dataset/qa_synth.jsonl", "dataset/synth_rejected.jsonl"):
+        try:
+            done |= {json.loads(l)["meta"]["id"] for l in open(name, encoding="utf-8") if l.strip()}
+        except FileNotFoundError:
+            pass
+    todo = [d for d in docs if d["meta"]["id"] not in done]
+    random.Random(o.seed).shuffle(todo)
+    todo = todo[: o.limit] if o.limit else todo
+    lock, stats, t0 = threading.Lock(), {"documents": 0, "pairs": 0, "rejected": {}}, time.time()
+    out = open("dataset/qa_synth.jsonl", "a", encoding="utf-8")
+    rej = open("dataset/synth_rejected.jsonl", "a", encoding="utf-8")
+
+    def one(d):
+        try:
+            pairs, finish = ask(o.url, o.model, d["document"])
+        except Exception as e:  # noqa: BLE001 — a failed call is counted, never a silent gap; the next run retries it
+            return d, None, f"request failed: {type(e).__name__}"
+        if pairs is None or finish != "stop":
+            return d, [], "no JSON answer" if finish == "stop" else f"finish_reason {finish}"
+        return d, pairs, None
+
+    with cf.ThreadPoolExecutor(o.workers) as pool:
+        for d, pairs, error in pool.map(one, todo):
+            with lock:
+                stats["documents"] += 1
+                kept, reasons = [], []
+                for p in pairs or []:
+                    why = check(p, d["document"]) if isinstance(p, dict) else "format"
+                    if why:
+                        reasons.append(why)
+                    else:
+                        kept.append(p)
+                if error:
+                    reasons.append(error)
+                for why in reasons:
+                    stats["rejected"][why] = stats["rejected"].get(why, 0) + 1
+                meta = {**d["meta"], "question_source": "synthetic", "generator": o.model, "prompt_sha256": PROMPT_SHA256}
+                for p in kept:
+                    answer = p["answer"].strip() + f"\n\nSource: {d['source']}"
+                    out.write(json.dumps({"messages": [{"role": "user", "content": p["question"].strip()},
+                                                       {"role": "assistant", "content": answer}], "meta": meta}, ensure_ascii=False) + "\n")
+                stats["pairs"] += len(kept)
+                if not kept and not (error or "").startswith("request failed"):
+                    rej.write(json.dumps({"meta": {"id": d["meta"]["id"]}, "reasons": reasons}, ensure_ascii=False) + "\n")
+                out.flush(); rej.flush()
+                if stats["documents"] % 20 == 0:
+                    print(f"{stats['documents']}/{len(todo)} documents, {stats['pairs']} pairs, {round(time.time() - t0)} s", flush=True)
+    stats.update(seconds=round(time.time() - t0), generator=o.model, prompt_sha256=PROMPT_SHA256, remaining=len(docs) - len(done) - len(todo))
+    json.dump(stats, open("synth_report.json", "w"), indent=1)
+    print(json.dumps(stats, indent=1))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
 CONVERT_SH = """#!/bin/sh
 # The adapter as GGUF for llama.cpp — written by vi-mcp finetune kit. LLAMA_CPP = a checkout of llama.cpp, BASE_HF = the base model's
 # Hugging Face directory (the same one train.py used).
@@ -222,6 +352,9 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
     """One connected-component split across ALL stages: object, source, duplicate content and program family stay together."""
     data = {name: [json.loads(s) for s in (qa_path.parent / f"{name}.jsonl").read_text().splitlines() if s.strip()]
             if (qa_path.parent / f"{name}.jsonl").exists() else [] for name in ("qa", "agentic", "logic", "kto", "dpo")}
+    synth = qa_path.parent / "qa_synth.jsonl"  # synth_qa.py output: QA rows like qa.jsonl, split with their source object's group
+    if synth.exists():
+        data["qa"] += [json.loads(s) for s in synth.read_text().splitlines() if s.strip()]
     parent = {}
     def root(x):
         parent.setdefault(x, x)
@@ -265,7 +398,23 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
         if counts[stage]["withheld"]:
             counts[stage]["reason"] = "solver-only program demonstration or observational preference; no independent task verification"
     test_ids = {r["meta"]["id"] for r in data["qa"] if root(keys(r)[0]) in test_groups}
-    return {**counts["qa"], "objekte_test": len(test_ids), "groups": len(groups), "test_groups": len(test_groups), "stages": counts}
+    sources = {side: dict(Counter((r.get("meta") or {}).get("question_source") for r in data["qa"] if (root(keys(r)[0]) in test_groups) == (side == "test")))
+               for side in ("train", "test")}
+    return {**counts["qa"], "objekte_test": len(test_ids), "groups": len(groups), "test_groups": len(test_groups), "stages": counts,
+            "qa_question_sources": sources}
+
+
+def resplit(directory: str) -> dict:
+    """Redo the shared split after synth_qa.py added dataset/qa_synth.jsonl; run.json records the new split and the synth file's hash."""
+    d = Path(directory)
+    if not (d / "run.json").exists():
+        raise ValueError(f"{d}: no run.json — not a kit written by vi-mcp finetune kit")
+    run = json.loads((d / "run.json").read_text(encoding="utf-8"))
+    run["split"] = _split(d / "dataset" / "qa.jsonl", d / "split")
+    synth = d / "dataset" / "qa_synth.jsonl"
+    run["qa_synth_sha256"] = hashlib.sha256(synth.read_bytes()).hexdigest() if synth.exists() else None
+    _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
+    return run["split"]
 
 
 HELDOUT_LOSS_PY = r'''"""Held-out next-token loss of the base model and, optionally, a LoRA adapter on one stage's TEST split.
@@ -426,6 +575,7 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     _write(d / "program_eval.jsonl", "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in cases))
     _write(d / "program_evaluate.py", PROGRAM_EVALUATE_PY, 0o700)
     _write(d / "heldout_loss.py", HELDOUT_LOSS_PY, 0o700)
+    _write(d / "synth_qa.py", SYNTH_QA_PY, 0o700)
     _write(d / "convert.sh", CONVERT_SH, 0o700)
     _write(d / "README-FINETUNE.md", GUIDE)
     run = {"base_model": base, "kit": g.now(), "vi_mcp": __version__, "handbook": GUIDE_VERSION, "index": index,
@@ -433,6 +583,7 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
            "incubator": manifest.get("inkubator"),
            "kit_code_sha256": {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "heldout_loss.py",
+                                         d / "synth_qa.py",
                                          d / "evaluation_core.py", *sorted(core.glob("*.py"))]}}
     _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
     return {"verzeichnis": str(d), **run, "eval_fragen": len(questions)}
@@ -481,6 +632,8 @@ def main(argv: list[str]) -> int:
     p = u.add_parser("plan", help="readiness and the steps for this server")
     k = u.add_parser("kit", help="write the training data, test split and scripts into a directory")
     r = u.add_parser("record", help="record a finished run as a model object with its lineage")
+    s = u.add_parser("split", help="redo the kit's shared split after synth_qa.py wrote dataset/qa_synth.jsonl (needs no database)")
+    s.add_argument("directory")
     for x in (p, k):
         x.add_argument("--index")
         x.add_argument("--base")
@@ -490,6 +643,13 @@ def main(argv: list[str]) -> int:
     o = a.parse_args(argv)
     if o.cmd == "guide":
         print(GUIDE)
+        return 0
+    if o.cmd == "split":
+        try:
+            print(json.dumps(resplit(o.directory), indent=2, ensure_ascii=False))
+        except ValueError as e:
+            print(f"vi-mcp finetune: {e}")
+            return 1
         return 0
     g.open_db(config.load().db)
     try:

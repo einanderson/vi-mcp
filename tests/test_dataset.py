@@ -33,8 +33,16 @@ def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd
     assert not any("private note" in q or "def f()" in q or "Bash ok" in q for q in questions)
     a = next(x for x in qa if x["meta"]["id"] == good.id)
     assert a["messages"][1]["content"].endswith("Source: https://docs.example/x") and a["meta"]["question_source"] == "doc2query"
+    no_q = "no real question yet: exported to documents.jsonl for QA synthesis, never trained as its own question"
     assert m["skipped"] == {"code piece (a copy of a repository)": 1, "target of the fixed question set (held out for evaluation)": 1,
-                            "question equal to an evaluation question": 1}
+                            "question equal to an evaluation question": 1, no_q: 1}
+    # 14.11.2026: an object without a real question is never trained as "its own text → itself" (that taught echoing); it goes to
+    # documents.jsonl for the kit's QA synthesis
+    assert all(x["messages"][0]["content"] != bad.text for x in qa) and all(x["meta"]["id"] != bad.id for x in qa)
+    docs = [json.loads(line) for line in (out / "documents.jsonl").read_text().splitlines()]
+    assert [d["meta"]["id"] for d in docs] == [bad.id] and m["counts"]["documents"] == 1
+    assert docs[0]["document"].startswith(bad.text) and docs[0]["source"] == "https://docs.example/x"
+    assert (out / "documents.jsonl").stat().st_mode & 0o077 == 0 and "documents.jsonl" in (out / "DATASHEET.md").read_text()
     kto = [json.loads(line) for line in (out / "kto.jsonl").read_text().splitlines()]
     assert {(x["meta"]["id"], x["label"]) for x in kto} == {(good.id, True), (bad.id, False)}
     dpo = [json.loads(line) for line in (out / "dpo.jsonl").read_text().splitlines()]
@@ -48,8 +56,8 @@ def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd
 def test_scrubbing_is_audited_and_an_index_can_be_exported_alone(gd, tmp_path, monkeypatch):
     from vi_mcp import anonymize
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    o = _k("deploy note", ["thema:deploy"], index="proj")
-    _k("other project", ["thema:deploy"], index="other")
+    o = _k("deploy note", ["thema:deploy"], index="proj", data={"klasse": {"fragen": ["How is proj deployed?"]}})
+    _k("other project", ["thema:deploy"], index="other", data={"klasse": {"fragen": ["How is other deployed?"]}})
     # a credential that slipped past the scrubber at save time (e.g. a pattern added later) — simulated by writing it directly
     with g.lock:
         g.db().execute("UPDATE objekt SET daten = ? WHERE id = ?", (json.dumps({**o.data, "inhalt": "password=hunter2secret"}), o.id))

@@ -112,6 +112,14 @@ once end to end on 14.11.2026 (Qwen/Qwen3-0.6B, AMD Strix Halo gfx1151, ROCm). T
 - `run.json` → `split.stages` shows train/test/withheld rows and `test_groups` per stage. Every stage with at least 5 groups gets
   held-out groups. A stage with 0 test rows cannot be measured; say so in the report.
 - The datasheet in `dataset/DATASHEET.md` lists what was held out or scrubbed and why.
+- Questions: `qa.jsonl` holds only real questions (doc2query). Knowledge without one is in `dataset/documents.jsonl` and is never
+  trained as "its own text → itself". The first production run did that for 96 % of its rows (20,066 of 20,957). The model then
+  echoed and continued Confluence pages, looped in 55 % of its answers and answered no real question better (blind test 14.11.2026,
+  VI `erkenntnis:0758b794…`). Synthesize pairs before training:
+  `python synth_qa.py --url http://HOST/v1 --model NAME --limit N` (an instruction model, thinking off, no token cap; keeps only
+  grounded pairs; resumable; `synth_report.json`), then `vi-mcp finetune split DIR`. Measured with Qwen3.6-35B-A3B Q4 on
+  the AMD gfx1151 host, 4 workers: 12 documents in 38 s, 14 pairs kept, 21 rejected (19 not grounded, 2 named "the document").
+  Check `run.json` → `split.qa_question_sources` before training.
 
 **2. Training environment.** Use its own container on the GPU host and do not change the host's services.
 - AMD: the `rocm/pytorch:<rocm>_<os>_<py>_pytorch_release_<ver>` image. Pick a tag listing your GPU arch (gfx1151 from ROCm 7.1).

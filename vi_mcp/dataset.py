@@ -88,7 +88,7 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     eval_groups |= {evaluation.group_of(o) for o in eval_objects.values()}
     eval_bodies = {_norm(str(o.data.get("inhalt") or "")) for o in eval_objects.values() if o.data.get("inhalt")}
     skipped, audit = Counter(), Counter()
-    qa, rated, qa_objects = [], [], []
+    qa, rated, qa_objects, documents = [], [], [], []
     for o in _objects(index):
         if o.data.get("machine_example"):
             skipped["machine execution evidence belongs to checked program formats, not generic question-to-itself QA"] += 1
@@ -103,12 +103,23 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
             skipped["evaluation source page or duplicate content (held out)"] += 1
             continue
         k = o.data.get("klasse") or {}
-        questions = [q for q in (k.get("fragen") or []) if isinstance(q, str) and q.strip()] or [o.text.strip()]
+        questions = [q for q in (k.get("fragen") or []) if isinstance(q, str) and q.strip()]
         meta = {"id": o.id, "kind": o.kind, "index": o.idx, "answers": k.get("answers"), "memory": vil.memory_of(o),
                 "evidence": vil.evidence_of(o), "weight": vil.weight_of(o)[0], "ratings": vil.weight_of(o)[1],
-                "question_source": "doc2query" if k.get("fragen") else "title", "group": evaluation.group_of(o),
+                "question_source": "doc2query", "group": evaluation.group_of(o),
                 "content_hash": hashlib.sha256(_norm(str(o.data.get("inhalt") or o.text)).encode()).hexdigest()}
         answer = _answer(o, audit)
+        w, n = vil.weight_of(o)
+        if n >= MIN_RATINGS:  # hint ratings (KTO/DPO) do not depend on a question
+            rated.append((o, w, n))
+        if not questions:
+            # 14.11.2026: the object's own text is never its question. 20,066 of 20,957 SFT rows of the first production run were
+            # "question = the document's beginning, answer = the document"; the model learned to echo and continue documents (blind
+            # test: no gain on 60 real questions, loops in 55 % of answers). Such objects go to documents.jsonl, from which the kit's
+            # synth_qa.py writes grounded question-answer pairs.
+            skipped["no real question yet: exported to documents.jsonl for QA synthesis, never trained as its own question"] += 1
+            documents.append({"document": answer, "source": str(o.data.get("quelle") or o.id), "meta": {**meta, "question_source": None}})
+            continue
         qa_objects.append((o, questions))
         for q in questions:
             if _norm(q) in eval_qs:
@@ -116,9 +127,6 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
                 continue
             qa.append({"messages": [{"role": "user", "content": _clean(q, audit, "question")}, {"role": "assistant", "content": answer}],
                        "meta": meta})
-        w, n = vil.weight_of(o)
-        if n >= MIN_RATINGS:
-            rated.append((o, w, n))
     kto, dpo = [], []
     for o, w, n in rated:
         if w >= GOOD or w <= BAD:
@@ -147,8 +155,8 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     logic_sft += machine_sft
     logic_kto += machine_kto
     dpo += machine_dpo
-    return {"qa": qa, "kto": kto + logic_kto, "dpo": dpo, "agentic": agentic_rows, "logic": logic_sft, "skipped": dict(skipped),
-            "scrubbed": dict(audit), "held_out": len(targets)}
+    return {"qa": qa, "kto": kto + logic_kto, "dpo": dpo, "agentic": agentic_rows, "logic": logic_sft, "documents": documents,
+            "skipped": dict(skipped), "scrubbed": dict(audit), "held_out": len(targets)}
 
 
 #: 0.63.0: the logic programs are run as a viewer that is no instance — it sees shared and internal objects, never anyone's private ones
@@ -435,7 +443,8 @@ A VI out of the incubator fine-tunes an AI: question → answer from its knowled
 ## Composition
 | file | examples | what |
 |---|---|---|
-| qa.jsonl | {c['qa']} | question → knowledge with source; questions from the classification (doc2query) or the object's text |
+| qa.jsonl | {c['qa']} | question → knowledge with source; only real questions from the classification (doc2query) |
+| documents.jsonl | {c.get('documents', 0)} | knowledge without a real question yet — input for the kit's synth_qa.py, never trained directly |
 | kto.jsonl | {c['kto']} | situation → hint, desirable if its measured success ≥ {GOOD} (≤ {BAD}: undesirable), ≥ {MIN_RATINGS} ratings |
 | dpo.jsonl | {c['dpo']} | the same trigger, one hint helped ≥ {DPO_MARGIN} more than the other |
 | agentic.jsonl | {c['agentic']} | tool use: the model asks the VI with vi_recall in VIL (relaxing once if needed) and answers from the target |
@@ -464,7 +473,9 @@ Credentials are removed at save time; this export ran the scrubber again — cha
 - Ordinary client user prompts are masked and never stored. Explicit logic/machine questions can become checked program examples; retrieval trajectories are constructed, not complete recorded task histories.
 - solver_only and observational labels describe inspection material, not independently verified program/preference examples; the kit withholds these from default program/DPO training.
 - The hint data are aggregated counters, not single actions; a hint shown more often weighs more.
-- doc2query questions exist only for objects the classification has labelled; the rest use the object's own text as the question.
+- doc2query questions exist only for objects the classification has labelled. The rest are in documents.jsonl; their text is never
+  used as their own question (the first production run, 14.11.2026, learned to echo documents that way). Synthesized pairs come from
+  a language model and are only checked for grounding in the document (word overlap), not verified by a person.
 """
 
 
@@ -476,12 +487,12 @@ def export(directory: str | Path, index: str | None = None) -> dict:
     d.mkdir(parents=True, exist_ok=True)
     os.chmod(d, 0o700)
     data = build(idx)
-    manifest = {"index": idx, "counts": {k: len(data[k]) for k in ("qa", "kto", "dpo", "agentic", "logic")}, "skipped": data["skipped"],
+    manifest = {"index": idx, "counts": {k: len(data[k]) for k in ("qa", "kto", "dpo", "agentic", "logic", "documents")}, "skipped": data["skipped"],
                 "scrubbed": data["scrubbed"], "held_out": data["held_out"], "versions": _versions(),
                 "quality": {"qa_question_sources": dict(Counter(r["meta"]["question_source"] for r in data["qa"])),
                             "qa_evidence": dict(Counter(r["meta"]["evidence"] for r in data["qa"])),
                             "program_validation": dict(Counter(r["meta"].get("validation", "unknown") for r in data["logic"]))}}
-    for name in ("qa", "kto", "dpo", "agentic", "logic"):
+    for name in ("qa", "kto", "dpo", "agentic", "logic", "documents"):
         _write(d / f"{name}.jsonl", "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in data[name]))
     _write(d / "manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
     _write(d / "DATASHEET.md", datasheet(manifest))

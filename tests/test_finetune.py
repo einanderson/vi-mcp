@@ -54,6 +54,72 @@ def test_kit_writes_data_split_and_valid_scripts_without_running_anything(vi):
     assert (d / "run.json").stat().st_mode & 0o077 == 0 and json.loads((d / "run.json").read_text())["base_model"] == "Qwen/Qwen3-4B"
 
 
+def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo_rows(vi, monkeypatch):
+    """14.11.2026: 96 % of the first production run's SFT rows were "question = the document's beginning" — the model learned to echo.
+    Now such knowledge goes to documents.jsonl; synth_qa.py keeps only grounded pairs, and `finetune split` puts them into the split."""
+    import http.server
+    import subprocess
+    import sys
+    import threading
+    for i in range(6):
+        g.new_object("erkenntnis", f"backup of db{i} runs nightly", ["thema:backup"],
+                     {"quelle": f"https://wiki.example/db{i}", "inhalt": f"The backup of db{i}.example runs at 02:00 with borg to /srv/backup/db{i}."},
+                     visibility="intern", instance="a")
+    d = vi / "kit"
+    finetune.kit(str(d), base_model="Qwen/Qwen3-4B", force=True)
+    docs = [json.loads(x) for x in (d / "dataset/documents.jsonl").read_text().splitlines()]
+    qa = [json.loads(x) for x in (d / "dataset/qa.jsonl").read_text().splitlines()]
+    assert len(docs) == 6 and all(x["meta"]["question_source"] == "doc2query" for x in qa)
+    assert not any(r["messages"][0]["content"].startswith("backup of db") for r in qa)  # never the text as its own question
+    script = (d / "synth_qa.py").read_text()
+    py_compile.compile(str(d / "synth_qa.py"), doraise=True)
+    assert "max_tokens" not in script and '"enable_thinking": False' in script and (d / "synth_qa.py").stat().st_mode & 0o777 == 0o700
+    calls = []
+
+    class Fake(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            calls.append(body)
+            doc = body["messages"][1]["content"]
+            n = doc.split("db", 1)[1][0]
+            pairs = [{"question": f"When does the backup of db{n}.example run?", "answer": f"At 02:00 with borg to /srv/backup/db{n}."},
+                     {"question": f"What does the document say about db{n}?", "answer": f"The backup of db{n}.example runs at 02:00."},
+                     {"question": f"Who owns db{n}.example in the finance team?", "answer": "Alice Example from finance owns it since 2019."}]
+            out = json.dumps({"choices": [{"message": {"content": "```json\n" + json.dumps({"pairs": pairs}) + "\n```"}, "finish_reason": "stop"}]})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(out.encode())
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{srv.server_address[1]}/v1"
+        run = lambda: subprocess.run([sys.executable, "synth_qa.py", "--url", url, "--model", "m", "--workers", "2"], cwd=d,
+                                     capture_output=True, text=True, timeout=60)
+        p = run()
+        assert p.returncode == 0, p.stderr
+        assert all("max_tokens" not in c and c["chat_template_kwargs"] == {"enable_thinking": False} for c in calls) and len(calls) == 6
+        synth = [json.loads(x) for x in (d / "dataset/qa_synth.jsonl").read_text().splitlines()]
+        assert len(synth) == 6 and all(r["meta"]["question_source"] == "synthetic" and r["meta"]["generator"] == "m" for r in synth)
+        assert all(r["messages"][0]["content"].startswith("When does the backup") for r in synth)  # meta and ungrounded pairs dropped
+        assert all(r["messages"][1]["content"].endswith(f"Source: https://wiki.example/{r['messages'][1]['content'].split('/srv/backup/')[1][:3]}") for r in synth)
+        report = json.loads((d / "synth_report.json").read_text())
+        assert report["pairs"] == 6 and report["rejected"] == {"refers to the document instead of its subject": 6, "not grounded in the document": 6}
+        assert run().returncode == 0 and len(calls) == 6  # resumable: done documents are not asked again
+    finally:
+        srv.shutdown()
+    split = finetune.resplit(str(d))
+    assert split["train"] + split["test"] == 24 + 6
+    assert sum(side.get("synthetic", 0) for side in split["qa_question_sources"].values()) == 6
+    rj = json.loads((d / "run.json").read_text())
+    assert rj["qa_synth_sha256"] and rj["split"] == split
+    assert finetune.main(["split", str(d)]) == 0
+
+
 def test_record_keeps_the_lineage_and_adopts_only_what_measured_better(vi):
     finetune.kit(str(vi / "kit"), base_model="Qwen/Qwen3-4B", force=True)
     d = vi / "kit"

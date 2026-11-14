@@ -3,6 +3,37 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What was fixed
+
+- **The training export no longer teaches a model to echo documents.** Knowledge without a real (doc2query) question was exported
+  as "question = the object's own text, answer = the object". In the first production run that was 96 % of the SFT rows (20,066
+  of 20,957). The blind test of the tuned Qwen3-0.6B (100 questions, judged pointwise against references, key opened afterwards)
+  showed:
+  - no gain on the 60 real questions (base 0, tuned 0 correct);
+  - a gain only on rows of the same echo form;
+  - loops in 55 % of the tuned answers (base 1 %);
+  - invented page paths instead of "I don't know".
+  
+  Such knowledge now goes to `documents.jsonl` and is never trained as its own question; `qa.jsonl` holds real questions only.
+  Hint ratings (KTO/DPO) still use every rated object.
+  Evidence: `tests/test_dataset.py::test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation`.
+
+### What is new
+
+- **`synth_qa.py` in the fine-tuning kit** turns `documents.jsonl` into question-answer pairs with an instruction model over an
+  OpenAI-compatible API (thinking off, no token cap). It keeps only grounded pairs: at least 80 % of the answer's words occur in the
+  document, the question names its subject instead of "the document", and nothing is copied from the document's beginning.
+  Rejections are counted per reason; the script is resumable. `vi-mcp finetune split DIR` puts the pairs into the shared split, and
+  `run.json` records the question sources per side. Diverse QA pairs inject knowledge better than raw text (arXiv 2409.07431,
+  2412.14964). Measured: 12 real documents → 14 pairs in 38 s, 21 candidates rejected.
+  Evidence: `tests/test_finetune.py::test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo_rows`.
+
+### What is still missing
+
+- Synthesized pairs are model output checked for word overlap, not verified by a person.
+
 ## 0.64.1 — 2026-11-14 — fine-tuning on a GPU end to end; statistics that measured nothing now measure
 
 ### What is new
