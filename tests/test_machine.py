@@ -174,6 +174,24 @@ def test_teach_never_publishes_imported_private_objects_or_private_context(gd, t
     assert call("teach", name="ctx", receipt=ex2["receipt"], include_context=True)["state"] == "taught"
 
 
+def test_receipt_history_yields_before_the_machine_locks_up(gd):
+    """Review 14.11.2026 (Claude): every receipt carries copies of the world. With 100 of the allowed 500 objects the sixth query
+    was refused and the machine was stuck (even a deletion needs a save). Now the oldest receipts give way, counted, and the newest
+    stays rateable."""
+    call("create")
+    for i in range(100):
+        call("execute", instruction=f"tell.fact api{i}", payload={"text": "API endpoint number %d with a typical sentence" % i,
+             "hashtags": ["service:api", f"port:{8000 + i}"], "source": "fixture inventory"})
+    for _ in range(12):
+        last = run()
+    status = call()
+    assert status["history_dropped"] > 0 and status["history"] < 12
+    rated = call("execute", instruction="rate " + last["receipt"], payload={"expected_answers": [f'ans("{8000 + i}")' for i in range(100)],
+                 "reference": "independent fixture", "question": "Which ports does the API use?"})
+    assert rated["correct"]
+    call("execute", instruction="tell.fact api0", payload={"deleted": True, "reason": "retired"})
+
+
 def test_cli_passes_vil_and_payload_without_opening_the_server_database(gd, monkeypatch, tmp_path, capsys):
     from clingo_object import Memory
     seen = []

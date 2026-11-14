@@ -65,6 +65,17 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **A machine locked up long before its object limit** (Claude's review, 14.11.2026). Every execution receipt carried two full
+  copies of the world (the filtered view and the input objects). Measured with a scratch script on a throw-away database:
+  - with 100 of the allowed 500 objects, the sixth query was refused, and from then on every instruction was refused, a deletion
+    too;
+  - with 500 objects, not even one query was possible.
+
+  Now a receipt keeps the input objects once (the filtered view as ids, members and counts — `training_eval` recomputes it from
+  them), and the oldest receipts give way, counted in `history_dropped`, before a transition is refused; the newest receipt stays
+  rateable. Measured after the fix: 199 queries in a row at 100, 300 and 500 objects. `dataset.machine_examples` read
+  `ex["world"]["objects"]` even when the input objects were present (an eager `dict.get` default); fixed with it. Evidence:
+  `tests/test_machine.py::test_receipt_history_yields_before_the_machine_locks_up` (failed before: "machine state limit reached").
 - **Trainer defaults could silently cut programs and learn user/tool observations.** The kit now renders original tool messages
   before Arrow loading, masks non-target context, preserves complete assistant turns and verifies actual trainer tokens. Oversized
   episodes refuse preparation or are explicitly omitted and counted; no implicit 1024-token truncation remains. Checked machine

@@ -50,8 +50,14 @@ def _save(o, reason, *, commit=True):
     from . import anonymize
     if anonymize.without_secrets(o.data) != o.data:
         raise ValueError("machine state contains a credential pattern")
+    # Receipts carry copies of the world they read: with a large world a handful of them filled the object and every further
+    # instruction — a deletion too — was refused. The oldest receipts give way first, counted in history_dropped; the newest
+    # stays so it can still be rated. Checked examples keep their own copy and never give way.
+    while len(json.dumps(o.data, ensure_ascii=False)) > g.DATA_MAX - 2000 and len(o.data["history"]) > 1:
+        o.data["history"].pop(0)
+        o.data["history_dropped"] += 1
     if len(json.dumps(o.data, ensure_ascii=False)) > g.DATA_MAX - 2000:
-        raise ValueError("machine state limit reached; remove objects or start another machine")
+        raise ValueError("machine state limit reached; remove objects, drop checked examples by teaching them, or start another machine")
     o.data["revision"] += 1
     o.last_at = g.now()
     o.change(o.instance, reason, "explicit machine instruction")
@@ -153,8 +159,11 @@ def _run(state, source):
     certain = bool(projections) and all(p == projections[0] for p in projections)
     answers = sorted(projections[0]) if certain else []
     context = [copy.deepcopy(o) for o in state["objects"].values() if not o.get("deleted")]
+    # The receipt keeps the input objects once: the filtered view is recomputed from them (training_eval, dataset), so it is stored
+    # as ids, members and counts only. Two full copies per receipt made a machine at its object limit unable to run one query.
+    world_ref = {**{k: v for k, v in world.items() if k != "objects"}, "object_ids": [x["id"] for x in world["objects"]]}
     return {"state": result["zustand"], "complete": complete, "determinate": certain, "answers": answers, "result": result,
-            "source": source, "world": world, "input_objects": context, "source_prefix": "\n".join(state["rules"].values()),
+            "source": source, "world": world_ref, "input_objects": context, "source_prefix": "\n".join(state["rules"].values()),
             "state_hash": state_hash(state), "input_context": copy.deepcopy(state.get("context", [])), "evidence": "inferred"}
 
 

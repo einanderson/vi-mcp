@@ -272,7 +272,7 @@ def machine_examples(index, audit, targets, eval_qs):
             continue
         question = _clean(e["question"], audit, "question")
         case = {"objects": _clean_json(ex["world"], audit), "expected": _clean_json(e["expected"], audit), "predicate": "ans",
-                "expected_state": e.get("expected_state", "erfuellt"), "input_objects": _clean_json(ex.get("input_objects", ex["world"]["objects"]), audit)}
+                "expected_state": e.get("expected_state", "erfuellt"), "input_objects": _clean_json(ex["input_objects"] if "input_objects" in ex else ex["world"]["objects"], audit)}
         meta = {"id": o.id, "kind": "machine", "group": "machine-task:" + hashlib.sha256(_norm(question).encode()).hexdigest(),
                 "validation": "reference", "program_family": training_eval.program_family(ex["source"]),
                 "frontend_model": ex.get("frontend_model", {}), "program_eval": {"question": question, "case": case}}
