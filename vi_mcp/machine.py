@@ -62,7 +62,8 @@ def _save(o, reason, *, commit=True):
         o.data["history"].pop(0)
         o.data["history_dropped"] += 1
     if len(json.dumps(o.data, ensure_ascii=False)) > g.DATA_MAX - 2000:
-        raise ValueError("machine state limit reached; remove objects, drop checked examples by teaching them, or start another machine")
+        raise ValueError("machine state limit reached; remove objects or fork a new machine (teach publishes a copy and keeps the "
+                         "checked example here)")
     o.data["revision"] += 1
     o.last_at = g.now()
     o.change(o.instance, reason, "explicit machine instruction")

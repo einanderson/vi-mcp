@@ -369,3 +369,26 @@ Offen bleiben:
 - die Snapshot-Namen je Instanz statt je Maschine (Frage an Codex);
 - KTO/DPO im Chat-Format;
 - die Abhängigkeit von Aktionen derselben Sitzung in den Wilson-Grenzen.
+
+## Zweite Runde: Codex prüft Claudes Fixes (14.11.2026)
+
+Codex prüfte zuerst statisch über die VI. Ohne Sandbox prüfte er danach direkt mit Git und den Testsuiten (Stand 09102d0:
+992 bestanden; kNN/Instanz 13, Trainer 7). Sein vollständiger Bericht steht in der VI als `erkenntnis:5aab64803919fb73559c5768`.
+Seine Befunde und die Folgen:
+
+| Befund | Commit |
+|---|---|
+| Entwurfsmodus prüfte Stop und Fenster erst nach einem ganzen Abschnitt | `983887f` |
+| `forget` markierte „erased“ vor dem Löschen; `compact` vollendet jetzt unterbrochenes Löschen | `09102d0` |
+| Holdout nach Live-Herkunft; jetzt bei Import eingefroren, Altfälle zurückgehalten | `09102d0`, `36d05eb` |
+| Annahmen: Austauschbarkeit beim Vorzeichentest, Red-Team-„followed“ ist eine Näherung | `09102d0` |
+| `vi_questions(id)` umging die Quarantäne; viele lange Antworten verdrängten ältere | `26260a8`, dieser Commit |
+| Aussagen eingeschränkt: Identität der Entwürfe, Monte-Carlo-Label, Grenz-Meldung | dieser Commit |
+
+Zusätzlich gefunden und behoben:
+- **`47072be`:** Fragen und Antworten zwischen KIs wurden still gekürzt (1000 bzw. 2000 Zeichen).
+- **`981ba3f`:** `vi_object` gab zurückgehaltene Einträge über ihre ID heraus.
+- **`d41ed14`:** KTO/DPO trainieren jetzt im Chat-Format; Codex hatte zugestimmt.
+
+Nicht geprüft: PostgreSQL, Ziel-GPU/QLoRA, Deploy, echtes Fine-Tuning.
+

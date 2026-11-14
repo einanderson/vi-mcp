@@ -63,10 +63,13 @@ def summarize_judgments(rows: list[dict]) -> dict:
     # Cluster-robust SE of the paired mean; a single task family gives no uncertainty estimate.
     k = len(groups)
     se = math.sqrt(k / (k - 1) * sum((sum(v) - len(v) * delta) ** 2 for v in groups.values())) / n if k > 1 else None
-    p = sign_flip_p([sum(v) for v in groups.values()])
+    sums = [sum(v) for v in groups.values()]
+    p = sign_flip_p(sums)
+    exact = sum(1 for x in sums if x) <= SIGN_FLIP_EXACT
     return {"metric": "verified_task_success", "base": sum(r["base_correct"] for r in rows) / n if n else None,
             "p_one_sided": p, "decision": bool(n and delta > 0 and p is not None and p < 0.05),
-            "decision_method": "exact one-sided sign-flip test over independent group sums (clustered McNemar); assumes independent "
+            "decision_method": ("exact" if exact else f"seeded Monte Carlo ({SIGN_FLIP_SAMPLES} samples)")
+                               + " one-sided sign-flip test over independent group sums (clustered McNemar); assumes independent "
                                "groups AND, under the null, base and tuned exchangeable within each group (symmetric group sums); "
                                "the Hoeffding lower_95 is the worst-case size bound, not the gate",
             "tuned": sum(r["tuned_correct"] for r in rows) / n if n else None, "n": n, "groups": k,

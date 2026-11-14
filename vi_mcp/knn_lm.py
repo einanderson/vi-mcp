@@ -425,7 +425,8 @@ class KNNLanguageModel:
         """Greedy decoding with explicit resource budget. Report budget exhaustion, never pretend it was a complete answer.
         draft > 0: exact retrieval-based speculative decoding (REST arXiv 2311.08252, NEST arXiv 2405.19325, without NEST's relaxed
         acceptance): the nearest neighbor's stored continuation is a draft, one forward pass verifies it, and a drafted token is
-        kept only if it IS the greedy choice of the mixed distribution — the text equals draft=0, with fewer forward passes."""
+        kept only if it IS the greedy choice of the mixed distribution — the text equals draft=0 up to floating-point differences
+        between sequence shapes (PyTorch: batched vs. sliced results may differ), with fewer forward passes."""
         if not isinstance(draft, int) or not 0 <= draft <= 64:
             raise ValueError("draft length must be 0–64 tokens")
         if draft:
@@ -521,5 +522,6 @@ class KNNLanguageModel:
         return {"text": text, "finish_reason": finish, "revision": view["revision"], "tokens": generated, "datastore_sha256": digest,
                 "speculative": {"forward_passes": passes, "drafted": drafted, "accepted_from_memory": accepted_from_memory,
                                 "tokens_per_pass": round(len(generated) / passes, 3) if passes else None, "spans": spans,
-                                "acceptance": ("exact greedy match (output equals draft=0)" if exact else
+                                "acceptance": ("exact greedy match: equals draft=0 up to floating-point differences between sequence "
+                                               "shapes (measured 72/72 on Qwen3-0.6B, float32, CPU; not a universal guarantee)" if exact else
                                                f"greedy match in {dtype}: near-ties may differ from draft=0 (length-dependent rounding)")}}

@@ -86,7 +86,9 @@ refused with a reason. Its compatibility covers the VI text-program frontend, no
   emitted, the tokens that followed it in its source are the draft.
 - One forward pass over context plus draft gives the mixed distribution at every draft position.
 - A drafted token is kept only if it is the greedy choice there. The first mismatch is replaced by the greedy token.
-- The text therefore equals `draft=0`, with fewer forward passes. The result reports `forward_passes`, `drafted` and
+- The text therefore equals `draft=0` up to floating-point differences between sequence shapes, with fewer forward passes.
+  Measured 72 of 72 identical on Qwen3-0.6B (float32, CPU). PyTorch does not guarantee identical batched and sliced results,
+  so this is a measurement, not a universal guarantee. The result reports `forward_passes`, `drafted` and
   `accepted_from_memory`, plus `spans` (which source supplied which generated tokens: attribution).
 
 Exactness needs float32, the default of `TransformersCore.load` and `--dtype`. Measured on Qwen3-0.6B (CPU) in bfloat16, the

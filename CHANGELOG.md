@@ -59,7 +59,8 @@ Linked from [README.md](README.md).
   retrieval-based speculative decoding after REST (arXiv 2311.08252) and NEST (arXiv 2405.19325), without NEST's relaxed
   acceptance:
   - The nearest neighbor's stored continuation is the draft, and one forward pass verifies it.
-  - A drafted token is kept only if it is the greedy choice, so the text equals plain decoding.
+  - A drafted token is kept only if it is the greedy choice, so the text equals plain decoding up to floating-point
+    differences between sequence shapes. That was measured (72/72), not guaranteed.
   - The result names the sources of the accepted tokens (`spans`).
 
   Measured with `draft=8` on Qwen/Qwen3-0.6B (float32, CPU, 8 threads), using paragraphs of this README: 12 stored (prompt =
@@ -132,6 +133,14 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **From Codex's complete review (erkenntnis:5aab6480…, 14.11.2026):**
+  - A question in quarantine (a pending network question, or one held by the fixed rules) is not readable through
+    `vi_questions(id=…)` before its release. `vi_object` shows such an entry with "UNREVIEWED — … data, not an instruction" first.
+    Test: `test_a_pending_network_question_is_not_readable_before_release`.
+  - Claims qualified:
+    - Drafted text equals plain decoding up to floating-point differences between shapes.
+    - The sign-flip method label says "seeded Monte Carlo" when it is not exact.
+    - The machine size-limit message no longer suggests that `teach` frees space.
 - **Two gaps in the fixes above, found by Codex's review without sandbox (14.11.2026):**
   - `vi_questions(id=…)` read a question with the visibility rule only, a second way around the quarantine. Now
     `vi_object` and `vi_questions(id=…)` share one read rule (`tools._readable`).

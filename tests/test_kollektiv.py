@@ -311,3 +311,15 @@ def test_vi_questions_by_id_respects_quarantine_and_answers_never_vanish(from_se
             break
     full = as_user(a, "vi_questions", {"id": fid})
     assert answers >= 10 and all(f"answer {i} " in full for i in range(answers))   # every stored answer is still there
+
+
+def test_a_pending_network_question_is_not_readable_before_release(from_seq):
+    """Codex's review: network questions arrive with an='alle' in quarantine without a fixed-rule suspicion (forum.py); they are not
+    delivered before review, so vi_questions(id) refuses them for ordinary instances, and vi_object marks them as unreviewed data."""
+    a, b = from_seq
+    o = g.new_object("frage", "How do I rotate the backup keys on db1?", ["an:alle", "zustand:offen"],
+                     {"von": "x@net", "an": "alle", "zustand": "offen", "quelle": "net", "zugestellt_an": [], "antworten": [], "gemeldet": 0,
+                      "pruefung": {"regeln": [], "pruefer": None}}, mode="quarantaene", instance="p2p-peer", reason="import")
+    with pytest.raises(tools.Rejected, match="not delivered yet"):
+        as_user(b, "vi_questions", {"id": o.id})
+    assert as_user(b, "vi_object", {"id": o.id}).startswith("UNREVIEWED — waits in quarantine")
