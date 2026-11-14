@@ -1384,6 +1384,10 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 + " — thanks, this is what the VI learns from")
     if name == "vi_object":
         o = _visible(args.get("id"), instance)
+        if o.mode == "quarantaene" and (o.data.get("pruefung") or {}).get("verdacht") and o.instance != instance and not release_permission:
+            # Found 14.11.2026: "shown to nobody until released" held for search and hints, but not for a read by id.
+            raise Rejected(f"object {o.id} is held in quarantine by the fixed rules — before release only its author, an instance with "
+                           "the release right or a person on the server (vi-mcp quarantine) can read it")
         s_now = session.current()
         if s_now is not None and o.id in s_now.shown:  # 0.49.0: a shown hint was opened — a weak signal of use, counted apart
             intuition.opened(instance, o.id)
