@@ -283,7 +283,7 @@ def machine_examples(index, audit, targets, eval_qs, eval_groups=None, skipped=N
             continue
         if any(not x.get("source_group_sha256") for x in imported):
             # Imported before provenance was frozen: the live source may have changed since (Codex's review) — held out, never
-            # judged by today's data. 0.64.0 is unreleased, so no released machine loses examples by this.
+            # judged by today's data. Frozen provenance shipped with 0.64.0 itself, so only pre-release development machines are affected.
             skipped["machine_unknown_provenance"] += 1
             continue
         question = _clean(e["question"], audit, "question")
