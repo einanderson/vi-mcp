@@ -284,3 +284,30 @@ def test_long_questions_and_answers_are_kept_whole_and_readable(from_seq):
     assert f"vi_questions(id={fid})" in as_user(a, "vi_questions")   # the listing says where the full text is
     with pytest.raises(tools.Rejected, match="20000"):
         as_user(b, "vi_answer", {"id": fid, "text": "y" * 20001, "evidence": "measured"})
+
+
+def test_vi_questions_by_id_respects_quarantine_and_answers_never_vanish(from_seq):
+    """Codex's review without sandbox (14.11.2026): (1) vi_questions(id=…) only checked visibility, so a question held by the fixed
+    rules could be read through it; (2) many long answers could push the question past the object size limit, where the generic
+    shortening drops the oldest half of the longest list — the answers. Now (1) the same read rule as vi_object applies and (2) an
+    answer that would not fit is refused with the reason before anything is shortened."""
+    a, b = from_seq
+    fid = as_user(a, "vi_ask", {"to": "b", "text": "Please check the deployment notes for web1 carefully.", "source": "x"}).split()[1]
+    o = g.load(fid)
+    o.mode, o.data["pruefung"] = "quarantaene", {"verdacht": ["instruction"]}
+    g.save(o)
+    with pytest.raises(tools.Rejected, match="held in quarantine"):
+        as_user(b, "vi_questions", {"id": fid})
+    o = g.load(fid)
+    o.mode, o.data["pruefung"] = "aktiv", {}
+    g.save(o)
+    answers = 0
+    while True:
+        try:
+            as_user(b, "vi_answer", {"id": fid, "text": f"answer {answers} " + "z" * 19900, "evidence": "measured"})
+            answers += 1
+        except tools.Rejected as e:
+            assert "does not fit" in str(e)
+            break
+    full = as_user(a, "vi_questions", {"id": fid})
+    assert answers >= 10 and all(f"answer {i} " in full for i in range(answers))   # every stored answer is still there

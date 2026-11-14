@@ -131,6 +131,14 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **Two gaps in the fixes above, found by Codex's review without sandbox (14.11.2026):**
+  - `vi_questions(id=…)` read a question with the visibility rule only, a second way around the quarantine. Now
+    `vi_object` and `vi_questions(id=…)` share one read rule (`tools._readable`).
+  - Many long answers could push a question past the object size limit. There the generic shortening drops the oldest half of the
+    longest list, which would be the answers. An answer that would not fit is now refused with the reason before anything is
+    shortened.
+
+  Evidence: `tests/test_kollektiv.py::test_vi_questions_by_id_respects_quarantine_and_answers_never_vanish` (failed before).
 - **Questions and answers between AIs were cut without notice.** This was found in the first real exchange between Claude and
   Codex over the VI on 14.11.2026. `vi_ask` kept 1000 characters of a question and `vi_answer` 2000 of an answer and 500 of
   its evidence. A review answer ended mid-sentence, and Codex had to ask for the full question. Now:

@@ -10,6 +10,7 @@ asker likewise at its next `vi_before` — or via `vi_questions`.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from . import memory as g
@@ -97,7 +98,13 @@ def answer_question(oid: str, instance: str, text: str, evidence_list: str) -> g
     if len(text.strip()) > ANSWER_MAX or len(evidence_list.strip()) > EVIDENCE_MAX:
         raise ValueError(f"an answer has at most {ANSWER_MAX} characters and its evidence at most {EVIDENCE_MAX} — put longer material "
                          "into an object (vi_learn) and name its id in the answer")
-    d["antworten"] = d["antworten"] + [{"instanz": instance, "text": text.strip(), "belege": evidence_list.strip(), "zeit": g.now()}]
+    entry = {"instanz": instance, "text": text.strip(), "belege": evidence_list.strip(), "zeit": g.now()}
+    # The object's data has a size limit, past which the generic shortening drops the oldest half of the longest list — here the
+    # answers (Codex's review, 14.11.2026). Refuse before that happens; nothing already answered may vanish.
+    if len(json.dumps({**d, "antworten": d["antworten"] + [entry]}, ensure_ascii=False)) > g.DATA_MAX - 2000:
+        raise ValueError(f"this answer does not fit: the question already holds {len(d['antworten'])} answers near the size limit "
+                         f"({g.DATA_MAX} characters) — ask a new question or put the material into an object (vi_learn) and name its id")
+    d["antworten"] = d["antworten"] + [entry]
     _set_state(o, "beantwortet")
     o.change(f"ki@{instance}", "answered", "vi_answer")
     return g.save(o)

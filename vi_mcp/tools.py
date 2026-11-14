@@ -725,6 +725,16 @@ def _visible(oid: str, instance: str) -> g.MemoryObject:
     return o
 
 
+def _readable(oid: str, instance: str, release_permission: bool) -> g.MemoryObject:
+    """_visible plus the quarantine rule — the one read path for vi_object and vi_questions(id) (Codex found the second way on
+    14.11.2026). An entry held by the fixed rules is readable before release only by its author, the release right or a person."""
+    o = _visible(oid, instance)
+    if o.mode == "quarantaene" and (o.data.get("pruefung") or {}).get("verdacht") and o.instance != instance and not release_permission:
+        raise Rejected(f"object {o.id} is held in quarantine by the fixed rules — before release only its author, an instance with "
+                       "the release right or a person on the server (vi-mcp quarantine) can read it")
+    return o
+
+
 class WithImages(str):
     """0.35.0: tool answer = text plus images [(mime, base64)] — the server sends each as MCP content {type: image}; callers that
     only read text (statistics, command line) see a plain str."""
@@ -945,7 +955,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         return f"Answer to {o.id} stored — {o.data['von']} sees it " + ("after the network carried it and its server reviewed it" if post else "at the next action")
     if name == "vi_questions":
         if args.get("id"):
-            o = _visible(args["id"], instance)
+            o = _readable(args["id"], instance, release_permission)
             d = o.data
             if o.kind != "frage" or instance not in (d.get("von"), d.get("an")) and d.get("an") != "alle" and instance not in d.get("zugestellt_an", []):
                 raise Rejected(f"{args['id']} is not a question to or from {instance}")
@@ -1397,11 +1407,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         return (f"feedback recorded for {len(booked)} hint(s)" + (f"; not shown {where}: {', '.join(unknown)}" if unknown else "")
                 + " — thanks, this is what the VI learns from")
     if name == "vi_object":
-        o = _visible(args.get("id"), instance)
-        if o.mode == "quarantaene" and (o.data.get("pruefung") or {}).get("verdacht") and o.instance != instance and not release_permission:
-            # Found 14.11.2026: "shown to nobody until released" held for search and hints, but not for a read by id.
-            raise Rejected(f"object {o.id} is held in quarantine by the fixed rules — before release only its author, an instance with "
-                           "the release right or a person on the server (vi-mcp quarantine) can read it")
+        o = _readable(args.get("id"), instance, release_permission)
         s_now = session.current()
         if s_now is not None and o.id in s_now.shown:  # 0.49.0: a shown hint was opened — a weak signal of use, counted apart
             intuition.opened(instance, o.id)
