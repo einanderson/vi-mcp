@@ -30,6 +30,9 @@ The runtime descriptor has `contract`, `model`, `devices`, `permissions` and `ma
 `binding`, MCP `tool`, `effect` (`read` or `write`), argument `schema` and `description`. Actual endpoint URLs and credential files
 belong to the trusted host profile; they are not serialized into a snapshot. An unspecified device credential means unauthenticated,
 never “send the VI's default token to this other server”. Registering a device alone grants no permission to invoke it.
+A device never names a VI owner operation (`vi_machine`, `vi_release`, `vi_quarantine`, `vi_set_visibility`, `vi_net_token`,
+`vi_net_switch`, `vi_tools_register` and their German aliases, `clingo_object.runtime.OWNER_TOOLS`): through it the model could
+reconfigure its own rights or release its own proposals. Host and server refuse such a descriptor.
 
 The model sees the instance world and context as data and may request an instruction, a registered device or completion. It cannot
 request permission changes, model replacement, independent reference ratings, publishing or snapshot control. Fixed validators

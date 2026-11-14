@@ -65,6 +65,12 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **A device could reopen owner operations to the model** (Claude's review, 14.11.2026, item 8). The loop forbids
+  configure, teach, snapshots and releases, but a device descriptor could name any MCP tool, including `vi_machine` itself. A host
+  that registered it would let the model grant itself rights through a device call. Now the shared descriptor check
+  (`clingo_object.runtime.OWNER_TOOLS`, German aliases included) refuses such a device on the host and on the server
+  (`configure`). Evidence: `tests/test_instance.py::test_owner_operations_can_never_be_a_device` (failed before: "DID NOT
+  RAISE"), with a test that keeps the list in step with the server's tool names.
 - **`vi-mcp knn forget` did not forget, and snapshots copied the forgotten source** (Claude's review, 14.11.2026, item 7).
   `forget` removed only the manifest entry. The shards behind the tombstone, keys and token IDs (the text itself), stayed on
   disk, and a snapshot taken afterwards copied them into the new datastore. Measured with a fixture datastore: after `forget`, one

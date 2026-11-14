@@ -80,6 +80,29 @@ def test_loop_refuses_unauthorized_device_and_model_cannot_change_policy(gd):
     assert "not authorized" in world["context"][1]["content"]
 
 
+@pytest.mark.parametrize("tool", ["vi_machine", "vi_release", "vi_set_visibility", "vi_quarantine"])
+def test_owner_operations_can_never_be_a_device(gd, tool):
+    """Review 14.11.2026 (Claude), item 8: the loop forbids owner operations, but a device may name any MCP tool. A host that
+    registered vi_machine as a device would let the model call configure/teach/snapshot through it and grant itself rights.
+    The shared descriptor check refuses such a device on the host and on the server."""
+    d = {**descriptor("write"), "tool": tool}
+    with pytest.raises(ValueError, match="owner operation"):
+        Device(d, lambda args: None)
+    instance = setup()
+    with pytest.raises((ServerError, tools.Rejected, ValueError), match="owner operation"):
+        instance.call("configure", payload={**default_runtime(), "model": Programmer.identity, "devices": {"control": d},
+                                            "permissions": ["control"]})
+
+
+def test_owner_tool_list_matches_the_server_names_and_aliases():
+    from clingo_object.runtime import OWNER_TOOLS
+    from vi_mcp import api_en
+    english = {t for t in OWNER_TOOLS if t not in api_en.TOOL_ALIASES}
+    served = {t["name"] for t in tools.TOOLS}
+    assert english <= served  # every listed owner tool exists under that name
+    assert {a for a, b in api_en.TOOL_ALIASES.items() if b in english} <= OWNER_TOOLS  # and its German alias is blocked too
+
+
 def test_uncertain_write_never_replays_after_process_restart(gd):
     calls = []
     def write(args):

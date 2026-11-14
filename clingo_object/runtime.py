@@ -104,6 +104,13 @@ def default_runtime():
             "devices": {}, "permissions": [], "max_steps": 32}
 
 
+#: VI owner operations: instance control, release of proposals, publishing, network credentials and switches, tool registration.
+#: The loop forbids them; a device naming one would reopen them to the model (review 14.11.2026). German aliases included
+#: (vi_mcp/api_en.TOOL_ALIASES); a test keeps this list in step with the server's tool names.
+OWNER_TOOLS = frozenset({"vi_machine", "vi_release", "vi_quarantine", "vi_set_visibility", "vi_net_token", "vi_net_switch",
+                         "vi_tools_register", "vi_freigabe", "vi_quarantaene", "vi_netz_token"})
+
+
 def validate_runtime(runtime):
     if not isinstance(runtime, dict) or set(runtime) != {"contract", "model", "devices", "permissions", "max_steps"}:
         raise ValueError("runtime needs contract, model, devices, permissions and max_steps")
@@ -130,6 +137,8 @@ def validate_runtime(runtime):
         if d["effect"] not in ("read", "write") or any(not isinstance(d[k], str) or not d[k].strip() or len(d[k]) > 1000
                                                        for k in ("binding", "tool", "description")):
             raise ValueError("invalid device binding, effect or description")
+        if d["tool"].strip().lower() in OWNER_TOOLS:
+            raise ValueError(f"device {name!r} names the owner operation {d['tool']!r}; owner operations are never devices")
         if not isinstance(d["schema"], dict) or d["schema"].get("type") != "object":
             raise ValueError("device arguments need an object schema")
         validate_schema(d["schema"])
