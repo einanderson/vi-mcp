@@ -278,12 +278,12 @@ def machine_examples(index, audit, targets, eval_qs, eval_groups=None, skipped=N
         inputs = ex["input_objects"] if "input_objects" in ex else (ex.get("world") or {}).get("objects") or []
         imported = [x for x in inputs if isinstance(x, dict) and "instance" in x and isinstance(x.get("id"), str)]
         frozen = {x["source_group_sha256"] for x in imported if x.get("source_group_sha256")}
-        unfrozen = [x["id"] for x in imported if not x.get("source_group_sha256")]
-        live = g.load_many(unfrozen)
-        if {x["id"] for x in imported} & targets or frozen & eval_hashes or any(evaluation.group_of(o) in eval_groups for o in live.values()):
+        if {x["id"] for x in imported} & targets or frozen & eval_hashes:
             skipped["machine_eval_object"] += 1
             continue
-        if set(unfrozen) - set(live):  # neither frozen nor loadable: provenance unknown — held out, never guessed
+        if any(not x.get("source_group_sha256") for x in imported):
+            # Imported before provenance was frozen: the live source may have changed since (Codex's review) — held out, never
+            # judged by today's data. 0.64.0 is unreleased, so no released machine loses examples by this.
             skipped["machine_unknown_provenance"] += 1
             continue
         question = _clean(e["question"], audit, "question")

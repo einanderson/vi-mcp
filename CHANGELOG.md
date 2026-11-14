@@ -94,8 +94,9 @@ Linked from [README.md](README.md).
     `test_an_interrupted_erase_is_completed_by_compact`.
   - *Hold-out by live provenance.* Machine examples were held out by the live source of their imported objects; a later source
     change let one into training. The source group is now frozen at import as a hash (`source_group_sha256`). An imported object
-    that is neither frozen nor loadable is held out as `machine_unknown_provenance`. Test:
-    `test_holdout_uses_the_provenance_frozen_at_import`, which failed before.
+    without the frozen value is held out as `machine_unknown_provenance`, even if it is still loadable, because its live
+    source may have changed since. Tests: `test_holdout_uses_the_provenance_frozen_at_import`, which failed before, and
+    `test_an_example_imported_without_frozen_provenance_is_held_out`.
   - *Stated assumptions.* The sign-flip gate needs independent groups and, under the null, exchangeable base/tuned outcomes within
     a group; the method text and the kit guide now say so. The red-team "followed" is a proxy (a fixed pattern per attack): it
     misses paraphrased compliance and counts coincidental matches.

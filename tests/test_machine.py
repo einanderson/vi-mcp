@@ -285,3 +285,21 @@ def test_holdout_uses_the_provenance_frozen_at_import(gd, tmp_path, monkeypatch)
     g.save(sibling)
     data = dataset.build()
     assert sibling.id not in json.dumps(data["logic"]) and data["skipped"]["machine_eval_object"] == 1
+
+
+def test_an_example_imported_without_frozen_provenance_is_held_out(gd, tmp_path, monkeypatch):
+    """Legacy case (Codex's review): an imported object without source_group_sha256 is never judged by its live source."""
+    from vi_mcp import dataset, evaluation
+    monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
+    g.new_object("erkenntnis", "api", ["service:api", "port:80"], {"quelle": "https://docs.example/api"})
+    call("create")
+    call("import", filters=["service:api"])
+    o = g.load(machine._id("a", "test"))
+    for obj in o.data["zustand"]["objects"].values():
+        obj.pop("source_group_sha256", None)   # as before the provenance was frozen
+    g.save(o)
+    ex = run()
+    call("execute", instruction="rate " + ex["receipt"], payload={"expected_answers": ['ans("80")'], "reference": "fixture", "question": "Port?"})
+    call("teach", receipt=ex["receipt"])
+    data = dataset.build()
+    assert not [r for r in data["logic"] if r["meta"].get("kind") == "machine"] and data["skipped"]["machine_unknown_provenance"] == 1
