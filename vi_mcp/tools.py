@@ -244,14 +244,16 @@ TOOLS = [
      "inputSchema": _schema({"index": {"type": "string", "description": "optional: one index (a project or special VI)"}})},
     {"name": "vi_machine",
      "description": "VI: a private virtual intelligence machine. Execute VIL over its own mutable objects and clingo-object rules; "
-                    "the model writes programs, the runtime executes them. Snapshots are immutable, forks independent. No shell or external tool is run. "
+                    "the model writes programs, the runtime executes them. Context, model/device bindings and permissions belong to its state. "
+                    "Snapshots are immutable, forks independent. The server runs no external device; a trusted client claims and records bounded calls. "
                     "Instructions: tell.fact NAME (payload text, hashtags, source), def.rule NAME (payload source), ask.rule NAME "
                     "(or payload source), ask.what FILTER, rate RECEIPT (payload expected_answers, reference). do/promise remain proposals.",
-     "inputSchema": _schema({"action": {"type": "string", "enum": ["create", "status", "execute", "answer", "snapshot", "restore", "fork", "teach", "import"],
-                                        "description": "default status; teach explicitly publishes a checked example internally"},
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["create", "status", "inspect", "configure", "context", "loop", "device", "observe", "execute", "answer", "snapshot", "restore", "fork", "teach", "import"],
+                                        "description": "default status; inspect returns own complete world, configure model/devices/permissions, context append or explicit compact; "
+                                                       "loop starts/resumes/records/finishes or resolves uncertain calls, device reserves, observe completes; teach publishes checked evidence internally"},
                              "name": {"type": "string", "description": "machine name, private to this authenticated instance (default default)"},
                              "instruction": {"type": "string", "description": "execute: VIL instruction such as tell.fact api, def.rule ports or ask.rule ports"},
-                             "payload": {"type": "object", "description": "structured operands: fact text/hashtags/source, rule source, or complete reference answers"},
+                             "payload": {"type": "object", "description": "structured operands: facts, rule source, complete reference answers, runtime contract, context messages, loop transition or device reservation/result; create may boot a complete world"},
                              "question": {"type": "string", "description": "answer: the server model writes and checks a program over this machine's objects"},
                              "snapshot": {"type": "string", "description": "snapshot name for snapshot, restore or fork"},
                              "target": {"type": "string", "description": "fork: new independent machine name, owned by the same instance"},

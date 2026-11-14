@@ -21,6 +21,12 @@ Transformers causal model interpolates next-token probabilities with a mutable h
 are private inference files, not VI SQL or network exports. `docs/KNN_LM.md`, `scripts/demo_knn_lm.py` and `tests/test_knn_lm.py` document
 the real neural path; the neural test needs torch/transformers and otherwise skips. No Python from MCP callers runs in either path.
 
+Complete instance contract `vil-instance-v1`: `clingo_object/runtime.py` is the trusted client loop, `machine_runtime` validates
+context/model/device/permission state on the memory server, `machine_host` provides `vi-mcp machine run|checkpoint|boot`. Device calls
+are reserved before dispatch, reported through before/after and never automatically repeated when their outcome is uncertain.
+The instance host holds the datastore writer lock across a symbolic capture; boot restores private context, programs and token
+memory against the current host's capabilities. Transport endpoints and credentials are not in the bundle. `docs/INSTANCE_RUNTIME.md`.
+
 Since 0.53.0 a failed action brings what the memory knows about its error (`intuition.error_hints`, returned by `vi_after`), and the
 first prompt of a session carries the skill table (`capabilities`, `vi_capabilities`: system, tools, manual id).
 Since 0.44.0 the hook also searches before every user prompt (`vi_prompt_context`: Claude Code `UserPromptSubmit`, Hermes shell hook

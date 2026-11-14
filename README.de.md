@@ -8,6 +8,9 @@ erscheint der nächsten vor der passenden Handlung als Hinweis. Das Sprachmodell
 
 ## Eine virtuelle Intelligenz als ausführbare Maschine (0.64.0)
 
+[Vollständige Instanzen](docs/INSTANCE_RUNTIME.md) besitzen eigenen Kontext, Modell- und Gerätebindungen, ausdrückliche Rechte und
+eine kontrollierte Ausführungsschleife. `vi-mcp machine run|checkpoint|boot` sichert und startet sie samt lokalem kNN-Gedächtnis.
+
 Der optionale [kNN-LM-Backend](docs/KNN_LM.md) verändert zusätzlich die Tokenvorhersage durch einen austauschbaren Speicher echter
 Hidden States und Folgetokens. Die Modellgewichte bleiben gleich. `vi-mcp knn` verwaltet den Speicher und bedient die VI unterhalb von MCP.
 

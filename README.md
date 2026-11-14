@@ -8,6 +8,9 @@ The language model itself is never changed. Learning happens in the memory, and 
 
 ## A virtual intelligence machine (0.64.0)
 
+[Complete instances](docs/INSTANCE_RUNTIME.md) add persisted context, model/device bindings, an explicit permission policy and a
+controlled execution loop. `vi-mcp machine run|checkpoint|boot` runs that loop and restores symbolic state together with local kNN memory.
+
 The optional [kNN-LM backend](docs/KNN_LM.md) also makes token prediction depend on a mutable hidden-state datastore, while the
 base model's weights stay fixed. It runs below MCP in real causal-model inference; `vi-mcp knn` manages its data and serves the VI.
 

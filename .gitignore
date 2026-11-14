@@ -231,3 +231,4 @@ docs/LOKAL*.md
 .venv-knn/
 token-memory/
 token-memory-snapshot/
+.vi-instance/

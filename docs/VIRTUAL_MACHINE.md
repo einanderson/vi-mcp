@@ -5,6 +5,9 @@ owns their input world, executes the safe notation, records results and compares
 This is an executable first machine contract, `vil-machine-v1`. It does not emulate a neural network's weights or promise identical
 natural-language behavior across models.
 
+The [complete instance runtime](INSTANCE_RUNTIME.md), `vil-instance-v1`, extends this world with context, model/device bindings,
+permissions and a controlled client-side loop. Its bundle checkpoint captures the symbolic world and the local kNN datastore together.
+
 ## The machine contract
 
 | Component | Implementation |
@@ -33,7 +36,8 @@ provider fallback. Changing that model can change generated programs; execution 
 and rule priors retains the clingo-object semantics.
 
 The optional [kNN-LM inference backend](KNN_LM.md) additionally changes token predictions through a mutable hidden-state/next-token
-datastore without training the base model. Its snapshots are explicit and separate from the symbolic machine's snapshot.
+datastore without training the base model. Standalone datastore snapshots remain available; the instance host coordinates them with
+the complete symbolic state when creating a bundle checkpoint.
 
 ## Execute and change facts
 

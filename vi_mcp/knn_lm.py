@@ -155,7 +155,8 @@ class Datastore:
             self._write(self.path, view)
             return view["revision"]
 
-    def snapshot(self, destination):
+    @contextlib.contextmanager
+    def frozen_snapshot(self, destination):
         """Copy one consistent revision into a new independent datastore, retaining its own tombstones and old shards."""
         destination = Path(destination)
         if destination.exists():
@@ -170,7 +171,11 @@ class Datastore:
                     shutil.copyfile(self.directory / d[field], destination / d[field])
                     os.chmod(destination / d[field], 0o600)
             self._write(destination / "manifest.json", view)
-        return Datastore(destination, self.identity)
+            yield Datastore(destination, self.identity)
+
+    def snapshot(self, destination):
+        with self.frozen_snapshot(destination) as frozen:
+            return frozen
 
     def distribution(self, query, *, k=32, temperature=1.0, view=None, exclude_sources=()):
         """Squared-L2 neighbors → softmax(-distance/temperature) → probability mass aggregated by next-token ID."""
@@ -228,6 +233,7 @@ class TransformersCore:
     """Frozen Hugging Face causal LM. Real last-layer context states and next-token logits from the same forward pass."""
     def __init__(self, model, tokenizer, model_id="local", device="cpu"):
         import torch
+        self.lock = threading.RLock()
         self.torch, self.model, self.tokenizer = torch, model.to(device).eval(), tokenizer
         self.model.requires_grad_(False)
         self.device = device
@@ -266,7 +272,7 @@ class TransformersCore:
     def forward(self, token_ids):
         if not 0 < len(token_ids) <= self.window:
             raise ValueError("context exceeds model window or is empty")
-        with self.torch.inference_mode():
+        with self.lock, self.torch.inference_mode():
             out = self.model(input_ids=self.torch.tensor([token_ids], device=self.device),
                              output_hidden_states=True, use_cache=False, return_dict=True)
         return (out.hidden_states[-1][0].float().cpu().numpy(), out.logits[0, -1].float().cpu().numpy())
@@ -291,7 +297,7 @@ class KNNLanguageModel:
             raise ValueError("retrieval temperature must be finite and positive")
         self.core, self.store = core, store
         self.weight, self.k, self.temperature = weight, k, temperature
-        self.lock = threading.RLock()
+        self.lock = getattr(core, "lock", threading.RLock())
 
     def remember(self, source, prompt, continuation):
         """Store only continuation targets, with causal prefix states; atomically replace this source's previous experience."""

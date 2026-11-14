@@ -410,3 +410,23 @@ def test_rule_weights_into_an_open_network_carry_no_names(gd, monkeypatch):
     assert [r["ziel"] for r in out] == [logic.rule_hash("flies(X) :- bird(X).")]
     assert all(set(r) == {"ziel", "gezeigt", "ja", "nein", "bestaetigt", "widerlegt"} for r in out)  # a hash and numbers, no text
     assert len(logic.outgoing("firma")) == 2
+
+
+def test_instance_checkpoint_is_private_and_omits_transport_credentials(gd, tmp_path):
+    import os
+    from clingo_object.runtime import OpenAIProgrammer
+    from tests.test_instance import setup
+    from vi_mcp import dataset, machine
+    model = OpenAIProgrammer("https://transport-only.invalid/v1/chat/completions", "test-model", binding="private-transport",
+                               token_file=tmp_path / "private-credential-file")
+    instance = setup(model)
+    instance.call("context", payload={"messages": [{"role": "user", "content": "PRIVATE-CONTEXT-MARKER"}]})
+    directory = tmp_path / "checkpoint"
+    instance.checkpoint(directory, "private-state")
+    text = (directory / "instance.json").read_text()
+    assert "PRIVATE-CONTEXT-MARKER" in text
+    assert "transport-only.invalid" not in text and "private-credential-file" not in text
+    assert machine._load("instance-test", "test").visibility == "privat"
+    assert not any("PRIVATE-CONTEXT-MARKER" in json.dumps(row) for row in dataset.build()["qa"])
+    if os.name != "nt":
+        assert (directory / "instance.json").stat().st_mode & 0o777 == 0o600

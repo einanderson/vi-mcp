@@ -7,6 +7,10 @@ execution, revision guards, immutable snapshots and independent forks. The LLM w
 state. The complete contract, boundaries and training path are in [VIRTUAL_MACHINE.md](VIRTUAL_MACHINE.md). The consciousness and
 intuition terms below describe architectural roles, not evidence of subjective consciousness.
 
+The [instance runtime](INSTANCE_RUNTIME.md) additionally owns context, model identity, declared MCP devices and permissions, and a
+resumable client-side loop. External calls have durable reservations and observations; uncertain writes are never silently replayed.
+Local kNN checkpoints hold the inference datastore writer lock across the symbolic capture and boot against today's host capabilities.
+
 ## Target picture
 
 A **VI** is an AI that loops — with two layers:

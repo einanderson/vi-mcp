@@ -7,6 +7,18 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Complete virtual instances**, `vil-instance-v1`: persisted context, model/decoder identity, MCP device descriptors, explicit
+  permissions and a bounded, resumable client-side execution loop. `vi-mcp machine run|checkpoint|boot` connects that loop to trusted
+  MCP devices; reservations precede calls, uncertain writes never retry automatically, and restoration cannot recover capabilities
+  revoked in the current host profile. The controller records VI before/after experience without treating its own completion as a
+  verified grade. Evidence: `tests/test_instance.py`, including real MCP/CLI transport and database reopen after an uncertain write.
+- **One coherent symbolic/neural checkpoint** captures context, rules, rights, model identity and kNN shards while the datastore
+  writer lock spans the symbolic capture. Execution receipts and independent checks survive boot too. Boot verifies the complete
+  instance/evidence hash, manifest and current model/capabilities and makes an independent
+  writable clone sharing the frozen core. Transport URLs and credentials stay outside the bundle. Evidence: `tests/test_instance_neural.py`,
+  `tests/test_knn_lm.py`, `tests/test_anonym.py`. A real configured LLM completed inventory lookup → fact insertion → solver query in
+  four model calls; its answer matched the independent synthetic fixture. A frozen neural fixture also generated a remembered complete
+  clingo-object program and ran it on two data states without parameter updates. Contract and reproduction: `docs/INSTANCE_RUNTIME.md`.
 - **Independent review handoff** in `docs/CLAUDE_REVIEW.md`: assessment, production-snapshot findings, implementation commit,
   reproducible neural/runtime evidence and the SQLite/PostgreSQL suite results, with the remaining architectural boundaries.
 
@@ -38,6 +50,14 @@ Linked from [README.md](README.md).
 
 ### What was fixed
 
+- **A rejected snapshot could leave an orphaned immutable object.** Parent registration and snapshot now share a database transaction;
+  a forced parent failure rolls both back on SQLite and PostgreSQL. Teaching an already published receipt also accepts a later explicit
+  reference correction instead of leaving the previous training label in place. Instance context accompanies its checked program
+  through training and executable evaluation. Evidence: `tests/test_instance.py` and `tests/test_instance_neural.py`.
+- **Foreign device bindings could inherit the VI's default token.** The new host adapter explicitly disables default credential
+  discovery for other MCP endpoints without their own token file; registered transports grant no capability without an allow-list.
+  Shared model instances also share the forward-pass lock, preventing separate datastores from racing implementation buffers.
+  Evidence: `tests/test_instance.py` and `tests/test_instance_neural.py`.
 - **Training/evaluation contamination across document chunks and later stages.** The audit reproduced an excluded evaluation
   target whose sibling chunk still trained the model. Export now excludes complete evaluation source pages, duplicate bodies and
   both query styles, and refuses a broken holdout file. The kit makes one connected-component split across QA, agentic, logic, KTO

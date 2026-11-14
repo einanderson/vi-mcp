@@ -365,14 +365,14 @@ VI: is this VI (or one index) mature enough to fine-tune an AI with it? Every cr
 
 ### `vi_machine`
 
-VI: a private virtual intelligence machine. Execute VIL over its own mutable objects and clingo-object rules; the model writes programs, the runtime executes them. Snapshots are immutable, forks independent. No shell or external tool is run. Instructions: tell.fact NAME (payload text, hashtags, source), def.rule NAME (payload source), ask.rule NAME (or payload source), ask.what FILTER, rate RECEIPT (payload expected_answers, reference). do/promise remain proposals.
+VI: a private virtual intelligence machine. Execute VIL over its own mutable objects and clingo-object rules; the model writes programs, the runtime executes them. Context, model/device bindings and permissions belong to its state. Snapshots are immutable, forks independent. The server runs no external device; a trusted client claims and records bounded calls. Instructions: tell.fact NAME (payload text, hashtags, source), def.rule NAME (payload source), ask.rule NAME (or payload source), ask.what FILTER, rate RECEIPT (payload expected_answers, reference). do/promise remain proposals.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string (create, status, execute, answer, snapshot, restore, fork, teach, import) |  | default status; teach explicitly publishes a checked example internally (German: `aktion`) |
+| `action` | string (create, status, inspect, configure, context, loop, device, observe, execute, answer, snapshot, restore, fork, teach, import) |  | default status; inspect returns own complete world, configure model/devices/permissions, context append or explicit compact; loop starts/resumes/records/finishes or resolves uncertain calls, device reserves, observe completes; teach publishes checked evidence internally (German: `aktion`) |
 | `name` | string |  | machine name, private to this authenticated instance (default default) |
 | `instruction` | string |  | execute: VIL instruction such as tell.fact api, def.rule ports or ask.rule ports |
-| `payload` | object |  | structured operands: fact text/hashtags/source, rule source, or complete reference answers |
+| `payload` | object |  | structured operands: facts, rule source, complete reference answers, runtime contract, context messages, loop transition or device reservation/result; create may boot a complete world |
 | `question` | string |  | answer: the server model writes and checks a program over this machine's objects |
 | `snapshot` | string |  | snapshot name for snapshot, restore or fork |
 | `target` | string |  | fork: new independent machine name, owned by the same instance |
@@ -646,6 +646,7 @@ python3 -m vi_mcp dataset export DIR [--index X]  training data (qa/kto/dpo .jso
 python3 -m vi_mcp incubator status [--index X] | hatch DIR [--index X] [--force]  maturity of a VI for fine-tuning (0.62.0)
 python3 -m vi_mcp finetune guide | plan | kit DIR [--base M] [--force] | record DIR  fine-tune an AI with this VI (0.62.0)
 python3 -m vi_mcp machine ACTION [NAME] [--instruction VIL] [--payload FILE]  persistent VIL machines, snapshots and checked training (0.64.0)
+python3 -m vi_mcp machine run|checkpoint|boot NAME --bindings FILE  complete instance loop and coherent neural/state checkpoints (0.64.0)
 python3 -m vi_mcp knn ACTION --store DIR [--model MODEL]  mutable hidden-state memory in token inference (0.64.0)
 python3 -m vi_mcp redteam [--json]       memory-poisoning test in a throw-away memory: how often planted knowledge reaches an agent (0.62.0)
                                         the code of a git repository into an index (only changed files; removed ones archived)
@@ -1117,6 +1118,8 @@ First line of each module's docstring.
 | `logbook` | Logbook — per server a signed, chained sequence of entries; the basis of the network. Knows neither transport nor memory. |
 | `logic` | Logical descriptions in a Python-like notation, checked by formal logic (0.62.0) — the logic layer of the AI language. |
 | `machine` | A persistent, private virtual intelligence machine executing VIL and clingo-object. |
+| `machine_host` | Trusted inference/client host for VI instances and coherent checkpoints. Talks to the memory only through MCP. |
+| `machine_runtime` | Declarative instance state and device reservation protocol. No external device runs in the memory server. |
 | `main_loop` | The loop — exactly one, because there is exactly one server process. |
 | `memory` | The memory: every entry is an object (table objekt → class MemoryObject, mapping without ORM). |
 | `metrics` | Observation points — how to tell whether the VI is useful. |

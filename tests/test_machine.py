@@ -153,3 +153,21 @@ def test_cli_passes_vil_and_payload_without_opening_the_server_database(gd, monk
     payload.write_text(json.dumps({"source": "fixture", "hashtags": ["port:80"]}))
     assert machine.main(["execute", "test", "--instruction", "tell.fact api", "--payload", str(payload)]) == 0
     assert seen[0][0] == "vi_machine" and seen[0][1]["payload"]["hashtags"] == ["port:80"]
+
+
+@pytest.mark.parametrize("field", ["weights_sha256", "tokenizer_sha256", "config_sha256", "decoder_sha256", "key_function"])
+def test_server_frontend_refuses_every_unattested_pinned_identity_before_commit(gd, monkeypatch, field):
+    from clingo_object.runtime import default_runtime
+    call("create")
+    fact()
+    runtime = default_runtime()
+    runtime["model"].update(model="test-model", **{field: "last-layer-v1" if field == "key_function" else "a" * 64})
+    call("configure", payload=runtime)
+    before = call()
+    def llm(messages, info):
+        info.update(model="test-model", knn={})
+        return PROGRAM
+    monkeypatch.setattr(logic, "_server_llm", llm)
+    with pytest.raises(tools.Rejected, match="identity differs"):
+        call("answer", question="Which port does the API use?")
+    assert call() == before

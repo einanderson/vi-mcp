@@ -454,7 +454,7 @@ def load_many(oids: list[str]) -> dict[str, MemoryObject]:
 _known_indexes: set[str] = set()
 
 
-def save(o: MemoryObject) -> MemoryObject:
+def save(o: MemoryObject, *, commit: bool = True) -> MemoryObject:
     tags = sorted(set(o.hashtags) | {f"art:{o.kind}", f"instanz:{o.instance}"})
     if o.idx not in _known_indexes:  # 0.61.0: every index an object refers to has its row (the primary key of vi_index)
         with lock:
@@ -472,7 +472,8 @@ def save(o: MemoryObject) -> MemoryObject:
             db().execute("DELETE FROM objekt_fts WHERE id = ?", (o.id,))
             db().execute("INSERT INTO objekt_fts (id, text) VALUES (?, ?)", (o.id, (o.text + "\n" + str(o.data.get("inhalt") or "")
                                                                                 + "".join("\n" + r.get("begriff", "") for r in o.data.get("regionen") or []))[:300000]))
-        db().commit()
+        if commit:
+            db().commit()
     o.hashtags = tags
     if _KINDS_CACHE["t"] != float("-inf"):  # cache loaded: a new kind counts at once, not only after KINDS_TTL_S
         new = {t.split(":", 1)[0] for t in tags} - _KINDS_CACHE["kinds"]
@@ -520,7 +521,9 @@ def _index_of(explicit: str | None) -> str:
 def new_object(kind: str, text: str, hashtags: list[str], data: dict | None = None, importance: int = 1,
                  who: str = "vi", reason: str = "", oid: str | None = None, mode: str = "aktiv",
                  conversation: str | None = None, instance: str | None = None, visibility: str | None = None,
-                 index: str | None = None, link: bool = True) -> MemoryObject:
+                 index: str | None = None, link: bool = True, commit: bool = True) -> MemoryObject:
+    if not commit and link:
+        raise ValueError("deferred commit requires link=False")
     if kind not in KINDS:
         raise ValueError(f"art must be one of {', '.join(KINDS)}")
     if visibility is not None and visibility not in VISIBILITIES:
@@ -540,7 +543,7 @@ def new_object(kind: str, text: str, hashtags: list[str], data: dict | None = No
                instance=instance or current_instance.get() or SERVER_INSTANCE, visibility=visibility or VISIBILITY_PER_KIND[kind],
                idx=_index_of(index),
                changes=[{"zeit": ts, "wer": who, "was": "created", "grund": (reason or "created")[:300]}])
-    save(o)
+    save(o) if commit else save(o, commit=False)
     if mode != "quarantaene" and link:  # unreviewed content gets no link to own knowledge; code pieces (0.61.0) none either
         link_similar(o)
     return o

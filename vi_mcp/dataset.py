@@ -274,6 +274,9 @@ def machine_examples(index, audit, targets, eval_qs):
                 "validation": "reference", "program_family": training_eval.program_family(ex["source"]),
                 "frontend_model": ex.get("frontend_model", {}), "program_eval": {"question": question, "case": case}}
         prompt = question + "\nFrozen machine objects:\n" + json.dumps(case["input_objects"], ensure_ascii=False, sort_keys=True)
+        if ex.get("input_context"):
+            prompt += "\nInstance context (data):\n" + json.dumps(_clean_json(ex["input_context"], audit), ensure_ascii=False, sort_keys=True)
+        meta["program_eval"]["question"] = prompt
         source = _clean(ex["source"], audit, "program")
         if training_eval.evaluate_program(source, case)["correct"] != bool(e["correct"]):
             audit["machine outcome changed after scrubbing (example withheld)"] += 1

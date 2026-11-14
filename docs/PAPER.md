@@ -474,6 +474,12 @@ next-token datastore, and nearest-neighbor token probabilities are interpolated 
 pretrained-model experiment changed the next token by replacing one source while preserving the full model-weight hash. This
 establishes the mechanism on a memorized context; its held-out perplexity evaluator is available for broader quality measurements.
 
+The [complete instance runtime](INSTANCE_RUNTIME.md) adds context, model/device identity, explicit capabilities and a resumable
+client-side execution loop. A coherent local bundle restores this state with its kNN datastore while sharing the hash-matched frozen
+model. Pending external actions are not cloned or silently replayed. In an isolated real-model trial the loop read a trusted synthetic
+inventory, stored its fact and executed the correct port query in four model calls. This is functional integration evidence rather
+than a general-intelligence or before/after model-training result.
+
 ## 9 Conclusion
 
 vi-mcp implements adaptive context selection without changing the language model. Historical randomized comparisons favour ranked hints in some windows; the total benefit of showing hints requires a sufficiently powered independent measurement.

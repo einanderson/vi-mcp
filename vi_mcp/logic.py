@@ -652,7 +652,7 @@ def _server_llm(messages: list[dict], model_info: dict | None = None) -> str:
     if model_info is not None:
         model_info.update(model=response.get("model") or cfg.get("model") or "unknown", temperature=0, thinking=False)
         if isinstance(response.get("knn"), dict):
-            model_info["knn"] = {k: response["knn"][k] for k in ("backend", "revision", "weight", "neighbors", "datastore_sha256", "weights_sha256")
+            model_info["knn"] = {k: response["knn"][k] for k in ("backend", "revision", "weight", "neighbors", "datastore_sha256", "weights_sha256", "tokenizer_sha256", "config_sha256")
                                  if k in response["knn"]}
     choice = response["choices"][0]
     if choice.get("finish_reason") == "length":

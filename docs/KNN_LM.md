@@ -86,8 +86,9 @@ old shards remain available to pinned requests and snapshots. A snapshot copies 
 There is no VI database connection, implicit network export or automatic ingestion of unreviewed knowledge.
 
 Several `KNNLanguageModel` objects may share one `TransformersCore` while using separate datastores; each HTTP process serves one
-datastore. The machine's symbolic snapshot and the inference datastore snapshot are separate explicit operations. Neither serializes
-a provider's KV cache or implements Titans. No claim of a complete neural-machine snapshot follows from a symbolic snapshot.
+datastore. Standalone symbolic and datastore snapshots are explicit operations; the [instance host](INSTANCE_RUNTIME.md) additionally
+coordinates them into one private bootable bundle with context, model identity and capabilities. Neither captures an opaque provider's
+KV cache or implements Titans. Local inference recomputes its causal states from the restored context.
 
 The default ceiling is one million active entries. Exact search is linear in entries and dimension and operates in blocks of 1,024
 vectors. It is suitable for correctness checks and bounded stores; billion-token workloads require an indexed backend and measured

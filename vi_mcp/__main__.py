@@ -28,6 +28,7 @@
   python3 -m vi_mcp incubator status [--index X] | hatch DIR [--index X] [--force]  maturity of a VI for fine-tuning (0.62.0)
   python3 -m vi_mcp finetune guide | plan | kit DIR [--base M] [--force] | record DIR  fine-tune an AI with this VI (0.62.0)
   python3 -m vi_mcp machine ACTION [NAME] [--instruction VIL] [--payload FILE]  persistent VIL machines, snapshots and checked training (0.64.0)
+  python3 -m vi_mcp machine run|checkpoint|boot NAME --bindings FILE  complete instance loop and coherent neural/state checkpoints (0.64.0)
   python3 -m vi_mcp knn ACTION --store DIR [--model MODEL]  mutable hidden-state memory in token inference (0.64.0)
   python3 -m vi_mcp redteam [--json]       memory-poisoning test in a throw-away memory: how often planted knowledge reaches an agent (0.62.0)
                                           the code of a git repository into an index (only changed files; removed ones archived)

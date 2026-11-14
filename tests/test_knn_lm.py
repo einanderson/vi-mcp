@@ -61,6 +61,24 @@ def test_invalid_keys_limits_and_corruption_fail_closed(tmp_path):
         store.distribution([0, 0])
 
 
+def test_frozen_checkpoint_holds_writers_until_the_symbolic_capture_finishes(tmp_path):
+    first = Datastore(tmp_path / "live", IDENTITY)
+    first.replace("inventory", [[0, 0]], [1])
+    other = Datastore(tmp_path / "live", IDENTITY)
+    started, finished = threading.Event(), threading.Event()
+    def write():
+        started.set()
+        other.replace("inventory", [[0, 0]], [2])
+        finished.set()
+    with first.frozen_snapshot(tmp_path / "snapshot") as frozen:
+        writer = threading.Thread(target=write, daemon=True)
+        writer.start()
+        assert started.wait(1) and not finished.wait(.05)
+        assert frozen.distribution([0, 0])[0].argmax() == 1
+    writer.join(timeout=2)
+    assert finished.is_set() and first.distribution([0, 0])[0].argmax() == 2
+
+
 def test_chat_endpoint_uses_inference_and_keeps_authentication(tmp_path):
     from http.server import ThreadingHTTPServer
     from vi_mcp.knn_cli import make_handler

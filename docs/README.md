@@ -9,6 +9,7 @@ Where to find what. Start with the [README](../README.md) ([deutsch](../README.d
 | [OPERATIONS](OPERATIONS.md) | administrators | Debian/RPM package, user service, configuration, PostgreSQL, embedding service, ports, Windows, backup, uninstalling |
 | [CLAUDE_REVIEW](CLAUDE_REVIEW.md) | reviewers | VI assessment, implemented audit fixes, execution and training evidence, independent review checklist |
 | [KNN_LM](KNN_LM.md) | inference operators and developers | Real kNN token interpolation, mutable context-state datastore, pretrained-model evidence and VI backend integration |
+| [INSTANCE_RUNTIME](INSTANCE_RUNTIME.md) | agents and inference operators | Complete instance state, controlled MCP loop, model/device permissions, coherent neural checkpoints and boot |
 | [VIRTUAL_MACHINE](VIRTUAL_MACHINE.md) | agents and developers | Executable VIL machine contract, mutable worlds, snapshots, isolation, model-generated programs and reference-checked training |
 | [ARCHITECTURE](ARCHITECTURE.md) | developers | Design: memory, intuition (hints), sleep, scorer, router and bandit, the network (logbook, gossip, long poll, network score, wiki, forum, live search), open wiki mode |
 | [PAPER](PAPER.md) | people and AIs | Technical report: how the memory learns, how a VI matures in the incubator, how its language VIL is built (symbols and weights), measurements, errors found, limitations, references |

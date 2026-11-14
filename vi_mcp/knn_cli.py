@@ -73,7 +73,7 @@ def make_handler(lm, token=None, steps=256):
                                       "choices": [choice], "knn": {"revision": result["revision"], "weight": lm.weight,
                                           "neighbors": lm.k, "finish_reason": result["finish_reason"], "backend": FORMAT,
                                           "datastore_sha256": result.get("datastore_sha256"),
-                                          "weights_sha256": lm.core.identity["weights_sha256"]}})
+                                          **{k: lm.core.identity[k] for k in ("weights_sha256", "tokenizer_sha256", "config_sha256") if k in lm.core.identity}}})
             except (ValueError, TypeError, KeyError) as e:
                 self.send_json(400, {"error": str(e)})
     return Handler

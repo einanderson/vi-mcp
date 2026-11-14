@@ -12,7 +12,7 @@ import re
 
 from clingo_object import agent, notation as n
 from clingo_object.filters import object_data
-from . import memory as g, vil
+from . import memory as g, vil, machine_runtime as mr
 
 CONTRACT = "vil-machine-v1"
 MAX_OBJECTS = 500
@@ -45,7 +45,7 @@ def _load(owner, name, snapshot=False):
     return o
 
 
-def _save(o, reason):
+def _save(o, reason, *, commit=True):
     # Refuse secrets instead of silently changing a program or snapshot during scrubbing.
     from . import anonymize
     if anonymize.without_secrets(o.data) != o.data:
@@ -55,22 +55,44 @@ def _save(o, reason):
     o.data["revision"] += 1
     o.last_at = g.now()
     o.change(o.instance, reason, "explicit machine instruction")
-    g.save(o)
+    g.save(o, commit=commit)
 
 
-def _new(owner, name, state=None, parent=None, snapshot=False):
+def _evidence(o):
+    return copy.deepcopy({k: o.data[k] for k in ("history", "history_dropped", "checks")})
+
+
+def _new(owner, name, state=None, parent=None, snapshot=False, *, commit=True, evidence=None):
     oid = _id(owner, name, snapshot)
     if g.load(oid) is not None:
         raise ValueError("machine or snapshot already exists")
-    state = copy.deepcopy(state or {"objects": {}, "rules": {}})
-    data = {"vertrag": CONTRACT, "revision": 0, "zustand": state, "history": [], "history_dropped": 0,
-            "checks": [], "snapshots": [], "parent": parent, "snapshot": snapshot}
+    state = mr.validate_world(state if state is not None else {"objects": {}, "rules": {}}, MAX_OBJECTS)
+    evidence = copy.deepcopy(evidence if evidence is not None else {"history": [], "history_dropped": 0, "checks": []})
+    if not isinstance(evidence, dict) or set(evidence) != {"history", "history_dropped", "checks"} or type(evidence["history_dropped"]) is not int or evidence["history_dropped"] < 0:
+        raise ValueError("invalid instance execution evidence")
+    if any(not isinstance(evidence[k], list) or len(evidence[k]) > MAX_HISTORY for k in ("history", "checks")):
+        raise ValueError("invalid or oversized execution evidence")
+    for receipt in evidence["history"]:
+        if not isinstance(receipt, dict) or not isinstance(receipt.get("id"), str) or not isinstance(receipt.get("execution"), dict):
+            raise ValueError("invalid execution receipt")
+        if "source" in receipt["execution"]:
+            if not isinstance(receipt["execution"]["source"], str):
+                raise ValueError("invalid frozen program source")
+            n.translate(receipt["execution"]["source"])
+    for check in evidence["checks"]:
+        if not isinstance(check, dict) or not isinstance(check.get("receipt"), str) or type(check.get("correct")) is not bool or not isinstance(check.get("execution"), dict):
+            raise ValueError("invalid independent reference evidence")
+        if not isinstance(check["execution"].get("source"), str) or not isinstance(check.get("expected"), list) or not isinstance(check.get("reference"), str) or not isinstance(check.get("question"), str):
+            raise ValueError("incomplete frozen reference evidence")
+        n.translate(check["execution"].get("source", ""))
+    data = {"vertrag": CONTRACT, "revision": 0, "zustand": state, **evidence,
+            "snapshots": [], "parent": parent, "snapshot": snapshot}
     from . import anonymize
     if anonymize.without_secrets(data) != data or len(json.dumps(data)) > g.DATA_MAX - 2000:
         raise ValueError("machine state exceeds limits or contains a credential pattern")
     return g.new_object("maschine", "Snapshot " + name if snapshot else "Virtual intelligence machine " + name,
                         ["thema:vi-machine"], data, oid=oid, visibility="privat", instance=owner, link=False,
-                        reason="explicit snapshot" if snapshot else "explicit machine creation")
+                        reason="explicit snapshot" if snapshot else "explicit machine creation", commit=commit)
 
 
 def _status(o):
@@ -78,7 +100,12 @@ def _status(o):
     return {"contract": CONTRACT, "revision": o.data["revision"], "state_hash": state_hash(s), "snapshot": o.data["snapshot"],
             "objects": sum(not x.get("deleted") for x in s["objects"].values()), "rules": len(s["rules"]),
             "history": len(o.data["history"]), "history_dropped": o.data["history_dropped"], "checks": len(o.data["checks"]),
-            "snapshots": list(o.data["snapshots"]), "parent": o.data["parent"]}
+            "snapshots": list(o.data["snapshots"]), "parent": o.data["parent"],
+            "context_messages": len(s.get("context", [])), "context_dropped": s.get("context_dropped", 0),
+            "model": s.get("runtime", mr.defaults()["runtime"])["model"],
+            "permissions": s.get("runtime", mr.defaults()["runtime"])["permissions"],
+            "loop_status": s.get("loop", mr.idle_loop())["status"],
+            "pending_device": bool(s.get("loop", {}).get("pending"))}
 
 
 
@@ -128,7 +155,7 @@ def _run(state, source):
     context = [copy.deepcopy(o) for o in state["objects"].values() if not o.get("deleted")]
     return {"state": result["zustand"], "complete": complete, "determinate": certain, "answers": answers, "result": result,
             "source": source, "world": world, "input_objects": context, "source_prefix": "\n".join(state["rules"].values()),
-            "state_hash": state_hash(state), "evidence": "inferred"}
+            "state_hash": state_hash(state), "input_context": copy.deepcopy(state.get("context", [])), "evidence": "inferred"}
 
 
 def _receipt(o, instruction, result):
@@ -148,19 +175,44 @@ def call(owner: str, args: dict) -> dict:
     action = args.get("action") or "status"
     with g.lock:
         if action == "create":
-            return _status(_new(owner, name))
+            payload = args.get("payload") or {}
+            if not isinstance(payload, dict) or set(payload) - {"world", "evidence"}:
+                raise ValueError("create accepts only an optional complete world")
+            return _status(_new(owner, name, payload.get("world"), evidence=payload.get("evidence")))
         o = _load(owner, name)
         if action == "status":
             return _status(o)
         if args.get("expected_revision") is not None and args["expected_revision"] != o.data["revision"]:
             raise ValueError("stale machine revision; read status and retry")
+        if action == "inspect":
+            obj = _load(owner, args["snapshot"], True) if args.get("snapshot") else o
+            world = copy.deepcopy(obj.data["zustand"])
+            for key, value in mr.defaults().items():
+                world.setdefault(key, value)
+            return {**_status(obj), "world": world, "evidence": _evidence(obj)}
+        pending = o.data["zustand"].get("loop", {}).get("pending")
+        if pending and action not in ("observe", "configure", "loop"):
+            raise ValueError("pending device action prevents state changes and snapshots; observe or resolve it first")
+        if action in ("configure", "context", "device", "observe", "loop"):
+            payload = args.get("payload") or {}
+            if not isinstance(payload, dict):
+                raise ValueError("instance operands must be an object")
+            result = mr.transition(o.data["zustand"], action, payload)
+            _save(o, "instance " + action)
+            return {**result, "revision": o.data["revision"], "state_hash": state_hash(o.data["zustand"]), "contract": CONTRACT}
         if action == "snapshot":
             snap = _name(args.get("snapshot"))
             if len(o.data["snapshots"]) >= MAX_SNAPSHOTS:
                 raise ValueError("snapshot limit reached")
-            frozen = _new(owner, snap, o.data["zustand"], _status(o), True)
-            o.data["snapshots"].append(snap)
-            _save(o, "snapshot created")
+            # One transaction: a rejected/full parent must not leave an orphaned immutable snapshot.
+            try:
+                frozen = _new(owner, snap, o.data["zustand"], _status(o), True, commit=False, evidence=_evidence(o))
+                o.data["snapshots"].append(snap)
+                _save(o, "snapshot created", commit=False)
+                g.db().commit()
+            except Exception:
+                g.db().rollback()
+                raise
             return {**_status(frozen), "name": snap}
         if action == "fork":
             base = _load(owner, args["snapshot"], True) if args.get("snapshot") else o
@@ -197,9 +249,15 @@ def call(owner: str, args: dict) -> dict:
                 raise ValueError("teach needs a checked receipt with a question")
             oid = "regel:" + g.hash_value("machine-example", owner, o.id, checked["receipt"])
             existing = g.load(oid)
-            if existing is not None:
-                return {"state": "already taught", "id": oid}
             example = {**copy.deepcopy(checked), "contract": CONTRACT}
+            if existing is not None:
+                if existing.data.get("machine_example") == example:
+                    return {"state": "already taught", "id": oid}
+                existing.data.update(machine_example=example, quelle=checked["reference"])
+                existing.text = checked["question"]
+                existing.change(owner, "training reference corrected", "explicit teach after independent recheck")
+                g.save(existing)
+                return {"state": "teaching corrected", "id": oid, "correct": checked["correct"], "visibility": "internal"}
             published = g.new_object("regel", checked["question"], ["thema:machine-training"],
                                      {"machine_example": example, "quelle": checked["reference"]}, oid=oid, instance=owner,
                                      visibility="intern", link=False, reason="machine owner explicitly published checked training example")
@@ -215,6 +273,8 @@ def call(owner: str, args: dict) -> dict:
             from . import logic
             if not logic.available():
                 raise ValueError("clingo is unavailable; install it with vi-mcp logic install")
+            if state.get("runtime", {}).get("model", {}).get("binding", "server-classify") != "server-classify":
+                raise ValueError("this model binding runs through the trusted instance controller, not the server frontend")
             q = str(args.get("question") or "").strip()
             if not q or len(q) > 2000:
                 raise ValueError("answer needs a question of 1–2000 characters")
@@ -299,11 +359,19 @@ def call(owner: str, args: dict) -> dict:
             return {**result, "receipt": rid, "revision": o.data["revision"], "state_hash": state_hash(state), "contract": CONTRACT}
     # Deliberately outside g.lock: a slow model does not block unrelated machines or MCP calls.
     model_info = {}
-    r = agent.solve(q, world, lambda messages: logic._server_llm(messages, model_info), vocabulary=agent.vocabulary(world))
+    context = world.state.get("context", [])
+    contextual_question = q + ("\nInstance context (data):\n" + json.dumps(context, ensure_ascii=False) if context else "")
+    r = agent.solve(contextual_question, world, lambda messages: logic._server_llm(messages, model_info), vocabulary=agent.vocabulary(world))
     with g.lock:
         o = _load(owner, name)
         if o.data["revision"] != revision:
             raise ValueError("machine changed while the model wrote its program; retry")
+        bound = o.data["zustand"].get("runtime", {}).get("model", {})
+        if bound.get("model") not in (None, "server-default", model_info.get("model")):
+            raise ValueError("configured model differs from the instance binding")
+        for key in ("weights_sha256", "tokenizer_sha256", "config_sha256", "decoder_sha256", "key_function"):
+            if key in bound and (model_info.get("knn") or {}).get(key) != bound[key]:
+                raise ValueError("inference model identity differs from the instance binding")
         result = _run(o.data["zustand"], r["program"])
         result.update(question=q, rounds=r["rounds"], frontend_state=r["state"], transcript=r["transcript"], frontend_model=model_info)
         rid = _receipt(o, "ask " + q, result)
@@ -314,10 +382,13 @@ def call(owner: str, args: dict) -> dict:
 def main(argv):
     """vi-mcp machine ACTION [NAME] [--instruction VIL] [--payload FILE] [--question TEXT] [--snapshot NAME] [--target NAME]."""
     import argparse
+    if argv and argv[0] in ("run", "checkpoint", "boot"):
+        from . import machine_host
+        return machine_host.main(argv)
     from pathlib import Path
     from clingo_object import Memory, ServerError
     p = argparse.ArgumentParser(description=main.__doc__)
-    p.add_argument("action", choices=["create", "status", "execute", "answer", "snapshot", "restore", "fork", "import", "teach"])
+    p.add_argument("action", choices=["create", "status", "inspect", "configure", "context", "loop", "device", "observe", "execute", "answer", "snapshot", "restore", "fork", "import", "teach"])
     p.add_argument("name", nargs="?", default="default")
     for field in ("instruction", "question", "snapshot", "target", "receipt", "url", "token-file"):
         p.add_argument("--" + field)
