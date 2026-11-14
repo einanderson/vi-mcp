@@ -96,6 +96,9 @@ def test_tokenizer_only_and_oversize_gate_load_no_model_weights(kit, monkeypatch
     assert main(["--stage", "logic", "--tokenizer-only"]) == 0
     report = json.loads((directory / "preflight-logic.json").read_text())
     assert report["status"] == "tokenizer_passed" and not report["trainer_verified"]
+    assert report["precision"].startswith("model dtype")
+    assert main(["--stage", "logic", "--tokenizer-only", "--fp32"]) == 0          # gfx1151: bf16 problems reported
+    assert json.loads((directory / "preflight-logic.json").read_text())["precision"] == "float32"
     assert main(["--stage", "logic", "--preflight", "--sequence-length", "16"]) == 2
     report = json.loads((directory / "preflight-logic.json").read_text())
     assert report["error_class"] == "ValueError" and report["audit"]["rejected"]["oversize"]

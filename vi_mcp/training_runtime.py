@@ -197,6 +197,8 @@ def main(argv=None):
     parser.add_argument("--preflight", action="store_true", help="construct trainer, collate and compute one loss; no train/save/optimizer step")
     parser.add_argument("--tokenizer-only", action="store_true", help="preflight tokenization only; no model weights or trainer loaded")
     parser.add_argument("--cpu", action="store_true")
+    parser.add_argument("--fp32", action="store_true", help="float32 weights, no bf16/fp16 mixed precision — e.g. on a GPU with "
+                                                               "reported bf16 problems (AMD gfx1151, ROCm/TheRock issue 9198)")
     parser.add_argument("--sequence-length", type=int, help="audited full-example bound, at most the model context")
     parser.add_argument("--skip-oversize", action="store_true", help="explicitly omit whole oversized episodes and count them; never truncate targets")
     o = parser.parse_args(argv)
@@ -235,6 +237,7 @@ def main(argv=None):
         if type(limit) is not int or not 2 <= limit <= window:
             raise ValueError("sequence limit exceeds the declared model context")
         data, audit = prepare(rows, tok, o.stage, limit, skip_oversize=o.skip_oversize)
+        report["precision"] = "float32" if (o.cpu or o.fp32) else "model dtype; bf16 mixed precision when the GPU supports it"
         report.update(audit=audit, sequence_limit=limit, model_revision=getattr(config, "_commit_hash", None) or revision,
                       tokenizer_sha256=digest(tok.backend_tokenizer.to_str()),
                       chat_template_sha256=digest(tok.chat_template), model_config_sha256=digest(config.to_dict()))
@@ -258,13 +261,13 @@ def main(argv=None):
                           revision=report["model_revision"])
         if parent_config is not None:
             model = AutoPeftModelForCausalLM.from_pretrained(parent, is_trainable=True, quantization_config=quant,
-                                                            dtype=torch.float32 if o.cpu else "auto", trust_remote_code=False)
+                                                            dtype=torch.float32 if (o.cpu or o.fp32) else "auto", trust_remote_code=False)
             peft, report["parent_adapter"] = None, str(parent)
         else:
             if o.stage != "sft" and not o.from_base and not o.preflight:
                 raise ValueError("later stages require an existing parent adapter")
             model = AutoModelForCausalLM.from_pretrained(base, revision=report["model_revision"], quantization_config=quant,
-                                                         dtype=torch.float32 if o.cpu else "auto", trust_remote_code=False)
+                                                         dtype=torch.float32 if (o.cpu or o.fp32) else "auto", trust_remote_code=False)
             peft = lora
             report["parent_adapter"] = "base" if o.stage == "sft" or o.from_base else "missing: fresh untrained probe only"
         from trl import SFTConfig, SFTTrainer, KTOConfig, KTOTrainer, DPOConfig, DPOTrainer
@@ -273,7 +276,7 @@ def main(argv=None):
         options = {"output_dir": str(Path("out") / o.stage), "num_train_epochs": o.epochs,
                    "learning_rate": o.lr or (2e-4 if o.stage == "sft" else 1e-4 if o.stage in ("agentic", "logic") else 5e-6),
                    "logging_steps": 10, "max_length": None, "report_to": "none", "use_cpu": o.cpu, "seed": o.seed,
-                   "bf16": not o.cpu and torch.cuda.is_available() and torch.cuda.is_bf16_supported(), "fp16": False,
+                   "bf16": not o.cpu and not o.fp32 and torch.cuda.is_available() and torch.cuda.is_bf16_supported(), "fp16": False,
                    "per_device_train_batch_size": 4 if o.stage == "kto" else 1}
         if o.cpu:
             options.update(bf16=False, fp16=False)

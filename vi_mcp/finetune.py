@@ -69,7 +69,8 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
 3. On the training host install its hardware-appropriate PyTorch, then `python -m pip install -r requirements-train.txt`.
    First run `python train.py --stage logic --tokenizer-only --from-base` (no model weights), then
    `python train.py --stage logic --preflight --from-base` (real trainer, one no-grad loss, zero optimizer steps).
-   Repeat for the intended stages. `--cpu` is available; the model must fit in memory. Reports are `preflight-STAGE.json`.
+   Repeat for the intended stages. `--cpu` is available; the model must fit in memory. `--fp32` keeps float32 on a GPU (no bf16 mixed precision),
+   e.g. on AMD gfx1151 where bf16 problems are reported. Reports are `preflight-STAGE.json`.
    These checks do not train, save an adapter, change run.json or certify incubator maturity. A missing parent adapter is named in the report.
 4. When explicitly ready, train SFT (`python train.py --stage sft`), then optionally agentic or logic. Later stages read only their shared train split.
    Use `--stage logic --from-adapter out/agentic` to continue the agentic stage, or `--stage dpo --from-adapter out/logic`

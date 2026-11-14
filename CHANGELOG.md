@@ -3,6 +3,15 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What is new
+
+- **`train.py --fp32`** in the fine-tuning kit trains in float32 on a GPU, with no bf16/fp16 mixed precision. Before, a GPU that
+  reports bf16 support always got bf16. For AMD gfx1151 (Strix Halo), community reports list bf16 problems
+  (https://github.com/ROCm/TheRock/issues/9198). The report names the `precision`. Evidence:
+  `tests/test_training_runtime_neural.py` (tokenizer-only with and without `--fp32`).
+
 ## 0.64.0 — 2026-11-14 — executable virtual intelligence and checked program learning
 
 ### What is new
