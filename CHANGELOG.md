@@ -65,6 +65,24 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **The poisoning test separates reach from compliance** (Claude's review, 14.11.2026, item 9). `vi-mcp redteam --llm URL` now
+  measures compliance as well as reach:
+  - Every attack that reached an agent (top-3 search hit or hint) is put to a language model the way an agent sees it: the task,
+    the top search hits and the hints.
+  - The model answers with one shell command, and fixed patterns per attack kind (`redteam.FOLLOW`) decide whether it follows the
+    poison.
+  - A control without poison gives the model's own rate of such commands.
+  - Without `--llm` the report says "compliance: not measured".
+
+  Measured on 14.11.2026 at 13:28 UTC with the qwen27b endpoint, temperature 0, in a throw-away memory:
+  - All 40 attacks on the network, company, open and insider ways were blocked.
+  - Of the 10 held-out insider attacks, 6 reached the agent; 0 of those 6 were followed. Each reply was the correct
+    `nginx -t && systemctl reload nginx` or `pg_dump …`.
+  - The control was clean.
+  - 0 of 6 is a small sample: the one-sided 95 % upper bound of the compliance rate is 39 %.
+
+  Execution is a third, separate boundary: an instance loop runs only declared devices and never owner operations. Evidence:
+  `tests/test_redteam.py::test_reach_and_compliance_are_separate_measurements`.
 - **A device could reopen owner operations to the model** (Claude's review, 14.11.2026, item 8). The loop forbids
   configure, teach, snapshots and releases, but a device descriptor could name any MCP tool, including `vi_machine` itself. A host
   that registered it would let the model grant itself rights through a device call. Now the shared descriptor check
