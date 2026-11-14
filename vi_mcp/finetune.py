@@ -25,6 +25,7 @@ from . import memory as g
 
 GUIDE_VERSION = "2026-11-14"
 TEST_SHARE = 0.15
+STRATIFY_MIN = 5  # a stage with at least this many groups always gets held-out groups
 
 GUIDE = """# Fine-tuning an AI with the knowledge of a VI
 
@@ -238,6 +239,16 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
     groups = sorted({root(keys(r)[0]) for rows in data.values() for r in rows})
     rnd = random.Random(seed)
     test_groups = set(rnd.sample(groups, max(1, int(len(groups) * share)))) if len(groups) > 1 else set()
+    # Stratified per stage (14.11.2026): the joint sample above can miss a small stage entirely — the production kit's logic stage
+    # had 14 groups and 0 test rows, so its gain was unmeasurable. Each stage with at least STRATIFY_MIN groups gets its share of
+    # test groups; components stay joint across stages, so this adds held-out groups and never splits one.
+    for rows in data.values():
+        own = sorted({root(keys(r)[0]) for r in rows})
+        if len(own) >= STRATIFY_MIN:
+            want = max(1, round(len(own) * share))
+            have = [x for x in own if x in test_groups]
+            if len(have) < want:
+                test_groups |= set(rnd.sample([x for x in own if x not in test_groups], want - len(have)))
     out_dir.mkdir(exist_ok=True)
     counts = {}
     for stage, rows in data.items():
@@ -247,7 +258,8 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
         for side, part in (("train", train), ("test", test)):
             path = out_dir / (f"{side}.jsonl" if stage == "qa" else f"{stage}.{side}.jsonl")
             _write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in part))
-        counts[stage] = {"train": len(train), "test": len(test), "withheld": len(rows) - len(train) - len(test)}
+        counts[stage] = {"train": len(train), "test": len(test), "withheld": len(rows) - len(train) - len(test),
+                         "groups": len({root(keys(r)[0]) for r in rows}), "test_groups": len({root(keys(r)[0]) for r in test})}
         if counts[stage]["withheld"]:
             counts[stage]["reason"] = "solver-only program demonstration or observational preference; no independent task verification"
     test_ids = {r["meta"]["id"] for r in data["qa"] if root(keys(r)[0]) in test_groups}

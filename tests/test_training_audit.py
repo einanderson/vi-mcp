@@ -153,3 +153,19 @@ def test_champion_does_not_count_repeated_hints_as_independent_actions(gd):
     repeated = [({"tool:demo": 1.0}, 1, action.id)] * learning.CHAMPION_MIN_N
     result = learning.compare_champion(champ, {"tool:demo": -2.0}, 0, repeated)
     assert result["zustand"] == "nicht_bestimmbar" and result["n"] == 1
+
+
+def test_every_stage_with_enough_groups_gets_held_out_groups(tmp_path):
+    """Production kit 14.11.2026: the logic stage had 14 groups and 0 test rows — the joint 15 % group sample over all stages
+    missed it (0.85^14 ≈ 10 % of seeds). Its gain could never be measured. Now each stage with at least 5 groups gets its share
+    of test groups (components still joint across stages), for every seed."""
+    d = tmp_path / "dataset"
+    d.mkdir()
+    qa = [{"messages": [], "meta": {"id": f"q{i}", "group": f"page{i}"}} for i in range(1000)]
+    logic = [{"messages": [], "meta": {"id": f"r{i}", "group": f"logic:{i % 14}"}} for i in range(127)]
+    (d / "qa.jsonl").write_text("".join(json.dumps(r) + "\n" for r in qa))
+    (d / "logic.jsonl").write_text("".join(json.dumps(r) + "\n" for r in logic))
+    for seed in range(25):
+        r = finetune._split(d / "qa.jsonl", tmp_path / f"split{seed}", seed=seed)
+        assert r["stages"]["logic"]["test"] > 0 and r["stages"]["logic"]["train"] > 0, seed
+        assert r["stages"]["logic"]["test_groups"] >= 2 and r["stages"]["qa"]["test"] > 0

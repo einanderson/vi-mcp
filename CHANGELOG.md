@@ -7,6 +7,12 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Every training stage with at least 5 groups gets held-out test groups.** In the kit built from production on 14.11.2026,
+  the logic stage had 14 groups and 0 test rows: the joint 15 % group sample over all stages missed it (about 0.85^14 ≈ 10 %
+  of seeds). Its gain could never be measured. Now each such stage gets its share of test groups. Components stay joint across
+  stages, so this only adds held-out groups. The split reports `groups` and `test_groups` per stage. Evidence:
+  `tests/test_training_audit.py::test_every_stage_with_enough_groups_gets_held_out_groups`. With the old code, seeds 8 and 10 of
+  25 gave the logic stage 0 test rows; now all 25 seeds give it test groups.
 - **`train.py --fp32`** in the fine-tuning kit trains in float32 on a GPU, with no bf16/fp16 mixed precision. Before, a GPU that
   reports bf16 support always got bf16. For AMD gfx1151 (Strix Halo), community reports list bf16 problems
   (https://github.com/ROCm/TheRock/issues/9198). The report names the `precision`. Evidence:
