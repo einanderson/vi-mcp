@@ -82,6 +82,9 @@ incubator state). Thresholds can be changed in `config.json` under `incubator`. 
 
 ### Fine-tuning — tell your AI "I want to fine-tune"
 
+The generated kit has a [tokenizer and real-trainer preflight](docs/TRAINING_PREFLIGHT.md): complete assistant/program targets,
+no silent truncation, and an optional loss check with zero optimizer steps. This verifies preparation without starting training.
+
 The VI knows how to fine-tune an AI with what it learned. On a vi-mcp server, say so to your AI: it calls `vi_finetune`, which tells
 whether the VI is mature (incubator) and gives the steps; `vi_finetune(action="guide")` explains fine-tuning (LoRA/QLoRA, SFT/KTO/DPO,
 the program TRL, hardware, the way back into llama.cpp, measuring). On the server `vi-mcp finetune kit DIR --base MODEL` writes

@@ -7,6 +7,13 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Real trainer preflight without training**, in every generated fine-tuning kit: tokenizer-only inspection or actual SFT, agentic,
+  logic, KTO and DPO trainer construction, collator verification and one no-grad loss. Reports bind dataset/tokenizer/template/config,
+  dependency versions, complete-target counts, parent readiness, unchanged parameters and zero optimizer steps. A program-first
+  `--from-base` path needs no preceding QA adapter. New adapters retain the resolved base revision for subsequent stages, which
+  refuse an explicit revision mismatch. The tested dependency versions and public solver sources ship with the kit.
+  Evidence: `tests/test_training_runtime.py`, `tests/test_training_runtime_neural.py`, `tests/test_anonym.py`;
+  setup and scope in `docs/TRAINING_PREFLIGHT.md`. No fine-tuning was started.
 - **Complete virtual instances**, `vil-instance-v1`: persisted context, model/decoder identity, MCP device descriptors, explicit
   permissions and a bounded, resumable client-side execution loop. `vi-mcp machine run|checkpoint|boot` connects that loop to trusted
   MCP devices; reservations precede calls, uncertain writes never retry automatically, and restoration cannot recover capabilities
@@ -50,6 +57,16 @@ Linked from [README.md](README.md).
 
 ### What was fixed
 
+- **Trainer defaults could silently cut programs and learn user/tool observations.** The kit now renders original tool messages
+  before Arrow loading, masks non-target context, preserves complete assistant turns and verifies actual trainer tokens. Oversized
+  episodes refuse preparation or are explicitly omitted and counted; no implicit 1024-token truncation remains. Checked machine
+  examples also no longer create generic question-to-itself QA; program export works even when no generic retrieval trajectories
+  exist. Evidence: `tests/test_training_runtime.py`,
+  `tests/test_training_runtime_neural.py`, `tests/test_machine.py`.
+- **Generated evaluation required a source checkout and could accept truncated output.** The kit bundles source-only clingo-object;
+  frozen program replay works in an isolated process. Both evaluators reject incomplete generations; ordinary judgments bind to
+  collected predictions and the held-out hash, and cached program predictions need exact coverage. Evidence:
+  `tests/test_kit_evaluation.py` and the package-local secret exclusion in `tests/test_anonym.py`.
 - **A rejected snapshot could leave an orphaned immutable object.** Parent registration and snapshot now share a database transaction;
   a forced parent failure rolls both back on SQLite and PostgreSQL. Teaching an already published receipt also accepts a later explicit
   reference correction instead of leaving the previous training label in place. Instance context accompanies its checked program

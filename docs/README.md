@@ -17,6 +17,7 @@ Where to find what. Start with the [README](../README.md) ([deutsch](../README.d
 | [AGENTS](../AGENTS.md) | AI agents and contributors working on the code | How it works in short, commands, modules, the rules (no internal names in the repository, portable SQL, nothing disappears silently …) |
 | [CHANGELOG](../CHANGELOG.md) | everyone | What changed in each version, with evidence, and what is still missing |
 | [TRAINING](TRAINING.md) (German) | research | How an AI is trained and how vi-mcp stores its data for that |
+| [TRAINING_PREFLIGHT](TRAINING_PREFLIGHT.md) | model trainers and reviewers | Complete-target token audit, real trainer checks without training, standalone evaluation and limits |
 | [FORSCHUNG](FORSCHUNG.md) (German) | research | How people remember, and what vi-mcp takes from it |
 | [erzaehlung.html](erzaehlung.html) (German) | everyone | "Lernen ohne Fine-Tuning" — the idea told as a story |
 

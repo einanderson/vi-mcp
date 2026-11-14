@@ -90,6 +90,9 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     skipped, audit = Counter(), Counter()
     qa, rated, qa_objects = [], [], []
     for o in _objects(index):
+        if o.data.get("machine_example"):
+            skipped["machine execution evidence belongs to checked program formats, not generic question-to-itself QA"] += 1
+            continue
         if "art_wissen:code" in o.hashtags:
             skipped["code piece (a copy of a repository)"] += 1
             continue
@@ -136,7 +139,7 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
                         "rejected": _clean(worst[0].text, audit, "hint"),
                         "meta": {"trigger": t, "chosen": best[0].id, "rejected": worst[0].id, "weights": [best[1], worst[1]],
                                  "validation": "observational"}})
-    agentic, agentic_skipped = agentic_examples(qa_objects, eval_qs, audit) if agentic else ([], Counter())
+    agentic_rows, agentic_skipped = agentic_examples(qa_objects, eval_qs, audit) if agentic else ([], Counter())
     skipped.update(agentic_skipped)
     logic_sft, logic_kto, logic_skipped = logic_examples(index, audit, targets, eval_qs, eval_groups) if agentic else ([], [], Counter())
     skipped.update(logic_skipped)
@@ -144,7 +147,7 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     logic_sft += machine_sft
     logic_kto += machine_kto
     dpo += machine_dpo
-    return {"qa": qa, "kto": kto + logic_kto, "dpo": dpo, "agentic": agentic, "logic": logic_sft, "skipped": dict(skipped),
+    return {"qa": qa, "kto": kto + logic_kto, "dpo": dpo, "agentic": agentic_rows, "logic": logic_sft, "skipped": dict(skipped),
             "scrubbed": dict(audit), "held_out": len(targets)}
 
 

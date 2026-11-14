@@ -86,6 +86,9 @@ einen eigenen Stand.
 
 ### Fine-Tuning — sag deiner KI „ich will fine-tunen“
 
+Das Kit bietet eine [Tokenizer- und Trainer-Vorprüfung](docs/TRAINING_PREFLIGHT.md): vollständige Assistenten-/Programmziele,
+keine stille Kürzung und optional ein Verlustwert bei null Optimierungsschritten. Damit lässt sich die Vorbereitung ohne Training prüfen.
+
 Die VI weiß, wie man eine KI mit dem Gelernten feinjustiert. Auf einem vi-mcp-Server genügt es, das der KI zu sagen: sie ruft
 `vi_finetune`, das meldet, ob die VI reif ist (Inkubator), und die Schritte nennt; `vi_finetune(action="guide")` erklärt Fine-Tuning
 (LoRA/QLoRA, SFT/KTO/DPO, das Programm TRL, Hardware, der Weg zurück nach llama.cpp, Messen). Auf dem Server schreibt

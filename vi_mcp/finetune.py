@@ -23,7 +23,7 @@ from pathlib import Path
 from . import __version__
 from . import memory as g
 
-GUIDE_VERSION = "2026-11-13"
+GUIDE_VERSION = "2026-11-14"
 TEST_SHARE = 0.15
 
 GUIDE = """# Fine-tuning an AI with the knowledge of a VI
@@ -42,7 +42,7 @@ stays in the house; only the base model is downloaded once.
   (tool-use SFT with `vi_logic`, 0.63.0 — "clingo ist die Sprache für LLMs"); wrongly rated conclusions are KTO negatives.
 
 ## The program
-- **TRL** (Hugging Face) reads all formats unchanged: SFT `messages`, KTO `prompt/completion/label`, DPO `prompt/chosen/rejected`
+- **TRL** (Hugging Face) supports SFT `messages`, KTO `prompt/completion/label`, DPO `prompt/chosen/rejected`
   (https://huggingface.co/docs/trl/main/en/dataset_formats). KTO: learning rate 5e-7 … 5e-6, desirable:undesirable between 1:1 and 4:3
   (https://huggingface.co/docs/trl/main/en/kto_trainer).
 - **Unsloth** builds on TRL: "2× faster with 70% less VRAM", supports AMD/ROCm incl. gfx1151 (https://github.com/unslothai/unsloth,
@@ -66,19 +66,32 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
 ## The steps
 1. The VI is mature enough: `vi-mcp incubator status` (a run before is a trial).
 2. `vi-mcp finetune kit DIR` — data, test split, scripts.
-3. Train SFT (`train.py --stage sft`), then optionally agentic or logic. Later stages read only their shared train split.
+3. On the training host install its hardware-appropriate PyTorch, then `python -m pip install -r requirements-train.txt`.
+   First run `python train.py --stage logic --tokenizer-only --from-base` (no model weights), then
+   `python train.py --stage logic --preflight --from-base` (real trainer, one no-grad loss, zero optimizer steps).
+   Repeat for the intended stages. `--cpu` is available; the model must fit in memory. Reports are `preflight-STAGE.json`.
+   These checks do not train, save an adapter, change run.json or certify incubator maturity. A missing parent adapter is named in the report.
+4. When explicitly ready, train SFT (`python train.py --stage sft`), then optionally agentic or logic. Later stages read only their shared train split.
    Use `--stage logic --from-adapter out/agentic` to continue the agentic stage, or `--stage dpo --from-adapter out/logic`
-   to continue the logic stage; without this flag each later stage starts from out/sft. Solver-only examples and
+   to continue the logic stage; without this flag each later stage starts from out/sft. `--stage logic --from-base` explicitly starts
+   program training directly on a fresh adapter without a prior QA stage. Solver-only examples and
    observational hint pairs are withheld from default program/DPO training. Checked machine examples are published explicitly with vi_machine teach.
-4. `convert.sh` → GGUF adapter; start llama-server with base and adapter.
-5. `evaluate.py` collects paired predictions; supply independent --judgments for correctness. For program writing use
+5. `convert.sh` → GGUF adapter; start llama-server with base and adapter.
+6. `evaluate.py` collects paired predictions; supply independent --judgments for correctness. For program writing use
    `program_evaluate.py --base URL --tuned URL`: full solver answers on frozen held-out worlds, not word overlap.
+   The kit bundles the solver's Python sources, so it works without a VI checkout. Truncated model outputs cannot count as correct.
    Adoption requires a positive conservative lower confidence bound over independent task families.
-6. `vi-mcp finetune record DIR` — the run becomes a model object with its lineage in the VI.
+7. `vi-mcp finetune record DIR` — the run becomes a model object with its lineage in the VI.
 
 ## Rules
 - Never set a token cap (max_tokens) in evaluation; if answers run long, switch thinking off (`enable_thinking: false`).
 - Evaluation source pages, duplicate contents and questions are excluded from export. The kit shares one split across all stages; never train from the unsplit dataset files when measuring the held-out sets.
+- The kit renders tool calls before Arrow loading and learns only complete assistant targets, masking user text and tool observations.
+  Every original token and mask is checked against the real trainer. No implicit 1024-token truncation is accepted: examples must fit
+  the model's declared context (`--sequence-length` may set a smaller bound). Oversized episodes refuse preparation; `--skip-oversize`
+  explicitly omits whole episodes with counts and reasons. Invalid templates or changed trainer tokens always refuse preparation.
+- Pin a remote model/tokenizer with `--revision COMMIT`. Preflight with `--base` may probe a small fixture; the report marks the override.
+  Such a probe verifies that fixture, not the intended large model, GPU or subsequent learning quality.
 - Internal data: the files carry company knowledge unanonymised.
 """
 
@@ -101,7 +114,9 @@ def plan(index: str | None = None, base_model: str | None = None) -> dict:
          "mature" if st["zustand"] == "reif" else f"not mature — a run now is a trial; open: {', '.join(st['offen'])}"),
         ("kit", f"vi-mcp finetune kit /srv/vi-finetune{(' --index ' + index) if index else ''}{(' --base ' + base) if base else ''}"
                 + ("" if st["zustand"] == "reif" else " --force"), "training data, test split and scripts, nothing is run"),
-        ("train", "python train.py --stage sft   (then optionally --stage kto or --stage dpo)", "on the GPU host, in a venv with torch, trl, peft"),
+        ("preflight", "python train.py --stage logic --tokenizer-only --from-base; python train.py --stage logic --preflight --from-base",
+         "install hardware-appropriate torch and requirements-train.txt first; real trainer check, no training"),
+        ("train", "python train.py --stage sft   (then optionally --stage logic, --stage kto or --stage dpo)", "only on an explicit training decision; a preflight alone changes no weights"),
         ("convert", "./convert.sh", "the adapter as GGUF for llama.cpp, and the llama-server line"),
         ("evaluate", "python evaluate.py --base URL --tuned URL", "same held-out questions to both; adopt only if better"),
         ("record", "vi-mcp finetune record /srv/vi-finetune", "the run as a model object with its lineage"),
@@ -119,59 +134,19 @@ def plan_lines(p: dict) -> list[str]:
     return out
 
 
-TRAIN_PY = r'''"""Fine-tune with TRL + LoRA — written by vi-mcp finetune kit; run it on the GPU host. Stages: sft (qa.jsonl), then on top of it
-agentic (agentic.jsonl: searching the VI with vi_recall), logic (logic.jsonl: clingo-object programs), kto or dpo."""
-import argparse, json, pathlib
+TRAIN_PY = r'''"""Fine-tuning kit entry point. First run --preflight (no training); --tokenizer-only loads no model weights.
+Stages: sft, agentic, logic, kto, dpo. Use --from-adapter to continue a selected prior stage.
+"""
+from training_runtime import main
 
-a = argparse.ArgumentParser()
-a.add_argument("--stage", choices=["sft", "agentic", "logic", "kto", "dpo"], default="sft")
-a.add_argument("--base", default=json.load(open("run.json"))["base_model"])
-a.add_argument("--qlora", action="store_true", help="load the base in 4 bit (small GPUs)")
-a.add_argument("--epochs", type=float, default=2)
-a.add_argument("--lr", type=float, default=None)
-a.add_argument("--from-adapter", default="out/sft", help="parent adapter for agentic/logic/KTO/DPO; e.g. out/logic")
-o = a.parse_args()
-
-from datasets import load_dataset
-from peft import LoraConfig, AutoPeftModelForCausalLM
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-
-tok = AutoTokenizer.from_pretrained(o.base)
-quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4") if o.qlora else None
-lora = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05, target_modules="all-linear", task_type="CAUSAL_LM")
-out = pathlib.Path("out") / o.stage
-if o.stage == "sft":
-    from trl import SFTConfig, SFTTrainer
-    model = AutoModelForCausalLM.from_pretrained(o.base, quantization_config=quant, torch_dtype="auto")
-    ds = load_dataset("json", data_files="split/train.jsonl")["train"].remove_columns(["meta"])
-    t = SFTTrainer(model=model, processing_class=tok, train_dataset=ds, peft_config=lora,
-                   args=SFTConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 2e-4, logging_steps=10))
-else:
-    model = AutoPeftModelForCausalLM.from_pretrained(o.from_adapter, is_trainable=True, quantization_config=quant, torch_dtype="auto")
-    if o.stage in ("agentic", "logic"):  # tool use: vi_recall in VIL, or vi_logic with clingo-object (rendered by the chat template)
-        from trl import SFTConfig, SFTTrainer
-        ds = load_dataset("json", data_files=f"split/{o.stage}.train.jsonl")["train"].remove_columns(["meta"])
-        t = SFTTrainer(model=model, processing_class=tok, train_dataset=ds,
-                       args=SFTConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 1e-4, logging_steps=10))
-    elif o.stage == "kto":
-        from trl import KTOConfig, KTOTrainer
-        ds = load_dataset("json", data_files="split/kto.train.jsonl")["train"].remove_columns(["meta"])
-        t = KTOTrainer(model=model, processing_class=tok, train_dataset=ds,
-                       args=KTOConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 5e-6, per_device_train_batch_size=4))
-    else:
-        from trl import DPOConfig, DPOTrainer
-        ds = load_dataset("json", data_files="split/dpo.train.jsonl")["train"].remove_columns(["meta"])
-        t = DPOTrainer(model=model, processing_class=tok, train_dataset=ds,
-                       args=DPOConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 5e-6))
-t.train()
-t.save_model(str(out))
-json.dump({**json.load(open("run.json")), f"trained_{o.stage}": str(out), f"parent_{o.stage}": o.base if o.stage == "sft" else o.from_adapter},
-          open("run.json", "w"), indent=2)
-print("adapter written to", out)
+if __name__ == "__main__":
+    raise SystemExit(main())
 '''
 
+
 EVALUATE_PY = r'''"""Collect paired predictions; correctness comes from independent judgments, never keyword overlap."""
-import argparse, hashlib, json, urllib.request
+import argparse, hashlib, json
+from clingo_object.agent import chat_post
 from evaluation_core import summarize_judgments
 
 a = argparse.ArgumentParser()
@@ -179,8 +154,14 @@ a.add_argument("--base", required=True)
 a.add_argument("--tuned", required=True)
 a.add_argument("--judgments", help="JSON list: id, group, base_correct, tuned_correct, reference")
 o = a.parse_args()
-rows = [json.loads(l) for l in open("split/test.jsonl")]
+rows = [json.loads(l) for l in open("split/test.jsonl") if l.strip()]
+evaluation_hash = hashlib.sha256(open("split/test.jsonl", "rb").read()).hexdigest()
 if o.judgments:
+    prediction_file = json.load(open("predictions.json"))
+    if prediction_file.get("evaluation_set_sha256") != evaluation_hash:
+        raise ValueError("predictions do not belong to the held-out file")
+    predictions = {p["id"]: p for p in prediction_file["predictions"]}
+
     judgments = json.load(open(o.judgments))
     ids = {r["meta"]["id"] + ":" + str(i) for i, r in enumerate(rows)}
     if {r["id"] for r in judgments} != ids or len(judgments) != len(rows):
@@ -188,8 +169,19 @@ if o.judgments:
     for i, r in enumerate(rows):
         j = next(j for j in judgments if j["id"] == r["meta"]["id"] + ":" + str(i))
         j["group"] = r["meta"].get("group", r["meta"]["id"])
+    if set(predictions) != ids or len(prediction_file["predictions"]) != len(rows):
+        raise ValueError("predictions must cover exactly the held-out questions")
+    incomplete = {"base": 0, "tuned": 0}
+    for judgment in judgments:
+        prediction = predictions[judgment["id"]]
+        for name in ("base", "tuned"):
+            if prediction.get(name + "_complete") is not True:
+                judgment[name + "_correct"] = False
+                incomplete[name] += 1
     summary = summarize_judgments(judgments)
-    summary["evaluation_set_sha256"] = hashlib.sha256(open("split/test.jsonl", "rb").read()).hexdigest()
+    summary["incomplete_predictions"] = incomplete
+    summary["predictions_sha256"] = hashlib.sha256(open("predictions.json", "rb").read()).hexdigest()
+    summary["evaluation_set_sha256"] = evaluation_hash
     json.dump(summary, open("eval.json", "w"), indent=2)
     print(json.dumps(summary, indent=2))
 else:
@@ -199,11 +191,11 @@ else:
         item = {"id": r["meta"]["id"] + ":" + str(i), "question": q, "reference_answer": r["messages"][1]["content"]}
         for name, url in (("base", o.base), ("tuned", o.tuned)):
             body = {"messages": [{"role": "user", "content": q}], "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
-            req = urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=600) as response:
-                item[name] = json.load(response)["choices"][0]["message"]["content"]
+            choice = chat_post(url, body, timeout=600)["choices"][0]
+            item[name] = choice["message"].get("content") or ""
+            item[name + "_complete"] = choice.get("finish_reason") == "stop"
         predictions.append(item)
-    json.dump(predictions, open("predictions.json", "w"), indent=2)
+    json.dump({"evaluation_set_sha256": evaluation_hash, "predictions": predictions}, open("predictions.json", "w"), indent=2)
     print("Predictions collected. Supply independent --judgments; no correctness score has been inferred.")
 '''
 
@@ -260,8 +252,8 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
 
 
 PROGRAM_EVALUATE_PY = r'''"""Evaluate program generation on frozen held-out tasks. No training or live tools are executed."""
-import argparse, hashlib, json, urllib.request
-from clingo_object.agent import program_of, SYSTEM
+import argparse, hashlib, json
+from clingo_object.agent import program_of, SYSTEM, chat_post
 from evaluation_core import evaluate_program, summarize_judgments
 
 a = argparse.ArgumentParser()
@@ -269,21 +261,26 @@ a.add_argument("--base", required=True, help="base chat completions URL")
 a.add_argument("--tuned", required=True, help="tuned chat completions URL")
 a.add_argument("--predictions", help="optional JSON list: id, base program, tuned program (offline replay)")
 o = a.parse_args()
-cases = [json.loads(l) for l in open("program_eval.jsonl")]
-cached = {r["id"]: r for r in json.load(open(o.predictions))} if o.predictions else {}
+cases = [json.loads(l) for l in open("program_eval.jsonl") if l.strip()]
+cached_rows = json.load(open(o.predictions)) if o.predictions else []
+cached = {r["id"]: r for r in cached_rows}
+if o.predictions and (set(cached) != {r["id"] for r in cases} or len(cached_rows) != len(cases)):
+    raise ValueError("cached predictions must cover exactly the held-out tasks")
 judgments, details = [], []
 for row in cases:
     outputs = {}
     for name, url in (("base", o.base), ("tuned", o.tuned)):
-        if cached:
+        if o.predictions:
             source = cached[row["id"]][name]
         else:
-            q = row["question"] + "\nFrozen objects (use only these tags and filters):\n" + json.dumps(row["case"].get("input_objects", row["case"]["objects"]))
+            q = row["question"] + "\nFrozen objects (use only these tags and filters):\n" + json.dumps(row["case"].get("input_objects", row["case"].get("objects", {})))
             body = {"messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": q}],
                     "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
-            req = urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=600) as r:
-                source = program_of(json.load(r)["choices"][0]["message"]["content"])
+            choice = chat_post(url, body, timeout=600)["choices"][0]
+            if choice.get("finish_reason") != "stop":
+                outputs[name] = {"correct": False, "error": "incomplete_model_output", "state": "refused"}
+                continue
+            source = program_of(choice["message"].get("content") or "")
         outputs[name] = evaluate_program(source, row["case"])
     judgments.append({"id": row["id"], "group": row["group"], "base_correct": outputs["base"]["correct"],
                       "tuned_correct": outputs["tuned"]["correct"], "reference": row["reference"]})
@@ -317,6 +314,18 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     questions = [{"frage": q["frage"], "stichworte": q["stichworte"]} for q in evaluation.load_questions(qp)] if qp.exists() else []
     _write(d / "eval_questions.json", json.dumps(questions, ensure_ascii=False, indent=1))
     _write(d / "train.py", TRAIN_PY, 0o700)
+    _write(d / "training_runtime.py", Path(__file__).with_name("training_runtime.py").read_text(encoding="utf-8"))
+    _write(d / "requirements-train.txt", "transformers==5.23.0\ntrl==1.18.0\npeft==0.21.3\ndatasets==5.2.0\naccelerate==1.15.0\n")
+    import clingo_object
+    from clingo_object import notation
+    core = d / "clingo_object"
+    core.mkdir(mode=0o700, exist_ok=True)
+    for source in sorted(Path(clingo_object.__file__).resolve().parent.glob("*.py")):
+        _write(core / source.name, source.read_text(encoding="utf-8"))
+    _write(d / "SOURCE-NOTICE.txt", f"Bundled clingo-object {clingo_object.__version__}; source: https://github.com/imoes/vi-mcp\n"
+           "SPDX-License-Identifier: AGPL-3.0-or-later\nLicense: https://github.com/imoes/vi-mcp/blob/main/LICENSE\n")
+    with (d / "requirements-train.txt").open("a", encoding="utf-8") as f:
+        f.write(f"clingo>={notation.CLINGO_MIN}\n")
     _write(d / "evaluate.py", EVALUATE_PY, 0o700)
     _write(d / "evaluation_core.py", Path(__file__).with_name("training_eval.py").read_text(encoding="utf-8"))
     cases, seen = [], set()
@@ -337,7 +346,9 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     _write(d / "README-FINETUNE.md", GUIDE)
     run = {"base_model": base, "kit": g.now(), "vi_mcp": __version__, "handbook": GUIDE_VERSION, "index": index,
            "dataset_manifest_sha256": hashlib.sha256((d / "dataset" / "manifest.json").read_bytes()).hexdigest(), "split": split,
-           "incubator": manifest.get("inkubator")}
+           "incubator": manifest.get("inkubator"),
+           "kit_code_sha256": {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
+                               for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "evaluation_core.py", *sorted(core.glob("*.py"))]}}
     _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
     return {"verzeichnis": str(d), **run, "eval_fragen": len(questions)}
 

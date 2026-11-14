@@ -28,6 +28,9 @@ def test_machine_worlds_stay_private_and_training_publication_scrubs_again(gd, t
         "payload": {"expected_answers": ['ans("safe")'], "reference": "fixture", "question": "Which answer is safe?"}})
     published = machine.call("owner", {"action": "teach", "name": "test", "receipt": run["receipt"]})
     assert g.load(published["id"]).visibility == "intern"
+    # Program exports must not depend on generic QA/retrieval trajectories existing.
+    built = dataset.build()
+    assert not built["qa"] and not built["agentic"] and len(built["logic"]) == 1
     # Simulate a credential pattern discovered only after storage. Export must scrub nested frozen worlds too.
     o = g.load(published["id"])
     o.data["machine_example"]["execution"]["input_objects"][0]["text"] = "password=hunter2secret"
@@ -430,3 +433,22 @@ def test_instance_checkpoint_is_private_and_omits_transport_credentials(gd, tmp_
     assert not any("PRIVATE-CONTEXT-MARKER" in json.dumps(row) for row in dataset.build()["qa"])
     if os.name != "nt":
         assert (directory / "instance.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_training_kit_bundles_source_only_not_package_local_configuration(gd, tmp_path, monkeypatch):
+    import clingo_object
+    from vi_mcp import evaluation, finetune
+    monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "__init__.py").write_text("PUBLIC_SOURCE = True\n")
+    (package / "private-settings.json").write_text("PRIVATE-PACKAGE-MARKER")
+    (package / ".credential").write_text("PRIVATE-CREDENTIAL-MARKER")
+    monkeypatch.setattr(clingo_object, "__file__", str(package / "__init__.py"))
+    g.new_object("erkenntnis", "Public training fixture", [], {"quelle": "fixture", "inhalt": "checked knowledge"}, visibility="intern")
+    directory = tmp_path / "kit"
+    finetune.kit(str(directory), base_model="fixture", force=True)
+    assert [p.name for p in (directory / "clingo_object").iterdir()] == ["__init__.py"]
+    for path in directory.rglob("*"):
+        if path.is_file():
+            assert b"PRIVATE-PACKAGE-MARKER" not in path.read_bytes() and b"PRIVATE-CREDENTIAL-MARKER" not in path.read_bytes()

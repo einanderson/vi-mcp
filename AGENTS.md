@@ -27,6 +27,11 @@ are reserved before dispatch, reported through before/after and never automatica
 The instance host holds the datastore writer lock across a symbolic capture; boot restores private context, programs and token
 memory against the current host's capabilities. Transport endpoints and credentials are not in the bundle. `docs/INSTANCE_RUNTIME.md`.
 
+Training kits include `training_runtime.py`: render original tool messages, audit complete assistant targets, verify real trainer
+tokens and refuse silent truncation. `train.py --tokenizer-only` loads no weights; `--preflight` constructs TRL/PEFT and checks one
+no-grad loss with unchanged parameters and zero optimizer steps. Neither starts training. The optional integration tests are
+`tests/test_training_runtime_neural.py`; setup and boundaries: `docs/TRAINING_PREFLIGHT.md`.
+
 Since 0.53.0 a failed action brings what the memory knows about its error (`intuition.error_hints`, returned by `vi_after`), and the
 first prompt of a session carries the skill table (`capabilities`, `vi_capabilities`: system, tools, manual id).
 Since 0.44.0 the hook also searches before every user prompt (`vi_prompt_context`: Claude Code `UserPromptSubmit`, Hermes shell hook

@@ -134,6 +134,7 @@ def test_import_refresh_and_reference_training_publication(gd, tmp_path, monkeyp
     data = dataset.build()
     positive = [r for r in data["logic"] if r["meta"].get("kind") == "machine"]
     assert len(positive) == 1 and positive[0]["meta"]["validation"] == "reference"
+    assert all(row["meta"]["id"] != positive[0]["meta"]["id"] for row in data["qa"])
     assert "9999" not in json.dumps(positive)
     # A real model mistake is a KTO negative, using the same independent reference answer.
     wrong = call("execute", instruction="ask.rule", payload={"source": 'ans("wrong")'})

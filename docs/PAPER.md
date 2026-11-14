@@ -480,6 +480,12 @@ model. Pending external actions are not cloned or silently replayed. In an isola
 inventory, stored its fact and executed the correct port query in four model calls. This is functional integration evidence rather
 than a general-intelligence or before/after model-training result.
 
+The generated training kit additionally audits complete assistant targets with the actual tokenizer before constructing the real
+SFT, KTO or DPO trainer. A no-training preflight verifies tokens, target masks and one finite loss with unchanged parameters and zero
+optimizer steps. All five supported stages passed on a tiny Transformer fixture and on a tiny initialized Qwen3 architecture with
+the real Qwen3 tokenizer. This establishes API/format compatibility for those fixtures, not target-GPU compatibility or a learned
+capability gain. See [training preflight](TRAINING_PREFLIGHT.md); the user has deferred actual fine-tuning.
+
 ## 9 Conclusion
 
 vi-mcp implements adaptive context selection without changing the language model. Historical randomized comparisons favour ranked hints in some windows; the total benefit of showing hints requires a sufficiently powered independent measurement.

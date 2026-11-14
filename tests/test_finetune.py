@@ -42,7 +42,7 @@ def test_kit_writes_data_split_and_valid_scripts_without_running_anything(vi):
     r = finetune.kit(str(vi / "kit"), base_model="Qwen/Qwen3-4B", force=True)
     d = vi / "kit"
     for f in ("dataset/qa.jsonl", "dataset/DATASHEET.md", "split/train.jsonl", "split/test.jsonl", "train.py", "evaluate.py", "convert.sh",
-              "README-FINETUNE.md", "run.json", "eval_questions.json"):
+              "README-FINETUNE.md", "run.json", "eval_questions.json", "training_runtime.py", "requirements-train.txt"):
         assert (d / f).exists(), f
     train = {json.loads(x)["meta"]["id"] for x in (d / "split/train.jsonl").read_text().splitlines()}
     test = {json.loads(x)["meta"]["id"] for x in (d / "split/test.jsonl").read_text().splitlines()}

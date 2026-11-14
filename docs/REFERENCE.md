@@ -1147,6 +1147,7 @@ First line of each module's docstring.
 | `stdio_bridge` | 0.36.0: `vi-mcp stdio` — MCP over stdio for clients on the server host, without a token. |
 | `tools` | The MCP tools of the VI. Groups: |
 | `training_eval` | Independent task judgments and executable program evaluation; no word-overlap adoption gate. |
+| `training_runtime` | Standalone training-kit runtime: audited tokenization, assistant targets and real trainer preflight without weight updates. |
 | `usage_stats` | Usage statistics — is the VI used, and does it work as intended? (0.21.0) |
 | `vector` | Vectors — meaning instead of identical words (stage 3, docs/TRAINING.md 4c; Park et al. 2023, section 4.1: relevance |
 | `vil` | VIL — the language in which an AI asks the memory and the memory answers (0.62.0, first executable part). |
