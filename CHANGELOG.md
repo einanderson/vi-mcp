@@ -7,6 +7,9 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Independent review handoff** in `docs/CLAUDE_REVIEW.md`: assessment, production-snapshot findings, implementation commit,
+  reproducible neural/runtime evidence and the SQLite/PostgreSQL suite results, with the remaining architectural boundaries.
+
 - **Real kNN-LM token inference**, `vi-mcp knn`: frozen Transformers causal models expose hidden context states and next-token logits;
   an atomically mutable datastore supplies squared-L2 neighbors whose token probabilities are mixed with the base distribution.
   Sources can be replaced or withdrawn, snapshots remain independent, generations pin a revision, and model/weight/tokenizer identity
