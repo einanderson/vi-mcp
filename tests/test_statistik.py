@@ -78,3 +78,16 @@ def test_rule_names_the_network_question():
     assert 'vi_ask(to="netz")' in tools.RULES
     learn = next(t for t in tools.TOOLS if t["name"] == "vi_learn")
     assert "never the network" not in json.dumps(learn) and "only a company network" in json.dumps(learn)
+
+
+def test_a_low_project_rate_names_its_dominant_error_class_and_span(gd):
+    """Production 14.11.2026: one project showed 40 % success; 184 of 227 failures were one LLM-provider error within one hour of
+    the day before (fixed since). The line now names that class, its count and span, so a past burst is not read as now."""
+    for i in range(12):
+        v = intuition.before("analyse", {"start": f"m{i}"}, "cs")
+        intuition.after("analyse", {"start": f"m{i}"}, False, 5, "LLMInvocationError: HTTP 400: model z does not support tools", None,
+                        v["vorher_id"], "cs")
+    for i in range(2):
+        _action("analyse", {"start": f"ok{i}"}, True, "cs")
+    b = tools.call_tool("vi_stats", {"days": 1}, "cs", True)
+    assert "12 of 12 failures are one error class" in b and "LLMInvocationError: HTTP #: model z" in b and "one burst within an hour" in b

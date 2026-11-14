@@ -168,10 +168,14 @@ def data(days: float = 7) -> dict:
         adopted += len(d.get("genutzt") or [])  # 0.59.0: implicit feedback
         if tot:
             conv_with_action.add(tot)
-        pr = per_project.setdefault(projects_of.get(tot) or "—", {"n": 0, "ok": 0, "ok_known": 0})
+        pr = per_project.setdefault(projects_of.get(tot) or "—", {"n": 0, "ok": 0, "ok_known": 0, "fehler": {}})
         pr["n"] += 1
         pr["ok"] += oktag == "ok:ja"
         pr["ok_known"] += bool(oktag)
+        if oktag == "ok:nein":  # 14.11.2026: a low rate needs its reason — which error class, how many, when
+            cls = re.sub(r"\d+", "#", str(d.get("fehler") or "unknown error"))[:70]
+            f = pr["fehler"].setdefault(cls, [0, z, z])
+            f[0], f[1], f[2] = f[0] + 1, min(f[1], z), max(f[2], z)
         if oktag:
             target = warn if v.get("warnung") else without_warn
             target["n"] += 1
@@ -301,6 +305,18 @@ def network_lines(days: float = 7) -> list[str]:
     return out
 
 
+def _failure_reason(project: str, e: dict) -> str:
+    """For a project below 80 % success with at least 10 failures: its most frequent error class, count and time span — so a past
+    burst (one provider error within an hour) is not read as the current state (found 14.11.2026: 184 of 227 failures of one
+    project were a single LLM-provider error on 13.11. 15:xx UTC, fixed since)."""
+    fails = e.get("ok_known", 0) - e.get("ok", 0)
+    if not e.get("fehler") or fails < 10 or e["ok"] >= 0.8 * e["ok_known"]:
+        return ""
+    cls, (cnt, first, last) = max(e["fehler"].items(), key=lambda kv: kv[1][0])
+    return (f"      {project}: {cnt} of {fails} failures are one error class, {first[:16]}–{last[:16]} UTC: {cls}"
+            + (" (one burst within an hour)" if first[:13] == last[:13] else ""))
+
+
 def report(days: float = 7) -> str:
     d = data(days)
     from . import on_demand, learning, metrics
@@ -312,6 +328,7 @@ def report(days: float = 7) -> str:
     z.append("    per instance: " + (", ".join(f"{i} {k}" for i, k in n["je_instanz"].items()) or "—") + " · clients: " + (", ".join(n["clients"]) or "—"))
     z.append("    actions per project (working directory sent by the hook; — = unknown): "
              + (", ".join(f"{p} {e['n']} ({_pct(e['ok'], e['ok_known'])} ok)" for p, e in list(n["je_projekt"].items())[:8]) or "—"))
+    z += [_failure_reason(p, e) for p, e in list(n["je_projekt"].items())[:8] if _failure_reason(p, e)]
     z.append(f"B Rules: before {_pct(r['vorbereitet'], r['aendernd'])} of the changing actions ({r['vorbereitet']} of {r['aendernd']}) the same "
              f"instance consulted the VI in the {LEAD_MIN} min before (counted since {(n['aufrufe_seit'] or '—')[:16]}, when calls are recorded; "
              f"the automatic vi_before of the hook does not count as consulting) · learned {r['gelernt']}× in {r['gespraeche_mit_handlung']} conversations with actions · "
