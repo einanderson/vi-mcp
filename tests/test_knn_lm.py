@@ -219,3 +219,47 @@ def test_compact_erases_replaced_shards_and_reports_what_it_freed(tmp_path):
     assert store.compact("again")["erased_versions"] == 0                 # idempotent
     with pytest.raises(ValueError, match="reason"):
         store.compact("")
+
+
+class _ChainCore:
+    """Deterministic core: the state of a position is the one-hot of its token, logits are flat — with weight ~1 and k=1 the kNN
+    memory decides alone, so greedy decoding follows the stored text exactly and drafts are accepted across any boundary."""
+    WORDS = ["[EOS]"] + [f"w{i}" for i in range(1, 16)]
+
+    def __init__(self, window):
+        import threading
+        self.window, self.lock = window, threading.RLock()
+        self.identity = {"model": "chain", "weights_sha256": "chain", "tokenizer_sha256": "chain", "key_function": "onehot",
+                         "dimension": len(self.WORDS), "vocab_size": len(self.WORDS)}
+        words = self.WORDS
+        class Tok:
+            eos_token_id = 0
+            def decode(self, ids, skip_special_tokens=True):
+                return " ".join(words[i] for i in ids if i)
+        self.tokenizer = Tok()
+
+    def encode(self, text):
+        return [self.WORDS.index(w) for w in text.split()]
+
+    def forward_all(self, ids):
+        states = np.eye(len(self.WORDS))[ids]
+        return states, np.zeros((len(ids), len(self.WORDS)))
+
+    def forward(self, ids):
+        states, logits = self.forward_all(ids)
+        return states, logits[-1]
+
+
+def test_drafts_match_plain_decoding_at_stop_strings_and_the_context_window(tmp_path):
+    """Codex's review (14.11.2026): drafted generation appended a whole accepted span before checking stop strings and the window,
+    so it could return more tokens than plain decoding. Both are now checked after every token, exactly like plain decoding."""
+    core = _ChainCore(window=10)
+    lm = KNNLanguageModel(core, Datastore(tmp_path / "store", core.identity), weight=1.0, k=1)
+    lm.remember("chain", "w1", " w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12")
+    for stop in (["w5"], ["w7"]):
+        plain, fast = lm.generate("w1", steps=11, stop=stop), lm.generate("w1", steps=11, stop=stop, draft=6)
+        assert fast["speculative"]["accepted_from_memory"] > 0
+        assert (fast["tokens"], fast["text"], fast["finish_reason"]) == (plain["tokens"], plain["text"], plain["finish_reason"]), stop
+    plain, fast = lm.generate("w1 w2 w3", steps=11), lm.generate("w1 w2 w3", steps=11, draft=6)
+    assert plain["finish_reason"] == "context" and fast["speculative"]["accepted_from_memory"] > 0
+    assert (fast["tokens"], fast["finish_reason"]) == (plain["tokens"], plain["finish_reason"])

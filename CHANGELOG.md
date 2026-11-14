@@ -74,6 +74,11 @@ Linked from [README.md](README.md).
   float32, plain decoding is about 3× slower than in bfloat16 (87.8 s vs 29.9 s for the same 12 runs).
 
   Evidence: `tests/test_knn_lm.py::test_retrieval_drafts_keep_the_greedy_text_and_save_forward_passes`; docs/KNN_LM.md.
+- **Retrieval drafts stop exactly where plain decoding stops** (Codex's review over the VI, 14.11.2026). An accepted span was
+  appended whole before stop strings and the context window were checked. With stop `w5` the drafted run returned 8 tokens where
+  plain decoding returned 4: the same text, more tokens. Now every token is checked in plain decoding's order: append, stop,
+  window. Evidence: `tests/test_knn_lm.py::test_drafts_match_plain_decoding_at_stop_strings_and_the_context_window`, a
+  deterministic chain core that forces drafts across both boundaries (failed before the fix).
 - **`vi-mcp knn compact`**, explicit storage management for the kNN datastore (open point of the review). Replaced versions
   used to keep their shards on disk forever. `compact --reason` erases them, but never live shards, marks the tombstones
   erased and reports the versions and freed bytes. `status` shows `tombstones_with_shards`. A request pinned to a compacted

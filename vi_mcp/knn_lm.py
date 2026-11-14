@@ -482,24 +482,27 @@ class KNNLanguageModel:
                 new.append((token, proposal[j][1] if from_memory else None))
                 if not from_memory or len(generated) + len(new) >= steps:
                     break
+            # Token by token, in the order plain decoding checks: append, stop string, context window. An accepted span must not
+            # run past a stop or the window (Codex's review, 14.11.2026: it returned 8 tokens where plain decoding returned 4).
+            text, done = self.core.tokenizer.decode(generated, skip_special_tokens=True), False
             for token, src in new:
                 generated.append(token)
-                ids.append(token)
                 if src:
                     accepted_from_memory += 1
                     if spans and spans[-1]["source_hash"] == src and spans[-1]["end"] == len(generated) - 1:
                         spans[-1]["end"] += 1
                     else:
                         spans.append({"source_hash": src, "start": len(generated) - 1, "end": len(generated)})
-            text = self.core.tokenizer.decode(generated, skip_special_tokens=True)
-            if any(s_ and s_ in text for s_ in stop):
-                text = text[:min(text.index(s_) for s_ in stop if s_ and s_ in text)]
-                finish = "stop"
-                break
-            if finish == "stop":
-                break
-            if len(ids) >= self.core.window:
-                finish = "context"
+                text = self.core.tokenizer.decode(generated, skip_special_tokens=True)
+                if any(s_ and s_ in text for s_ in stop):
+                    text = text[:min(text.index(s_) for s_ in stop if s_ and s_ in text)]
+                    finish, done = "stop", True
+                    break
+                ids.append(token)
+                if len(ids) >= self.core.window:
+                    finish, done = "context", True
+                    break
+            if done or finish == "stop":
                 break
             # Next draft: the nearest neighbor of the last verified state predicted the token just emitted; what followed it in
             # its source is the proposal. If that neighbor predicted something else, no draft (one token per pass, as without).
