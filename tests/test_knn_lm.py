@@ -46,6 +46,26 @@ def test_live_mutation_pinned_revision_restart_and_independent_snapshot(tmp_path
         Datastore(tmp_path / "store", {**IDENTITY, "weights_sha256": "other"})
 
 
+def test_forget_erases_every_shard_of_the_source_and_snapshots_do_not_copy_it(tmp_path):
+    """Review 14.11.2026 (Claude), item 7: forget only removed the manifest entry. The keys and the token IDs (the text itself)
+    stayed on disk behind the tombstone, and a snapshot taken afterwards copied them into the new datastore."""
+    import numpy as np
+    store = Datastore(tmp_path / "store", IDENTITY)
+    store.replace("note", [[7, 7]], [2])
+    store.replace("note", [[7, 7]], [3])          # the older version becomes a "replaced" tombstone
+    store.replace("public", [[0, 1]], [1])
+    pinned = store.view()
+    store.forget("note", "user asked to forget")
+    holding = [p for p in (tmp_path / "store").glob("*.npy") if (np.load(p) == 7).all() or np.load(p).tolist() in ([2], [3])]
+    assert not holding
+    view = store.view()
+    assert [t["erased"] for t in view["tombstones"] if t["source_hash"] == view["tombstones"][-1]["source_hash"]] == [True, True]
+    snap = store.snapshot(tmp_path / "snap")
+    assert len(list((tmp_path / "snap").glob("*.npy"))) == 2 and snap.distribution([0, 1])[0].argmax() == 1
+    with pytest.raises(ValueError, match="forgotten"):
+        store.distribution([7, 7], view=pinned)   # a generation pinned before the forget gets a named refusal
+
+
 def test_invalid_keys_limits_and_corruption_fail_closed(tmp_path):
     store = Datastore(tmp_path / "store", IDENTITY, max_entries=2)
     for keys, tokens in (([[float("nan"), 0]], [1]), ([[0, 0]], [4]), ([[0, 0]], [1.5])):

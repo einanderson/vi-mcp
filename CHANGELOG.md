@@ -65,6 +65,16 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **`vi-mcp knn forget` did not forget, and snapshots copied the forgotten source** (Claude's review, 14.11.2026, item 7).
+  `forget` removed only the manifest entry. The shards behind the tombstone, keys and token IDs (the text itself), stayed on
+  disk, and a snapshot taken afterwards copied them into the new datastore. Measured with a fixture datastore: after `forget`, one
+  file of the new snapshot still held the forgotten keys. Now `forget` erases every shard of the source, including its older
+  replaced versions. The tombstones keep hash, reason and checksums (`erased`). Snapshots skip erased shards, and a generation pinned
+  before the `forget` gets a named refusal. Snapshots taken before stay independent copies (docs/KNN_LM.md). Evidence:
+  `tests/test_knn_lm.py::test_forget_erases_every_shard_of_the_source_and_snapshots_do_not_copy_it` (failed before the fix). The
+  real neural path passes in a torch environment: `test_knn_lm.py` + `test_instance_neural.py` 9 passed, trainer tests 15 passed.
+  This counter-check also found that my `teach` fix above broke `test_instance_neural.py`, which my plain environment skips; the
+  test now states the explicit `include_context=True`.
 - **The adoption gate for a fine-tuned model could not be passed with realistic data** (Claude's review, 14.11.2026, item 6).
   The gate was the Hoeffding lower bound, which is valid but takes the worst case of every task and ignores ties. Measured with
   `training_eval.summarize_judgments`:

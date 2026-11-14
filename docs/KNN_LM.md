@@ -81,8 +81,12 @@ refused with a reason. Its compatibility covers the VI text-program frontend, no
 ## Persistence and isolation
 
 Each datastore is a private inference-host directory. Immutable NumPy shards hold vectors and integer token targets; a manifest is
-atomically replaced under a process/file lock. Readers see a coherent revision. Source replacement and withdrawal leave tombstones;
-old shards remain available to pinned requests and snapshots. A snapshot copies one coherent revision into an independent datastore.
+atomically replaced under a process/file lock. Readers see a coherent revision. Source replacement and withdrawal leave tombstones.
+A replaced shard remains available to pinned requests and snapshots. `forget` erases: every shard of that source, including its
+older replaced versions, is deleted once the manifest no longer references it, because token IDs are the text and keys can be
+inverted. Its tombstones keep the source hash, the reason and the checksums (`erased: true`). A request pinned to an earlier revision
+gets a named refusal ("restart on the current revision"). A snapshot copies one coherent revision into an independent datastore,
+without erased shards. A snapshot taken before a `forget` is an independent copy and keeps the source until it is forgotten there too.
 There is no VI database connection, implicit network export or automatic ingestion of unreviewed knowledge.
 
 Several `KNNLanguageModel` objects may share one `TransformersCore` while using separate datastores; each HTTP process serves one

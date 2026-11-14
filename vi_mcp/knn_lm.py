@@ -96,7 +96,11 @@ class Datastore:
         if Path(filename).name != filename or not filename.endswith(".npy"):
             raise ValueError("invalid datastore shard path")
         path = self.directory / filename
-        stat = path.stat()
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            raise ValueError("a source of this pinned revision was forgotten (its shards are erased); "
+                             "restart on the current revision") from None
         stamp = (stat.st_size, stat.st_mtime_ns)
         if self._verified.get(filename) != stamp:
             if _digest(path) != descriptor[field + "_sha256"]:
@@ -151,8 +155,19 @@ class Datastore:
                 raise ValueError("unknown datastore source")
             old = view["documents"].pop(key)
             view["tombstones"].append({"source_hash": key, "revision": view["revision"], "reason": str(reason), "shard": old})
+            # Forgetting erases: the token IDs are the text itself and the keys can be inverted. Every shard of this source —
+            # the live one and older replaced versions — is deleted after the manifest no longer references it; the tombstones
+            # keep hash, reason and checksums (erased=True). Snapshots taken before stay independent copies (docs/KNN_LM.md).
+            doomed = []
+            for t in view["tombstones"]:
+                if t["source_hash"] == key and not t.get("erased"):
+                    doomed += [t["shard"][f] for f in ("keys", "tokens")]
+                    t["erased"] = True
             view["revision"] += 1
             self._write(self.path, view)
+            for filename in doomed:
+                (self.directory / filename).unlink(missing_ok=True)
+                self._verified.pop(filename, None)
             return view["revision"]
 
     @contextlib.contextmanager
@@ -164,7 +179,7 @@ class Datastore:
         with self._writer():
             view = self.view()
             destination.mkdir(mode=0o700, parents=True)
-            descriptors = list(view["documents"].values()) + [x["shard"] for x in view["tombstones"]]
+            descriptors = list(view["documents"].values()) + [x["shard"] for x in view["tombstones"] if not x.get("erased")]
             for d in descriptors:
                 for field in ("keys", "tokens"):
                     self._array(d, field)

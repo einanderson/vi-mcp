@@ -52,7 +52,10 @@ def test_full_instance_boot_preserves_context_policy_program_and_neural_memory(g
     assert clone_model.lm.lock is lm.lock  # all callers serialize shared model buffers, not only each individual datastore
     assert clone.inspect()["world"] == frozen_world
     assert clone.inspect()["evidence"] == frozen_evidence
-    assert clone.call("teach", receipt=receipt["receipt"])["correct"]  # checked learning evidence survives boot too
+    # checked learning evidence survives boot too; the instance context goes along only when the owner says so (review 14.11.2026)
+    with pytest.raises(Exception, match="include_context"):
+        clone.call("teach", receipt=receipt["receipt"])
+    assert clone.call("teach", receipt=receipt["receipt"], include_context=True)["correct"]
     assert lm.predict("service port")["token"] == 4
     assert clone_model.lm.predict("service port")["token"] == 3
     g.close_db()
