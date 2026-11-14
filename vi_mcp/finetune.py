@@ -82,6 +82,8 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
 6. `evaluate.py` collects paired predictions; supply independent --judgments for correctness. For program writing use
    `program_evaluate.py --base URL --tuned URL`: full solver answers on frozen held-out worlds, not word overlap.
    The kit bundles the solver's Python sources, so it works without a VI checkout. Truncated model outputs cannot count as correct.
+   `heldout_loss.py --stage sft|agentic|logic` measures the held-out loss on the assistant targets, for base and adapter, with the
+   same tokens as training. It shows knowledge absorption, not task success, and it is never the adoption gate.
    Adoption requires an exact one-sided sign-flip test over independent task families (clustered McNemar) at p < 0.05 with a
    positive difference. It assumes independent families and, under the null, base and tuned exchangeable within each family.
    The Hoeffding lower_95 is reported as the worst-case size bound.
@@ -266,6 +268,72 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
     return {**counts["qa"], "objekte_test": len(test_ids), "groups": len(groups), "test_groups": len(test_groups), "stages": counts}
 
 
+HELDOUT_LOSS_PY = r'''"""Held-out next-token loss of the base model and, optionally, a LoRA adapter on one stage's TEST split.
+
+Same tokens and masks as training (training_runtime.prepare: assistant targets only), a seeded sample of whole held-out rows.
+Lower loss on held-out rows shows that the model absorbed the VI's knowledge for that stage. It is NOT the adoption gate:
+task success needs independent judgments (evaluate.py) or executable references (program_evaluate.py).
+    python heldout_loss.py --stage sft [--adapter out/sft] [--base-only] [--examples 400] [--fp32]
+"""
+import argparse, json, math, random, time
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from training_runtime import prepare
+
+FILES = {"sft": "split/test.jsonl", "agentic": "split/agentic.test.jsonl", "logic": "split/logic.test.jsonl"}
+a = argparse.ArgumentParser()
+a.add_argument("--stage", choices=sorted(FILES), default="sft")
+a.add_argument("--adapter", help="LoRA adapter directory (default out/<stage>)")
+a.add_argument("--base-only", action="store_true")
+a.add_argument("--examples", type=int, default=400)
+a.add_argument("--fp32", action="store_true", help="float32 weights (default on CPU)")
+a.add_argument("--sequence-length", type=int, default=4096)
+o = a.parse_args()
+device = "cuda" if torch.cuda.is_available() else "cpu"
+dtype = torch.float32 if (o.fp32 or device == "cpu") else "auto"
+base = json.load(open("run.json"))["base_model"]
+rows = [json.loads(l) for l in open(FILES[o.stage]) if l.strip()]
+if not rows:
+    raise SystemExit(f"{FILES[o.stage]} is empty: no held-out rows for stage {o.stage}")
+random.Random(7).shuffle(rows)
+tok = AutoTokenizer.from_pretrained(base)
+data, audit = prepare(rows, tok, o.stage, o.sequence_length, skip_oversize=True)
+data = data[:o.examples]
+
+
+def score(model):
+    model.eval()
+    total, count = 0.0, 0
+    with torch.no_grad():
+        for ex in data:
+            ids = torch.tensor([ex["input_ids"]], device=device)
+            labels = torch.tensor([ex["labels"]], device=device)
+            logits = model(input_ids=ids).logits[0, :-1].float()
+            target = labels[0, 1:]
+            mask = target != -100
+            total -= float(torch.log_softmax(logits[mask], dim=-1).gather(1, target[mask].unsqueeze(1)).sum())
+            count += int(mask.sum())
+    return total / count, count
+
+
+t0 = time.time()
+model = AutoModelForCausalLM.from_pretrained(base, dtype=dtype).to(device)
+base_nll, tokens = score(model)
+out = {"metric": "held_out_assistant_token_nll", "stage": o.stage, "file": FILES[o.stage], "examples": len(data), "tokens": tokens,
+       "sample_seed": 7, "device": device, "dtype": str(dtype), "base_nll": base_nll, "base_perplexity": math.exp(min(700, base_nll)),
+       "oversize_skipped": audit["rejected"].get("oversize", 0),
+       "scope": "held-out rows of this kit's split; knowledge absorption, not verified task success"}
+if not o.base_only:
+    from peft import PeftModel
+    adapter = o.adapter or f"out/{o.stage}"
+    tuned_nll, _ = score(PeftModel.from_pretrained(model, adapter))
+    out.update(adapter=adapter, tuned_nll=tuned_nll, difference=tuned_nll - base_nll, tuned_perplexity=math.exp(min(700, tuned_nll)))
+out["seconds"] = round(time.time() - t0, 1)
+json.dump(out, open(f"heldout-loss-{o.stage}.json", "w"), indent=1)
+print(json.dumps(out, indent=1))
+'''
+
+
 PROGRAM_EVALUATE_PY = r'''"""Evaluate program generation on frozen held-out tasks. No training or live tools are executed."""
 import argparse, hashlib, json
 from clingo_object.agent import program_of, SYSTEM, chat_post
@@ -357,13 +425,15 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
                 cases.append({"id": ident, "group": m["group"], **case, "reference": "explicit reference stored with checked execution"})
     _write(d / "program_eval.jsonl", "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in cases))
     _write(d / "program_evaluate.py", PROGRAM_EVALUATE_PY, 0o700)
+    _write(d / "heldout_loss.py", HELDOUT_LOSS_PY, 0o700)
     _write(d / "convert.sh", CONVERT_SH, 0o700)
     _write(d / "README-FINETUNE.md", GUIDE)
     run = {"base_model": base, "kit": g.now(), "vi_mcp": __version__, "handbook": GUIDE_VERSION, "index": index,
            "dataset_manifest_sha256": hashlib.sha256((d / "dataset" / "manifest.json").read_bytes()).hexdigest(), "split": split,
            "incubator": manifest.get("inkubator"),
            "kit_code_sha256": {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
-                               for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "evaluation_core.py", *sorted(core.glob("*.py"))]}}
+                               for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "heldout_loss.py",
+                                         d / "evaluation_core.py", *sorted(core.glob("*.py"))]}}
     _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
     return {"verzeichnis": str(d), **run, "eval_fragen": len(questions)}
 

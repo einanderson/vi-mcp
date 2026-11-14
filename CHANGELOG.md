@@ -7,6 +7,11 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **`heldout_loss.py` in the fine-tuning kit** measures the held-out next-token loss of the base model and of a LoRA adapter on
+  one stage's test split (`--stage sft|agentic|logic`), with the same tokens and masks as training. It runs on GPU or CPU and also
+  with `--base-only`. Use it to check that the model absorbed the VI's knowledge; it is never the adoption gate, which needs
+  independent judgments or executable references. Evidence: `tests/test_training_runtime_neural.py::test_heldout_loss_of_a_fresh_adapter_equals_the_base`.
+  A fresh adapter with B = 0 gives exactly the base loss, so the comparison is like with like.
 - **Every training stage with at least 5 groups gets held-out test groups.** In the kit built from production on 14.11.2026,
   the logic stage had 14 groups and 0 test rows: the joint 15 % group sample over all stages missed it (about 0.85^14 ≈ 10 %
   of seeds). Its gain could never be measured. Now each such stage gets its share of test groups. Components stay joint across

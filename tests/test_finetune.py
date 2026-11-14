@@ -48,7 +48,7 @@ def test_kit_writes_data_split_and_valid_scripts_without_running_anything(vi):
     test = {json.loads(x)["meta"]["id"] for x in (d / "split/test.jsonl").read_text().splitlines()}
     assert train and test and not (train & test)  # split by object: no object on both sides
     assert r["split"]["train"] + r["split"]["test"] == 24 and r["eval_fragen"] == 1
-    for f in ("train.py", "evaluate.py"):
+    for f in ("train.py", "evaluate.py", "heldout_loss.py"):
         py_compile.compile(str(d / f), doraise=True)
         assert '"max_tokens"' not in (d / f).read_text() and "max_new_tokens" not in (d / f).read_text() and (d / f).stat().st_mode & 0o777 == 0o700
     assert (d / "run.json").stat().st_mode & 0o077 == 0 and json.loads((d / "run.json").read_text())["base_model"] == "Qwen/Qwen3-4B"

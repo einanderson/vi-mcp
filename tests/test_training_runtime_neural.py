@@ -1,6 +1,7 @@
 """Actual exported kits through real Transformers/PEFT/TRL, without train(), backward() or optimizer steps."""
 import hashlib
 import json
+import math
 from pathlib import Path
 import runpy
 import sys
@@ -127,3 +128,19 @@ def test_a_later_stage_can_load_a_valid_parent_adapter_without_training_it(kit, 
     assert main(["--stage", "logic", "--preflight", "--cpu", "--from-adapter", str(parent), "--revision", "b" * 40]) == 2
     report = json.loads((directory / "preflight-logic.json").read_text())
     assert report["error_class"] == "ValueError" and not report["trainer_verified"] and report["optimizer_steps"] == 0
+
+
+def test_heldout_loss_of_a_fresh_adapter_equals_the_base(kit, monkeypatch):
+    """heldout_loss.py: same tokens/masks as training on the held-out split; a fresh LoRA adapter (B = 0) must give exactly the base
+    loss — the measurement compares like with like."""
+    import subprocess, sys
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoModelForCausalLM
+    directory, base = kit
+    model = get_peft_model(AutoModelForCausalLM.from_pretrained(base), LoraConfig(r=4, target_modules=["c_attn"], task_type="CAUSAL_LM"))
+    model.save_pretrained(directory / "out" / "sft")
+    r = subprocess.run([sys.executable, "heldout_loss.py", "--stage", "sft", "--examples", "5"], cwd=directory, capture_output=True,
+                       text=True, env={**__import__("os").environ, "CUDA_VISIBLE_DEVICES": "", "HIP_VISIBLE_DEVICES": ""})
+    assert r.returncode == 0, r.stderr[-2000:]
+    out = json.loads((directory / "heldout-loss-sft.json").read_text())
+    assert out["examples"] > 0 and math.isfinite(out["base_nll"]) and abs(out["difference"]) < 1e-6
