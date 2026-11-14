@@ -195,3 +195,22 @@ def test_a_clear_but_small_difference_names_the_minimum_effect_not_the_standard_
     m = metrics.hint_lift_matched(24)
     assert 0.03 < m["lift"] < 0.05 and m["lift"] > 2 * m["standardfehler"]
     assert m["urteil"] == "beyond 2 standard errors but below the 5-point minimum effect — no verdict"
+
+
+def test_opening_a_hint_the_hook_showed_in_another_session_counts(gd):
+    """Production 14.11.2026: 'opened with vi_object after being shown 0' over 7 days with 1503 vi_object calls. The hook shows hints
+    in its own MCP session (client claude-code-hook); the agent opens them over its own connection — the same-session check in
+    vi_object never matched. intuition.opened already links by instance and recent experience, across sessions."""
+    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"])
+    hook = session.begin("a", "claude-code-hook")
+    with session.on_behalf(hook):
+        v = intuition.before("Bash", {"command": "uptime"}, "a", False)
+        intuition.after("Bash", {"command": "uptime"}, True, 5, None, None, v["vorher_id"], "a", False)
+    agent = session.begin("a", "claude-code")
+    with session.on_behalf(agent):
+        tools.call_tool("vi_object", {"id": k.id}, "a", False)
+    assert usage_stats.data(1)["regeln"]["geoeffnet"] == 1
+    other = session.begin("b", "claude-code")       # another instance opening the same object is not "use of a shown hint"
+    with session.on_behalf(other):
+        tools.call_tool("vi_object", {"id": k.id}, "b", False)
+    assert usage_stats.data(1)["regeln"]["geoeffnet"] == 1

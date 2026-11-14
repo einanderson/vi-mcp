@@ -7,6 +7,12 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Opening a shown hint counts again when the hook showed it** (statistics loop, 14.11.2026). Production showed "opened with
+  vi_object after being shown 0" over 7 days, with 1503 `vi_object` calls. Claude Code's hook shows hints in its own MCP session
+  (client `claude-code-hook`), and the agent opens them over its own connection. `vi_object` counted an open only within the same
+  session, so this weak signal of use was structurally 0. The same-session check is gone; `intuition.opened` already links by
+  instance and the recent experiences in which the hint was shown. Another instance opening the object still does not count.
+  Evidence: `tests/test_hint_quality.py::test_opening_a_hint_the_hook_showed_in_another_session_counts` (failed before: 0 == 1).
 - **A kept legacy router champion gets its own measured AUC** (statistics loop after the 0.64.0 deploy, 14.11.2026). Production showed
   "router AUC None": the active champion was trained by 0.63.2 without a saved report. 0.64.0 rightly no longer shows the
   challenger's numbers for it, but showed nothing instead. The incubator's router criterion therefore stayed "not measured" for as
