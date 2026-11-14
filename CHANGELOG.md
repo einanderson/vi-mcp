@@ -7,6 +7,10 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **A fine-tuning runbook in AGENTS.md** that an agent can follow end to end: data and kit from a read-only copy, its own GPU
+  container, memory on unified-memory hosts, precision, the order of commands, measured cost, a blind judgment of task success,
+  and record and merge. It is written from the first complete run on 14.11.2026 (Qwen3-0.6B on an AMD gfx1151 GPU: held-out
+  NLL 2.269 → 1.294 after 0.25 epoch in 4.1 h).
 - **Opening a shown hint counts again when the hook showed it** (statistics loop, 14.11.2026). Production showed "opened with
   vi_object after being shown 0" over 7 days, with 1503 `vi_object` calls. Claude Code's hook shows hints in its own MCP session
   (client `claude-code-hook`), and the agent opens them over its own connection. `vi_object` counted an open only within the same

@@ -97,6 +97,94 @@ menu below. On first installation the menu opens by itself if a terminal is pres
 Modules (`vi_mcp/`): `memory` (objects, search), `intuition` (before/after), `session`, `sleep_cycle`, `main_loop` (the loop), `scorer`, `learning`, `bandit`, `vector`, `reflection`, `skills`, `reflexes`, `sandbox`,
 `content` (meaning as a router feature), `on_demand` (training on demand), `evaluation` (fixed question set, daily measurement in sleep, 0.55.0), `weight_writer` (LLM weight layer on the fitted router, measured, 0.58.0), `indexes` (projects and special VIs: column objekt.idx, table vi_index, project first, own model per index, 0.61.0), `code_import` (code of a git repository into an index, vi_code_sync, 0.61.0), `index_transfer` (an index into a signed file and back, comparison of the same content in two places, 0.62.0), `solutions` (problem → solution with content from episodes, 0.55.0), `usage_stats` (usage statistics, `vi_stats`), `metrics` (hint lift, by hint age), `images` (images with description and SAM 3 regions), `image_cli` (`vi-mcp image`), `stdio_bridge` (`vi-mcp stdio`, MCP over stdio through the local socket), `index` (memory index in the instructions), `weight_audit` (fixed rules over the router weights), `archive`, `self_model`, `questions`, `p2p` (memory on the network), `net_score` (content hash, holders, network score), `wiki` + `wiki_merge` (network wiki pages, merge), `forum` (questions and answers between AIs in the network), `web` (read-only web page of the free and open networks), `web_internal` (internal knowledge search with sign-in, 0.62.0), `vocabulary` (the words of the memory with counts, completion, why a search found nothing, 0.62.0), `vil` (VIL, the AI language: ask questions, tell answers, 0.62.0), `classify` (labels knowledge by question type and memory kind with a language model, 0.62.0), `dataset` (training data for fine-tuning: qa/kto/dpo with datasheet, hold-out and scrubbing audit, 0.62.0), `incubator` (maturity of a VI for fine-tuning, measured criteria, hatch, 0.62.0), `finetune` (the fine-tuning interface: handbook, plan, kit with TRL scripts, record with lineage, 0.62.0), `word_weights` (measured weight per word and question type, exchanged between memories as signed ratings, 0.62.0), `redteam` (memory-poisoning test in a throw-away memory, 0.62.0), `relevance` (a language model grades real searches 0–3 after UMBRELA — the relevance label, measured only, 0.62.0), `logic` (rules in a Python-like notation decided by clingo: four-valued answers, reported violations, soft rules with learned weights, 0.62.0), the top-level package `clingo_object` (0.63.0, clingo-objekt: `notation` = the language core the server runs, `expr`/`model`/`program` = real Python classes and expressions compiling to it, `client` = `Memory`, the MCP client; never imports `vi_mcp`), `configure` (package configuration: debconf, menu, VI_MCP_ variables), `db` (SQLite or PostgreSQL behind the sqlite3 interface, SQL translation), `db_migrate` (`vi-mcp db migrate|status`), `logbook`, `net_service` (separate process `vi-p2p`), `net_torrent`, `net_cli`, `anonymize`, `checks`, `reviewer`, `setup`, `config`, `server`, `tools`, `api_en` (German aliases), `log_output`.
 
+## Fine-tuning runbook (an agent can run it end to end)
+
+vi-mcp trains nothing by itself. A fine-tuning run is a person's explicit decision: who decides, which host, which base model, and
+which services may be paused. Ask before you start, and do not infer permission from an earlier run. Everything below was done
+once end to end on 14.11.2026 (Qwen/Qwen3-0.6B, AMD Strix Halo gfx1151, ROCm). The measured numbers are from that run.
+
+**1. Data and kit.** Never train from the live database.
+- Copy the database read-only: SQLite backup API with `?mode=ro`, or `pg_dump`. Put `eval/recall.json` (the fixed question set)
+  next to the copy, so the evaluation targets are held out. The kit finds it as `<db dir>/eval/recall.json`.
+- Point a scratch config at the copy and build the kit:
+  `VI_MCP_CONFIG=<scratch>/config.json vi-mcp finetune kit DIR --base <hf model id> --force`. `--force` is needed while the VI is
+  still in the incubator.
+- `run.json` → `split.stages` shows train/test/withheld rows and `test_groups` per stage. Every stage with at least 5 groups gets
+  held-out groups. A stage with 0 test rows cannot be measured; say so in the report.
+- The datasheet in `dataset/DATASHEET.md` lists what was held out or scrubbed and why.
+
+**2. Training environment.** Use its own container on the GPU host and do not change the host's services.
+- AMD: the `rocm/pytorch:<rocm>_<os>_<py>_pytorch_release_<ver>` image. Pick a tag listing your GPU arch (gfx1151 from ROCm 7.1).
+  NVIDIA: a CUDA PyTorch image.
+- Derive an image that installs `requirements-train.txt` with a constraints file of the image's `torch*`/`triton` versions
+  (`pip freeze | grep -iE "^(torch|torchvision|torchaudio|pytorch-triton-rocm|triton)==" > keep.txt`, then
+  `pip install -c keep.txt -r …`). Otherwise pip may replace the GPU torch.
+- Run with the GPU devices: AMD `--device /dev/kfd --device /dev/dri --group-add <video gid> --group-add <render gid>
+  --security-opt seccomp=unconfined`; NVIDIA `--gpus all`.
+- Behind a proxy, pass it as build args and env. Mount a Hugging Face cache, then run training with `HF_HUB_OFFLINE=1`.
+- Smoke test first:
+  - `torch.cuda.is_available()` is True, also on ROCm.
+  - `get_device_properties(0).gcnArchName` reports the arch.
+  - An fp32 matmul agrees with a CPU fp64 reference to about 1e-3.
+- Pitfalls met:
+  - `docker build` failed with "permission denied" on `~/.docker/buildx/activity`. Use `DOCKER_CONFIG=<own dir>`; do not repair
+    the user's files.
+  - The container writes as root. Read its reports with sudo, or run it with `-u`.
+
+**3. Memory.** On unified-memory hosts (APUs), GPU memory and RAM are one pool.
+- The fp32 logits of one long example alone are `sequence × vocab × 4 bytes`: 7104 × 151936 ≈ 4.3 GB, and gradients come on top.
+- Check `free -g` first. If other model servers hold the memory, stop one only with explicit permission, and only for the
+  duration of the run. Record the stop: what, when, how to restart (a VI entry, `thema:offen`).
+- Afterwards restart it and probe it with a trivial request, not only `/health`.
+
+**4. Precision.** Use `--fp32` on GPUs with known bf16 problems; ROCm/TheRock issue 9198 lists bf16 bugs on gfx1151.
+- The report's `precision` must say `float32`.
+- A kNN-LM core also needs float32: in bfloat16 the same position's logits drift up to 0.625 between sequence lengths.
+
+**5. Order of commands** (in the kit directory, inside the container):
+1. `python train.py --stage sft --tokenizer-only --fp32`: no weights, a token audit of every row. Expect `rejected: {}`,
+   `valid: true`.
+2. `python train.py --stage sft --preflight --fp32`: the real trainer, one no-grad loss, parameters unchanged, 0 optimizer steps.
+   Expect `status: preflight_passed`.
+3. `python heldout_loss.py --stage sft --base-only`: optional, the base loss before training.
+4. `python train.py --stage sft --fp32 --epochs E`. Choose E from the measured throughput. Later stages
+   (`--stage logic|agentic|kto|dpo`) continue from `out/sft` unless `--from-base`.
+5. `python heldout_loss.py --stage sft`: base vs adapter on the held-out rows. This shows knowledge absorption, not task success.
+
+Run training detached (`docker run -d …`) and watch for the end and for failures: `Traceback`, `out of memory`, `Killed`, and the
+container exit code.
+
+**6. Measured cost** (Qwen3-0.6B, LoRA r=16/α=32, fp32, batch 1, one Strix Halo GPU):
+- About 310 trained tokens/s, 1–6 s per step depending on example length.
+- 0.25 epoch = 5240 rows = 4.6 M tokens took 4.1 h.
+- `heldout_loss.py` on 400 rows took 7 min.
+- Results:
+  - Held-out NLL 2.269 → 1.294 (perplexity 9.7 → 3.6).
+  - Training loss 1.50 → 1.13.
+  - 10.1 M trainable parameters; the adapter file is 40 MB.
+
+Scale E to the time the person allows. A full epoch would have been about 16 h.
+
+**7. Judging task success.** The adoption gate never uses word overlap and never uses the training loss.
+- Use a question catalog the model never trained on:
+  - questions from `eval/recall.json`, whose targets and source pages are held out;
+  - plus a seeded sample of `split/test.jsonl`.
+- Keep the references with the judge; only the questions go to the GPU host.
+- Generate base and tuned answers from the same loaded weights: PEFT `model.disable_adapter()` for the base.
+  - Greedy decoding, thinking off, the same system prompt for both.
+  - A local `generate` needs a token budget against endless loops. Mark an answer that reaches it as incomplete; never cut it
+    silently.
+- Randomize A/B per question and store the key apart. Judge each answer against the reference as correct, partial or wrong,
+  pointwise and not as a preference. Open the key only after all judgments. Position bias and style leaks are named limits.
+- Then run `evaluate.py` with the judgments: the exact clustered sign-flip test decides `decision`. The Hoeffding `lower_95` is
+  only the worst-case size bound.
+
+**8. Record and use.**
+- `vi-mcp finetune record DIR` stores the run with its lineage as a model object (dataset hash, base, adapter hash, evaluation).
+- To get a standalone model, run PEFT `merge_and_unload()` and save. For llama.cpp, convert to GGUF and quantize, or keep the
+  adapter separate (`convert.sh` → `llama-server --lora`).
+- Deploy a tuned model only with the person's approval.
+
 ## Rules
 
 - **Store knowledge in full.** Code, API tables, commands and configurations belong unabridged in the field `content` (stored as `inhalt`, up to 200,000 characters), not as a summary with a reference to a file. What is missing is a gap in the memory.
