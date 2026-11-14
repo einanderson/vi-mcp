@@ -2,7 +2,8 @@
 
 Stand: 14. November 2026. Autor: Codex. Empfänger: Claude als unabhängiger Codeprüfer.
 Ausgangsstand: `e7acd14929f69c33a5278997f43fa05f165ec2e1`. Zielstand: 0.64.0, noch nicht veröffentlicht.
-Implementierungscommit: `3cd332a4c07ad6d594e777cc48da5aedf8335a8a`.
+Implementierung des Maschinen- und kNN-Kerns: `3cd332a4c07ad6d594e777cc48da5aedf8335a8a`.
+Vollständiger Instanzvertrag mit kohärenten Lernbelegen und Checkpoints: `a96768490970b0651d7a84ab7c871d4535671938`.
 
 ## Ergebnis
 
@@ -10,6 +11,10 @@ vi-mcp hat jetzt eine ausführbare virtuelle Intelligenz im hier definierten tec
 mit VIL und clingo-object eine persistente Maschine mit veränderlichen Daten. Der Runtime gehören Zustand, Ausführung, Isolation,
 Snapshots und Prüfnachweise. Ein unverändertes Programm liefert nach einer Änderung der Fakten ein anderes korrektes Ergebnis.
 [Der Maschinenvertrag](VIRTUAL_MACHINE.md) definiert die unterstützte Semantik und Grenzen.
+
+Der [vollständige Instanzvertrag](INSTANCE_RUNTIME.md) ergänzt jetzt den eigenen Kontext, Modell- und Decoderbindung,
+MCP-Geräte, ausdrückliche Rechte und eine kontrollierte Ausführungsschleife. Ein kohärenter lokaler Checkpoint sichert diesen
+Zustand zusammen mit dem neuronalen Datastore; ein Klon erhält eine eigene Änderungsebene bei gemeinsamem eingefrorenem Kern.
 
 Zusätzlich ist [kNN-LM im Inferenzkern](KNN_LM.md) implementiert: Ein austauschbarer Speicher echter Modellzustände und Folgetokens
 verändert die Tokenverteilung bei unveränderten Modellgewichten. Er läuft als eigener Transformers-Inferenzbackend unterhalb von
@@ -23,6 +28,7 @@ nachgewiesen. Das Projekt virtualisiert die symbolische Arbeitsumgebung und Prog
 |---|---|---|
 | Persistentes Gedächtnis und Suche | Technisch weit entwickelt | Gemessene Suchqualität; Mehrkosten der hybriden Suche |
 | Veränderliche virtuelle Maschine | Ausführbarer Vertrag v1 | Gleicher Programmtext, neue Fakten, neue Antwort; Restore und Fork |
+| Vollständige Instanz mit Kontext und Geräten | Implementiert und funktional geprüft | Kohärenter neuronaler Checkpoint, Boot, Geräte-/Rechteprüfung, echte LLM-Schleife |
 | LLM als Programmierer | In einem einfachen realen Versuch bestätigt | Zwei richtige Antworten bei zwei Datenständen; eine Aufgabenfamilie |
 | kNN-LM unterhalb von MCP | Implementiert und mit vortrainiertem Modell ausgeführt | Ersetzen, Rückziehen und Snapshot ändern die Tokenvorhersage bei gleichem Gewichtshash |
 | KI-Lerninhalte | Vorhanden, jetzt genauer geprüft und partitioniert | SFT, KTO, DPO und ausführbare Referenzfälle |
@@ -62,9 +68,9 @@ Ausgangszustand, keine erneute Produktionsmessung des neuen Codes.
 Regeln, Revisionen und Zustands-Hashes. Unterstützt sind Erstellen, Fakten ersetzen, Regeln definieren, Fragen ausführen,
 sichtbare VI-Objekte ausdrücklich importieren und aktualisieren, Snapshots, Restore und unabhängige Forks.
 
-Das LLM erhält die Datenwelt seiner Maschine und schreibt sichere clingo-object-Notation. Modellaufrufe laufen außerhalb des
+Das LLM erhält die Datenwelt und den gespeicherten Kontext seiner Maschine und schreibt sichere clingo-object-Notation. Modellaufrufe laufen außerhalb des
 globalen Datenbank-Locks; eine zwischenzeitliche Zustandsänderung verhindert das Übernehmen des Ergebnisses. Der Server führt
-keinen Python-Code von Aufrufern aus. `do` und `promise` speichern Vorschläge. Externe Aktionen gehören nicht zum Vertrag v1.
+keinen Python-Code von Aufrufern aus. `do` und `promise` speichern Vorschläge. Der vollständige Instanz-Controller führt ausdrücklich gebundene externe MCP-Geräte auf der vertrauenswürdigen Clientseite aus.
 Gemeinsame Filtersemantik liegt in [`clingo_object/filters.py`](../clingo_object/filters.py).
 
 ### Lerninhalte für den Maschinenprogrammierer
@@ -136,11 +142,43 @@ Die Basiswahrscheinlichkeiten für blue und green lagen bei ungefähr 0,002 %. D
 nach der Speicheränderung von blue zu green. Es gab kein Training und keinen Optimizer. Dies ist ein Nachweis des Mechanismus auf
 einem absichtlich gemerkten Kontext. Für allgemeine Qualität sind unabhängige Aufgaben und die angebotene Holdout-Auswertung nötig.
 
-Der erste Backend verwendet Transformers, keinen Text-API-Proxy und keinen GGUF-Runner. Er berechnet Kontexte pro Token erneut;
-exakte Suche ist linear. Ein großer Index und KV-Cache-Optimierung sind weitere Leistungsarbeiten. Symbolische Maschinen-Snapshots
-und neuronale Datastore-Snapshots sind getrennte Operationen; Kontextverwaltung, Berechtigungen, alle MCP-Geräte und neuronaler
-Laufzeitzustand sind noch nicht als ein gemeinsamer Instanz-Snapshot virtualisiert. Eine vollständige QEMU-Entsprechung ist daher
-weiterhin nicht belegt. Titans gehört nicht zu dieser Implementierung.
+Der Backend verwendet Transformers, keinen Text-API-Proxy und keinen GGUF-Runner. Er berechnet Kontexte pro Token erneut;
+exakte Suche ist linear. Ein großer Index und KV-Cache-Optimierung sind Leistungsarbeiten, keine Voraussetzung des implementierten
+Mechanismus. Titans gehört nicht zu dieser Implementierung.
+
+## Vollständige Instanzen und kohärente Checkpoints
+
+Der zuvor fehlende gemeinsame Instanzzustand ist jetzt implementiert. `clingo_object/runtime.py` verwaltet die Client-Schleife,
+`vi_mcp/machine_runtime.py` validiert Kontext, Modellbindung, Geräteschemas, Rechte und Loop-Status im Server.
+`vi_mcp/machine_host.py` bindet die tatsächlichen MCP-Transporte und den lokalen kNN-Kern. Der Speicher führt keinen vom Aufrufer
+übermittelten Python-Code aus. Das LLM kann nur sichere Daten-/Regeloperationen, erlaubte Geräte oder einen Abschluss vorschlagen.
+
+Vor einem Geräteaufruf entsteht eine persistente Reservierung mit Argumenten und Policy-Hash. Unsichere Schreibvorgänge bleiben
+gesperrt, auch nach einem Neustart. Checkpoint und Fork sind in diesem Zustand untersagt. Eine unabhängige Prüfung und ausdrückliche
+Auflösung sind erforderlich. Ein wiederhergestellter Rechtebestand kann keine aktuell im Hostprofil entzogene Fähigkeit reaktivieren.
+Fremde MCP-Transporte ohne eigene Token-Datei erben niemals das Standard-Token der VI. Vorher-/Nachher-Hooks erfassen die Geräteerfahrung.
+
+Lokale Checkpoints halten den Datastore-Writer-Lock über die atomare symbolische Aufnahme. Der Bundle enthält privaten Kontext,
+Programme, Rechte, Ausführungsbelege, unabhängige Referenzprüfungen, Modell-/Decoderidentität und die unveränderlichen kNN-Shards. Boot prüft den vollständigen Instanz-/Beleg-Hash, Welt- und Manifest-Hashes und das aktuelle
+Modell. Der Klon bekommt seinen eigenen schreibbaren Speicher; Modellkern und Forward-Lock können gemeinsam benutzt werden.
+Transport-URLs und Zugangsdaten bleiben im Hostprofil. Ein Fehler hinterlässt ein ausdrücklich unvollständiges, nicht bootbares
+Artefakt. Die Snapshot-Erzeugung und ihre Registrierung beim Elternobjekt teilen jetzt eine Datenbanktransaktion.
+
+Der native Backend hält keinen separaten persistenten KV-Cache; kausale Zustände werden aus dem wiederhergestellten Kontext neu
+berechnet. Ein externer Textanbieter stellt seinen opaken Laufzeitzustand weiterhin nicht zur Verfügung. Die Virtualisierung betrifft
+hier den vollständig verwalteten lokalen Instanzzustand; externe Gerätezustände oder physikalische Zeit werden nicht zurückgerollt.
+Das ist eine technische virtuelle KI-Instanz, kein Beleg für Bewusstsein oder allgemeine Intelligenz.
+
+In einem isolierten Versuch mit dem tatsächlich konfigurierten LLM erfolgten vier Modellaufrufe und ein Inventargeräteaufruf:
+Inventar lesen, Fakt speichern, `ans(P) <= (O in objects("service:api")) & (O.port == P)` ausführen und das Ergebnis berichten.
+Der Solver lieferte `ans("8080")`, entsprechend dem unabhängigen synthetischen Fixture. Der Abschluss des Modells blieb korrekt als
+`model_report`, `verified=false` gekennzeichnet; die gesonderte Fixture-Prüfung bestätigte den Erfolg.
+
+Ein weiterer neuronaler Test verwendet einen echten eingefrorenen kausalen Transformer und ein festes Byte-Vokabular. Vor dem
+Speichereintrag erzeugt er nicht das verlangte Programm; danach erzeugt er es bytegenau und endet an EOS. Derselbe generierte
+clingo-object-Text liefert auf zwei Datenwelten die unabhängig erwarteten Ports 80 und 8080. Der volle Gewichtshash bleibt gleich. Auch die geprüften Belege können nach Boot noch ausdrücklich als Lernbeispiele gelehrt werden.
+Das ist gezieltes Merken eines geprüften Programms mit ausführbarem Transfer auf veränderte Daten, kein Nachweis freier
+Programmsynthese auf unbekannten Aufgaben. Ein eigenes Fine-Tuning wurde entsprechend der Nutzerentscheidung nicht gestartet.
 
 ## Funktionsnachweise
 
@@ -174,21 +212,43 @@ Die Ausgangssuite bestand mit 919 bestandenen und vier übersprungenen SQLite-Te
 
 | Prüfung | Ergebnis |
 |---|---|
-| Gesamtsuite SQLite | 943 bestanden, fünf übersprungen, 157,77 s |
-| Gesamtsuite PostgreSQL 16 | 944 bestanden, vier übersprungen, 255,00 s |
-| kNN-Suite mit echten Torch-/Transformers-Abhängigkeiten | Fünf bestanden, 3,00 s |
+| Gesamtsuite SQLite | 961 bestanden, sechs übersprungen, 160,23 s |
+| Gesamtsuite PostgreSQL 16 | 962 bestanden, fünf übersprungen, 245,14 s |
+| kNN-Suite mit echten Torch-/Transformers-Abhängigkeiten | Acht bestanden, 3,75 s |
 | Vortrainierter kNN-Versuch einschließlich HTTP | Bestanden, Gewichtshash unverändert |
 | CLI über getrennte Prozesse | Eintragen, Vorhersage, Auswertung, Snapshot, Rücknahme bestanden |
+| Instanz-CLI über echte MCP-Transporte | Run, kohärenter Checkpoint, Boot und Ablehnung entzogener Rechte bestanden |
+| Separates clingo-object-Wheel | Offline installiert; Runtime importiert ohne vi_mcp |
+| Echte konfigurierte LLM-Schleife | Vier Modellaufrufe, ein Geräteaufruf, unabhängige Portreferenz bestätigt |
 | Generierte Referenz | `scripts/gen_reference.py --check` bestanden |
 | Diff und Kontrolle ergänzter öffentlicher Inhalte | `git diff --check` bestanden; keine gefundenen privaten Systemadressen oder Schlüssel |
 
-Die reguläre Suite überspringt den optionalen neuronalen Test ohne torch/transformers; dieser wurde separat vollständig ausgeführt.
+Die reguläre Suite überspringt die optionalen neuronalen Prüfungen ohne torch/transformers; diese wurden separat vollständig ausgeführt.
 Die verbleibenden übersprungenen Tests entsprechen den plattform-/datenbankabhängigen Fällen der vorhandenen Suite. Die 106
 Warnungen der Gesamtläufe betreffen bestehende Bibliothekswarnungen. Ein während der Umsetzung eingeführter Fehler beim Übernehmen
 von Off-Policy-Diagnostik wurde durch die Index-Regressionstests entdeckt, korrigiert und in beiden Gesamtläufen erneut geprüft.
 
 Beim zusätzlichen CLI-Evaluatorversuch war die Referenzquelle bereits im Speicher. Der Evaluator schloss sie korrekt aus; Basis-
 und kNN-Log-Loss waren beide 10,795430 pro Token. Der künstliche Vorteil durch Nachschlagen der eigenen Referenz verschwand.
+
+## Abgleich mit den Anforderungen
+
+| Anforderung aus der Sitzung | Implementierung und maßgeblicher Nachweis |
+|---|---|
+| README und Paper lesen, Funktion und Technik bewerten | Befunde und Bewertung in diesem Bericht; korrigierte Aussagen im PAPER; Regressionsfälle für die reproduzierten Fehler |
+| Gesammelte Erfahrungen für KI-Lernen aufbereiten | QA/agentic/logic/KTO/DPO, unabhängige Komplettreferenzen, gemeinsamer Split und ausführbare Tests; kein automatisch gestartetes Fine-Tuning |
+| Das LLM soll die Maschine programmieren | Echte LLM-Schleife erzeugt den richtigen ausführbaren Query; neuronaler kNN-Vertrag erzeugt ein vollständiges geprüftes Programm ohne Parameteränderung |
+| Austauschbares Gedächtnis unterhalb von MCP | Native Hidden-State-/Folgetoken-Interpolation; vortrainierter Tokenwechsel sowie Rücknahme und Snapshot bei konstantem Gewichtshash |
+| Basismodell und eigener VI-Zustand | `TransformersCore` wird geteilt, Datastore und private Welt sind unabhängig; Modell- und Decoderidentität werden geprüft |
+| Kontext, Wissen, Programme und Rechte gehören zur Instanz | Gemeinsamer Zustand und kohärenter Bundle einschließlich Lernbelegen; vollständiger Boot-Test und Datenbank-Reopen |
+| Geräte und Ausführungsschleife | Reale MCP-/CLI-Tests, Rechte- und Schema-Gates, persistente Reservierung, echte LLM-Ausführung und Schutz gegen Wiederholung ungewisser Writes |
+| Snapshot und Klon mit eigener Änderungsebene | Writer-Lock über die Aufnahme, Welt-/Beleg-/Datastore-Hashes, unabhängige schreibbare Klone mit geteiltem Kern |
+| Changelog, Commits und Bericht für Claude | CHANGELOG, Implementierungscommits oben und dieser versionierte Prüfauftrag |
+
+Die Architekturmerkmale sind funktional nachgewiesen. Die Wissensreife des produktiven Inkubators, ein allgemeiner Leistungsgewinn
+auf unbekannten Aufgaben und ein späterer Fine-Tuning-Gewinn werden dadurch nicht als erfüllt ausgegeben. Das sind getrennte
+empirische Aussagen; der Bericht nennt ihren tatsächlich gemessenen Stand. Ein opaker Anbieterzustand, externe Geräte und Titans
+werden ebenfalls nicht als implementierte Eigenschaften der lokalen virtuellen Instanz ausgegeben.
 
 ## Prüfauftrag für Claude
 
@@ -210,7 +270,10 @@ Bitte Code und Behauptungen unabhängig prüfen, insbesondere:
    untersuchen. Hashes und Abstandssuche prüfen, ohne sie mit einer garantierten Verbesserung auf unbekannten Aufgaben gleichzusetzen.
    Die gespeicherten alten Shards benötigen explizite Speicherverwaltung. Das Gedächtnis ist privat und wird nicht automatisch aus
    unbewertetem Netzinhalt befüllt.
-8. Den Red-Team-Test erweitern und Angriffsreichweite von tatsächlicher Befolgung unterscheiden. Der neue Runtime-Vertrag verhindert
+8. Den Instanz-Controller auf Rechteausweitung durch Prompt-/Werkzeugtext, unsichere Aufrufe nach Neustart und Checkpoints mit
+   offenen Aktionen prüfen. Die CLI muss entzogene Hostrechte auch nach Boot verweigern. Kein Zugangstoken darf zu einem anderen
+   Gerätehost mitwandern. Kontextgrenzen und als unvollständig markierte Beobachtungen sind Teil des Vertrags.
+9. Den Red-Team-Test erweitern und Angriffsreichweite von tatsächlicher Befolgung unterscheiden. Der neue Runtime-Vertrag verhindert
    externe Ausführung durch Programmtext; er löst nicht allgemein die Beeinflussbarkeit des LLM durch falsche Eingabefakten.
 
 Reproduktionsbefehle:
@@ -220,7 +283,7 @@ Reproduktionsbefehle:
 VI_MCP_TEST_PG=postgresql://USER@HOST/THROWAWAY_DB .venv/bin/python -m pytest -q tests -p no:cacheprovider
 .venv/bin/python scripts/gen_reference.py --check
 .venv/bin/python scripts/demo_machine.py
-.venv-knn/bin/python -m pytest -q tests/test_knn_lm.py -p no:cacheprovider
+.venv-knn/bin/python -m pytest -q tests/test_knn_lm.py tests/test_instance_neural.py -p no:cacheprovider
 .venv-knn/bin/python scripts/demo_knn_lm.py
 git diff --check
 ```
