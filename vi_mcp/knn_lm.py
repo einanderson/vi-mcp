@@ -188,14 +188,19 @@ class Datastore:
                 doomed += files
                 t["erased"], t["erased_reason"] = True, str(reason)
                 versions += 1
-            freed = sum((self.directory / f).stat().st_size for f in doomed if (self.directory / f).exists())
+            # Orphans: shard files that no live document and no kept tombstone references — an erase interrupted after its
+            # manifest write (Codex's review, 14.11.2026) or a crash between writing a shard and the manifest. Completed here.
+            kept = live | {t["shard"][f] for t in view["tombstones"] if not t.get("erased") for f in ("keys", "tokens")}
+            orphans = sorted(p.name for p in self.directory.glob("*.npy") if p.name not in kept and p.name not in doomed)
+            freed = sum((self.directory / f).stat().st_size for f in doomed + orphans if (self.directory / f).exists())
             if versions:
                 view["revision"] += 1
                 self._write(self.path, view)
-            for filename in doomed:
+            for filename in doomed + orphans:
                 (self.directory / filename).unlink(missing_ok=True)
                 self._verified.pop(filename, None)
-            return {"erased_versions": versions, "freed_bytes": freed, "revision": view["revision"], "reason": str(reason)}
+            return {"erased_versions": versions, "orphans_removed": len(orphans), "freed_bytes": freed, "revision": view["revision"],
+                    "reason": str(reason)}
 
     @contextlib.contextmanager
     def frozen_snapshot(self, destination):

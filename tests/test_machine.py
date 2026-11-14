@@ -264,3 +264,24 @@ def test_snapshot_labels_belong_to_their_machine(gd):
         call("restore", name="c1", snapshot="base")     # c1 has no 'base'; a1's is not reachable from c1
     call("fork", name="a1", snapshot="base", target="copy")
     assert run(name="copy")["answers"] == ['ans("80")']
+
+
+def test_holdout_uses_the_provenance_frozen_at_import(gd, tmp_path, monkeypatch):
+    """Codex's review (14.11.2026): the hold-out check for machine examples read the LIVE source of the imported objects. If a sibling
+    of an evaluation target later changed its source or was deleted, the example slipped into training. The source group is now
+    frozen at import (as a hash); an imported object without it and no longer loadable is held out as unknown provenance."""
+    from vi_mcp import dataset, evaluation
+    monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
+    target = g.new_object("erkenntnis", "evaluation target page", ["service:other", "port:1"], {"quelle": "https://docs.example/api"})
+    sibling = g.new_object("erkenntnis", "sibling chunk", ["service:api", "port:81"], {"quelle": "https://docs.example/api · Version 2"})
+    (tmp_path / "eval").mkdir()
+    (tmp_path / "eval/recall.json").write_text(json.dumps([{"target": target.id, "group": evaluation.group_of(target), "frage": "which port"}]))
+    call("create")
+    call("import", filters=["service:api"])
+    ex = run()
+    call("execute", instruction="rate " + ex["receipt"], payload={"expected_answers": ['ans("81")'], "reference": "fixture", "question": "Port?"})
+    call("teach", receipt=ex["receipt"])
+    sibling.data["quelle"] = "https://elsewhere.example/moved"   # the live provenance changes after the import
+    g.save(sibling)
+    data = dataset.build()
+    assert sibling.id not in json.dumps(data["logic"]) and data["skipped"]["machine_eval_object"] == 1

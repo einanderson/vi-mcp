@@ -81,7 +81,8 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
    `program_evaluate.py --base URL --tuned URL`: full solver answers on frozen held-out worlds, not word overlap.
    The kit bundles the solver's Python sources, so it works without a VI checkout. Truncated model outputs cannot count as correct.
    Adoption requires an exact one-sided sign-flip test over independent task families (clustered McNemar) at p < 0.05 with a
-   positive difference; the Hoeffding lower_95 is reported as the worst-case size bound.
+   positive difference. It assumes independent families and, under the null, base and tuned exchangeable within each family.
+   The Hoeffding lower_95 is reported as the worst-case size bound.
 7. `vi-mcp finetune record DIR` — the run becomes a model object with its lineage in the VI.
 
 ## Rules

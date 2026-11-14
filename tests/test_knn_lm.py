@@ -263,3 +263,21 @@ def test_drafts_match_plain_decoding_at_stop_strings_and_the_context_window(tmp_
     plain, fast = lm.generate("w1 w2 w3", steps=11), lm.generate("w1 w2 w3", steps=11, draft=6)
     assert plain["finish_reason"] == "context" and fast["speculative"]["accepted_from_memory"] > 0
     assert (fast["tokens"], fast["finish_reason"]) == (plain["tokens"], plain["finish_reason"])
+
+
+def test_an_interrupted_erase_is_completed_by_compact(tmp_path, monkeypatch):
+    """Codex's review (14.11.2026): forget marks the tombstone erased before the files are gone; a crash in between leaves the data
+    on disk under an 'erased' tombstone. compact now removes every shard file no live document or kept tombstone references."""
+    import pathlib
+    store = Datastore(tmp_path / "store", IDENTITY)
+    store.replace("note", [[7, 7]], [2])
+    store.replace("public", [[0, 1]], [1])
+    real_unlink = pathlib.Path.unlink
+    monkeypatch.setattr(pathlib.Path, "unlink", lambda self, missing_ok=False: (_ for _ in ()).throw(OSError("crash")))
+    with pytest.raises(OSError):
+        store.forget("note", "user asked to forget")
+    monkeypatch.setattr(pathlib.Path, "unlink", real_unlink)
+    assert len(list((tmp_path / "store").glob("*.npy"))) == 4      # the data survived the crash …
+    report = store.compact("finish interrupted erase")
+    assert report["orphans_removed"] == 2 and len(list((tmp_path / "store").glob("*.npy"))) == 2   # … until compact
+    assert store.distribution([0, 1])[0].argmax() == 1

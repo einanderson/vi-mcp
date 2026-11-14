@@ -250,7 +250,13 @@ def call(owner: str, args: dict) -> dict:
             ids = {x["id"] for x in data["objects"]}
             for oid in set(mount.get(key, [])) - ids:
                 state["objects"][oid] = {"id": oid, "deleted": True, "reason": "object no longer matches imported filters"}
+            from . import evaluation
+            live = g.load_many([x["id"] for x in data["objects"]])
             for obj in data["objects"]:
+                # Provenance frozen at import (Codex's review, 14.11.2026): the hold-out of training data must not depend on the
+                # object's later source. A hash, so no source URL enters a training prompt.
+                if obj["id"] in live:
+                    obj["source_group_sha256"] = hashlib.sha256(evaluation.group_of(live[obj["id"]]).encode()).hexdigest()
                 state["objects"][obj["id"]] = obj
             if len(state["objects"]) > MAX_OBJECTS:
                 raise ValueError("import exceeds total object limit")

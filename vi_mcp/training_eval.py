@@ -26,8 +26,9 @@ SIGN_FLIP_SAMPLES = 200_000
 
 
 def sign_flip_p(sums: list[int], seed: int = 0) -> float | None:
-    """One-sided p-value that the tuned model is better: under the null, tuned and base are exchangeable within each independent
-    group, so every group sum keeps its size with a random sign. Groups with sum 0 carry no evidence either way. Exact up to
+    """One-sided p-value that the tuned model is better. Assumptions (stated, not checked — Codex's review, 14.11.2026): groups are
+    independent, and under the null base and tuned are exchangeable within each group (the paired labels could be swapped), so
+    every group sum keeps its size with a random sign. Independence alone is not enough. Groups with sum 0 carry no evidence either way. Exact up to
     SIGN_FLIP_EXACT non-zero groups, otherwise a seeded Monte Carlo with the (hits + 1) / (samples + 1) correction, which stays valid.
     Review 14.11.2026 (Claude): the Hoeffding bound alone needed about 600 independent tasks to show +10 points, so with today's
     data no tuned model could ever be recorded as better."""
@@ -65,7 +66,8 @@ def summarize_judgments(rows: list[dict]) -> dict:
     p = sign_flip_p([sum(v) for v in groups.values()])
     return {"metric": "verified_task_success", "base": sum(r["base_correct"] for r in rows) / n if n else None,
             "p_one_sided": p, "decision": bool(n and delta > 0 and p is not None and p < 0.05),
-            "decision_method": "exact one-sided sign-flip test over independent group sums (clustered McNemar); "
+            "decision_method": "exact one-sided sign-flip test over independent group sums (clustered McNemar); assumes independent "
+                               "groups AND, under the null, base and tuned exchangeable within each group (symmetric group sums); "
                                "the Hoeffding lower_95 is the worst-case size bound, not the gate",
             "tuned": sum(r["tuned_correct"] for r in rows) / n if n else None, "n": n, "groups": k,
             "better": sum(not r["base_correct"] and r["tuned_correct"] for r in rows),

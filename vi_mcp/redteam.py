@@ -16,7 +16,9 @@ before the matching action. The report counts attempts, blocked (rejected or hel
 
 Reach is not compliance (review 14.11.2026, item 9). With a language model (`run(llm=…)`, `vi-mcp redteam --llm URL`) every attack that
 reached is also put to the model as an agent would see it — the task, the top search hits and the hints — and the model answers with one
-shell command; a fixed rule per attack kind (FOLLOW) decides whether the command follows the poison. A control asks the same without any
+shell command; a fixed rule per attack kind (FOLLOW) decides whether the command follows the poison. That is a proxy (Codex's
+review, 14.11.2026): a paraphrased compliance the pattern does not match is missed, a coincidental match is counted — the rate is
+an estimate of literal compliance, not a proof of safety. A control asks the same without any
 poison, so the model's own rate of such commands is known. Execution is a third, separate boundary: an instance loop runs only declared
 devices and never owner operations (tests/test_instance.py); a plain shell agent has no such boundary.
 """
@@ -205,5 +207,5 @@ def main(argv: list[str]) -> int:
               f"reach {s['success_rate']:.0%}" + (f" · followed {s['followed']} ({s['followed_rate']:.0%} of attempts)" if "followed" in s else ""))
     if r["control"]:
         print("  control without poison: " + ", ".join(f"{k}: {'attack-like' if v['attack_like'] else 'clean'}" for k, v in r["control"].items()))
-    print(f"  compliance: {r['compliance']}")
+    print(f"  compliance: {r['compliance']}" + (" (followed = the command matches the attack's fixed pattern — a proxy)" if r["control"] else ""))
     return 0

@@ -74,6 +74,17 @@ Linked from [README.md](README.md).
   float32, plain decoding is about 3× slower than in bfloat16 (87.8 s vs 29.9 s for the same 12 runs).
 
   Evidence: `tests/test_knn_lm.py::test_retrieval_drafts_keep_the_greedy_text_and_save_forward_passes`; docs/KNN_LM.md.
+- **Three more points from Codex's review over the VI (14.11.2026):**
+  - *Interrupted erase.* `forget` marks a tombstone erased before its files are gone, so a crash in between left the data on disk.
+    `compact` now also removes orphan shard files (`orphans_removed`). Test:
+    `test_an_interrupted_erase_is_completed_by_compact`.
+  - *Hold-out by live provenance.* Machine examples were held out by the live source of their imported objects; a later source
+    change let one into training. The source group is now frozen at import as a hash (`source_group_sha256`). An imported object
+    that is neither frozen nor loadable is held out as `machine_unknown_provenance`. Test:
+    `test_holdout_uses_the_provenance_frozen_at_import`, which failed before.
+  - *Stated assumptions.* The sign-flip gate needs independent groups and, under the null, exchangeable base/tuned outcomes within
+    a group; the method text and the kit guide now say so. The red-team "followed" is a proxy (a fixed pattern per attack): it
+    misses paraphrased compliance and counts coincidental matches.
 - **Retrieval drafts stop exactly where plain decoding stops** (Codex's review over the VI, 14.11.2026). An accepted span was
   appended whole before stop strings and the context window were checked. With stop `w5` the drafted run returned 8 tokens where
   plain decoding returned 4: the same text, more tokens. Now every token is checked in plain decoding's order: append, stop,

@@ -262,6 +262,7 @@ def machine_examples(index, audit, targets, eval_qs, eval_groups=None, skipped=N
     skipped["machine_eval_object"]): its objects are part of the training prompt."""
     from . import evaluation, training_eval
     eval_groups = eval_groups or set()
+    eval_hashes = {hashlib.sha256(x.encode()).hexdigest() for x in eval_groups}
     skipped = skipped if skipped is not None else Counter()
     sft, kto, dpo, pairs = [], [], [], {}
     tool = _tool_schema("vi_machine")
@@ -275,9 +276,15 @@ def machine_examples(index, audit, targets, eval_qs, eval_groups=None, skipped=N
         if not ex.get("complete") or not ex.get("determinate"):
             continue
         inputs = ex["input_objects"] if "input_objects" in ex else (ex.get("world") or {}).get("objects") or []
-        imported = [x["id"] for x in inputs if isinstance(x, dict) and "instance" in x and isinstance(x.get("id"), str)]
-        if set(imported) & targets or any(evaluation.group_of(x) in eval_groups for x in g.load_many(imported).values()):
+        imported = [x for x in inputs if isinstance(x, dict) and "instance" in x and isinstance(x.get("id"), str)]
+        frozen = {x["source_group_sha256"] for x in imported if x.get("source_group_sha256")}
+        unfrozen = [x["id"] for x in imported if not x.get("source_group_sha256")]
+        live = g.load_many(unfrozen)
+        if {x["id"] for x in imported} & targets or frozen & eval_hashes or any(evaluation.group_of(o) in eval_groups for o in live.values()):
             skipped["machine_eval_object"] += 1
+            continue
+        if set(unfrozen) - set(live):  # neither frozen nor loadable: provenance unknown — held out, never guessed
+            skipped["machine_unknown_provenance"] += 1
             continue
         question = _clean(e["question"], audit, "question")
         case = {"objects": _clean_json(ex["world"], audit), "expected": _clean_json(e["expected"], audit), "predicate": "ans",
