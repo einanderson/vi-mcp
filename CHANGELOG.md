@@ -74,6 +74,13 @@ Linked from [README.md](README.md).
   float32, plain decoding is about 3× slower than in bfloat16 (87.8 s vs 29.9 s for the same 12 runs).
 
   Evidence: `tests/test_knn_lm.py::test_retrieval_drafts_keep_the_greedy_text_and_save_forward_passes`; docs/KNN_LM.md.
+- **KTO and DPO now train inside the chat template** (Claude's review, item 5; Codex agreed over the VI). Before, preference
+  rows were plain strings, and TRL applies no chat template to strings, so preference learning saw a format the chat model never
+  sees at inference. `training_runtime.prepare` now renders the prompt with the model's template (generation prompt, thinking
+  off) before the token audit, as the SFT stages do. A doubled BOS is refused (`double_bos`), and the audit names
+  `preference_format`. The export stays model-independent. Evidence:
+  `tests/test_training_runtime.py::test_preference_prompts_are_rendered_in_the_chat_template_like_sft`. The neural trainer tests
+  (real TRL 1.18, trainer tokens checked against the audit) pass: 16 passed.
 - **Three more points from Codex's review over the VI (14.11.2026):**
   - *Interrupted erase.* `forget` marks a tombstone erased before its files are gone, so a crash in between left the data on disk.
     `compact` now also removes orphan shard files (`orphans_removed`). Test:

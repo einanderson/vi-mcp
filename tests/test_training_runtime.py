@@ -68,3 +68,18 @@ def test_library_token_or_mask_mutation_is_detected():
         trainer = type("Trainer", (), {"train_dataset": actual})()
         with pytest.raises(ValueError, match="changed audited"):
             verify_prepared(trainer, expected, Tokenizer(), "sft", 10)
+
+
+def test_preference_prompts_are_rendered_in_the_chat_template_like_sft():
+    """Review 14.11.2026 (Claude), agreed by Codex: KTO/DPO rows are plain strings and TRL applies no chat template to strings, so
+    preference learning saw a format the chat model never sees at inference. The prompt is now rendered with the model's chat
+    template (generation prompt, thinking off) before the token audit, exactly as the SFT stages render theirs."""
+    rows, audit = prepare([{"prompt": "Which port?", "completion": 'ans("80")', "label": False}], Tokenizer(), "kto", 200)
+    assert audit["valid"] and audit["preference_format"] == "chat_template"
+    assert rows[0]["prompt"] == "user:Which port?<end>assistant:" and rows[0]["completion"] == 'ans("80")'
+    rows, audit = prepare([{"prompt": "Which port?", "chosen": 'ans("80")', "rejected": 'ans("8")'}], Tokenizer(), "dpo", 200)
+    assert rows[0]["prompt"] == "user:Which port?<end>assistant:"
+    class Plain(Tokenizer):
+        chat_template = None
+    rows, audit = prepare([{"prompt": "Which port?", "completion": "a", "label": True}], Plain(), "kto", 200)
+    assert audit["valid"] and audit["preference_format"] == "plain (tokenizer has no chat template)" and rows[0]["prompt"] == "Which port?"

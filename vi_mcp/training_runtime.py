@@ -78,6 +78,14 @@ def prepare(rows, tokenizer, stage, limit, *, skip_oversize=False):
                 fields = ("completion",) if stage == "kto" else ("chosen", "rejected")
                 if not isinstance(prompt, str) or not prompt or any(not isinstance(row[k], str) or not row[k] for k in fields):
                     raise ValueError("preference_format")
+                if tokenizer.chat_template:
+                    # TRL applies no chat template to string rows; render it here like the SFT stages (review 14.11.2026, agreed
+                    # by Codex), so preference learning sees the format of inference. The audit below then checks these tokens.
+                    prompt = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], add_generation_prompt=True,
+                                                           enable_thinking=False, tokenize=False)
+                    bos = getattr(tokenizer, "bos_token", None)
+                    if bos and prompt.startswith(bos) and encode(tokenizer, prompt, special=True)[:2] == encode(tokenizer, bos + bos, special=False)[:2]:
+                        raise ValueError("double_bos")
                 if stage == "kto" and type(row.get("label")) is not bool:
                     raise ValueError("binary_label")
                 if stage == "dpo" and row["chosen"] == row["rejected"]:
@@ -110,11 +118,13 @@ def prepare(rows, tokenizer, stage, limit, *, skip_oversize=False):
                 audit["target_tokens"] += n
         except (ValueError, KeyError, TypeError) as e:
             allowed = {"conversation_or_template", "template_prefix_mismatch", "empty_target", "no_assistant_target",
-                       "preference_format", "binary_label", "identical_preference", "missing_eos", "preference_prefix_mismatch"}
+                       "preference_format", "binary_label", "identical_preference", "missing_eos", "preference_prefix_mismatch", "double_bos"}
             rejected[str(e) if str(e) in allowed else "invalid_example"] += 1
         except Exception:
             rejected["chat_template_error"] += 1
     audit.update(examples=len(prepared), rejected=dict(rejected))
+    if stage in ("kto", "dpo"):
+        audit["preference_format"] = "chat_template" if tokenizer.chat_template else "plain (tokenizer has no chat template)"
     audit["valid"] = bool(prepared) and not any(n for key, n in rejected.items() if key != "oversize" or not skip_oversize)
     return prepared, audit
 
