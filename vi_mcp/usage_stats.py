@@ -375,7 +375,10 @@ def report(days: float = 7) -> str:
     z.append(relevance.line(days))  # 0.62.0
     m = learning.model()
     z.append(f"F Cleanup: {a['schlaefe']} sleeps (median {a['schlaf_ms_median'] // 1000} s, {a['neue_erkenntnisse']} new insights, {a['fehler']} step errors) · "
-             f"{on_demand.line()} · router AUC {m.data.get('auc_holdout') if m else '—'}"
+             f"{on_demand.line()} · router AUC "
+             + (str(m.data["auc_holdout"]) if m and m.data.get("auc_holdout") is not None
+                else f"unknown ({m.data['kennzahlen']})" if m and isinstance(m.data.get("kennzahlen"), str) else "—")
+             + (f" [{m.data['kennzahlen']}]" if m and m.data.get("auc_holdout") is not None and isinstance(m.data.get("kennzahlen"), str) else "")
              + (f", calibration error (ECE) {m.data['ece_holdout']}" if m and m.data.get("ece_holdout") is not None else "")
              + f" · semantic edges {a['semantische_kanten']}")
     z += measurement_lines()

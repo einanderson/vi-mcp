@@ -681,7 +681,15 @@ def compare_champion(champ: dict | None, weights: dict, intercept: float, holdou
     # (production 12.11.2026: +0.0035 ± 0.0026 over 226 observations rejected a challenger; on-demand training runs every minute)
     worse = mean > 0 and mean > CHAMPION_SE * se
     lc = sum(a for a, _ in pairs) / len(pairs)
+    # The champion's own AUC on the same unseen actions (14.11.2026): a legacy champion without a saved report showed "AUC None",
+    # so the incubator's router criterion stayed "not measured" for as long as the champion was kept.
+    ys = [y for _f, y, _o in unseen]
+    auc_champion = None
+    if len(set(ys)) == 2:
+        from sklearn.metrics import roc_auc_score
+        auc_champion = round(float(roc_auc_score(ys, [prediction(c, f) for f, _y, _o in unseen])), 3)
     return {"zustand": "schlechter" if worse else "nicht_schlechter", "n": n_actions, "observations": len(unseen), "seit": since[:16],
+            "auc_champion": auc_champion,
             "log_loss_champion": round(lc, 4), "log_loss_neu": round(lc + mean, 4), "differenz": round(mean, 4), "standardfehler": round(se, 4),
             "urteil": f"log loss new {lc + mean:.4f} vs champion {lc:.4f} on {n_actions} independent actions since {since[:16]} "
                       f"(difference {mean:+.4f} ± {se:.4f})" + (f" — worse by more than {CHAMPION_SE:g} standard errors" if worse else "")}
@@ -729,7 +737,13 @@ def _keep_champion(report: dict) -> None:
     if m is None or not champ:
         return
     # A legacy champion has no saved report. Unknown metrics are safer than the challenger's metrics under old weights.
-    active_report = champ.get("bericht") or {"trainiert": champ.get("trainiert"), "kennzahlen": "unknown: legacy champion without report"}
+    active_report = champ.get("bericht")
+    if not active_report:
+        measured = (report.get("champion") or {}).get("auc_champion")
+        active_report = ({"trainiert": champ.get("trainiert"), "auc_holdout": measured,
+                          "kennzahlen": f"legacy champion without report — AUC measured on {report['champion'].get('n')} holdout actions "
+                                        f"it had not seen (since {report['champion'].get('seit')})"} if measured is not None else
+                         {"trainiert": champ.get("trainiert"), "kennzahlen": "unknown: legacy champion without report"})
     data = {**active_report, "gewichte": champ["gewichte"], "achsenabschnitt": champ["achsenabschnitt"], "champion_modell": champ,
             "zustand": "aktiv", "herausforderer_verworfen": report.get("trainiert"),
             "champion": report["champion"], "herausforderer": dict(report),

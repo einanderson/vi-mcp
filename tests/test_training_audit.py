@@ -68,6 +68,21 @@ def test_retained_champion_keeps_its_metrics_and_date(gd):
     assert m.data["herausforderer"]["auc_holdout"] == .61
 
 
+def test_a_legacy_champion_gets_its_own_measured_auc_not_none(gd):
+    """Production 14.11.2026 after 0.64.0: the kept champion was trained before reports were saved; vi_stats showed "router AUC None"
+    and the incubator's router criterion stayed "not measured" while the champion was kept. Its AUC is now measured on the same
+    holdout actions it had not seen, with that provenance named — never the challenger's number."""
+    learning._save({"trainiert": "2026-01-01", "n": 1000, "zustand": "aktiv"}, {"tool:demo": 1.0}, 0, "aktiv", True)
+    m = learning.model()
+    m.data["champion_modell"].pop("bericht", None)   # as written by a version before reports were kept
+    g.save(m)
+    learning._keep_champion({"trainiert": "2026-02-01", "auc_holdout": .61, "n": 1200,
+                             "champion": {"zustand": "schlechter", "urteil": "fixture", "auc_champion": .83, "n": 412, "seit": "2026-01-01T00:00"}})
+    m = learning.model()
+    assert m.data["auc_holdout"] == .83 and "412 holdout actions it had not seen" in m.data["kennzahlen"]
+    assert m.data["herausforderer"]["auc_holdout"] == .61
+
+
 def test_solver_success_and_one_positive_atom_do_not_verify_program(gd, tmp_path, monkeypatch):
     pytest.importorskip("clingo")
     from vi_mcp import logic

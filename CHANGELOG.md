@@ -7,6 +7,15 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **A kept legacy router champion gets its own measured AUC** (statistics loop after the 0.64.0 deploy, 14.11.2026). Production showed
+  "router AUC None": the active champion was trained by 0.63.2 without a saved report. 0.64.0 rightly no longer shows the
+  challenger's numbers for it, but showed nothing instead. The incubator's router criterion therefore stayed "not measured" for as
+  long as the champion was kept, and every challenger since was worse (log loss 0.292 vs 0.279).
+  - `compare_champion` now also computes the champion's AUC on the same holdout actions it had not seen.
+  - A legacy champion keeps that number, with its provenance named.
+  - `vi_stats` names the reason when no AUC is known.
+
+  Evidence: `tests/test_training_audit.py::test_a_legacy_champion_gets_its_own_measured_auc_not_none` (failed before).
 - **`heldout_loss.py` in the fine-tuning kit** measures the held-out next-token loss of the base model and of a LoRA adapter on
   one stage's test split (`--stage sft|agentic|logic`), with the same tokens and masks as training. It runs on GPU or CPU and also
   with `--base-only`. Use it to check that the model absorbed the VI's knowledge; it is never the adoption gate, which needs
