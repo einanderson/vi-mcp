@@ -146,6 +146,34 @@ def test_import_refresh_and_reference_training_publication(gd, tmp_path, monkeyp
     assert any(r["meta"].get("validation") == "reference" and PROGRAM in r["chosen"] and 'ans("wrong")' in r["rejected"] for r in built["dpo"])
 
 
+def test_teach_never_publishes_imported_private_objects_or_private_context(gd, tmp_path, monkeypatch):
+    """Review 14.11.2026 (Claude): the owner sees its own private objects, import copies them into the machine, and teach used to
+    publish the whole frozen execution (input objects, world, instance context) as internal — private knowledge laundered into the
+    training data. Teach refuses with the reason; the owner can drop the object from the world (or not import it) and teach again."""
+    from vi_mcp import dataset, evaluation
+    monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
+    g.new_object("erkenntnis", "own private API", ["service:api", "port:7777"], {"quelle": "fixture"}, visibility="privat", instance="a")
+    call("create")
+    call("import", filters=["service:api"])
+    ex = run()
+    assert ex["answers"] == ['ans("7777")']
+    call("execute", instruction="rate " + ex["receipt"], payload={"expected_answers": ['ans("7777")'],
+         "reference": "independent fixture", "question": "Which port does the API use?"})
+    with pytest.raises(tools.Rejected, match="private"):
+        call("teach", receipt=ex["receipt"])
+    assert "7777" not in json.dumps(dataset.build())
+    # Private instance context travels only with an explicit include_context.
+    call("create", name="ctx")
+    fact(name="ctx")
+    call("context", name="ctx", payload={"messages": [{"role": "user", "content": "private note 4242"}]})
+    ex2 = run(name="ctx")
+    call("execute", name="ctx", instruction="rate " + ex2["receipt"], payload={"expected_answers": ['ans("80")'],
+         "reference": "independent fixture", "question": "Which port does the API use?"})
+    with pytest.raises(tools.Rejected, match="context"):
+        call("teach", name="ctx", receipt=ex2["receipt"])
+    assert call("teach", name="ctx", receipt=ex2["receipt"], include_context=True)["state"] == "taught"
+
+
 def test_cli_passes_vil_and_payload_without_opening_the_server_database(gd, monkeypatch, tmp_path, capsys):
     from clingo_object import Memory
     seen = []

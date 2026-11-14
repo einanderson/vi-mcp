@@ -247,7 +247,21 @@ def call(owner: str, args: dict) -> dict:
             checked = next((x for x in o.data["checks"] if x["receipt"] == args.get("receipt")), None)
             if not checked or not checked["question"].strip():
                 raise ValueError("teach needs a checked receipt with a question")
-            oid = "regel:" + g.hash_value("machine-example", owner, o.id, checked["receipt"])
+            # The published example carries the frozen execution (its input objects, world and context). Imported objects keep their
+            # memory visibility: a private one (the owner sees its own) or one that is not knowledge (experience, conversation) must not
+            # become internal training data through teach. Objects written into the machine itself are the owner's explicit content.
+            ex = checked["execution"]
+            inputs = ex.get("input_objects") or list((ex.get("world") or {}).get("objects") or [])
+            from .dataset import KINDS
+            blocked = sorted({x.get("id", "?") for x in inputs if isinstance(x, dict) and "instance" in x
+                              and (x.get("visibility") == "privat" or x.get("kind") not in KINDS)})
+            if blocked:
+                raise ValueError(f"teach refused: the checked execution read {len(blocked)} imported private or non-knowledge "
+                                 "object(s); delete them from the machine world or import narrower filters, rerun and rate again")
+            if ex.get("input_context") and args.get("include_context") is not True:
+                raise ValueError("teach refused: the execution carries private instance context; pass include_context=true to "
+                                 "publish it internally with the example, or clear the context, rerun and rate again")
+            oid ="regel:" + g.hash_value("machine-example", owner, o.id, checked["receipt"])
             existing = g.load(oid)
             example = {**copy.deepcopy(checked), "contract": CONTRACT}
             if existing is not None:

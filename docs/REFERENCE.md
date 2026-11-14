@@ -377,6 +377,7 @@ VI: a private virtual intelligence machine. Execute VIL over its own mutable obj
 | `snapshot` | string |  | snapshot name for snapshot, restore or fork |
 | `target` | string |  | fork: new independent machine name, owned by the same instance |
 | `receipt` | string |  | teach: execution receipt already checked with rate and an independent reference |
+| `include_context` | boolean |  | teach: also publish the private instance context the execution read (refused without it) |
 | `filters` | array of string |  | import/refresh visible VI objects; snapshots keep the imported world frozen |
 | `expected_revision` | integer |  | reject a write if another instruction changed the machine |
 

@@ -57,6 +57,14 @@ Linked from [README.md](README.md).
 
 ### What was fixed
 
+- **`teach` could publish private knowledge as internal training data** (found in Claude's review of this release, 14.11.2026). An
+  owner sees its own private objects; `import` copied them into the machine, and `teach` published the whole frozen execution
+  (input objects, world, instance context) as internal — from there `dataset.build` took them into the training set, around the rule
+  "private objects never go in". Now `teach` refuses, with the count and the reason, when the checked execution read an imported
+  private or non-knowledge object; the private instance context goes along only with an explicit `include_context=true`. Objects
+  written into the machine itself stay the owner's explicit content. Evidence:
+  `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
+  RAISE"), passes with it.
 - **Trainer defaults could silently cut programs and learn user/tool observations.** The kit now renders original tool messages
   before Arrow loading, masks non-target context, preserves complete assistant turns and verifies actual trainer tokens. Oversized
   episodes refuse preparation or are explicitly omitted and counted; no implicit 1024-token truncation remains. Checked machine

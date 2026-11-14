@@ -100,7 +100,8 @@ LLM or by clingo. An independently implemented SQL query, inventory fixture or h
 
 Private machines and snapshots are excluded from exports. `teach` is an explicit promotion of one checked example to internal
 knowledge, including its frozen inputs. The owner must intend to share those inputs within the organisation. It never publishes to
-an open network. The export audits credential scrubbing again.
+an open network. It refuses when the execution read an imported object that is private or not knowledge (experience, conversation),
+and it publishes the private instance context only with `include_context=true`. The export audits credential scrubbing again.
 
 The training pipeline uses the checked evidence as follows:
 

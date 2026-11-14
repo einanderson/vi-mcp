@@ -258,6 +258,7 @@ TOOLS = [
                              "snapshot": {"type": "string", "description": "snapshot name for snapshot, restore or fork"},
                              "target": {"type": "string", "description": "fork: new independent machine name, owned by the same instance"},
                              "receipt": {"type": "string", "description": "teach: execution receipt already checked with rate and an independent reference"},
+                             "include_context": {"type": "boolean", "description": "teach: also publish the private instance context the execution read (refused without it)"},
                              "filters": {"type": "array", "items": _S, "description": "import/refresh visible VI objects; snapshots keep the imported world frozen"},
                              "expected_revision": {"type": "integer", "description": "reject a write if another instruction changed the machine"}})},
     {"name": "vi_logic",
