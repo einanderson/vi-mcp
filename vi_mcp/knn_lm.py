@@ -170,6 +170,33 @@ class Datastore:
                 self._verified.pop(filename, None)
             return view["revision"]
 
+    def compact(self, reason):
+        """Explicit storage management: erase the shards of replaced versions (never a live document), mark their tombstones erased
+        and report what was freed. A request still pinned to a revision that used them gets the named refusal of _array."""
+        if not reason or not str(reason).strip():
+            raise ValueError("compact needs a reason")
+        with self._writer():
+            view = self.view()
+            live = {d[f] for d in view["documents"].values() for f in ("keys", "tokens")}
+            doomed, versions = [], 0
+            for t in view["tombstones"]:
+                if t.get("erased"):
+                    continue
+                files = [t["shard"][f] for f in ("keys", "tokens")]
+                if set(files) & live:
+                    continue  # defensive: a tombstone never shares files with a live document
+                doomed += files
+                t["erased"], t["erased_reason"] = True, str(reason)
+                versions += 1
+            freed = sum((self.directory / f).stat().st_size for f in doomed if (self.directory / f).exists())
+            if versions:
+                view["revision"] += 1
+                self._write(self.path, view)
+            for filename in doomed:
+                (self.directory / filename).unlink(missing_ok=True)
+                self._verified.pop(filename, None)
+            return {"erased_versions": versions, "freed_bytes": freed, "revision": view["revision"], "reason": str(reason)}
+
     @contextlib.contextmanager
     def frozen_snapshot(self, destination):
         """Copy one consistent revision into a new independent datastore, retaining its own tombstones and old shards."""

@@ -1,4 +1,4 @@
-"""vi-mcp knn add|predict|generate|forget|snapshot|serve — frozen causal model with mutable next-token memory.
+"""vi-mcp knn add|predict|generate|forget|compact|snapshot|serve — frozen causal model with mutable next-token memory.
 
 Runs on the inference host. Install torch, transformers and numpy in its Python environment, not the memory daemon's.
 JSONL experience rows: {source, prompt, continuation}; only independently approved experience should be ingested.
@@ -82,7 +82,7 @@ def make_handler(lm, token=None, steps=256, draft=0):
 def main(argv):
     """vi-mcp knn ACTION --store DIR [--model MODEL] [--revision COMMIT] [--data JSONL] [--prompt TEXT]."""
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("action", choices=["add", "predict", "generate", "evaluate", "forget", "snapshot", "serve", "status"])
+    p.add_argument("action", choices=["add", "predict", "generate", "evaluate", "forget", "snapshot", "serve", "status", "compact"])
     p.add_argument("--store", required=True)
     p.add_argument("--model")
     p.add_argument("--revision")
@@ -105,12 +105,14 @@ def main(argv):
     args = p.parse_args(argv)
     try:
         from .knn_lm import Datastore, KNNLanguageModel, TransformersCore
-        if args.action in ("status", "forget", "snapshot"):
+        if args.action in ("status", "forget", "snapshot", "compact"):
             store = Datastore(args.store)
             if args.action == "forget":
                 if not args.source:
                     raise ValueError("forget requires --source and --reason")
                 value = {"revision": store.forget(args.source, args.reason)}
+            elif args.action == "compact":
+                value = store.compact(args.reason)
             elif args.action == "snapshot":
                 if not args.destination:
                     raise ValueError("snapshot requires --destination")
@@ -118,7 +120,8 @@ def main(argv):
             else:
                 v = store.view()
                 value = {"revision": v["revision"], "documents": len(v["documents"]), "entries": sum(d["entries"] for d in v["documents"].values()),
-                         "tombstones": len(v["tombstones"]), "identity": v["identity"]}
+                         "tombstones": len(v["tombstones"]), "tombstones_with_shards": sum(not t.get("erased") for t in v["tombstones"]),
+                         "identity": v["identity"]}
         else:
             if not args.model:
                 raise ValueError("inference and ingestion require --model")

@@ -199,3 +199,23 @@ def test_retrieval_drafts_keep_the_greedy_text_and_save_forward_passes(tmp_path)
     assert other.generate("reload nginx", steps=6, draft=4)["tokens"] == other.generate("reload nginx", steps=6)["tokens"]
     with pytest.raises(ValueError, match="draft"):
         lm.generate("reload nginx", draft=65)
+
+
+def test_compact_erases_replaced_shards_and_reports_what_it_freed(tmp_path):
+    """Review item 7, open point: replaced shards stayed on disk forever. compact is the explicit storage management: it erases the
+    shards of replaced versions (never live ones), marks their tombstones erased and reports the count and bytes."""
+    store = Datastore(tmp_path / "store", IDENTITY)
+    store.replace("inventory", [[0, 0]], [1])
+    store.replace("inventory", [[0, 0]], [2])
+    store.replace("inventory", [[0, 0]], [3])
+    store.replace("other", [[1, 1]], [1])
+    pinned = store.view()
+    before = len(list((tmp_path / "store").glob("*.npy")))
+    report = store.compact("disk cleanup after review")
+    assert before == 8 and report["erased_versions"] == 2 and report["freed_bytes"] > 0
+    assert len(list((tmp_path / "store").glob("*.npy"))) == 4          # only live shards remain
+    assert store.distribution([0, 0])[0].argmax() == 3                    # live data untouched
+    assert store.distribution([0, 0], view=pinned)[0].argmax() == 3      # a view pinned after the last replace still works
+    assert store.compact("again")["erased_versions"] == 0                 # idempotent
+    with pytest.raises(ValueError, match="reason"):
+        store.compact("")

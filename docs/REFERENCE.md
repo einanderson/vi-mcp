@@ -1112,7 +1112,7 @@ First line of each module's docstring.
 | `index_transfer` | Index export and import (0.62.0): an index into a signed file and back — to compare how the same content works in two places. |
 | `indexes` | Indexes (0.61.0): every object belongs to exactly one index — `global` or a project / special VI such as `cue-print` or `ansible`. |
 | `intuition` | Intuition — the automatic memory access before and the learning after every action. |
-| `knn_cli` | vi-mcp knn add\|predict\|generate\|forget\|snapshot\|serve — frozen causal model with mutable next-token memory. |
+| `knn_cli` | vi-mcp knn add\|predict\|generate\|forget\|compact\|snapshot\|serve — frozen causal model with mutable next-token memory. |
 | `knn_lm` | kNN-LM below MCP: mutable hidden-state/next-token memory interpolated with frozen-model probabilities. |
 | `learning` | Learning — the router learns from the hint lift instead of us setting its weights (docs/TRAINING.md 4a/4b). |
 | `log_output` | Server log output — one line per event on stderr (systemd → journal). |

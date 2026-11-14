@@ -103,6 +103,9 @@ older replaced versions, is deleted once the manifest no longer references it, b
 inverted. Its tombstones keep the source hash, the reason and the checksums (`erased: true`). A request pinned to an earlier revision
 gets a named refusal ("restart on the current revision"). A snapshot copies one coherent revision into an independent datastore,
 without erased shards. A snapshot taken before a `forget` is an independent copy and keeps the source until it is forgotten there too.
+`vi-mcp knn compact --store DIR --reason TEXT` (`Datastore.compact`) is the explicit storage management for replaced versions:
+their shards are erased, the tombstones marked, and the number of versions and freed bytes reported. `status` shows
+`tombstones_with_shards`.
 There is no VI database connection, implicit network export or automatic ingestion of unreviewed knowledge.
 
 Several `KNNLanguageModel` objects may share one `TransformersCore` while using separate datastores; each HTTP process serves one

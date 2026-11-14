@@ -74,6 +74,11 @@ Linked from [README.md](README.md).
   float32, plain decoding is about 3× slower than in bfloat16 (87.8 s vs 29.9 s for the same 12 runs).
 
   Evidence: `tests/test_knn_lm.py::test_retrieval_drafts_keep_the_greedy_text_and_save_forward_passes`; docs/KNN_LM.md.
+- **`vi-mcp knn compact`**, explicit storage management for the kNN datastore (open point of the review). Replaced versions
+  used to keep their shards on disk forever. `compact --reason` erases them, but never live shards, marks the tombstones
+  erased and reports the versions and freed bytes. `status` shows `tombstones_with_shards`. A request pinned to a compacted
+  revision gets the named refusal. Evidence: `tests/test_knn_lm.py::test_compact_erases_replaced_shards_and_reports_what_it_freed`.
+  CLI check on a scratch store: `tombstones_with_shards` went from 1 to 0, and 272 bytes were freed.
 - **`TransformersCore.load` defaults to float32** (`--dtype`). Measured on Qwen3-0.6B (CPU), the same position's logits differed
   between sequence lengths:
 
