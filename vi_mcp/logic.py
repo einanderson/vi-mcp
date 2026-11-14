@@ -55,7 +55,7 @@ from pathlib import Path
 from clingo_object.notation import (  # noqa: F401 — the language core, shared with the Python package clingo-object
     MAX_SOURCE, MAX_STATEMENTS, MAX_DEPTH, MAX_MODELS, MAX_SOFT_ENUM, TIMEOUT_S, CLINGO_VERSION, RULE_VERSION,
     PRIOR_N, SCALE, MAX_FILTERS, OBJ_FIELDS, PRELUDE, LogicError, translate, translate_full,
-    rule_hash, facts, proposals, lines, TEXT_FIELDS, NUMBER_FIELDS, _quote, _query,
+    rule_hash, facts, proposals, lines, TEXT_FIELDS, NUMBER_FIELDS, _quote, _query, reference_answers,
     _solve, _contradictions, _as_term, _head, _split, _visible, _cost, check_result,
     ask_result, probabilities_result, run_program, weighted,
 )
@@ -343,9 +343,7 @@ def verify(source: str, expected: list[str], reference: str, question: str, inst
     from . import memory as g
     if not reference.strip() or not question.strip() or not re.fullmatch(r"[a-z][a-z0-9_]*", predicate) or predicate.startswith("vi__"):
         raise LogicError("verify needs reference, question and a public predicate (default ans)")
-    want = {_query(str(a)) for a in expected}
-    if any(not a.startswith(predicate + "(") and a != predicate for a in want):
-        raise LogicError("every expected answer must use the projected predicate")
+    want = set(reference_answers(list(expected), predicate))
     with g.lock:
         raw = _run(source, viewer=instance)
         r = {**check_result(raw, belief), "ausfuehrung_hash": raw["ausfuehrung_hash"]}

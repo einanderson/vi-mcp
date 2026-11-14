@@ -65,6 +65,22 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **A broken reference answer booked a correct program as wrong** (Claude's review, 14.11.2026). A variable (`ans(X)`) or another
+  predicate (`port("80")`) in the expected answers was accepted by `vi_machine rate`; `vi_logic verify` checked the predicate
+  but not groundness. The program was rated "refuted", and in the machine that became a KTO negative for training. Now one shared
+  rule, `clingo_object.notation.reference_answers`, used by `rate`, `verify` and the training evaluator, refuses such a
+  reference with the reason. Probed on a throw-away database, all with the expected outcome:
+  - exact answers, missing answers and extra answers;
+  - a number against a string;
+  - quoting variants and duplicates;
+  - the empty set;
+  - two models with different answers (refused as undetermined);
+  - a contradiction;
+  - a violated `never`;
+  - an enumeration cut off at 2^12 models (refused as incomplete).
+
+  Evidence: `tests/test_training_audit.py::test_a_broken_reference_is_refused_not_booked_as_a_wrong_program` (failed before the
+  fix).
 - **A machine locked up long before its object limit** (Claude's review, 14.11.2026). Every execution receipt carried two full
   copies of the world (the filtered view and the input objects). Measured with a scratch script on a throw-away database:
   - with 100 of the allowed 500 objects, the sixth query was refused, and from then on every instruction was refused, a deletion

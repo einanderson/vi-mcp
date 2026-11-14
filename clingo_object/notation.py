@@ -483,6 +483,26 @@ def _query(q: str) -> str:
         raise LogicError(f"query {q!r}: {e.msg}") from None
 
 
+def reference_answers(expected, predicate: str = "ans") -> list[str]:
+    """A complete reference answer set: every entry a ground atom of the projected predicate, normalised like the solver prints it.
+    One rule for vi_machine rate, vi_logic verify and the training evaluator. A variable (ans(X)) or another predicate used to be
+    accepted and rated the program "wrong" — a broken reference became a training negative."""
+    import clingo
+    if not isinstance(expected, list):
+        raise LogicError("expected answers must be a list (empty is a valid complete answer)")
+    out = set()
+    for a in expected:
+        q = _query(str(a))
+        try:
+            sym = clingo.parse_term(q)
+        except RuntimeError:
+            raise LogicError(f"expected answer {a!r} is not ground: a reference names values, not variables") from None
+        if sym.type != clingo.SymbolType.Function or sym.name != predicate:
+            raise LogicError(f"expected answer {a!r} must use the projected predicate {predicate}")
+        out.add(q)
+    return sorted(out)
+
+
 def lines(r: dict) -> list[str]:
     """A check result for people and agents."""
     if r["zustand"] in ("zeitlimit", "widerspruch"):

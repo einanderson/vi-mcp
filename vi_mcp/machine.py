@@ -365,7 +365,7 @@ def call(owner: str, args: dict) -> dict:
                 ex = receipt["execution"]
                 if not ex["complete"] or not ex["determinate"] or not isinstance(payload.get("expected_answers"), list) or not payload.get("reference"):
                     raise ValueError("rate needs a complete determinate execution, complete expected_answers and independent reference")
-                want = sorted({_ for _ in (n._query(a) for a in payload["expected_answers"])})
+                want = n.reference_answers(payload["expected_answers"])
                 correct = want == ex["answers"] and ex["state"] == payload.get("expected_state", "erfuellt")
                 check = {"receipt": body, "correct": correct, "expected": want, "reference": str(payload["reference"]),
                          "execution": copy.deepcopy(ex), "question": str(payload.get("question") or ""),

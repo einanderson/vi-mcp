@@ -66,7 +66,7 @@ def evaluate_program(source: str, case: dict) -> dict:
         if not projections or any(s != projections[0] for s in projections):
             raise ValueError("answer is undetermined")
         got = projections[0]
-        want = {n._query(a) for a in case["expected"]}
+        want = set(n.reference_answers(case["expected"], predicate))
         tp = len(got & want)
         return {"correct": got == want and result["zustand"] == case.get("expected_state", "erfuellt"),
                 "precision": tp / len(got) if got else float(not want), "recall": tp / len(want) if want else float(not got),

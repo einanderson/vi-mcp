@@ -84,6 +84,26 @@ def test_solver_success_and_one_positive_atom_do_not_verify_program(gd, tmp_path
     assert v["state"] == "refuted" and v["unexpected"] == 1
 
 
+@pytest.mark.parametrize("bad", ["ans(X)", 'port("gate1")'])
+def test_a_broken_reference_is_refused_not_booked_as_a_wrong_program(gd, bad):
+    """Review 14.11.2026 (Claude): a variable or another predicate in the reference used to be accepted and rated the program wrong —
+    in the machine that became a KTO negative. One shared rule (notation.reference_answers) now refuses it in verify and in rate."""
+    pytest.importorskip("clingo")
+    g.new_object("erkenntnis", "DMZ", ["host:gate1", "zone:dmz"], {"quelle": "fixture"})
+    src = 'ans(H) <= (O in objects("zone:dmz")) & (O.host == H)'
+    with pytest.raises(tools.Rejected, match="ground|predicate"):
+        tools.call_tool("vi_logic", {"action": "verify", "source": src, "question": "Which hosts are in the DMZ?",
+                                     "expected_answers": ['ans("gate1")', bad], "reference": "independent fixture"}, "a", False)
+    call = lambda action, **kw: json.loads(tools.call_tool("vi_machine", {"action": action, "name": "m", **kw}, "a", False))
+    call("create")
+    call("execute", instruction="tell.fact gate1", payload={"text": "gate", "hashtags": ["zone:dmz", "host:gate1"], "source": "fixture"})
+    ex = call("execute", instruction="ask.rule", payload={"source": 'ans(H) <= (O in objects("zone:dmz")) & (O.host == H)'})
+    with pytest.raises(tools.Rejected, match="ground|predicate"):
+        call("execute", instruction="rate " + ex["receipt"], payload={"expected_answers": [bad], "reference": "fixture", "question": "q"})
+    assert call("status")["checks"] == 0
+    assert not training_eval.evaluate_program(src, {"expected": [bad]})["correct"]
+
+
 def test_program_evaluation_checks_semantics_and_extra_answers():
     pytest.importorskip("clingo")
     case = {"expected": ['ans("safe")']}
