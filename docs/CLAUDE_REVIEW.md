@@ -4,6 +4,7 @@ Stand: 14. November 2026. Autor: Codex. Empfänger: Claude als unabhängiger Cod
 Ausgangsstand: `e7acd14929f69c33a5278997f43fa05f165ec2e1`. Zielstand: 0.64.0, noch nicht veröffentlicht.
 Implementierung des Maschinen- und kNN-Kerns: `3cd332a4c07ad6d594e777cc48da5aedf8335a8a`.
 Vollständiger Instanzvertrag mit kohärenten Lernbelegen und Checkpoints: `a96768490970b0651d7a84ab7c871d4535671938`.
+Reale Trainer-Vorprüfung, vollständige Lernziele und eigenständige Evaluatoren: `01ed43b991043cff06e154594738f76476cf608a`.
 
 ## Ergebnis
 
@@ -32,6 +33,7 @@ nachgewiesen. Das Projekt virtualisiert die symbolische Arbeitsumgebung und Prog
 | LLM als Programmierer | In einem einfachen realen Versuch bestätigt | Zwei richtige Antworten bei zwei Datenständen; eine Aufgabenfamilie |
 | kNN-LM unterhalb von MCP | Implementiert und mit vortrainiertem Modell ausgeführt | Ersetzen, Rückziehen und Snapshot ändern die Tokenvorhersage bei gleichem Gewichtshash |
 | KI-Lerninhalte | Vorhanden, jetzt genauer geprüft und partitioniert | SFT, KTO, DPO und ausführbare Referenzfälle |
+| Trainer und Tokenizer | Alle fünf Stufen funktional vorgeprüft | Echte TRL/PEFT-Trainer, vollständige Ziele, endlicher Loss, null Optimierungsschritte |
 | Lerngewinn durch Fine-Tuning | Offen | Noch kein Training und kein Vergleich eines trainierten Adapters |
 | Gesamtnutzen der Hinweise | Offen | Bisherige randomisierte Messung noch zu unsicher |
 | Schutz gegen vergiftetes Wissen | Begrenzte Robustheit | Feste Regeln generalisieren schlecht; Daten werden nicht als ausführbarer Python-Code behandelt |
@@ -100,6 +102,40 @@ Testwelten; [`vi_mcp/training_eval.py`](../vi_mcp/training_eval.py) prüft volls
 fehlender Antworten, Syntaxfehler, Unsicherheit und Ressourcenabbrüche. Gespeicherte Vorhersagen können offline geprüft werden.
 Das gewöhnliche `evaluate.py` verlangt unabhängige Korrektheitsurteile. Wortüberlappung autorisiert keine Übernahme mehr.
 Ein positiver konservativer Konfidenzwert über unabhängige Aufgabengruppen und die Bindung an die Testdatei sind erforderlich.
+
+### Vorbereitung mit echten Tokenizern und Trainern
+
+[`vi_mcp/training_runtime.py`](../vi_mcp/training_runtime.py) wird mit dem Kit ausgeliefert. Es rendert die ursprünglichen
+Tool-Nachrichten, bevor Arrow unterschiedliche Argumentobjekte mit zusätzlichen Nullfeldern vereinigen kann. Nur vollständige
+Assistenten-Ziele einschließlich Programm und Tool-Aufruf erhalten Loss-Labels; Nutzertext und Werkzeugbeobachtungen sind maskiert.
+Implizite Kürzung auf 1.024 Tokens wurde durch eine Prüfung gegen das deklarierte Modellfenster ersetzt. Zu große Episoden führen
+zum Abbruch oder werden ausdrücklich vollständig verworfen und gezählt. Trainer-Token und Masken müssen exakt erhalten bleiben.
+
+`train.py --tokenizer-only` lädt keine Modellgewichte. `--preflight` konstruiert den tatsächlichen Trainer, prüft einen kollatierten
+Batch und berechnet einen Loss unter `torch.no_grad()`. Es ruft weder Training noch Modellspeicherung auf; Parameterhash,
+Optimierungsschritte und unveränderte Abstammungsdatei werden geprüft. `--from-base` erlaubt direktes Programmtraining ohne
+vorherigen QA-Adapter. Ein vorhandener Elternadapter wird ebenfalls im echten PEFT-Ladepfad geprüft. Neue Adapter speichern die
+aufgelöste Revision ihrer Basis; nachfolgende Stufen laden diese Revision und verweigern einen ausdrücklich abweichenden Stand.
+Eine bloß fehlende Abhängigkeit
+oder fehlende Inkubatorreife wird durch einen erfolgreichen API-Test nicht als erfüllt ausgegeben.
+
+Das Kit enthält getestete Bibliotheksversionen, ausschließlich öffentliche Solver-Quellen und Codehashes. Seine Evaluatoren laufen
+ohne Quellcheckout und zählen unvollständige Generierungen nicht als richtig. Normale Einzelurteile werden an die eingesammelten
+Vorhersagen und Testdatei gebunden; ein leerer oder unvollständiger Offline-Cache löst keinen unbeabsichtigten Online-Aufruf aus.
+Geprüfte Maschinenbelege erzeugen keine sinnlosen Frage-an-sich-selbst-QA-Zeilen mehr. Ein dabei sichtbar gewordener Exportfehler
+durch Überschreiben des `agentic`-Schalters wurde korrigiert: Programmdaten werden auch ohne allgemeine Retrieval-Beispiele exportiert.
+
+Der separate Versuch verwendete den echten [Qwen3-Tokenizer](https://huggingface.co/Qwen/Qwen3-0.6B/tree/c1899de289a04d12100db370d81485cdf75e47ca)
+aus Commit `c1899de289a04d12100db370d81485cdf75e47ca` mit einer winzigen zufällig initialisierten Qwen3-Architektur: eine Schicht,
+Hidden Size 16, zwei Attention-/KV-Köpfe, Head-Dimension 8, Kontext 4.096 und Vokabular 151.669. Alle fünf Stufen bestanden mit
+unveränderten Parametern und null Optimierungsschritten. SFT/agentic/logic/KTO/DPO enthielten 18/36/4/1/1 vorbereitete Beispiele;
+die zugehörigen Loss-Werte lagen bei 11,9396/11,9198/11,9514/0,5/0,6931. Das sind ungeübte Fixture-Loss-Werte, keine Qualitätsmessung.
+Der unveränderte Datei-Hash der Basisgewichte war `043cc0b42def369b035c90bff69ee5a1c31801418473620b801a8aa80b3fe4a1`.
+
+Getestet wurden torch 2.15.0+cpu, Transformers 5.23.0, TRL 1.18.0, PEFT 0.21.3, datasets 5.2.0 und accelerate 1.15.0. Die automatisierte
+neuronale Suite verwendet zusätzlich einen unabhängigen Byte-Tokenizer/GPT2-Fixture. Weder der produktive qwen27b noch ein trainierter
+Adapter oder eine Ziel-GPU wurden damit zertifiziert. Ein echtes Fine-Tuning bleibt entsprechend der Nutzerentscheidung ungestartet.
+[Ausführung und Grenzen](TRAINING_PREFLIGHT.md) sind im Kit-Handbuch und separat dokumentiert.
 
 ### Router und Reifebewertung
 
@@ -186,6 +222,8 @@ Der deterministische Versuch ist reproduzierbar:
 
 ```bash
 .venv/bin/python scripts/demo_machine.py
+# Optional neural environment: install appropriate torch, transformers, peft, trl, datasets, accelerate and clingo.
+python -m pytest -q tests/test_knn_lm.py tests/test_instance_neural.py tests/test_training_runtime_neural.py -p no:cacheprovider
 ```
 
 Er erzeugt eine temporäre Datenbank. Die Antwort ändert sich von Port 80 auf 8080; Fork und Restore liefern weiterhin 80.
@@ -212,9 +250,10 @@ Die Ausgangssuite bestand mit 919 bestandenen und vier übersprungenen SQLite-Te
 
 | Prüfung | Ergebnis |
 |---|---|
-| Gesamtsuite SQLite | 961 bestanden, sechs übersprungen, 160,23 s |
-| Gesamtsuite PostgreSQL 16 | 962 bestanden, fünf übersprungen, 245,14 s |
-| kNN-Suite mit echten Torch-/Transformers-Abhängigkeiten | Acht bestanden, 3,75 s |
+| Gesamtsuite SQLite | 970 bestanden, sieben übersprungen, 155,73 s |
+| Gesamtsuite PostgreSQL 16 | 971 bestanden, sechs übersprungen, 231,15 s |
+| Neuronale kNN-/Instanz-/Trainer-Suite | 15 bestanden, 5,92 s |
+| Separater echter Qwen3-Tokenizer mit winzigem initialisiertem Qwen3-Modell | Alle fünf Trainer-Vorprüfungen bestanden; keine Parameteränderung oder Optimierung |
 | Vortrainierter kNN-Versuch einschließlich HTTP | Bestanden, Gewichtshash unverändert |
 | CLI über getrennte Prozesse | Eintragen, Vorhersage, Auswertung, Snapshot, Rücknahme bestanden |
 | Instanz-CLI über echte MCP-Transporte | Run, kohärenter Checkpoint, Boot und Ablehnung entzogener Rechte bestanden |
@@ -223,10 +262,14 @@ Die Ausgangssuite bestand mit 919 bestandenen und vier übersprungenen SQLite-Te
 | Generierte Referenz | `scripts/gen_reference.py --check` bestanden |
 | Diff und Kontrolle ergänzter öffentlicher Inhalte | `git diff --check` bestanden; keine gefundenen privaten Systemadressen oder Schlüssel |
 
-Die reguläre Suite überspringt die optionalen neuronalen Prüfungen ohne torch/transformers; diese wurden separat vollständig ausgeführt.
+Die reguläre Suite überspringt die optionalen neuronalen Prüfungen ohne torch/transformers beziehungsweise TRL/PEFT; diese wurden separat vollständig ausgeführt.
 Die verbleibenden übersprungenen Tests entsprechen den plattform-/datenbankabhängigen Fällen der vorhandenen Suite. Die 106
 Warnungen der Gesamtläufe betreffen bestehende Bibliothekswarnungen. Ein während der Umsetzung eingeführter Fehler beim Übernehmen
 von Off-Policy-Diagnostik wurde durch die Index-Regressionstests entdeckt, korrigiert und in beiden Gesamtläufen erneut geprüft.
+Der erste neue Gesamtlauf entdeckte den Exportfehler für reine Programmdatensätze; nach der Korrektur bestanden beide vollständigen
+Suiten erneut. Die abschließende Bindung an die Modellrevision wurde anschließend gezielt mit allen 15 neuronalen und elf
+Trainer-/Kit-Regressionstests geprüft. Die neuronalen Warnungen betreffen PEFTs Conv1D-Anpassung des GPT2-Fixtures und eine bestehende
+Checkpointing-Deprecation in Transformers.
 
 Beim zusätzlichen CLI-Evaluatorversuch war die Referenzquelle bereits im Speicher. Der Evaluator schloss sie korrekt aus; Basis-
 und kNN-Log-Loss waren beide 10,795430 pro Token. Der künstliche Vorteil durch Nachschlagen der eigenen Referenz verschwand.
@@ -236,7 +279,7 @@ und kNN-Log-Loss waren beide 10,795430 pro Token. Der künstliche Vorteil durch 
 | Anforderung aus der Sitzung | Implementierung und maßgeblicher Nachweis |
 |---|---|
 | README und Paper lesen, Funktion und Technik bewerten | Befunde und Bewertung in diesem Bericht; korrigierte Aussagen im PAPER; Regressionsfälle für die reproduzierten Fehler |
-| Gesammelte Erfahrungen für KI-Lernen aufbereiten | QA/agentic/logic/KTO/DPO, unabhängige Komplettreferenzen, gemeinsamer Split und ausführbare Tests; kein automatisch gestartetes Fine-Tuning |
+| Gesammelte Erfahrungen für KI-Lernen aufbereiten | QA/agentic/logic/KTO/DPO, unabhängige Komplettreferenzen, gemeinsamer Split, echte Trainer-/Tokenizer-Vorprüfung und ausführbare Tests; kein automatisch gestartetes Fine-Tuning |
 | Das LLM soll die Maschine programmieren | Echte LLM-Schleife erzeugt den richtigen ausführbaren Query; neuronaler kNN-Vertrag erzeugt ein vollständiges geprüftes Programm ohne Parameteränderung |
 | Austauschbares Gedächtnis unterhalb von MCP | Native Hidden-State-/Folgetoken-Interpolation; vortrainierter Tokenwechsel sowie Rücknahme und Snapshot bei konstantem Gewichtshash |
 | Basismodell und eigener VI-Zustand | `TransformersCore` wird geteilt, Datastore und private Welt sind unabhängig; Modell- und Decoderidentität werden geprüft |
@@ -262,8 +305,9 @@ Bitte Code und Behauptungen unabhängig prüfen, insbesondere:
    Regelpräfixe und veränderte Fakten. Referenzherkunft ist eine dokumentierte Behauptung des Prüfers, kein unabhängiger Wahrheitsdienst.
 4. Gemeinsame Partitionierung aller Trainingsstufen prüfen. Strukturähnliche Programme werden konservativ gruppiert; das kann
    kleine Datensätze fast vollständig einer Seite zuordnen. Ausreichend unterschiedliche Testfamilien müssen erst gesammelt werden.
-5. Die generierten Trainer und Evaluatoren lesen. GPU-, Tokenizer-, Chat-Template- und TRL-Kompatibilität mit dem später gewählten
-   Basismodell benötigen einen echten Trainingslauf. Adapter-Abstammung und Auswahl der vorausgehenden Stufe sind ausdrücklich konfigurierbar.
+5. Die generierten Trainer und Evaluatoren lesen. Alle fünf CPU-Trainer und der echte Qwen3-Tokenizer sind ohne Training geprüft;
+   Zielmodell, Ziel-GPU, QLoRA und tatsächliche Lernqualität brauchen eigene Prüfungen. Verlustmasken, vollständige Programme,
+   Token-Audits und Elternadapter gezielt überprüfen. Ein Vorprüfbericht darf nicht als Trainings- oder Reifebeleg erscheinen.
 6. Statistik prüfen: Die Konfidenzgrenzen setzen unabhängige Gruppen voraus. Wiederholte Nutzeraufgaben und gemeinsame Agenten können
    weiter korrelieren. Das Übernahmeprotokoll verarbeitet Resultate eines externen Prüfers und ist keine kryptografische Trainingsattestation.
 7. kNN-Vektoren und Targets auf kausale Ausrichtung, Identitätsbindung, Neuberechnung, Concurrent Writer und Speicherrevision
