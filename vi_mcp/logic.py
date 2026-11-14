@@ -322,6 +322,7 @@ def _run(source: str, viewer: str | None = None) -> dict:
         program = facts + "\n" + program
     r = _run_program(program, stmts)
     r["importiert"] = imported
+    r["ausfuehrung_hash"] = hashlib.sha256(json.dumps([program, r["w"], CLINGO_VERSION], sort_keys=True).encode()).hexdigest()
     return r
 
 
@@ -331,7 +332,42 @@ def _run_program(program: str, stmts: list[dict]) -> dict:
 
 def check(source: str, viewer: str | None = None) -> dict:
     """Translate, import the memory objects the asking instance may see, solve with measured rule weights (clingo_object.notation)."""
-    return check_result(_run(source, viewer), belief)
+    r = _run(source, viewer)
+    return {**check_result(r, belief), "ausfuehrung_hash": r["ausfuehrung_hash"]}
+
+
+def verify(source: str, expected: list[str], reference: str, question: str, instance: str, predicate: str = "ans") -> dict:
+    """Compare the complete projected answer with an independently supplied reference, tied to the exact execution state.
+    A caller assertion of a reference is recorded as such; this is not a claim that clingo proved the natural-language translation.
+    """
+    from . import memory as g
+    if not reference.strip() or not question.strip() or not re.fullmatch(r"[a-z][a-z0-9_]*", predicate) or predicate.startswith("vi__"):
+        raise LogicError("verify needs reference, question and a public predicate (default ans)")
+    want = {_query(str(a)) for a in expected}
+    if any(not a.startswith(predicate + "(") and a != predicate for a in want):
+        raise LogicError("every expected answer must use the projected predicate")
+    with g.lock:
+        raw = _run(source, viewer=instance)
+        r = {**check_result(raw, belief), "ausfuehrung_hash": raw["ausfuehrung_hash"]}
+        if r["zustand"] in ("zeitlimit", "widerspruch") or not r.get("vollstaendig") or (r.get("importiert") or {}).get("abgeschnitten"):
+            raise LogicError("verify needs a complete execution without timeout, contradiction or cut objects")
+        projections = [{a for a in m if a.startswith(predicate + "(") or a == predicate} for m in raw["map"]]
+        if any(a != projections[0] for a in projections):
+            raise LogicError("verify needs a determinate projected answer")
+        got = projections[0]
+        _p, _s, filters = translate_full(source)
+        world = object_data(filters, instance, edges="vi__edge(" in raw["program"]) if filters else {
+            "filters": [], "members": [], "objects": [], "edges": [], "counts": {"cut": 0}}
+        proof = {"richtig": want == got, "erwartet": sorted(want), "erhalten": sorted(got), "referenz": reference,
+                 "frage": question, "praedikat": predicate, "instanz": instance, "zeit": g.now(), "ausfuehrung_hash": r["ausfuehrung_hash"],
+                 "case": {"objects": world, "expected": sorted(want), "predicate": predicate, "expected_state": r["zustand"]}}
+        name = "verified-" + program_hash(source)[:24]
+        private = any(o.get("visibility") == "privat" for o in world["objects"])
+        o = save_rule_set(name, source, question, "privat" if private else "intern", instance)
+        g.update_data(o.id, lambda d: d["logik"].update({"pruefung": proof}))
+        g.db().commit()
+        return {"state": "verified" if proof["richtig"] else "refuted", "missing": len(want - got), "unexpected": len(got - want),
+                "rule_set": name, "execution_hash": r["ausfuehrung_hash"], "reference": reference}
 
 
 def _proposal_target_ok(p: dict, instance: str | None) -> str | None:
@@ -599,7 +635,7 @@ def outgoing(net: str, limit: int = 1000) -> list[dict]:
 agent_llm = None
 
 
-def _server_llm(messages: list[dict]) -> str:
+def _server_llm(messages: list[dict], model_info: dict | None = None) -> str:
     """The classify model of this server, multi-turn, temperature 0, thinking off, no token cap (project rule)."""
     import urllib.request
     from . import classify
@@ -612,7 +648,13 @@ def _server_llm(messages: list[dict]) -> str:
             **({"model": cfg["model"]} if cfg.get("model") else {})}
     from clingo_object.agent import chat_post  # 0.63.3: retries once without llama.cpp fields if the provider refuses them
     header = {"Authorization": f"Bearer {cfg['token']}"} if cfg.get("token") else {}
-    choice = chat_post(cfg["url"], body, header, 300, urllib.request.build_opener(urllib.request.ProxyHandler({})))["choices"][0]
+    response = chat_post(cfg["url"], body, header, 300, urllib.request.build_opener(urllib.request.ProxyHandler({})))
+    if model_info is not None:
+        model_info.update(model=response.get("model") or cfg.get("model") or "unknown", temperature=0, thinking=False)
+        if isinstance(response.get("knn"), dict):
+            model_info["knn"] = {k: response["knn"][k] for k in ("backend", "revision", "weight", "neighbors", "datastore_sha256", "weights_sha256")
+                                 if k in response["knn"]}
+    choice = response["choices"][0]
     if choice.get("finish_reason") == "length":
         raise LogicError("the language model's answer was cut off — thinking is off; check the model's context size")
     return choice["message"]["content"] or ""

@@ -245,6 +245,16 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
         c[0] += _ok(o)
         c[1] += 1
     num = den = var = 0.0
+    bounds = []
+    from statistics import NormalDist
+    comparable = sum(bool(c[True][1] and c[False][1]) for c in strata.values())
+    # Simultaneous Wilson bounds avoid a fictitious zero uncertainty when an arm has no failures.
+    z = NormalDist().inv_cdf(1 - 0.05 / (2 * max(1, comparable)))
+    def wilson(a, n, lower):
+        p, z2 = a / n, z * z
+        center = p + z2 / (2 * n)
+        radius = z * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))
+        return (center - radius if lower else center + radius) / (1 + z2 / n)
     n_s = n_h = used = 0
     for c in strata.values():
         (a, n1), (b, n0) = c[True], c[False]
@@ -252,6 +262,7 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
             continue
         w = n1 * n0 / (n1 + n0)
         p1, p0 = a / n1, b / n0
+        bounds.append((w, wilson(a, n1, True) - wilson(b, n0, False)))
         num += w * (p1 - p0)
         den += w
         var += w * w * (p1 * (1 - p1) / n1 + p0 * (1 - p0) / n0)
@@ -263,6 +274,7 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
     verdict = ("hints raise the success of an action" if d > 2 * se else "hints lower the success of an action" if d < -2 * se
                else "no difference beyond 2 standard errors")
     return {"zustand": "gemessen", "differenz": round(d, 4), "standardfehler": round(se, 4), "gezeigt": n_s, "zurueckgehalten": n_h,
+            "lower_95": sum(w * lo for w, lo in bounds) / den, "confidence_method": "simultaneous Wilson bounds within instance/tool strata",
             "schichten": used, "urteil": f"shown − held back {d * 100:+.1f} ± {se * 100:.1f} points ({n_s} vs {n_h} actions, {used} strata): {verdict}"}
 
 

@@ -216,7 +216,8 @@ def _fit_weights(obs_w: list) -> tuple[dict, float, set, dict]:
     kept = {k for k, n in tally.items() if n >= MIN_PER_FEATURE}
     vec = DictVectorizer(sparse=True)
     X = vec.fit_transform([{k: v for k, v in m.items() if k in kept} for m, _y, _o, _w in obs_w])
-    clf, rep = fit_calibrated(X, np.array([y for _m, y, _o, _w in obs_w]), np.array([w for _m, _y, _o, w in obs_w]))
+    clf, rep = fit_calibrated(X, np.array([y for _m, y, _o, _w in obs_w]), np.array([w for _m, _y, _o, w in obs_w]),
+                              [o for _m, _y, o, _w in obs_w])
     weights = {n: round(float(w), 4) for n, w in zip(vec.get_feature_names_out(), clf.coef_[0]) if abs(w) > 1e-6}
     return weights, float(clf.intercept_[0]), kept, rep
 
@@ -239,7 +240,7 @@ def train_index(index: str, reason: str = "sleep") -> dict:
                                                         f"≥ {MIN_INDEX_OBS} and ≥ {MIN_INDEX_FAILS}; the shared model ranks")
         _save_index(index, report, {}, 0.0, "test")
         return report
-    n_test = _holdout_size([y for _f, y, _o, _w in idx_obs])
+    n_test = _holdout_size([y for _f, y, _o, _w in idx_obs], [o for _f, _y, o, _w in idx_obs])
     train_part, holdout_w = idx_obs[:-n_test], idx_obs[-n_test:]
     held = {o for _f, _y, o, _w in holdout_w}
     weights, b, kept, fit_rep = _fit_weights(train_part)
@@ -302,8 +303,9 @@ def train(reason: str = "sleep") -> dict:
     obs = [(f, y, o) for f, y, o, _w in wobs]
     if not obs:
         return {"zustand": "zu_wenig_daten", "grund": "no labeled observations", "n": 0}
+    n_test = _holdout_size([yy for _m, yy, _o in obs], [o for _m, _y, o in obs])
     tally: dict[str, int] = {}
-    for m, _y, _o in obs:
+    for m, _y, _o in obs[:-n_test]:
         for k in m:
             tally[k] = tally.get(k, 0) + 1
     kept = {k for k, n in tally.items() if n >= MIN_PER_FEATURE}
@@ -317,14 +319,16 @@ def train(reason: str = "sleep") -> dict:
         _save(report, {}, 0.0, "test")
         return report
     # split by time: older data trains, newer data tests (no look into the future)
-    n_test = _holdout_size([yy for _m, yy, _o in obs])
     vec = DictVectorizer(sparse=True)
-    X = vec.fit_transform(X_d)
-    Xtr, Xte, ytr, yte = X[:-n_test], X[-n_test:], y[:-n_test], y[-n_test:]
+    Xtr = vec.fit_transform(X_d[:-n_test])
+    Xte = vec.transform(X_d[-n_test:])
+    ytr, yte = y[:-n_test], y[-n_test:]
     wts = np.array([w for _f, _y, _o, w in wobs])
-    clf, fit_report = fit_calibrated(Xtr, ytr, wts[:-n_test])
+    train_groups = [o for _f, _y, o in obs[:-n_test]]
+    clf, fit_report = fit_calibrated(Xtr, ytr, wts[:-n_test], train_groups)
     report.update(fit_report)
-    clf, report["off_policy"] = _off_policy(clf, Xtr, ytr, wts[:-n_test], np.array(ips_raw[:-n_test]), Xte, yte)
+    clf, report["off_policy"] = _off_policy(clf, Xtr, ytr, wts[:-n_test], np.array(ips_raw[:-n_test]), Xte, yte, train_groups)
+    report.update(report["off_policy"].pop("fit", {}))
     auc = float(roc_auc_score(yte, clf.predict_proba(Xte)[:, 1])) if len(set(yte.tolist())) == 2 else None
     weights = {name: round(float(w), 4) for name, w in zip(vec.get_feature_names_out(), clf.coef_[0]) if abs(w) > 1e-6}
     report.update(auc_holdout=None if auc is None else round(auc, 3), holdout=n_test, holdout_fehler=int(len(yte) - yte.sum()),
@@ -371,33 +375,43 @@ VALIDATION = 0.2
 VALIDATION_MIN = 50
 
 
-def _off_policy(clf, Xtr, ytr, wtr, ips, Xte, yte):
-    """0.62.0: the router learns from data its own choices produced. Fit a second model with the label weights times the inverse offer
-    probabilities (normalised to mean 1 over the training part) and keep it only if it beats the uncorrected one on the holdout by more
-    than 2 standard errors of the paired per-observation log loss. Returns (model, report)."""
+def _off_policy(clf, Xtr, ytr, wtr, ips, Xte, yte, groups=None):
+    """Choose inverse-propensity correction on an inner chronological validation, never on the final holdout.
+    Xte/yte remain accepted for compatibility but are deliberately not inspected. Correlated hints count once per action.
+    """
     import numpy as np
     if not len(ips) or not (ips != 1.0).any():
         return clf, {"zustand": "keine_propensities", "grund": "no logged offer probabilities in the training part"}
-    if len(set(yte.tolist())) < 2:
-        return clf, {"zustand": "nicht_bestimmbar", "grund": "holdout has one class only"}
-    factors = ips / ips.mean()
-    alt, _rep = fit_calibrated(Xtr, ytr, wtr * factors)
+    cut = _group_cut(groups, int(len(ytr) * (1 - VALIDATION))) if groups else int(len(ytr) * (1 - VALIDATION))
+    if len(ytr) - cut < VALIDATION_MIN or len(set(ytr[:cut].tolist())) < 2 or len(set(ytr[cut:].tolist())) < 2:
+        return clf, {"zustand": "nicht_bestimmbar", "grund": "too little two-class inner validation; final holdout untouched"}
+    inner_groups = groups[:cut] if groups else None
+    raw, _ = fit_calibrated(Xtr[:cut], ytr[:cut], wtr[:cut], inner_groups)
+    factors = ips[:cut] / ips[:cut].mean()
+    weighted, _ = fit_calibrated(Xtr[:cut], ytr[:cut], wtr[:cut] * factors, inner_groups)
     eps = 1e-12
-    p0 = np.clip(clf.predict_proba(Xte)[:, 1], eps, 1 - eps)
-    p1 = np.clip(alt.predict_proba(Xte)[:, 1], eps, 1 - eps)
-    l0 = -(yte * np.log(p0) + (1 - yte) * np.log(1 - p0))
-    l1 = -(yte * np.log(p1) + (1 - yte) * np.log(1 - p1))
-    d = l1 - l0
+    p0 = np.clip(raw.predict_proba(Xtr[cut:])[:, 1], eps, 1 - eps)
+    p1 = np.clip(weighted.predict_proba(Xtr[cut:])[:, 1], eps, 1 - eps)
+    yv = ytr[cut:]
+    l0 = -(yv * np.log(p0) + (1 - yv) * np.log(1 - p0))
+    l1 = -(yv * np.log(p1) + (1 - yv) * np.log(1 - p1))
+    by_action = {}
+    for oid, value in zip(groups[cut:] if groups else range(len(yv)), l1 - l0):
+        by_action.setdefault(oid, []).append(float(value))
+    d = np.array([sum(v) / len(v) for v in by_action.values()])
     mean, se = float(d.mean()), float(d.std(ddof=1) / np.sqrt(len(d))) if len(d) > 1 else float("inf")
     better = mean < -2 * se
     rep = {"zustand": "uebernommen" if better else "verworfen", "log_loss_ohne": round(float(l0.mean()), 4), "log_loss_mit": round(float(l1.mean()), 4),
-           "differenz": round(mean, 5), "standardfehler": round(se, 5), "gewichtet": int((ips != 1.0).sum()),
-           "urteil": (f"off-policy correction {'kept' if better else 'rejected'}: holdout log loss {l1.mean():.4f} with vs {l0.mean():.4f} "
-                      f"without ({mean:+.5f} ± {se:.5f} per observation)")}
-    return (alt if better else clf), rep
+           "differenz": round(mean, 5), "standardfehler": round(se, 5), "gewichtet": int((ips != 1.0).sum()), "validation_actions": len(d),
+           "urteil": (f"off-policy correction {'kept' if better else 'rejected'}: inner validation log loss {l1.mean():.4f} with vs {l0.mean():.4f} "
+                      f"without ({mean:+.5f} ± {se:.5f} per action); final holdout untouched")}
+    if better:
+        alt, rep["fit"] = fit_calibrated(Xtr, ytr, wtr * (ips / ips.mean()), groups)
+        return alt, rep
+    return clf, rep
 
 
-def fit_calibrated(Xtr, ytr, wtr):
+def fit_calibrated(Xtr, ytr, wtr, groups=None):
     """0.55.0 (scikit-learn user guide: linear_model, common_pitfalls). Choose C by the weighted log loss on the newest 20 % of the
     training part (models fitted on the older 80 % with the label weights), then refit on the whole training part with that C — the
     newest observations carry the newest hints. Without both classes in enough validation data: C = 1.
@@ -406,7 +420,7 @@ def fit_calibrated(Xtr, ytr, wtr):
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import log_loss
     n = Xtr.shape[0]
-    cut = int(n * (1 - VALIDATION))
+    cut = _group_cut(groups, int(n * (1 - VALIDATION))) if groups else int(n * (1 - VALIDATION))
     yv, wv = ytr[cut:], wtr[cut:]
     C, chosen = 1.0, {"zustand": "standard", "grund": f"validation part {n - cut} observations or one class only — C = 1"}
     if n - cut >= VALIDATION_MIN and len(set(yv.tolist())) == 2 and len(set(ytr[:cut].tolist())) == 2:
@@ -496,13 +510,21 @@ def inseparable(obs: list) -> dict:
     return {"gruppen": len(multi), "hinweise": sum(len(v) for v in multi), "beispiele": [v[:4] for v in multi[:5]]}
 
 
-def _holdout_size(y: list[int]) -> int:
+def _group_cut(groups: list[str], cut: int) -> int:
+    """A time boundary never divides the observations of one action."""
+    while 0 < cut < len(groups) and groups[cut - 1] == groups[cut]:
+        cut -= 1
+    return cut
+
+
+def _holdout_size(y: list[int], groups: list[str] | None = None) -> int:
     """Most recent part of the data as holdout: HOLDOUT, grown in 5 % steps up to HOLDOUT_MAX until it has HOLDOUT_MIN_ERRORS failures."""
     n = len(y)
     share = HOLDOUT
     while share < HOLDOUT_MAX and (len(y[-max(1, int(n * share)):]) - sum(y[-max(1, int(n * share)):])) < HOLDOUT_MIN_ERRORS:
         share = round(share + 0.05, 2)
-    return max(1, int(n * share))
+    size = max(1, int(n * share))
+    return n - _group_cut(groups, n - size) if groups else size
 
 
 def _feedbacks() -> list:
@@ -590,7 +612,8 @@ def _save(report: dict, weights: dict, intercept: float, mode: str, new_champion
     data = {**report, "gewichte": weights, "achsenabschnitt": round(intercept, 4)}
     # 0.55.0: the champion is the model of the last sleep in which it went active; carried over by every other training
     if new_champion:
-        data["champion_modell"] = {"gewichte": weights, "achsenabschnitt": round(intercept, 4), "trainiert": report.get("trainiert")}
+        data["champion_modell"] = {"gewichte": weights, "achsenabschnitt": round(intercept, 4), "trainiert": report.get("trainiert"),
+                                   "bericht": dict(report)}
     elif m is not None and m.data.get("champion_modell"):
         data["champion_modell"] = m.data["champion_modell"]
     if m is not None and m.data.get("llm_schicht"):  # 0.58.0: the LLM layer lives beside the fitted weights, the fit never overwrites it
@@ -628,17 +651,18 @@ def _times(oids: list[str]) -> dict[str, str]:
 
 def compare_champion(champ: dict | None, weights: dict, intercept: float, holdout: list) -> dict:
     """0.55.0: champion / challenger. Both models predict the holdout observations that arose after the champion was trained (it has not
-    seen them; the challenger has not either — they are its holdout). Paired difference of the log loss per observation (scikit-learn
+    seen them; the challenger has not either — they are its holdout). Paired difference of the mean log loss per action (scikit-learn
     model_evaluation: log loss is the proper scoring rule for probabilities); the challenger is `schlechter` when its mean loss is higher
     by more than CHAMPION_SE standard errors of that difference. Exhaustive: kein_champion · nicht_bestimmbar · schlechter · nicht_schlechter."""
     if not champ or not champ.get("gewichte"):
         return {"zustand": "kein_champion", "urteil": "no model of an earlier sleep to compare with"}
     since = str(champ.get("trainiert") or "")
     ts = _times([o for _f, _y, o in holdout])
-    unseen = [(f, y) for f, y, o in holdout if ts.get(o, "") > since]
-    if len(unseen) < CHAMPION_MIN_N:
-        return {"zustand": "nicht_bestimmbar", "n": len(unseen), "seit": since[:16],
-                "urteil": f"{len(unseen)} holdout observations since the champion ({since[:16]}) — at least {CHAMPION_MIN_N} needed"}
+    unseen = [(f, y, o) for f, y, o in holdout if ts.get(o, "") > since]
+    n_actions = len({o for _f, _y, o in unseen})
+    if n_actions < CHAMPION_MIN_N:
+        return {"zustand": "nicht_bestimmbar", "n": n_actions, "seit": since[:16],
+                "urteil": f"{n_actions} holdout actions since the champion ({since[:16]}) — at least {CHAMPION_MIN_N} needed"}
     c = type("M", (), {"data": champ})()
     n = type("M", (), {"data": {"gewichte": weights, "achsenabschnitt": intercept}})()
     eps = 1e-12
@@ -646,16 +670,20 @@ def compare_champion(champ: dict | None, weights: dict, intercept: float, holdou
     def loss(m, f, y):
         p = min(1 - eps, max(eps, prediction(m, f)))
         return -math.log(p if y else 1 - p)
-    d = [loss(n, f, y) - loss(c, f, y) for f, y in unseen]
+    action_losses = {}
+    for f, y, oid in unseen:
+        action_losses.setdefault(oid, []).append((loss(c, f, y), loss(n, f, y)))
+    pairs = [(sum(a for a, _ in v) / len(v), sum(b for _, b in v) / len(v)) for v in action_losses.values()]
+    d = [b - a for a, b in pairs]
     mean = sum(d) / len(d)
     se = math.sqrt(sum((x - mean) ** 2 for x in d) / (len(d) - 1) / len(d))
     # 0.59.0: two standard errors like the other gates — with one, equal models were rejected by chance about one training in six
     # (production 12.11.2026: +0.0035 ± 0.0026 over 226 observations rejected a challenger; on-demand training runs every minute)
     worse = mean > 0 and mean > CHAMPION_SE * se
-    lc = sum(loss(c, f, y) for f, y in unseen) / len(unseen)
-    return {"zustand": "schlechter" if worse else "nicht_schlechter", "n": len(unseen), "seit": since[:16],
+    lc = sum(a for a, _ in pairs) / len(pairs)
+    return {"zustand": "schlechter" if worse else "nicht_schlechter", "n": n_actions, "observations": len(unseen), "seit": since[:16],
             "log_loss_champion": round(lc, 4), "log_loss_neu": round(lc + mean, 4), "differenz": round(mean, 4), "standardfehler": round(se, 4),
-            "urteil": f"log loss new {lc + mean:.4f} vs champion {lc:.4f} on {len(unseen)} observations since {since[:16]} "
+            "urteil": f"log loss new {lc + mean:.4f} vs champion {lc:.4f} on {n_actions} independent actions since {since[:16]} "
                       f"(difference {mean:+.4f} ± {se:.4f})" + (f" — worse by more than {CHAMPION_SE:g} standard errors" if worse else "")}
 
 
@@ -700,9 +728,12 @@ def _keep_champion(report: dict) -> None:
     champ = champion()
     if m is None or not champ:
         return
-    data = {**report, "gewichte": champ["gewichte"], "achsenabschnitt": champ["achsenabschnitt"], "champion_modell": champ,
+    # A legacy champion has no saved report. Unknown metrics are safer than the challenger's metrics under old weights.
+    active_report = champ.get("bericht") or {"trainiert": champ.get("trainiert"), "kennzahlen": "unknown: legacy champion without report"}
+    data = {**active_report, "gewichte": champ["gewichte"], "achsenabschnitt": champ["achsenabschnitt"], "champion_modell": champ,
             "zustand": "aktiv", "herausforderer_verworfen": report.get("trainiert"),
-            "warnung": m.data.get("warnung") or {"zustand": "aus", "grund": "champion kept without a warning threshold"},
+            "champion": report["champion"], "herausforderer": dict(report),
+            "warnung": active_report.get("warnung") or {"zustand": "aus", "grund": "champion kept without a measured warning threshold"},
             **({"llm_schicht": m.data["llm_schicht"]} if m.data.get("llm_schicht") else {})}
     m.text = (f"Router model (aktiv, champion of {str(champ.get('trainiert'))[:16]}): challenger rejected — {report['champion']['urteil']}")
     m.data, m.mode = {**data, "versionen": m.data.get("versionen", 0) + 1}, "aktiv"

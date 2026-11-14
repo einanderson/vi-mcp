@@ -12,6 +12,32 @@ from vi_mcp import memory as g  # noqa: E402
 from test_p2p import _bundle, _model, GOOD, net  # noqa: E402,F401
 
 
+def test_machine_worlds_stay_private_and_training_publication_scrubs_again(gd, tmp_path, monkeypatch):
+    from vi_mcp import dataset, evaluation, machine
+    pytest.importorskip("clingo")
+    monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
+    machine.call("owner", {"action": "create", "name": "test"})
+    machine.call("owner", {"action": "execute", "name": "test", "instruction": "tell.fact api",
+                          "payload": {"text": "API", "hashtags": ["port:80"], "source": "fixture"}})
+    machine.call("owner", {"action": "snapshot", "name": "test", "snapshot": "initial"})
+    assert not dataset.build()["logic"]
+    exported, _reason = p2p._collect("owner")
+    assert not exported
+    run = machine.call("owner", {"action": "execute", "name": "test", "instruction": "ask.rule", "payload": {"source": 'ans("safe")'}})
+    machine.call("owner", {"action": "execute", "name": "test", "instruction": "rate " + run["receipt"],
+        "payload": {"expected_answers": ['ans("safe")'], "reference": "fixture", "question": "Which answer is safe?"}})
+    published = machine.call("owner", {"action": "teach", "name": "test", "receipt": run["receipt"]})
+    assert g.load(published["id"]).visibility == "intern"
+    # Simulate a credential pattern discovered only after storage. Export must scrub nested frozen worlds too.
+    o = g.load(published["id"])
+    o.data["machine_example"]["execution"]["input_objects"][0]["text"] = "password=hunter2secret"
+    with g.lock:
+        g.db().execute("UPDATE objekt SET daten = ? WHERE id = ?", (json.dumps(o.data), o.id))
+        g.db().commit()
+    built = dataset.build()
+    assert "hunter2secret" not in json.dumps(built) and built["scrubbed"].get("machine")
+
+
 @pytest.mark.parametrize("text,category", [
     ("Der Server hat 10.1.2.3 als Adresse", "ip"), ("Netz 172.16.0.0/16 ist intern", "ip"), ("Adresse fe80::1 am Link", "ip"), ("2001:db8::8a2e:370:7334 antwortet", "ip"),
     ("Karte 00:1a:2b:3c:4d:5e fällt aus", "mac"), ("Dienst auf db1.firma.intern läuft", "domain"), ("Siehe mail.acme.de für Details", "domain"), ("https://wiki/seite ist die Quelle", "domain"),

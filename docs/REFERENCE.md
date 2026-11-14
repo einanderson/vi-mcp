@@ -1,12 +1,12 @@
 # vi-mcp reference
 
-Generated from the code of vi-mcp 0.63.3 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
+Generated from the code of vi-mcp 0.64.0 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
 
 Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server configuration](#server-configuration-configjson) · [Network service configuration](#network-service-configuration-etcvi-p2pnetworkjson) · [Configuration catalogue](#configuration-catalogue-debconf-vi-mcp-configure-vi_mcp_key) · [Environment variables](#environment-variables) · [HTTP endpoints](#http-endpoints) · [Modules](#modules-vi_mcp)
 
 ## MCP tools
 
-61 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
+62 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
 
 ### `vi_before`
 
@@ -363,14 +363,34 @@ VI: is this VI (or one index) mature enough to fine-tune an AI with it? Every cr
 |---|---|---|---|
 | `index` | string |  | optional: one index (a project or special VI) |
 
+### `vi_machine`
+
+VI: a private virtual intelligence machine. Execute VIL over its own mutable objects and clingo-object rules; the model writes programs, the runtime executes them. Snapshots are immutable, forks independent. No shell or external tool is run. Instructions: tell.fact NAME (payload text, hashtags, source), def.rule NAME (payload source), ask.rule NAME (or payload source), ask.what FILTER, rate RECEIPT (payload expected_answers, reference). do/promise remain proposals.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | string (create, status, execute, answer, snapshot, restore, fork, teach, import) |  | default status; teach explicitly publishes a checked example internally (German: `aktion`) |
+| `name` | string |  | machine name, private to this authenticated instance (default default) |
+| `instruction` | string |  | execute: VIL instruction such as tell.fact api, def.rule ports or ask.rule ports |
+| `payload` | object |  | structured operands: fact text/hashtags/source, rule source, or complete reference answers |
+| `question` | string |  | answer: the server model writes and checks a program over this machine's objects |
+| `snapshot` | string |  | snapshot name for snapshot, restore or fork |
+| `target` | string |  | fork: new independent machine name, owned by the same instance |
+| `receipt` | string |  | teach: execution receipt already checked with rate and an independent reference |
+| `filters` | array of string |  | import/refresh visible VI objects; snapshots keep the imported world frozen |
+| `expected_revision` | integer |  | reject a write if another instruction changed the machine |
+
 ### `vi_logic`
 
 VI: logical descriptions in a Python-like notation, checked by formal logic (answer set programming, clingo). Facts zone("gate1", "dmz"); rules head <= body with & (and), ~x (not derivable), -x (explicitly false), comparisons in parentheses (H != "a"); never(cond) = a constraint whose violation is reported; soft(rule) or soft(rule, 0.9) = a rule with a learned weight; built in: obligatory/forbidden/permitted/done → violation, conflict. Capitalised names are variables. action check: what follows, violated constraints, norm conflicts, contradictions, rule weights. ask: true/false/both/unknown/not_derived/undetermined per atom (+ P(atom) with probabilities). rate: a conclusion was checked against reality (correct true/false) — the rules that derive it learn their weight. save: keep a named rule set (then use rule_set=name in the other actions). Results are evidence 'inferred'. Object dialect clingo-objekt (memory objects as facts, as you may see them): (O in objects("art:skill host:web*")) binds O to the objects of a vi_recall filter; (O.host == H) reads a hashtag, (O.kind == "skill") a field (kind, mode, visibility, instance, index, text; numbers age, importance, confirmed, refuted, accesses, e.g. (O.age > 90)); linked(O, B) follows an edge (objects one edge away are imported too). Comparisons in parentheses. Classes, methods and inheritance are real Python in the package clingo-object (import clingo_object), which compiles them to this notation.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string (check, ask, rate, save, objects, propose, learn, answer) |  | default check; objects: the memory objects of filters as JSON (data for clingo-object); propose: hold what the rules propose (propose(tag(…)) / propose(link(…))) for review; learn: learn rules from the rule set's rated conclusions, held for review; answer: a question in natural language — the server's model writes the program (German: `aktion`) |
+| `action` | string (check, ask, rate, save, objects, propose, learn, answer, verify) |  | default check; objects: the memory objects of filters as JSON (data for clingo-object); propose: hold what the rules propose (propose(tag(…)) / propose(link(…))) for review; learn: learn rules from the rule set's rated conclusions, held for review; answer: a question in natural language — the server's model writes the program (German: `aktion`) |
 | `question` | string |  | answer: e.g. which DMZ hosts are never described as production? |
+| `expected_answers` | array of string |  | verify: complete independently checked answer set (empty is valid) |
+| `reference` | string |  | verify: independent oracle or test that produced expected_answers |
+| `predicate` | string |  | verify: projected predicate, default ans |
 | `filters` | array of string |  | objects: vi_recall filters, e.g. ["art:skill", "host:web*"] |
 | `edges` | boolean |  | objects: also edges and the objects one edge away (default true) |
 | `source` | string |  | statements, one per line (added to rule_set if both are given) (German: `quelle`) |
@@ -625,6 +645,8 @@ python3 -m vi_mcp web internal [on|off] [--base PATH]  internal knowledge search
 python3 -m vi_mcp dataset export DIR [--index X]  training data (qa/kto/dpo .jsonl, DATASHEET.md) to fine-tune a model (0.62.0)
 python3 -m vi_mcp incubator status [--index X] | hatch DIR [--index X] [--force]  maturity of a VI for fine-tuning (0.62.0)
 python3 -m vi_mcp finetune guide | plan | kit DIR [--base M] [--force] | record DIR  fine-tune an AI with this VI (0.62.0)
+python3 -m vi_mcp machine ACTION [NAME] [--instruction VIL] [--payload FILE]  persistent VIL machines, snapshots and checked training (0.64.0)
+python3 -m vi_mcp knn ACTION --store DIR [--model MODEL]  mutable hidden-state memory in token inference (0.64.0)
 python3 -m vi_mcp redteam [--json]       memory-poisoning test in a throw-away memory: how often planted knowledge reaches an agent (0.62.0)
                                         the code of a git repository into an index (only changed files; removed ones archived)
                                         indexes (0.61.0): projects and special VIs — every object belongs to one; a project's
@@ -1088,10 +1110,13 @@ First line of each module's docstring.
 | `index_transfer` | Index export and import (0.62.0): an index into a signed file and back — to compare how the same content works in two places. |
 | `indexes` | Indexes (0.61.0): every object belongs to exactly one index — `global` or a project / special VI such as `cue-print` or `ansible`. |
 | `intuition` | Intuition — the automatic memory access before and the learning after every action. |
+| `knn_cli` | vi-mcp knn add\|predict\|generate\|forget\|snapshot\|serve — frozen causal model with mutable next-token memory. |
+| `knn_lm` | kNN-LM below MCP: mutable hidden-state/next-token memory interpolated with frozen-model probabilities. |
 | `learning` | Learning — the router learns from the hint lift instead of us setting its weights (docs/TRAINING.md 4a/4b). |
 | `log_output` | Server log output — one line per event on stderr (systemd → journal). |
 | `logbook` | Logbook — per server a signed, chained sequence of entries; the basis of the network. Knows neither transport nor memory. |
 | `logic` | Logical descriptions in a Python-like notation, checked by formal logic (0.62.0) — the logic layer of the AI language. |
+| `machine` | A persistent, private virtual intelligence machine executing VIL and clingo-object. |
 | `main_loop` | The loop — exactly one, because there is exactly one server process. |
 | `memory` | The memory: every entry is an object (table objekt → class MemoryObject, mapping without ORM). |
 | `metrics` | Observation points — how to tell whether the VI is useful. |
@@ -1118,6 +1143,7 @@ First line of each module's docstring.
 | `solutions` | Solutions (0.56.0) — which problem was solved by what, with its content, to keep company knowledge. |
 | `stdio_bridge` | 0.36.0: `vi-mcp stdio` — MCP over stdio for clients on the server host, without a token. |
 | `tools` | The MCP tools of the VI. Groups: |
+| `training_eval` | Independent task judgments and executable program evaluation; no word-overlap adoption gate. |
 | `usage_stats` | Usage statistics — is the VI used, and does it work as intended? (0.21.0) |
 | `vector` | Vectors — meaning instead of identical words (stage 3, docs/TRAINING.md 4c; Park et al. 2023, section 4.1: relevance |
 | `vil` | VIL — the language in which an AI asks the memory and the memory answers (0.62.0, first executable part). |

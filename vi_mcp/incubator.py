@@ -15,7 +15,7 @@ Criteria (thresholds overridable in config `incubator`, e.g. {"min_knowledge": 1
   refuted_handled   refuted knowledge is marked, not deleted: at least one correction exists or none was needed (informative)
   search            hybrid MRR of the daily fixed question set (evaluation.py)
   router            the hint model is active with a holdout AUC (learning.py; an index uses its own model if it has one)
-  hints_no_harm     the randomized hold-back does not show that hints lower success (metrics.holdback_effect)
+  hints_no_harm     the randomized hold-back lower confidence bound excludes more than max_hint_harm damage
   labels            share of knowledge classified for the AI language (classify.py), and the student active
   training_data     question → answer examples the dataset export would write (dataset.py), with the evaluation held out
   gold              (informative) labels set by people (classify.set_gold) against the language model's, and the truth check: do
@@ -27,7 +27,8 @@ import json
 
 from . import memory as g
 
-DEFAULTS = {"min_knowledge": 500, "min_checked": 0.2, "min_mrr": 0.6, "min_auc": 0.75, "min_labelled": 0.5, "min_examples": 1000}
+DEFAULTS = {"min_knowledge": 500, "min_checked": 0.2, "min_mrr": 0.6, "min_auc": 0.75, "min_labelled": 0.5, "min_examples": 1000,
+            "max_hint_harm": 0.02}
 REQUIRED = ("knowledge", "checked", "search", "router", "hints_no_harm", "labels", "training_data")
 
 
@@ -79,8 +80,14 @@ def status(index: str | None = None) -> dict:
     if hb.get("zustand") != "gemessen":
         out.append(_c("hints_no_harm", "nicht_gemessen", hb.get("zurueckgehalten"), "no harm beyond 2 SE", hb.get("urteil", "")))
     else:
-        harm = hb["differenz"] < -2 * hb["standardfehler"]
-        out.append(_c("hints_no_harm", "offen" if harm else "erfuellt", hb["differenz"], "no harm beyond 2 SE", hb["urteil"]))
+        margin = float(cfg["max_hint_harm"])
+        if not 0 <= margin < 1:
+            raise ValueError("incubator.max_hint_harm must be between 0 (inclusive) and 1 (exclusive)")
+        lower = hb.get("lower_95", hb["differenz"] - 1.96 * hb["standardfehler"])
+        safe = lower > -margin
+        out.append(_c("hints_no_harm", "erfuellt" if safe else "offen", hb["differenz"], f"95% lower bound > {-margin:g}",
+                      f"{hb['urteil']}; lower 95% bound {lower:+.4f}, tolerated harm {margin:.4f}"
+                      + (" — noninferiority established" if safe else " — noninferiority not established")))
     labelled = sum(1 for *_x, k in rows if k in ("einig", "uneinig", "schueler"))
     lshare = round(labelled / n, 3) if n else 0.0
     st = g.load(classify.STUDENT)

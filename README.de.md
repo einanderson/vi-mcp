@@ -6,6 +6,18 @@
 **MCP (Streamable HTTP)** anschließen. Jede Sitzung hat ihren eigenen Gesprächskontext, wie Zeitscheiben eines Prozessors. Alle teilen dasselbe Gedächtnis: Was eine Sitzung lernt,
 erscheint der nächsten vor der passenden Handlung als Hinweis. Das Sprachmodell wird dabei nicht verändert. Gelernt wird im Gedächtnis, und das bleibt lesbar.
 
+## Eine virtuelle Intelligenz als ausführbare Maschine (0.64.0)
+
+Der optionale [kNN-LM-Backend](docs/KNN_LM.md) verändert zusätzlich die Tokenvorhersage durch einen austauschbaren Speicher echter
+Hidden States und Folgetokens. Die Modellgewichte bleiben gleich. `vi-mcp knn` verwaltet den Speicher und bedient die VI unterhalb von MCP.
+
+VIL und clingo-object haben jetzt eine persistente Laufzeit: `vi_machine`. Jede angemeldete Instanz kann private Maschinen
+anlegen, deren Objekte ändern, Regeln definieren und ausführen, sichtbares Wissen importieren sowie Zustände sichern,
+wiederherstellen und klonen. Das LLM schreibt austauschbar die Programme; clingo führt die sichere Notation über den aktuellen
+Daten aus. Geprüfte Ausführungen werden nach ausdrücklicher interner Freigabe zu SFT-, KTO- und Präferenzbeispielen derselben
+Aufgabe. Ein unverändertes Programm liefert nach geänderten Fakten eine neue Antwort, ohne das Modell neu zu trainieren.
+[Vertrag, Beispiele und Training](docs/VIRTUAL_MACHINE.md).
+
 ## Was das ist: eine Suche nach dem besten Prompt
 
 vi-mcp trainiert kein Sprachmodell. Es lernt aus dem gemessenen Ausgang jeder Handlung aller angeschlossenen Agenten, *welcher Kontext als
@@ -23,6 +35,11 @@ einem täglich neu trainierten Modell, geprüft gegen Zufallswahl.
 mit und ohne Hinweise kann das nicht klären — Hinweise erscheinen bei den schwierigen. Deshalb werden bei zufälligen 5 % der Aktionen mit
 Hinweisen die Hinweise zurückgehalten, und `vi_stats` vergleicht diese mit den übrigen. Ein Unterschied von wenigen Punkten braucht einige
 hundert zurückgehaltene Aktionen: Wochen, nicht Tage.
+
+*Prüfstand vom 14.11.2026:* Der aktuelle randomisierte Vorteil der Auswahl beträgt 4,7 ± 3,1 Prozentpunkte
+(ein Standardfehler) und ist in diesem Zeitfenster nicht eindeutig. Die historischen Zahlen oben beweisen keinen Gesamtnutzen
+der Hinweise. Ab 0.64.0 verlangt der Inkubator eine untere Nichtunterlegenheitsgrenze; das Fine-Tuning-Kit prüft Programme
+und Aufgabenergebnisse statt bloßer Wortübereinstimmung.
 
 **Paper:** [Learning What to Put in Front of the Model — gemessenes Gedächtnis, Inkubation und eine gewichtete Sprache für KI-Agenten](docs/PAPER.md) (englisch) erklärt, wie das Gedächtnis lernt, wie eine VI im Inkubator reift und wie ihre Sprache aufgebaut ist, mit Quellen und Messungen.
 
@@ -56,7 +73,7 @@ Zustand — erfüllt, offen oder noch nicht gemessen (zählt nie als erfüllt):
 | checked | Anteil, der nach dem Zeigen bewertet oder von einer Instanz bestätigt wurde — geprüftes, nicht nur behauptetes Wissen | 20 % |
 | search | hybride MRR des täglichen festen Fragensatzes | 0,6 |
 | router | das Hinweismodell ist aktiv, Holdout-AUC | 0,75 |
-| hints_no_harm | das zufällige Zurückhalten zeigt nicht, dass Hinweise den Erfolg senken | kein Schaden über 2 SE |
+| hints_no_harm | das zufällige Zurückhalten zeigt nicht, dass Hinweise den Erfolg senken | untere 95%-Konfidenzgrenze über −0,02 |
 | labels | Anteil, der für die KI-Sprache klassifiziert ist, und der Schüler aktiv | 50 % |
 | training_data | Frage → Antwort-Beispiele, mit zurückgehaltenem Fragensatz | 1000 |
 

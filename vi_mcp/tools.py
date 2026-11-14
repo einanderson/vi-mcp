@@ -242,6 +242,22 @@ TOOLS = [
      "description": "VI: is this VI (or one index) mature enough to fine-tune an AI with it? Every criterion — knowledge, checked share, "
                     "search quality, hint model, no harm from hints, labels, training data — with threshold, measured value and state.",
      "inputSchema": _schema({"index": {"type": "string", "description": "optional: one index (a project or special VI)"}})},
+    {"name": "vi_machine",
+     "description": "VI: a private virtual intelligence machine. Execute VIL over its own mutable objects and clingo-object rules; "
+                    "the model writes programs, the runtime executes them. Snapshots are immutable, forks independent. No shell or external tool is run. "
+                    "Instructions: tell.fact NAME (payload text, hashtags, source), def.rule NAME (payload source), ask.rule NAME "
+                    "(or payload source), ask.what FILTER, rate RECEIPT (payload expected_answers, reference). do/promise remain proposals.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["create", "status", "execute", "answer", "snapshot", "restore", "fork", "teach", "import"],
+                                        "description": "default status; teach explicitly publishes a checked example internally"},
+                             "name": {"type": "string", "description": "machine name, private to this authenticated instance (default default)"},
+                             "instruction": {"type": "string", "description": "execute: VIL instruction such as tell.fact api, def.rule ports or ask.rule ports"},
+                             "payload": {"type": "object", "description": "structured operands: fact text/hashtags/source, rule source, or complete reference answers"},
+                             "question": {"type": "string", "description": "answer: the server model writes and checks a program over this machine's objects"},
+                             "snapshot": {"type": "string", "description": "snapshot name for snapshot, restore or fork"},
+                             "target": {"type": "string", "description": "fork: new independent machine name, owned by the same instance"},
+                             "receipt": {"type": "string", "description": "teach: execution receipt already checked with rate and an independent reference"},
+                             "filters": {"type": "array", "items": _S, "description": "import/refresh visible VI objects; snapshots keep the imported world frozen"},
+                             "expected_revision": {"type": "integer", "description": "reject a write if another instruction changed the machine"}})},
     {"name": "vi_logic",
      "description": "VI: logical descriptions in a Python-like notation, checked by formal logic (answer set programming, clingo). "
                     "Facts zone(\"gate1\", \"dmz\"); rules head <= body with & (and), ~x (not derivable), -x (explicitly false), "
@@ -256,12 +272,15 @@ TOOLS = [
                     "visibility, instance, index, text; numbers age, importance, confirmed, refuted, accesses, e.g. (O.age > 90)); "
                     "linked(O, B) follows an edge (objects one edge away are imported too). Comparisons in parentheses. Classes, methods "
                     "and inheritance are real Python in the package clingo-object (import clingo_object), which compiles them to this notation.",
-     "inputSchema": _schema({"action": {"type": "string", "enum": ["check", "ask", "rate", "save", "objects", "propose", "learn", "answer"],
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["check", "ask", "rate", "save", "objects", "propose", "learn", "answer", "verify"],
                                         "description": "default check; objects: the memory objects of filters as JSON (data for clingo-object); "
                                                        "propose: hold what the rules propose (propose(tag(…)) / propose(link(…))) for review; "
                                                        "learn: learn rules from the rule set's rated conclusions, held for review; "
                                                        "answer: a question in natural language — the server's model writes the program"},
                              "question": {"type": "string", "description": "answer: e.g. which DMZ hosts are never described as production?"},
+                             "expected_answers": {"type": "array", "items": _S, "description": "verify: complete independently checked answer set (empty is valid)"},
+                             "reference": {"type": "string", "description": "verify: independent oracle or test that produced expected_answers"},
+                             "predicate": {"type": "string", "description": "verify: projected predicate, default ans"},
                              "filters": {"type": "array", "items": _S, "description": "objects: vi_recall filters, e.g. [\"art:skill\", \"host:web*\"]"},
                              "edges": {"type": "boolean", "description": "objects: also edges and the objects one edge away (default true)"},
                              "source": {"type": "string", "description": "statements, one per line (added to rule_set if both are given)"},
@@ -599,6 +618,11 @@ def _logic(args: dict, instance: str | None) -> str:
     try:
         if action == "check":
             return "\n".join(logic.lines(logic.check(src, viewer=instance)))
+        if action == "verify":
+            if not isinstance(args.get("expected_answers"), list):
+                raise Rejected("verify needs expected_answers (the complete reference answer set)")
+            return json.dumps(logic.verify(src, args["expected_answers"], str(args.get("reference") or ""),
+                                           str(args.get("question") or ""), instance, str(args.get("predicate") or "ans")), ensure_ascii=False)
         if action == "ask":
             qs = [str(q) for q in (args.get("queries") or [])]
             if not qs:
@@ -1314,6 +1338,12 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             raise Rejected(str(e)) from e
     if name == "vi_logic":  # 0.62.0
         return _logic(args, instance)
+    if name == "vi_machine":
+        from . import machine
+        try:
+            return json.dumps(machine.call(instance, args), ensure_ascii=False)
+        except (ValueError, machine.n.LogicError) as e:
+            raise Rejected(str(e)) from e
     if name == "vi_vocabulary":  # 0.62.0
         from . import vocabulary
         # the asking instance decides what it sees — never the session context alone (without one, viewer None would see everything)

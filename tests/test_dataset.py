@@ -17,7 +17,7 @@ def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd
     good = _k("restart nginx with systemctl reload, not restart", ["tool:nginx", "thema:reload"], 9, 1,
               data={"klasse": {"answers": "how", "memory": "procedure", "fragen": ["Wie lade ich nginx neu?", "nginx reload ohne Ausfall?"]}})
     bad = _k("nginx needs a full restart after config changes", ["tool:nginx", "thema:reload"], 1, 9)
-    held = _k("the evaluation target", ["thema:y"])
+    held = _k("the evaluation target", ["thema:y"], quelle="https://docs.example/held")
     _k("private note", visibility="privat")
     _k("def f(): pass", ["art_wissen:code", "datei:x.py"])
     g.new_object("erfahrung", "Bash ok", ["tool:Bash"], {"quelle": "t"})

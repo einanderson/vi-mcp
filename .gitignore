@@ -226,3 +226,8 @@ __marimo__/
 config.json
 docs/LOKAL*.md
 .venv/
+
+# Optional inference environment and private kNN example stores
+.venv-knn/
+token-memory/
+token-memory-snapshot/

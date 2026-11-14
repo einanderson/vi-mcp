@@ -27,11 +27,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from clingo_object.filters import parse_filter
+
 from . import anonymize
 from .log_output import log
 
 KINDS = ("erfahrung", "antwort", "erkenntnis", "regel", "reflex", "gespraech", "suche", "frage", "selbst", "schlaf", "modell", "skill", "bewertung", "bild", "seite",
-         "vorschlag")  # 0.63.0: a change a logic program proposes (logic.store_proposals), held in quarantine until someone else releases it
+         "vorschlag", "maschine")  # private virtual-machine state and snapshots
 #: strittig = refuted by exactly one foreign instance (still appears, with a note); widerlegt = refuted by the author
 #: or by ≥ 2 different instances (no longer appears)
 #: archiviert = stub (text, hashtags) stays, content compressed in the archive; visible only with modus:archiviert in the filter
@@ -41,7 +43,7 @@ MODES = ("aktiv", "test", "aus", "defekt", "strittig", "widerlegt", "archiviert"
 #: Collective: who may read an object? privat = only the author instance (results may contain credentials),
 #: geteilt = all instances. The loop (server) sees everything. Exhaustive for KINDS.
 VISIBILITY_PER_KIND = {"erfahrung": "privat", "antwort": "privat", "erkenntnis": "geteilt", "regel": "geteilt", "reflex": "geteilt",
-                "gespraech": "geteilt", "suche": "geteilt", "frage": "geteilt", "selbst": "geteilt", "schlaf": "geteilt", "modell": "geteilt", "skill": "geteilt", "bewertung": "privat", "bild": "geteilt", "seite": "geteilt", "vorschlag": "intern"}
+                "gespraech": "geteilt", "suche": "geteilt", "frage": "geteilt", "selbst": "geteilt", "schlaf": "geteilt", "modell": "geteilt", "skill": "geteilt", "bewertung": "privat", "bild": "geteilt", "seite": "geteilt", "vorschlag": "intern", "maschine": "privat"}
 #: author of objects the server creates itself (loop) — a named instance, not NULL
 SERVER_INSTANCE = "vi"
 #: weight bonus per different FOREIGN instance that confirmed (self-confirmation does not count as evidence)
@@ -700,28 +702,6 @@ def _is_condition(tok: str, kinds: frozenset[str] | None) -> bool:
     return bool(TAG.match(tok)) and (kinds is None or tok.split(":", 1)[0] in kinds)
 
 
-def parse_filter(text: str, kinds: frozenset[str] | None = None) -> tuple[list[list[str]], list[str], list[str]]:
-    """Filter text → (AND groups of OR tags, exclusion tags, free words). `(a OR b) c !d word`. Pure when `kinds` is given or None.
-    0.26.0: a word with a colon is a hashtag condition only in the form kind:value (TAG) and, if `kinds` is given, with a kind that occurs
-    in the memory — otherwise it is free text. Before, "Hosts: 62.153.216.33" in a question emptied the whole search silently (reported by
-    the AIKB benchmark session, 10.11.2026)."""
-    groups, remove, words = [], [], []
-    for m in re.finditer(r"\(([^()]*)\)|(!?\S+)", text or ""):
-        if m.group(1) is not None:
-            old = [t for t in re.split(r"\s+OR\s+|\s+", m.group(1).strip()) if t and t != "OR"]
-            if old:
-                groups.append(old)
-            continue
-        tok = m.group(2)
-        if tok.upper() == "OR":
-            continue
-        if tok.startswith("!"):
-            remove.append(tok[1:])
-        elif ":" in tok and _is_condition(tok, kinds):
-            groups.append([tok])
-        else:
-            words.append(tok)
-    return groups, remove, words
 
 
 def _tag_condition(tag: str) -> tuple[str, tuple]:

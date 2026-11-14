@@ -20,6 +20,7 @@ anonymize.without_secrets once more; what that changes is counted (an audit of t
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 from collections import Counter
@@ -28,7 +29,7 @@ from pathlib import Path
 from . import __version__
 from . import memory as g
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 KINDS = ("erkenntnis", "regel", "skill")
 ANSWER_CHARS = 8000
 MIN_RATINGS = 5
@@ -40,17 +41,18 @@ def _norm(q: str) -> str:
     return re.sub(r"\W+", " ", (q or "").lower()).strip()
 
 
-def _eval_hold_out() -> tuple[set[str], set[str]]:
+def _eval_hold_out() -> tuple[set[str], set[str], set[str]]:
     """(target ids, normalised questions) of the fixed question set — held out of every training file."""
     from . import evaluation
     p = evaluation.eval_dir() / "recall.json"
     if not p.exists():
-        return set(), set()
+        return set(), set(), set()
     try:
         qs = evaluation.load_questions(p)
-    except Exception:  # noqa: BLE001
-        return set(), set()
-    return {q["target"] for q in qs}, {_norm(q["frage"]) for q in qs if q.get("frage")}
+    except Exception as e:  # a broken guard must never silently export the evaluation
+        raise ValueError("cannot read evaluation holdout") from e
+    return ({q["target"] for q in qs}, {_norm(q[s]) for q in qs for s in ("frage", "stichworte") if q.get(s)},
+            {q["group"] for q in qs if q.get("group")})
 
 
 def _objects(index: str | None) -> list[g.MemoryObject]:
@@ -80,8 +82,11 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     """All examples and the bookkeeping, in memory (export writes them). agentic=False skips the trajectories — they run two searches
     per object (up to AGENTIC_MAX), which a status check must not pay: found on a copy of production (40,861 objects), where
     vi_incubator ran for more than 10 minutes."""
-    from . import vil
-    targets, eval_qs = _eval_hold_out()
+    from . import evaluation, vil
+    targets, eval_qs, eval_groups = _eval_hold_out()
+    eval_objects = g.load_many(list(targets))
+    eval_groups |= {evaluation.group_of(o) for o in eval_objects.values()}
+    eval_bodies = {_norm(str(o.data.get("inhalt") or "")) for o in eval_objects.values() if o.data.get("inhalt")}
     skipped, audit = Counter(), Counter()
     qa, rated, qa_objects = [], [], []
     for o in _objects(index):
@@ -91,11 +96,15 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
         if o.id in targets:
             skipped["target of the fixed question set (held out for evaluation)"] += 1
             continue
+        if evaluation.group_of(o) in eval_groups or (o.data.get("inhalt") and _norm(str(o.data["inhalt"])) in eval_bodies):
+            skipped["evaluation source page or duplicate content (held out)"] += 1
+            continue
         k = o.data.get("klasse") or {}
         questions = [q for q in (k.get("fragen") or []) if isinstance(q, str) and q.strip()] or [o.text.strip()]
         meta = {"id": o.id, "kind": o.kind, "index": o.idx, "answers": k.get("answers"), "memory": vil.memory_of(o),
                 "evidence": vil.evidence_of(o), "weight": vil.weight_of(o)[0], "ratings": vil.weight_of(o)[1],
-                "question_source": "doc2query" if k.get("fragen") else "title"}
+                "question_source": "doc2query" if k.get("fragen") else "title", "group": evaluation.group_of(o),
+                "content_hash": hashlib.sha256(_norm(str(o.data.get("inhalt") or o.text)).encode()).hexdigest()}
         answer = _answer(o, audit)
         qa_objects.append((o, questions))
         for q in questions:
@@ -125,11 +134,16 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
             seen.add((best[0].id, worst[0].id))
             dpo.append({"prompt": f"Situation: {t}. Which piece of knowledge helps?", "chosen": _clean(best[0].text, audit, "hint"),
                         "rejected": _clean(worst[0].text, audit, "hint"),
-                        "meta": {"trigger": t, "chosen": best[0].id, "rejected": worst[0].id, "weights": [best[1], worst[1]]}})
+                        "meta": {"trigger": t, "chosen": best[0].id, "rejected": worst[0].id, "weights": [best[1], worst[1]],
+                                 "validation": "observational"}})
     agentic, agentic_skipped = agentic_examples(qa_objects, eval_qs, audit) if agentic else ([], Counter())
     skipped.update(agentic_skipped)
-    logic_sft, logic_kto, logic_skipped = logic_examples(index, audit) if agentic else ([], [], Counter())
+    logic_sft, logic_kto, logic_skipped = logic_examples(index, audit, targets, eval_qs, eval_groups) if agentic else ([], [], Counter())
     skipped.update(logic_skipped)
+    machine_sft, machine_kto, machine_dpo = machine_examples(index, audit, targets, eval_qs) if agentic else ([], [], [])
+    logic_sft += machine_sft
+    logic_kto += machine_kto
+    dpo += machine_dpo
     return {"qa": qa, "kto": kto + logic_kto, "dpo": dpo, "agentic": agentic, "logic": logic_sft, "skipped": dict(skipped),
             "scrubbed": dict(audit), "held_out": len(targets)}
 
@@ -138,21 +152,26 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
 LOGIC_VIEWER = "dataset-export"
 
 
-def logic_examples(index: str | None, audit: Counter) -> tuple[list[dict], list[dict], Counter]:
+def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None, eval_groups=None) -> tuple[list[dict], list[dict], Counter]:
     """0.63.0 clingo-objekt — the user: "clingo ist die Sprache für LLMs" and "trainieren unsere VI mit clingo-objekt inkl. den
     DB-SQL-Objekten". From every saved rule set that is not private: (1) the task in its description → the assistant writes the program
     (vi_logic check with the source) → the solver's real answer → the answer citing the rule set; (2) every conclusion someone checked
     against reality (logic.rate, table logik_bewertung): right ones as SFT (ask → value), wrong ones as KTO negatives. A rule set that
     does not solve is counted, never an example."""
-    from . import logic
+    from . import evaluation, logic, training_eval
+    targets, eval_qs, eval_groups = targets or set(), eval_qs or set(), eval_groups or set()
     skipped: Counter = Counter()
     if not logic.available():
         skipped["logic: clingo not installed — no logic examples"] += 1
         return [], [], skipped
     tool = _tool_schema("vi_logic")
     sft, kto = [], []
+    verified = {}
     for _s, o, _p in g.recall("art:regel thema:logik", limit=5000, viewer=None):
         if o.visibility == "privat" or o.mode not in ("aktiv", "test") or "logik" not in o.data or (index and o.idx != index):
+            continue
+        if o.id in targets or evaluation.group_of(o) in eval_groups:
+            skipped["logic: evaluation target or source page (held out)"] += 1
             continue
         src = str(o.data["logik"].get("quelle") or "")
         name = o.data["logik"].get("name") or o.id
@@ -162,9 +181,12 @@ def logic_examples(index: str | None, audit: Counter) -> tuple[list[dict], list[
         except Exception as e:  # noqa: BLE001 — a rule set that no longer solves is counted, not an example
             skipped[f"logic: rule set does not solve ({type(e).__name__})"] += 1
             continue
-        if r["zustand"] in ("zeitlimit", "widerspruch"):
+        if r["zustand"] in ("zeitlimit", "widerspruch") or not r.get("vollstaendig", False) or (r.get("importiert") or {}).get("abgeschnitten"):
             skipped[f"logic: rule set in state {r['zustand']}"] += 1
             continue
+        proof = o.data["logik"].get("pruefung") or {}
+        if proof.get("richtig") and proof.get("ausfuehrung_hash") == r.get("ausfuehrung_hash"):
+            verified[logic.program_hash(src)] = proof
         lines = "\n".join(logic.lines(r))
         answer = (f"{'Violated' if r['zustand'] == 'verletzt' else 'Satisfied'}: "
                   + ("; ".join(f"never #{v['nr']} {v['never']}" for v in r["verletzt"]) or "no constraint violated")
@@ -174,8 +196,11 @@ def logic_examples(index: str | None, audit: Counter) -> tuple[list[dict], list[
                                      "name": "vi_logic", "arguments": {"action": "check", "source": _clean(src, audit, "program")}}}]},
                                  {"role": "tool", "name": "vi_logic", "content": _clean(lines, audit, "tool")},
                                  {"role": "assistant", "content": _clean(answer, audit, "answer")}],
-                    "tools": [tool], "meta": {"id": o.id, "rule_set": name, "kind": "check"}})
-        for concl, right in logic.rated_conclusions(logic.program_hash(src)):
+                    "tools": [tool], "meta": {"id": o.id, "rule_set": name, "kind": "check", "group": "logic:" + logic.program_hash(src),
+                                               "validation": "reference" if logic.program_hash(src) in verified else "solver_only",
+                                               "program_family": training_eval.program_family(src),
+                                               **({"program_eval": {"question": task, "case": proof["case"]}} if proof.get("case") and logic.program_hash(src) in verified else {})}})
+        for concl, right in dict(reversed(logic.rated_conclusions(logic.program_hash(src)))).items():
             q = f"Under the rule set {name}: does {concl} hold?"
             if right:
                 value = logic.ask(src, [concl], viewer=LOGIC_VIEWER).get(concl, "unknown")
@@ -184,7 +209,8 @@ def logic_examples(index: str | None, audit: Counter) -> tuple[list[dict], list[
                                              "name": "vi_logic", "arguments": {"action": "ask", "rule_set": name, "queries": [concl]}}}]},
                                          {"role": "tool", "name": "vi_logic", "content": f"{concl}: {value}\nevidence: inferred"},
                                          {"role": "assistant", "content": f"{concl}: {value} — checked against reality: right. (rule set {name})"}],
-                            "tools": [tool], "meta": {"id": o.id, "rule_set": name, "kind": "rated", "right": True}})
+                            "tools": [tool], "meta": {"id": o.id, "rule_set": name, "kind": "rated", "right": True,
+                                                       "group": "logic:" + logic.program_hash(src), "validation": "rated_atom"}})
             else:
                 kto.append({"prompt": _clean(q, audit, "question"), "completion": f"{concl} holds (derived by the rule set {name})",
                             "label": False, "meta": {"id": o.id, "rule_set": name, "source": "logic.rate"}})
@@ -193,7 +219,13 @@ def logic_examples(index: str | None, audit: Counter) -> tuple[list[dict], list[
     for q in logic.asked_questions():
         if q["instanz"] == LOGIC_VIEWER or (q["frage"], q["programm_hash"]) in seen_q:
             continue
-        rated = logic.rated_conclusions(q["programm_hash"])
+        if _norm(q["frage"]) in eval_qs:
+            skipped["logic: evaluation question (held out)"] += 1
+            continue
+        if index and q["programm_hash"] not in verified:
+            skipped["logic: asked program not verified in this index"] += 1
+            continue
+        rated = list(dict(reversed(logic.rated_conclusions(q["programm_hash"]))).items())
         if not rated:
             continue
         seen_q.add((q["frage"], q["programm_hash"]))
@@ -203,16 +235,82 @@ def logic_examples(index: str | None, audit: Counter) -> tuple[list[dict], list[
             except Exception as e:  # noqa: BLE001
                 skipped[f"logic: asked program does not solve ({type(e).__name__})"] += 1
                 continue
+            proof = verified.get(q["programm_hash"])
+            if not proof or proof.get("frage") != q["frage"] or proof.get("ausfuehrung_hash") != r.get("ausfuehrung_hash"):
+                skipped["logic: partial ratings do not verify the whole question and program"] += 1
+                continue
             sft.append({"messages": [{"role": "user", "content": _clean(q["frage"], audit, "question")},
                                      {"role": "assistant", "content": "", "tool_calls": [{"type": "function", "function": {
                                          "name": "vi_logic", "arguments": {"action": "check", "source": _clean(q["programm"], audit, "program")}}}]},
                                      {"role": "tool", "name": "vi_logic", "content": _clean("\n".join(logic.lines(r)), audit, "tool")},
                                      {"role": "assistant", "content": f"{len(rated)} conclusion(s) of this program were checked against reality: right."}],
-                        "tools": [tool], "meta": {"kind": "asked", "rated": len(rated)}})
+                        "tools": [tool], "meta": {"kind": "asked", "rated": len(rated), "group": "logic:" + q["programm_hash"],
+                                                   "validation": "reference"}})
         else:
             kto.append({"prompt": _clean(q["frage"], audit, "question"), "completion": _clean(q["programm"], audit, "program"), "label": False,
-                        "meta": {"source": "logic.answer", "wrong": sum(1 for _c, right in rated if not right), "rated": len(rated)}})
+                        "meta": {"source": "logic.answer", "wrong": sum(1 for _c, right in rated if not right), "rated": len(rated),
+                                 "group": "logic:" + q["programm_hash"]}})
     return sft, kto, skipped
+
+
+def machine_examples(index, audit, targets, eval_qs):
+    """Only examples explicitly published by a machine owner; private state and snapshots are never traversed."""
+    from . import training_eval
+    sft, kto, dpo, pairs = [], [], [], {}
+    tool = _tool_schema("vi_machine")
+    for _s, o, _w in g.recall("art:regel thema:machine-training", limit=5000, viewer=None):
+        if o.visibility == "privat" or o.mode not in ("aktiv", "test") or (index and o.idx != index) or o.id in targets:
+            continue
+        e = o.data.get("machine_example")
+        if not e or _norm(e.get("question")) in eval_qs:
+            continue
+        ex = e["execution"]
+        if not ex.get("complete") or not ex.get("determinate"):
+            continue
+        question = _clean(e["question"], audit, "question")
+        case = {"objects": _clean_json(ex["world"], audit), "expected": _clean_json(e["expected"], audit), "predicate": "ans",
+                "expected_state": e.get("expected_state", "erfuellt"), "input_objects": _clean_json(ex.get("input_objects", ex["world"]["objects"]), audit)}
+        meta = {"id": o.id, "kind": "machine", "group": "machine-task:" + hashlib.sha256(_norm(question).encode()).hexdigest(),
+                "validation": "reference", "program_family": training_eval.program_family(ex["source"]),
+                "frontend_model": ex.get("frontend_model", {}), "program_eval": {"question": question, "case": case}}
+        prompt = question + "\nFrozen machine objects:\n" + json.dumps(case["input_objects"], ensure_ascii=False, sort_keys=True)
+        source = _clean(ex["source"], audit, "program")
+        if training_eval.evaluate_program(source, case)["correct"] != bool(e["correct"]):
+            audit["machine outcome changed after scrubbing (example withheld)"] += 1
+            continue
+        if e["correct"]:
+            sft.append({"messages": [{"role": "user", "content": prompt}, {"role": "assistant", "content": "", "tool_calls": [
+                {"type": "function", "function": {"name": "vi_machine", "arguments": {"action": "execute", "instruction": "ask.rule",
+                                                                                         "payload": {"source": source}}}}]},
+                {"role": "tool", "name": "vi_machine", "content": json.dumps({"answers": e["expected"], "evidence": "inferred"})},
+                {"role": "assistant", "content": json.dumps(e["expected"])}], "tools": [tool], "meta": meta})
+        else:
+            kto.append({"prompt": prompt, "completion": source, "label": False, "meta": {**meta, "source": "machine.reference"}})
+        key = (prompt, ex["state_hash"])
+        group = pairs.setdefault(key, {"positive": [], "negative": []})
+        group["positive" if e["correct"] else "negative"].append((source, meta))
+        for step in ex.get("transcript", [])[:-1]:
+            failed = (ex.get("source_prefix", "") + "\n" + step["program"]).strip()
+            if not training_eval.evaluate_program(failed, case)["correct"]:
+                failed = _clean(failed, audit, "program")
+                kto.append({"prompt": prompt, "completion": failed, "label": False, "meta": {**meta, "source": "machine.repair"}})
+                group["negative"].append((failed, meta))
+    for (prompt, _state), group in pairs.items():
+        if group["positive"]:
+            chosen, meta = group["positive"][0]
+            for rejected, neg in group["negative"]:
+                if chosen != rejected:
+                    dpo.append({"prompt": prompt, "chosen": chosen, "rejected": rejected,
+                                "meta": {**meta, "chosen": meta["id"], "rejected": neg["id"], "validation": "reference"}})
+    return sft, kto, dpo
+
+
+def _clean_json(value, audit):
+    from . import anonymize
+    cleaned = anonymize.without_secrets(value)
+    if cleaned != value:
+        audit["machine"] += 1
+    return cleaned
 
 
 AGENTIC_MAX = 2000
@@ -282,7 +380,9 @@ def agentic_examples(items: list[tuple], eval_qs: set[str], audit: Counter) -> t
             skipped["agentic: the search did not find the target (no example teaches a wrong answer)"] += 1
             continue
         messages.append({"role": "assistant", "content": _answer(o, audit) + f"\n\n(from {o.id})"})
-        out.append({"messages": messages, "tools": [tool], "meta": {"id": o.id, "steps": (len(messages) - 2) // 2, "answers": qtype}})
+        from . import evaluation
+        out.append({"messages": messages, "tools": [tool], "meta": {"id": o.id, "steps": (len(messages) - 2) // 2, "answers": qtype,
+                    "group": evaluation.group_of(o), "content_hash": hashlib.sha256(_norm(str(o.data.get("inhalt") or o.text)).encode()).hexdigest()}})
     return out, skipped
 
 
@@ -325,7 +425,7 @@ A VI out of the incubator fine-tunes an AI: question → answer from its knowled
 - quarantine, refuted and archived objects: never selected
 
 ## Evaluation hold-out (contamination guard)
-{manifest['held_out']} targets of the fixed question set are not in any file, nor questions equal to an evaluation question.
+{manifest['held_out']} targets, their source pages and duplicate bodies are held out, as are both evaluation query styles. The fine-tuning kit additionally partitions all training stages together.
 
 ## Scrubbing audit
 Credentials are removed at save time; this export ran the scrubber again — changed texts: """ + (", ".join(f"{k} {v}" for k, v in sc.items()) or "none") + f""".
@@ -339,7 +439,8 @@ Credentials are removed at save time; this export ran the scrubber again — cha
 """ + "\n".join(f"- {k}: {v}" for k, v in manifest["versions"].items()) + """
 
 ## Known gaps
-- No user prompts: they are masked and never stored, so there are no full task trajectories.
+- Ordinary client user prompts are masked and never stored. Explicit logic/machine questions can become checked program examples; retrieval trajectories are constructed, not complete recorded task histories.
+- solver_only and observational labels describe inspection material, not independently verified program/preference examples; the kit withholds these from default program/DPO training.
 - The hint data are aggregated counters, not single actions; a hint shown more often weighs more.
 - doc2query questions exist only for objects the classification has labelled; the rest use the object's own text as the question.
 """
@@ -354,7 +455,10 @@ def export(directory: str | Path, index: str | None = None) -> dict:
     os.chmod(d, 0o700)
     data = build(idx)
     manifest = {"index": idx, "counts": {k: len(data[k]) for k in ("qa", "kto", "dpo", "agentic", "logic")}, "skipped": data["skipped"],
-                "scrubbed": data["scrubbed"], "held_out": data["held_out"], "versions": _versions()}
+                "scrubbed": data["scrubbed"], "held_out": data["held_out"], "versions": _versions(),
+                "quality": {"qa_question_sources": dict(Counter(r["meta"]["question_source"] for r in data["qa"])),
+                            "qa_evidence": dict(Counter(r["meta"]["evidence"] for r in data["qa"])),
+                            "program_validation": dict(Counter(r["meta"].get("validation", "unknown") for r in data["logic"]))}}
     for name in ("qa", "kto", "dpo", "agentic", "logic"):
         _write(d / f"{name}.jsonl", "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in data[name]))
     _write(d / "manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))

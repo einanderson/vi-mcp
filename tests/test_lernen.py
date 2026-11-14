@@ -425,17 +425,15 @@ def test_off_policy_correction_is_kept_only_when_it_wins():
 def test_off_policy_correction_is_kept_when_it_is_clearly_better(monkeypatch):
     import numpy as np
     from vi_mcp import learning
-    yte = np.array([0, 1] * 50)
-    Xte = np.zeros((100, 1))
-
     class Fixed:
         def __init__(self, good):
             self.good = good
 
         def predict_proba(self, X):
-            p = np.where(yte == 1, 0.95, 0.05) if self.good else np.full(len(X), 0.5)
+            p = np.where(X[:, 0] == 1, 0.95, 0.05) if self.good else np.full(len(X), 0.5)
             return np.column_stack([1 - p, p])
-    monkeypatch.setattr(learning, "fit_calibrated", lambda X, y, w: (Fixed(True), {}))
-    kept, rep = learning._off_policy(Fixed(False), np.zeros((10, 1)), np.array([0, 1] * 5), np.ones(10), np.array([1.0, 3.0] * 5),
-                                     Xte, yte)
+    monkeypatch.setattr(learning, "fit_calibrated", lambda X, y, w, groups=None: (Fixed(not np.allclose(w, 1)), {}))
+    y = np.array([0, 1] * 200)
+    kept, rep = learning._off_policy(Fixed(False), y.reshape(-1, 1), y, np.ones(400), np.array([1.0, 3.0] * 200),
+                                     None, None)  # the final holdout cannot even be read
     assert rep["zustand"] == "uebernommen" and kept.good and rep["log_loss_mit"] < rep["log_loss_ohne"]

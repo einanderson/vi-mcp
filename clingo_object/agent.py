@@ -104,6 +104,8 @@ def answers_of(lines: str) -> list[str]:
 def check_locally(prog: str, memory) -> tuple[str, list[str]]:
     """Solve here with the objects from memory.objects — every ans atom, not only those a text answer shows. Returns (text, answers)."""
     from . import notation
+    if getattr(memory, "source_prefix", ""):
+        prog = memory.source_prefix + "\n" + prog
     program, stmts, filters = notation.translate_full(prog)
     facts = ""
     imported = None

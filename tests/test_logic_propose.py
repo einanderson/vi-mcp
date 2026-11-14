@@ -101,17 +101,16 @@ def test_rule_sets_and_rated_conclusions_become_training_data(gd, tmp_path):
     tools.call_tool("vi_logic", {"action": "rate", "rule_set": "dmz", "conclusion": 'in_dmz("gate1")', "correct": True}, "a", False)
     tools.call_tool("vi_logic", {"action": "rate", "rule_set": "dmz", "conclusion": 'in_dmz("gate1")', "correct": False}, "a", False)
     m = dataset.export(tmp_path / "out")
-    assert m["counts"]["logic"] == 2
+    assert m["counts"]["logic"] == 1  # the latest refutation supersedes the earlier positive label
     rows = [json.loads(x) for x in (tmp_path / "out" / "logic.jsonl").read_text().splitlines()]
     check = next(r for r in rows if r["meta"]["kind"] == "check")
     call = check["messages"][1]["tool_calls"][0]["function"]
     assert call["name"] == "vi_logic" and call["arguments"]["source"] == src and check["tools"][0]["function"]["name"] == "vi_logic"
     assert "violated never #2" in check["messages"][2]["content"] and check["messages"][3]["content"].startswith("Violated")
-    rated = next(r for r in rows if r["meta"]["kind"] == "rated")
-    assert 'in_dmz("gate1"): true' in rated["messages"][3]["content"]
+    assert not any(r["meta"]["kind"] == "rated" for r in rows)
     kto = [json.loads(x) for x in (tmp_path / "out" / "kto.jsonl").read_text().splitlines()]
     assert any(k["meta"].get("source") == "logic.rate" and k["label"] is False for k in kto)
-    assert "logic.jsonl | 2 |" in (tmp_path / "out" / "DATASHEET.md").read_text()
+    assert "logic.jsonl | 1 |" in (tmp_path / "out" / "DATASHEET.md").read_text()
     assert all(r["meta"]["rule_set"] != "mine" for r in rows)
 
 
@@ -179,6 +178,8 @@ def test_answered_questions_become_training_data_once_rated(gd, monkeypatch, tmp
     bad_prog = next(q["programm"] for q in asked if q["frage"] != "Which hosts are in the DMZ?")
     tools.call_tool("vi_logic", {"action": "rate", "source": good_prog, "conclusion": 'ans("gate1")', "correct": True}, "a", False)
     tools.call_tool("vi_logic", {"action": "rate", "source": bad_prog, "conclusion": 'ans("gate1")', "correct": False}, "a", False)
+    tools.call_tool("vi_logic", {"action": "verify", "source": good_prog, "expected_answers": ['ans("gate1")'],
+                                 "question": "Which hosts are in the DMZ?", "reference": "independent fixture inventory"}, "a", False)
     dataset.export(tmp_path / "out")
     logic_rows = [json.loads(x) for x in (tmp_path / "out" / "logic.jsonl").read_text().splitlines()]
     kto = [json.loads(x) for x in (tmp_path / "out" / "kto.jsonl").read_text().splitlines()]

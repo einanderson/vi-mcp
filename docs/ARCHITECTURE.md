@@ -1,5 +1,12 @@
 # Architecture
 
+## Executable virtual intelligence
+
+Since 0.64.0, `machine.py` provides private virtual intelligence machines: VIL instructions, persistent mutable worlds, clingo-object
+execution, revision guards, immutable snapshots and independent forks. The LLM writes programs; the runtime controls execution and
+state. The complete contract, boundaries and training path are in [VIRTUAL_MACHINE.md](VIRTUAL_MACHINE.md). The consciousness and
+intuition terms below describe architectural roles, not evidence of subjective consciousness.
+
 ## Target picture
 
 A **VI** is an AI that loops — with two layers:

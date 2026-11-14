@@ -3,6 +3,63 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.64.0 — not yet released — executable virtual intelligence and checked program learning
+
+### What is new
+
+- **Real kNN-LM token inference**, `vi-mcp knn`: frozen Transformers causal models expose hidden context states and next-token logits;
+  an atomically mutable datastore supplies squared-L2 neighbors whose token probabilities are mixed with the base distribution.
+  Sources can be replaced or withdrawn, snapshots remain independent, generations pin a revision, and model/weight/tokenizer identity
+  prevents incompatible keys. An OpenAI-compatible text-program endpoint connects the VI to this backend; execution receipts retain
+  its datastore and weight hashes. Evidence: `tests/test_knn_lm.py` checks the distribution, revision/isolation, corruption refusal,
+  authentication and a real transformer. `scripts/demo_knn_lm.py` ran a pinned pretrained model: replacing a source changed its next
+  token from blue to green at unchanged weight hash; probability rose from about 0.002% to 75%. This is a memorized-context mechanism
+  test, not a held-out quality gain. See `docs/KNN_LM.md` for installation, operating limits and the reproducible experiment.
+- **VIL and clingo-object have a persistent virtual-machine runtime**, `vi_machine` / `vi-mcp machine`, contract `vil-machine-v1`.
+  Private machines own mutable objects and rules; explicit instructions define and execute programs, import/refresh visible VI
+  objects, record proposals and verify complete reference answers. Immutable snapshots, restore, independent forks, state hashes
+  and optimistic revisions make changes reviewable. The server's model can write programs over one frozen machine world; a
+  concurrent world change rejects its commit. Model calls do not hold the global database lock. No caller Python, shell or external
+  write is executed. Evidence: `tests/test_machine.py` changes a fact from port 80 to 8080 under the same program, restores after a
+  database reopen, forks independently, rejects cross-owner/stale access and checks a model repair against an independent fixture.
+  The contract and boundaries are in `docs/VIRTUAL_MACHINE.md`.
+- **Checked machine executions teach program writing.** An owner may explicitly publish one reference-checked receipt internally
+  (`teach`). Correct programs become tool-use SFT; incorrect programs and independently replayed failed repair attempts become KTO
+  negatives. Correct and incorrect programs under exactly the same question and world become DPO pairs. Private machines and
+  snapshots themselves are never selected for export. Evidence: `tests/test_machine.py`, `tests/test_anonym.py`.
+- **Executable held-out program evaluation** in the fine-tuning kit (`program_eval.jsonl`, `program_evaluate.py`) compares full
+  answers against frozen reference worlds, including missing/extra rows, syntax errors, uncertainty and resource limits. Cached
+  model predictions allow offline replay. The normal evaluator now collects predictions and requires independent correctness
+  judgments. Adoption requires a report bound to the test file and a positive conservative confidence bound over independent task
+  groups. Evidence: `tests/test_training_audit.py`, `tests/test_finetune.py`. No fine-tuning run or general capability gain is claimed.
+
+### What was fixed
+
+- **Training/evaluation contamination across document chunks and later stages.** The audit reproduced an excluded evaluation
+  target whose sibling chunk still trained the model. Export now excludes complete evaluation source pages, duplicate bodies and
+  both query styles, and refuses a broken holdout file. The kit makes one connected-component split across QA, agentic, logic, KTO
+  and DPO, joining object/source/content/task identities. Later stages read their train split, not the unsplit export. Solver-only
+  program demonstrations and observational hint pairs are withheld from default program/DPO training, with counts and reasons.
+  Evidence: `tests/test_training_audit.py` and `tests/test_dataset.py`.
+- **One correct conclusion could certify an incorrect complete program.** Positive asked-program examples now need an explicit
+  complete-answer reference check (`vi_logic action=verify`), bound to the exact imported facts, program and rule weights. A partial
+  rating remains evidence about that atom only. Latest corrections supersede earlier labels; cuts and incomplete enumeration do
+  not certify examples. Evidence: `tests/test_training_audit.py` reproduces a correct DMZ host plus an incorrect extra host and
+  confirms that rating only the correct host does not admit the program.
+- **An uncertain negative hint effect passed the incubator's no-harm gate.** A synthetic effect of −15 ± 10 percentage points
+  previously passed. The gate now requires a lower confidence bound above the configurable tolerated harm (`max_hint_harm`, default
+  0.02). Stratified simultaneous Wilson bounds retain uncertainty in zero-failure arms. Evidence: `tests/test_training_audit.py`,
+  `tests/test_holdback.py`; insufficient evidence remains an open criterion.
+- **Active weights and displayed model metrics could belong to different models.** A retained champion now keeps its own saved
+  report, warning threshold and training date; challenger diagnostics are separate. Legacy champions without reports show unknown
+  metrics. Training, validation and holdout boundaries keep all observations of an action together, and feature selection uses
+  training data only. Off-policy correction is selected on inner chronological validation, leaving the final holdout untouched;
+  uncertainty and champion minimum sample sizes count independent actions, rather than repeated hints. Evidence: `tests/test_training_audit.py` and `tests/test_lernen.py`.
+- **Keyword coverage could reward an opposite answer.** “Always disable firewall” scored 83% against “Never disable firewall” in the
+  audit. Legacy word-overlap reports no longer authorize adopting a fine-tuned model. Reference-checked task success and executable
+  program answers replace that gate. Later training stages also accept an explicit parent adapter (`--from-adapter`) so a logic or
+  preference stage can continue the intended previous stage. Evidence: `tests/test_finetune.py`, `tests/test_training_audit.py`.
+
 ## 0.63.3 — not yet released — language models of other providers
 
 ### What was fixed

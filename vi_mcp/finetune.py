@@ -33,8 +33,8 @@ An existing open model (e.g. Qwen, Llama) stays frozen; only a small add-on is t
 model's size). **QLoRA** loads the frozen model in 4 bit so it fits into little GPU memory (Dettmers et al., arXiv 2305.14314). The data
 stays in the house; only the base model is downloaded once.
 
-## Three ways to learn, three files of `vi-mcp dataset export`
-- **SFT** — `qa.jsonl`: question → right answer with source. The model learns the knowledge.
+## Training formats of `vi-mcp dataset export`
+- **SFT** — `qa.jsonl`: question → knowledge with source. Imported or title-derived examples are not automatically verified answers; the manifest reports their evidence and question source.
 - **KTO** — `kto.jsonl`: an answer was good or not (binary). Exactly the VI's helped/not-helped signal (Ethayarajh et al., arXiv 2402.01306).
 - **DPO** — `dpo.jsonl`: in the same situation this answer was better than that one (Rafailov et al., arXiv 2305.18290).
 - **agentic** — `agentic.jsonl`: the model asks the VI with `vi_recall` in VIL and answers from what it found (tool-use SFT).
@@ -66,16 +66,19 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
 ## The steps
 1. The VI is mature enough: `vi-mcp incubator status` (a run before is a trial).
 2. `vi-mcp finetune kit DIR` — data, test split, scripts.
-3. Train SFT (`train.py --stage sft`), then on top of it `--stage agentic` (searching the VI with vi_recall in VIL), `--stage logic`
-   (writing clingo-object programs), and
-   optionally KTO or DPO (`--stage kto|dpo`).
+3. Train SFT (`train.py --stage sft`), then optionally agentic or logic. Later stages read only their shared train split.
+   Use `--stage logic --from-adapter out/agentic` to continue the agentic stage, or `--stage dpo --from-adapter out/logic`
+   to continue the logic stage; without this flag each later stage starts from out/sft. Solver-only examples and
+   observational hint pairs are withheld from default program/DPO training. Checked machine examples are published explicitly with vi_machine teach.
 4. `convert.sh` → GGUF adapter; start llama-server with base and adapter.
-5. `evaluate.py` — base and fine-tuned get the same held-out questions; adopt only what is measurably better.
+5. `evaluate.py` collects paired predictions; supply independent --judgments for correctness. For program writing use
+   `program_evaluate.py --base URL --tuned URL`: full solver answers on frozen held-out worlds, not word overlap.
+   Adoption requires a positive conservative lower confidence bound over independent task families.
 6. `vi-mcp finetune record DIR` — the run becomes a model object with its lineage in the VI.
 
 ## Rules
 - Never set a token cap (max_tokens) in evaluation; if answers run long, switch thinking off (`enable_thinking: false`).
-- The evaluation questions are held out of the training data (the export guarantees it) — never train on them.
+- Evaluation source pages, duplicate contents and questions are excluded from export. The kit shares one split across all stages; never train from the unsplit dataset files when measuring the held-out sets.
 - Internal data: the files carry company knowledge unanonymised.
 """
 
@@ -126,6 +129,7 @@ a.add_argument("--base", default=json.load(open("run.json"))["base_model"])
 a.add_argument("--qlora", action="store_true", help="load the base in 4 bit (small GPUs)")
 a.add_argument("--epochs", type=float, default=2)
 a.add_argument("--lr", type=float, default=None)
+a.add_argument("--from-adapter", default="out/sft", help="parent adapter for agentic/logic/KTO/DPO; e.g. out/logic")
 o = a.parse_args()
 
 from datasets import load_dataset
@@ -143,64 +147,66 @@ if o.stage == "sft":
     t = SFTTrainer(model=model, processing_class=tok, train_dataset=ds, peft_config=lora,
                    args=SFTConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 2e-4, logging_steps=10))
 else:
-    model = AutoPeftModelForCausalLM.from_pretrained("out/sft", is_trainable=True, quantization_config=quant, torch_dtype="auto")
+    model = AutoPeftModelForCausalLM.from_pretrained(o.from_adapter, is_trainable=True, quantization_config=quant, torch_dtype="auto")
     if o.stage in ("agentic", "logic"):  # tool use: vi_recall in VIL, or vi_logic with clingo-object (rendered by the chat template)
         from trl import SFTConfig, SFTTrainer
-        ds = load_dataset("json", data_files=f"dataset/{o.stage}.jsonl")["train"].remove_columns(["meta"])
+        ds = load_dataset("json", data_files=f"split/{o.stage}.train.jsonl")["train"].remove_columns(["meta"])
         t = SFTTrainer(model=model, processing_class=tok, train_dataset=ds,
                        args=SFTConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 1e-4, logging_steps=10))
     elif o.stage == "kto":
         from trl import KTOConfig, KTOTrainer
-        ds = load_dataset("json", data_files="dataset/kto.jsonl")["train"].remove_columns(["meta"])
+        ds = load_dataset("json", data_files="split/kto.train.jsonl")["train"].remove_columns(["meta"])
         t = KTOTrainer(model=model, processing_class=tok, train_dataset=ds,
                        args=KTOConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 5e-6, per_device_train_batch_size=4))
     else:
         from trl import DPOConfig, DPOTrainer
-        ds = load_dataset("json", data_files="dataset/dpo.jsonl")["train"].remove_columns(["meta"])
+        ds = load_dataset("json", data_files="split/dpo.train.jsonl")["train"].remove_columns(["meta"])
         t = DPOTrainer(model=model, processing_class=tok, train_dataset=ds,
                        args=DPOConfig(output_dir=str(out), num_train_epochs=o.epochs, learning_rate=o.lr or 5e-6))
 t.train()
 t.save_model(str(out))
-json.dump({**json.load(open("run.json")), f"trained_{o.stage}": str(out)}, open("run.json", "w"), indent=2)
+json.dump({**json.load(open("run.json")), f"trained_{o.stage}": str(out), f"parent_{o.stage}": o.base if o.stage == "sft" else o.from_adapter},
+          open("run.json", "w"), indent=2)
 print("adapter written to", out)
 '''
 
-EVALUATE_PY = r'''"""Base against fine-tuned on held-out questions — written by vi-mcp finetune kit. Both are OpenAI-compatible endpoints (llama-server).
-Score per question: share of the expected keywords in the answer. No max_tokens (project rule); thinking off."""
-import argparse, json, re, urllib.request
+EVALUATE_PY = r'''"""Collect paired predictions; correctness comes from independent judgments, never keyword overlap."""
+import argparse, hashlib, json, urllib.request
+from evaluation_core import summarize_judgments
 
 a = argparse.ArgumentParser()
-a.add_argument("--base", required=True, help="chat completions URL of the base model")
-a.add_argument("--tuned", required=True, help="chat completions URL of base + adapter")
+a.add_argument("--base", required=True)
+a.add_argument("--tuned", required=True)
+a.add_argument("--judgments", help="JSON list: id, group, base_correct, tuned_correct, reference")
 o = a.parse_args()
-
-
-def ask(url, q):
-    body = {"messages": [{"role": "user", "content": q}], "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
-    req = urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        return json.load(r)["choices"][0]["message"]["content"]
-
-
-def words(t):
-    return {w for w in re.findall(r"\w{4,}", (t or "").lower())}
-
-
 rows = [json.loads(l) for l in open("split/test.jsonl")]
-qs = [(r["messages"][0]["content"], words(r["messages"][1]["content"])) for r in rows]
-qs += [(q["frage"], words(q["stichworte"])) for q in json.load(open("eval_questions.json"))]
-res = {"base": [], "tuned": []}
-for q, expect in qs:
-    for name, url in (("base", o.base), ("tuned", o.tuned)):
-        got = words(ask(url, q))
-        res[name].append(len(got & expect) / len(expect) if expect else 0.0)
-summary = {k: round(sum(v) / len(v), 4) if v else None for k, v in res.items()}
-summary["n"] = len(qs)
-summary["better"] = sum(1 for b, t in zip(res["base"], res["tuned"]) if t > b)
-summary["worse"] = sum(1 for b, t in zip(res["base"], res["tuned"]) if t < b)
-json.dump(summary, open("eval.json", "w"), indent=2)
-print(json.dumps(summary, indent=2))
+if o.judgments:
+    judgments = json.load(open(o.judgments))
+    ids = {r["meta"]["id"] + ":" + str(i) for i, r in enumerate(rows)}
+    if {r["id"] for r in judgments} != ids or len(judgments) != len(rows):
+        raise ValueError("judgments must cover exactly the held-out questions")
+    for i, r in enumerate(rows):
+        j = next(j for j in judgments if j["id"] == r["meta"]["id"] + ":" + str(i))
+        j["group"] = r["meta"].get("group", r["meta"]["id"])
+    summary = summarize_judgments(judgments)
+    summary["evaluation_set_sha256"] = hashlib.sha256(open("split/test.jsonl", "rb").read()).hexdigest()
+    json.dump(summary, open("eval.json", "w"), indent=2)
+    print(json.dumps(summary, indent=2))
+else:
+    predictions = []
+    for i, r in enumerate(rows):
+        q = r["messages"][0]["content"]
+        item = {"id": r["meta"]["id"] + ":" + str(i), "question": q, "reference_answer": r["messages"][1]["content"]}
+        for name, url in (("base", o.base), ("tuned", o.tuned)):
+            body = {"messages": [{"role": "user", "content": q}], "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
+            req = urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=600) as response:
+                item[name] = json.load(response)["choices"][0]["message"]["content"]
+        predictions.append(item)
+    json.dump(predictions, open("predictions.json", "w"), indent=2)
+    print("Predictions collected. Supply independent --judgments; no correctness score has been inferred.")
 '''
+
 
 CONVERT_SH = """#!/bin/sh
 # The adapter as GGUF for llama.cpp — written by vi-mcp finetune kit. LLAMA_CPP = a checkout of llama.cpp, BASE_HF = the base model's
@@ -215,17 +221,79 @@ echo "serve: llama-server -m BASE.gguf --lora adapter-$STAGE.gguf   (switchable:
 
 
 def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 7) -> dict:
-    """Test split by object (all questions of one object on the same side), deterministic."""
-    rows = [json.loads(line) for line in qa_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    ids = sorted({r["meta"]["id"] for r in rows})
+    """One connected-component split across ALL stages: object, source, duplicate content and program family stay together."""
+    data = {name: [json.loads(s) for s in (qa_path.parent / f"{name}.jsonl").read_text().splitlines() if s.strip()]
+            if (qa_path.parent / f"{name}.jsonl").exists() else [] for name in ("qa", "agentic", "logic", "kto", "dpo")}
+    parent = {}
+    def root(x):
+        parent.setdefault(x, x)
+        if parent[x] != x:
+            parent[x] = root(parent[x])
+        return parent[x]
+    def keys(row):
+        m = row.get("meta") or {}
+        refs = ["id:" + str(m[k]) for k in ("id", "chosen", "rejected") if m.get(k)]
+        refs += [k + ":" + str(m[k]) for k in ("group", "content_hash", "program_family") if m.get(k)]
+        return refs or ["row:" + hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()]
+    for rows in data.values():
+        for r in rows:
+            refs = keys(r)
+            for x in refs[1:]:
+                parent[root(x)] = root(refs[0])
+    groups = sorted({root(keys(r)[0]) for rows in data.values() for r in rows})
     rnd = random.Random(seed)
-    test_ids = set(rnd.sample(ids, max(1, int(len(ids) * share)))) if len(ids) > 1 else set()
+    test_groups = set(rnd.sample(groups, max(1, int(len(groups) * share)))) if len(groups) > 1 else set()
     out_dir.mkdir(exist_ok=True)
-    train = [r for r in rows if r["meta"]["id"] not in test_ids]
-    test = [r for r in rows if r["meta"]["id"] in test_ids]
-    for name, part in (("train", train), ("test", test)):
-        _write(out_dir / f"{name}.jsonl", "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in part))
-    return {"train": len(train), "test": len(test), "objekte_test": len(test_ids)}
+    counts = {}
+    for stage, rows in data.items():
+        train = [r for r in rows if root(keys(r)[0]) not in test_groups
+                 and not (stage in ("logic", "dpo") and (r.get("meta") or {}).get("validation") in ("solver_only", "observational"))]
+        test = [r for r in rows if root(keys(r)[0]) in test_groups]
+        for side, part in (("train", train), ("test", test)):
+            path = out_dir / (f"{side}.jsonl" if stage == "qa" else f"{stage}.{side}.jsonl")
+            _write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in part))
+        counts[stage] = {"train": len(train), "test": len(test), "withheld": len(rows) - len(train) - len(test)}
+        if counts[stage]["withheld"]:
+            counts[stage]["reason"] = "solver-only program demonstration or observational preference; no independent task verification"
+    test_ids = {r["meta"]["id"] for r in data["qa"] if root(keys(r)[0]) in test_groups}
+    return {**counts["qa"], "objekte_test": len(test_ids), "groups": len(groups), "test_groups": len(test_groups), "stages": counts}
+
+
+PROGRAM_EVALUATE_PY = r'''"""Evaluate program generation on frozen held-out tasks. No training or live tools are executed."""
+import argparse, hashlib, json, urllib.request
+from clingo_object.agent import program_of, SYSTEM
+from evaluation_core import evaluate_program, summarize_judgments
+
+a = argparse.ArgumentParser()
+a.add_argument("--base", required=True, help="base chat completions URL")
+a.add_argument("--tuned", required=True, help="tuned chat completions URL")
+a.add_argument("--predictions", help="optional JSON list: id, base program, tuned program (offline replay)")
+o = a.parse_args()
+cases = [json.loads(l) for l in open("program_eval.jsonl")]
+cached = {r["id"]: r for r in json.load(open(o.predictions))} if o.predictions else {}
+judgments, details = [], []
+for row in cases:
+    outputs = {}
+    for name, url in (("base", o.base), ("tuned", o.tuned)):
+        if cached:
+            source = cached[row["id"]][name]
+        else:
+            q = row["question"] + "\nFrozen objects (use only these tags and filters):\n" + json.dumps(row["case"].get("input_objects", row["case"]["objects"]))
+            body = {"messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": q}],
+                    "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
+            req = urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=600) as r:
+                source = program_of(json.load(r)["choices"][0]["message"]["content"])
+        outputs[name] = evaluate_program(source, row["case"])
+    judgments.append({"id": row["id"], "group": row["group"], "base_correct": outputs["base"]["correct"],
+                      "tuned_correct": outputs["tuned"]["correct"], "reference": row["reference"]})
+    details.append({"id": row["id"], **outputs})
+summary = summarize_judgments(judgments)
+summary["evaluation_set_sha256"] = hashlib.sha256(open("program_eval.jsonl", "rb").read()).hexdigest()
+summary["evaluation_kind"] = "program"
+json.dump({**summary, "details": details}, open("program_eval_result.json", "w"), indent=2)
+print(json.dumps(summary, indent=2))
+'''
 
 
 def _write(p: Path, text: str, mode: int = 0o600) -> None:
@@ -250,6 +318,21 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     _write(d / "eval_questions.json", json.dumps(questions, ensure_ascii=False, indent=1))
     _write(d / "train.py", TRAIN_PY, 0o700)
     _write(d / "evaluate.py", EVALUATE_PY, 0o700)
+    _write(d / "evaluation_core.py", Path(__file__).with_name("training_eval.py").read_text(encoding="utf-8"))
+    cases, seen = [], set()
+    for stage in ("logic", "kto"):
+        for line in (d / "split" / f"{stage}.test.jsonl").read_text().splitlines():
+            row = json.loads(line)
+            m = row.get("meta") or {}
+            case = m.get("program_eval")
+            if not case:
+                continue
+            ident = hashlib.sha256(json.dumps(case, sort_keys=True).encode()).hexdigest()
+            if ident not in seen:
+                seen.add(ident)
+                cases.append({"id": ident, "group": m["group"], **case, "reference": "explicit reference stored with checked execution"})
+    _write(d / "program_eval.jsonl", "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in cases))
+    _write(d / "program_evaluate.py", PROGRAM_EVALUATE_PY, 0o700)
     _write(d / "convert.sh", CONVERT_SH, 0o700)
     _write(d / "README-FINETUNE.md", GUIDE)
     run = {"base_model": base, "kit": g.now(), "vi_mcp": __version__, "handbook": GUIDE_VERSION, "index": index,
@@ -270,10 +353,14 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
         f = d / "out" / stage / "adapter_model.safetensors"
         if f.exists():
             adapters[stage] = hashlib.sha256(f.read_bytes()).hexdigest()
-    ev = json.loads((d / "eval.json").read_text(encoding="utf-8")) if (d / "eval.json").exists() else None
+    ep = d / "program_eval_result.json" if (d / "program_eval_result.json").exists() else d / "eval.json"
+    ev = json.loads(ep.read_text(encoding="utf-8")) if ep.exists() else None
     if not adapters:
         raise ValueError(f"{d}: no trained adapter under out/ — run train.py first")
-    better = ev is not None and ev.get("tuned") is not None and ev.get("base") is not None and ev["tuned"] > ev["base"]
+    evaluation_path = d / "program_eval.jsonl" if ev and ev.get("evaluation_kind") == "program" else d / "split" / "test.jsonl"
+    evaluation_hash = hashlib.sha256(evaluation_path.read_bytes()).hexdigest()
+    better = bool(ev and ev.get("metric") == "verified_task_success" and ev.get("evaluation_set_sha256") == evaluation_hash
+                  and ev.get("n", 0) > 0 and ev.get("lower_95") is not None and ev["lower_95"] > 0)
     verdict = ("not evaluated — run evaluate.py" if ev is None else
                f"fine-tuned {ev['tuned']} vs base {ev['base']} on {ev['n']} held-out questions ({ev['better']} better, {ev['worse']} worse)")
     oid = f"modell:finetune:{run['kit'][:19].replace(':', '').replace('-', '')}"

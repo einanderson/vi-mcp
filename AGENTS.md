@@ -14,6 +14,13 @@ Sleep (when enough important things have accumulated; at night only after 24 h w
 learn on demand (`on_demand`), about a minute after new experiences or new knowledge. Visibilities: private, shared, internal (only with a token; never an open network, only a company network).
 Everything is an object in SQLite with hashtags (`art:wert`, kind:value), owning instance and visibility (stored as `privat`/`geteilt`/`intern`). vi-mcp trains no model by itself; fine-tuning an AI with a VI's knowledge is a person's explicit action (`vi_finetune`, `vi-mcp finetune`: data, scripts and lineage — the training runs in an external program on a GPU host, 0.62.0).
 
+0.64.0: `vi_machine` / `vi-mcp machine` executes VIL over a named instance's private mutable world, with safe clingo-object programs,
+revisions, snapshots and forks. A full independent answer reference checks an execution; only explicit `teach` promotes that example
+internally for training. See `docs/VIRTUAL_MACHINE.md`. The optional `vi-mcp knn` runs on the inference host, below MCP: a frozen
+Transformers causal model interpolates next-token probabilities with a mutable hidden-state/target datastore. Its shards and snapshots
+are private inference files, not VI SQL or network exports. `docs/KNN_LM.md`, `scripts/demo_knn_lm.py` and `tests/test_knn_lm.py` document
+the real neural path; the neural test needs torch/transformers and otherwise skips. No Python from MCP callers runs in either path.
+
 Since 0.53.0 a failed action brings what the memory knows about its error (`intuition.error_hints`, returned by `vi_after`), and the
 first prompt of a session carries the skill table (`capabilities`, `vi_capabilities`: system, tools, manual id).
 Since 0.44.0 the hook also searches before every user prompt (`vi_prompt_context`: Claude Code `UserPromptSubmit`, Hermes shell hook

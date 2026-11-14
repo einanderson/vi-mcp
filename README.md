@@ -6,6 +6,17 @@
 Each session keeps its own conversation context, like time slices on a processor. All of them share the same memory: what one session learns shows up as a hint for the next one, right before the relevant action.
 The language model itself is never changed. Learning happens in the memory, and the memory stays readable.
 
+## A virtual intelligence machine (0.64.0)
+
+The optional [kNN-LM backend](docs/KNN_LM.md) also makes token prediction depend on a mutable hidden-state datastore, while the
+base model's weights stay fixed. It runs below MCP in real causal-model inference; `vi-mcp knn` manages its data and serves the VI.
+
+VIL and clingo-object now have a persistent runtime: `vi_machine`. Each authenticated instance can create private machines, change
+their objects, define and execute rules, import visible knowledge, snapshot, restore and fork a world. The LLM is a replaceable
+program writer; clingo executes the safe notation over the machine's current data. Checked executions become SFT, KTO and
+same-task preference examples only after explicit internal publication. A fixed program changes its answer when facts change,
+without retraining the model. [Machine contract, examples and training](docs/VIRTUAL_MACHINE.md).
+
 ## What this is: a search for the best prompt
 
 vi-mcp does not train a language model. It learns, from the measured outcome of every action of every connected agent, *which context to
@@ -18,6 +29,10 @@ choices check it.
   targets × 2 queries, daily).
 - **Predicting:** the model recognises the actions that will fail — 51 % of the warned actions failed, 3 % of the others (AUC 0.88).
 - **Choosing:** the hint it chooses beats a randomly chosen one by 12.6 ± 5.3 points of success (randomized, so causal).
+
+*Audit update (14.11.2026):* the current randomized ranking advantage is 4.7 ± 3.1 percentage points (one standard error),
+not a conclusive gain in this window. Historical results above do not establish the total benefit of hints. The 0.64.0 incubator
+requires a noninferiority lower bound, and the fine-tuning kit checks program/task correctness rather than keyword overlap.
 
 *Being measured (since 0.61.0):* how much showing hints at all raises the success of an action. Comparing actions with and without hints
 cannot tell — hints appear on the hard ones. So on a random 5 % of the actions with hints, the hints are held back, and `vi_stats` compares
@@ -55,7 +70,7 @@ its state — met, open, or not measured yet (never counted as met):
 | checked | share rated after being shown or confirmed by an instance — knowledge put to the test, not only stated | 20 % |
 | search | hybrid MRR of the daily fixed question set | 0.6 |
 | router | the hint model is active, holdout AUC | 0.75 |
-| hints_no_harm | the randomized hold-back does not show that hints lower success | no harm beyond 2 SE |
+| hints_no_harm | the randomized hold-back does not show that hints lower success | lower 95% confidence bound above −0.02 |
 | labels | share classified for the AI language, and the student active | 50 % |
 | training_data | question → answer examples, with the evaluation held out | 1000 |
 

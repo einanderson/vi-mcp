@@ -121,7 +121,7 @@ the effect causal:
   weighted by 1/p (clipped at 10) and replaces the uncorrected one only if it wins on the holdout by more than two standard errors.
 - **Hold-back** (0.61.0). On a random 5 % of actions that have hints, the hints are held back (the risk warning stays). Comparing held-back
   with shown actions within instance and tool (Mantel–Haenszel) estimates the *total* effect of showing hints. A raw comparison cannot:
-  hints appear on hard actions (raw lift −37 points, matched lift −1 point, 13.11.2026). The hold-back is not yet deployed; a difference of
+  hints appear on hard actions (raw lift −37 points, matched lift −1 point, 13.11.2026). The hold-back was not yet deployed at that measurement; it is now collecting observations; a difference of
   a few points needs a few hundred held-back actions — weeks.
 
 Warnings, by contrast, are clearly predictive: actions after a warning succeeded 51 % of the time, without a warning 98 % (24 h,
@@ -376,7 +376,7 @@ A memory matures in operation. `vi-mcp incubator status` measures seven required
 | checked | share rated after being shown or confirmed — knowledge put to the test, not only stated | 20 % |
 | search | hybrid MRR of the daily fixed question set | 0.6 |
 | router | hint model active, holdout AUC | 0.75 |
-| hints_no_harm | the randomized hold-back does not show that hints lower success | no harm beyond 2 SE |
+| hints_no_harm | the randomized hold-back does not show that hints lower success | lower 95% confidence bound above −0.02 |
 | labels | share classified, and the student active | 50 % |
 | training_data | question → answer examples, evaluation held out | 1,000 |
 
@@ -438,7 +438,7 @@ A system built on "evidence or hypothesis" must report its own errors. In the wo
 - **No human gold set yet.** κ between two prompts measures the model's consistency with itself, not correctness (Pangakis et al. found
   precision or recall below 0.5 on 9 of 27 annotation tasks [41]).
 - **No fine-tuning run yet.** The kit is untested on real hardware; whether the exported data improves a model is open.
-- **The total effect of hints is not yet measured** (hold-back not deployed).
+- **The total effect of hints is not yet established** (the deployed hold-back has too few observations).
 - **Poisoning.** PoisonedRAG succeeds 97 % of the time with five texts per target question [42], AgentPoison above 80 % with under 0.1 %
   poisoned entries [43]. Our own poisoning test (`vi-mcp redteam`, a throw-away memory, success = top 3 of search or shown as a hint)
   found imports and token-less proposals held 10 of 10, but **10 of 10 planted entries of an instance with a token reached an agent**.
@@ -448,7 +448,7 @@ A system built on "evidence or hypothesis" must report its own errors. In the wo
   first version of the rules held 216 of 300 real objects; the version kept holds 1 — measuring false positives on real data was as
   important as measuring attacks.
 - **Off-policy training is gated, not proven.** Every training fits an inverse-propensity-weighted router beside the uncorrected one and
-  keeps it only if it is better on the holdout by more than 2 SE; whether it ever wins on production data is not yet known.
+  keeps it only if it is better on an inner chronological validation by more than 2 SE (since 0.64.0, the final holdout stays untouched); whether it ever wins on production data is not yet known.
 - **Order-dependent tests.** Two tests fail rarely in a full run and pass alone; the cause is unknown.
 - **The logic layer's weight counting** approximates LPMLN weight learning where several rules derive the same conclusion. Rule learning
   covers unary conclusions with up to two conditions and has no production data yet (127 conclusions, all right — no negatives).
@@ -457,9 +457,26 @@ A system built on "evidence or hypothesis" must report its own errors. In the wo
 - **The language does not yet rank better.** Every reordering by question type, label or word weight lowered MRR on the production
   copy (5.4); a relevance weight learned from what is used after a search is the open step.
 
+## 8.1 Implementation audit and virtual machine contract
+
+The 14 November audit reproduced source-page leakage across training/evaluation, action observations split across train/holdout,
+challenger metrics displayed under champion weights, and an insufficient non-harm gate. Version 0.64.0 groups training partitions,
+separates model reports and requires a noninferiority lower bound. Fine-tuning adoption uses independent correctness or executable
+program checks rather than keyword coverage. One correct sampled conclusion no longer certifies a complete generated program.
+
+VIL and clingo-object form the instruction and execution architecture of a persistent virtual intelligence machine (`vi_machine`):
+private mutable objects and rules, snapshots, forks, revision guards and reference-checked training examples. The model writes
+programs; the runtime controls state and execution. This does not virtualize neural parameters, certify the underlying facts or
+establish a fine-tuning gain. See [the executable machine contract](VIRTUAL_MACHINE.md) and its regression tests.
+
+The optional [kNN-LM backend](KNN_LM.md) also implements inference below MCP: a causal model's hidden states index a mutable
+next-token datastore, and nearest-neighbor token probabilities are interpolated with its unchanged base distribution. A pinned
+pretrained-model experiment changed the next token by replacing one source while preserving the full model-weight hash. This
+establishes the mechanism on a memorized context; its held-out perplexity evaluator is available for broader quality measurements.
+
 ## 9 Conclusion
 
-vi-mcp shows that a memory for AI agents can learn — measurably and causally — which context helps, without touching the language model.
+vi-mcp implements adaptive context selection without changing the language model. Historical randomized comparisons favour ranked hints in some windows; the total benefit of showing hints requires a sufficiently powered independent measurement.
 The incubator turns "is this memory good enough?" into criteria with values, and the export turns a mature memory into training data that
 another AI can learn from, including how to search the memory itself. VIL keeps the symbols readable for people and checkable for
 parsers, and puts meaning where the system already has it: in measured weights, exchanged between memories as measurements rather than
