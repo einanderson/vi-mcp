@@ -55,6 +55,37 @@ Linked from [README.md](README.md).
   judgments. Adoption requires a report bound to the test file and a positive conservative confidence bound over independent task
   groups. Evidence: `tests/test_training_audit.py`, `tests/test_finetune.py`. No fine-tuning run or general capability gain is claimed.
 
+- **Retrieval drafts for the kNN-LM** (`generate(draft=N)`, `vi-mcp knn generate|serve --draft N`). This is exact
+  retrieval-based speculative decoding after REST (arXiv 2311.08252) and NEST (arXiv 2405.19325), without NEST's relaxed
+  acceptance:
+  - The nearest neighbor's stored continuation is the draft, and one forward pass verifies it.
+  - A drafted token is kept only if it is the greedy choice, so the text equals plain decoding.
+  - The result names the sources of the accepted tokens (`spans`).
+
+  Measured with `draft=8` on Qwen/Qwen3-0.6B (float32, CPU, 8 threads), using paragraphs of this README: 12 stored (prompt =
+  first 12 words, the rest remembered) and 6 controls not stored, 32 tokens each.
+
+  | Memory weight | Stored: tokens per pass | Stored: faster | Controls: faster | Identical to plain decoding |
+  |---|---|---|---|---|
+  | 0.5 | 6.40 | 5.75× | 3.05× | 18 / 18 |
+  | 0.25 | 1.61 | 1.57× | 1.79× | 18 / 18 |
+
+  The controls gain too: the memory supplies drafts even for unrelated prompts. Wall times are in the scratch measurement; in
+  float32, plain decoding is about 3× slower than in bfloat16 (87.8 s vs 29.9 s for the same 12 runs).
+
+  Evidence: `tests/test_knn_lm.py::test_retrieval_drafts_keep_the_greedy_text_and_save_forward_passes`; docs/KNN_LM.md.
+- **`TransformersCore.load` defaults to float32** (`--dtype`). Measured on Qwen3-0.6B (CPU), the same position's logits differed
+  between sequence lengths:
+
+  | Precision | Lengths with a difference | Largest difference |
+  |---|---|---|
+  | bfloat16 (the checkpoint's default) | 8 of 16 | up to 0.625 |
+  | float32 | 0 of 16 | 0.0 |
+
+  kNN keys are written at one length and queried at another, and drafts verify at a longer length. In bfloat16, 2 of 72 drafted
+  runs flipped a near-tie (0.352 against 0.351); in float32, 72 of 72 were identical. Outside float32, a drafted result says it is
+  not exact. The weight hash includes the dtype, so a datastore written with a bfloat16 core does not match a float32 core.
+
 ### What was fixed
 
 - **`teach` could publish private knowledge as internal training data** (found in Claude's review of this release, 14.11.2026). An

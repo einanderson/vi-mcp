@@ -1,4 +1,5 @@
 """kNN-LM probability semantics, mutable revisions and real neural integration when optional dependencies exist."""
+import hashlib
 import json
 import threading
 import urllib.error
@@ -160,3 +161,41 @@ def test_real_transformer_changes_next_token_from_datastore_only(tmp_path):
     assert score["base_nll"] == score["knn_nll"]  # the evaluator cannot retrieve its own target source
     store.forget("inventory", "test complete")
     np.testing.assert_array_equal(lm.predict("service port")["probabilities"], baseline["probabilities"])
+
+
+def _tiny_lm(tmp_path, weight=.99):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import Whitespace
+    torch.manual_seed(5)
+    words = ["[UNK]", "[EOS]", "reload", "nginx", "check", "config", "with", "nginx-t", "then", "systemctl", "reload-nginx", "done",
+             "backup", "database", "pg_dump", "into", "srv"]
+    tok = Tokenizer(WordLevel({w: i for i, w in enumerate(words)}, unk_token="[UNK]"))
+    tok.pre_tokenizer = Whitespace()
+    tok = PreTrainedTokenizerFast(tokenizer_object=tok, unk_token="[UNK]", eos_token="[EOS]")
+    model = GPT2LMHeadModel(GPT2Config(vocab_size=len(words), n_positions=64, n_embd=16, n_layer=2, n_head=2, eos_token_id=1))
+    core = TransformersCore(model, tok, "deterministic-draft-transformer")
+    return KNNLanguageModel(core, Datastore(tmp_path / "store", core.identity), weight=weight, k=1)
+
+
+def test_retrieval_drafts_keep_the_greedy_text_and_save_forward_passes(tmp_path):
+    """Exact retrieval-based speculative decoding (REST/NEST without relaxed acceptance): same tokens as plain greedy decoding,
+    fewer forward passes when the memory holds the continuation, and the accepted tokens name their source."""
+    lm = _tiny_lm(tmp_path)
+    runbook = " check config with nginx-t then systemctl reload-nginx done"
+    lm.remember("runbook-nginx", "reload nginx", runbook)
+    plain = lm.generate("reload nginx", steps=8)
+    fast = lm.generate("reload nginx", steps=8, draft=6)
+    assert fast["tokens"] == plain["tokens"] and fast["text"] == plain["text"]
+    spec = fast["speculative"]
+    assert spec["forward_passes"] < len(fast["tokens"]) and spec["accepted_from_memory"] > 0
+    assert {s["source_hash"] for s in spec["spans"]} == {hashlib.sha256(b"runbook-nginx").hexdigest()}
+    # Nothing relevant in memory: no usable drafts, still the identical text.
+    other = _tiny_lm(tmp_path / "other", weight=.3)
+    other.remember("backup", "backup database", " pg_dump into srv")
+    assert other.generate("reload nginx", steps=6, draft=4)["tokens"] == other.generate("reload nginx", steps=6)["tokens"]
+    with pytest.raises(ValueError, match="draft"):
+        lm.generate("reload nginx", draft=65)

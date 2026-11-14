@@ -204,25 +204,39 @@ class Datastore:
             raise ValueError("incompatible datastore view")
         blocked = {hashlib.sha256(s.encode()).hexdigest() for s in exclude_sources}
         distances, targets = np.empty(0), np.empty(0, dtype=np.int64)
+        origin, rows, sources = np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64), []
         for source, d in sorted(view["documents"].items()):
             if source in blocked:
                 continue
+            sources.append(source)
             keys, tokens = self._array(d, "keys"), self._array(d, "tokens")
             for start in range(0, len(tokens), 1024):
                 delta = np.asarray(keys[start:start + 1024], dtype=np.float64) - query
                 ds = np.einsum("ij,ij->i", delta, delta)
                 distances = np.concatenate((distances, ds))
                 targets = np.concatenate((targets, tokens[start:start + 1024]))
+                origin = np.concatenate((origin, np.full(len(ds), len(sources) - 1, dtype=np.int64)))
+                rows = np.concatenate((rows, np.arange(start, start + len(ds), dtype=np.int64)))
                 # Stable ties: previous neighbors first, then source hash and row position.
                 keep = np.argsort(distances, kind="stable")[:k]
-                distances, targets = distances[keep], targets[keep]
+                distances, targets, origin, rows = distances[keep], targets[keep], origin[keep], rows[keep]
         probability = np.zeros(self.identity["vocab_size"], dtype=np.float64)
         if len(targets):
             weights = np.exp(-(distances - distances[0]) / temperature)
             weights /= weights.sum()
             np.add.at(probability, targets, weights)
         return probability, {"revision": view["revision"], "neighbors": len(targets),
-                             "nearest_squared_l2": float(distances[0]) if len(targets) else None}
+                             "nearest_squared_l2": float(distances[0]) if len(targets) else None,
+                             "nearest": {"source_hash": sources[int(origin[0])], "row": int(rows[0])} if len(targets) else None}
+
+    def continuation(self, view, source_hash, row, length):
+        """The stored next tokens of one source from a row on, in order — a shard keeps a source's targets contiguous, so the
+        tokens after a neighbor's target are the text that followed it (a draft for speculative decoding, never an answer by itself)."""
+        d = view["documents"].get(source_hash)
+        if d is None or length < 1:
+            return []
+        tokens = self._array(d, "tokens")
+        return [int(t) for t in tokens[row:row + length]]
 
 
 def interpolate(logits, memory_probability, weight):
@@ -261,10 +275,14 @@ class TransformersCore:
                          "vocab_size": int(model.config.vocab_size), "context_window": self.window}
 
     @classmethod
-    def load(cls, model_id, revision=None, device="cpu"):
+    def load(cls, model_id, revision=None, device="cpu", dtype="float32"):
+        """float32 by default (measured 14.11.2026, Qwen3-0.6B on CPU): in the checkpoint's bfloat16 the logits of the same position
+        differed by up to 0.625 between sequence lengths (8 of 16 lengths), in float32 by 0.0 (0 of 16). kNN keys are written at
+        one length and queried at another, and speculative drafts verify at a longer length — both need reproducible states."""
+        import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision, trust_remote_code=False)
-        model = AutoModelForCausalLM.from_pretrained(model_id, revision=revision, trust_remote_code=False)
+        model = AutoModelForCausalLM.from_pretrained(model_id, revision=revision, trust_remote_code=False, dtype=getattr(torch, dtype))
         return cls(model, tokenizer, model_id, device)
 
     def weight_hash(self):
@@ -284,13 +302,18 @@ class TransformersCore:
             raise ValueError("context exceeds model window; split the source explicitly")
         return ids
 
-    def forward(self, token_ids):
+    def forward_all(self, token_ids):
+        """Context states and next-token logits at every position of one forward pass (speculative verification)."""
         if not 0 < len(token_ids) <= self.window:
             raise ValueError("context exceeds model window or is empty")
         with self.lock, self.torch.inference_mode():
             out = self.model(input_ids=self.torch.tensor([token_ids], device=self.device),
                              output_hidden_states=True, use_cache=False, return_dict=True)
-        return (out.hidden_states[-1][0].float().cpu().numpy(), out.logits[0, -1].float().cpu().numpy())
+        return out.hidden_states[-1][0].float().cpu().numpy(), out.logits[0].float().cpu().numpy()
+
+    def forward(self, token_ids):
+        states, logits = self.forward_all(token_ids)
+        return states, logits[-1]
 
     def chat_prompt(self, messages):
         if not isinstance(messages, list) or not messages or any(m.get("role") not in ("system", "user", "assistant", "tool")
@@ -366,8 +389,15 @@ class KNNLanguageModel:
                 "seconds": time.monotonic() - started, "source_exclusion": True,
                 "datastore_sha256": hashlib.sha256(_json(view).encode()).hexdigest()}
 
-    def generate(self, prompt, steps=64, stop=()):
-        """Greedy decoding with explicit resource budget. Report budget exhaustion, never pretend it was a complete answer."""
+    def generate(self, prompt, steps=64, stop=(), draft=0):
+        """Greedy decoding with explicit resource budget. Report budget exhaustion, never pretend it was a complete answer.
+        draft > 0: exact retrieval-based speculative decoding (REST arXiv 2311.08252, NEST arXiv 2405.19325, without NEST's relaxed
+        acceptance): the nearest neighbor's stored continuation is a draft, one forward pass verifies it, and a drafted token is
+        kept only if it IS the greedy choice of the mixed distribution — the text equals draft=0, with fewer forward passes."""
+        if not isinstance(draft, int) or not 0 <= draft <= 64:
+            raise ValueError("draft length must be 0–64 tokens")
+        if draft:
+            return self._generate_drafted(prompt, steps, stop, draft)
         if not isinstance(steps, int) or not 1 <= steps <= 4096:
             raise ValueError("decoding step budget must be 1–4096")
         ids, generated, view = self.core.encode(prompt), [], self.store.view()
@@ -394,3 +424,67 @@ class KNNLanguageModel:
                 break
         return {"text": self.core.tokenizer.decode(generated, skip_special_tokens=True), "finish_reason": finish,
                 "revision": view["revision"], "tokens": generated, "datastore_sha256": hashlib.sha256(_json(view).encode()).hexdigest()}
+
+    def _generate_drafted(self, prompt, steps, stop, draft):
+        if not isinstance(steps, int) or not 1 <= steps <= 4096:
+            raise ValueError("decoding step budget must be 1–4096")
+        ids, generated, view = self.core.encode(prompt), [], self.store.view()
+        eos = self.core.tokenizer.eos_token_id
+        proposal, finish, passes = [], "budget", 0
+        drafted = accepted_from_memory = 0
+        spans = []  # attribution: which stored source supplied which generated tokens
+        digest = hashlib.sha256(_json(view).encode()).hexdigest()
+        dtype = str(getattr(getattr(self.core, "model", None), "dtype", "float32")).replace("torch.", "")
+        exact = dtype == "float32"
+        while len(generated) < steps:
+            proposal = proposal[:max(0, min(steps - len(generated) - 1, self.core.window - len(ids)))]
+            with self.lock:
+                states, logits = self.core.forward_all(ids + [t for t, _src in proposal])
+            passes += 1
+            drafted += len(proposal)
+            base = len(ids) - 1
+            new, nearest = [], None
+            for j in range(len(proposal) + 1):
+                memory, info = self.store.distribution(states[base + j], k=self.k, temperature=self.temperature, view=view)
+                mixed, _base = interpolate(logits[base + j], memory, self.weight)
+                token, nearest = int(mixed.argmax()), info.get("nearest")
+                if token == eos:
+                    finish = "stop"
+                    break
+                from_memory = j < len(proposal) and token == proposal[j][0]
+                new.append((token, proposal[j][1] if from_memory else None))
+                if not from_memory or len(generated) + len(new) >= steps:
+                    break
+            for token, src in new:
+                generated.append(token)
+                ids.append(token)
+                if src:
+                    accepted_from_memory += 1
+                    if spans and spans[-1]["source_hash"] == src and spans[-1]["end"] == len(generated) - 1:
+                        spans[-1]["end"] += 1
+                    else:
+                        spans.append({"source_hash": src, "start": len(generated) - 1, "end": len(generated)})
+            text = self.core.tokenizer.decode(generated, skip_special_tokens=True)
+            if any(s_ and s_ in text for s_ in stop):
+                text = text[:min(text.index(s_) for s_ in stop if s_ and s_ in text)]
+                finish = "stop"
+                break
+            if finish == "stop":
+                break
+            if len(ids) >= self.core.window:
+                finish = "context"
+                break
+            # Next draft: the nearest neighbor of the last verified state predicted the token just emitted; what followed it in
+            # its source is the proposal. If that neighbor predicted something else, no draft (one token per pass, as without).
+            proposal = []
+            if nearest and new and finish != "stop":
+                cont = self.store.continuation(view, nearest["source_hash"], nearest["row"], draft + 1)
+                if cont and cont[0] == new[-1][0]:
+                    proposal = [(t, nearest["source_hash"]) for t in cont[1:]]
+        else:
+            text = self.core.tokenizer.decode(generated, skip_special_tokens=True)
+        return {"text": text, "finish_reason": finish, "revision": view["revision"], "tokens": generated, "datastore_sha256": digest,
+                "speculative": {"forward_passes": passes, "drafted": drafted, "accepted_from_memory": accepted_from_memory,
+                                "tokens_per_pass": round(len(generated) / passes, 3) if passes else None, "spans": spans,
+                                "acceptance": ("exact greedy match (output equals draft=0)" if exact else
+                                               f"greedy match in {dtype}: near-ties may differ from draft=0 (length-dependent rounding)")}}

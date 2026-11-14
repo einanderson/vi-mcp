@@ -12,7 +12,7 @@ from pathlib import Path
 import threading
 
 
-def make_handler(lm, token=None, steps=256):
+def make_handler(lm, token=None, steps=256, draft=0):
     """Minimal non-streaming OpenAI-compatible chat/completion endpoint for existing VI model clients."""
     from http.server import BaseHTTPRequestHandler
     from .knn_lm import FORMAT
@@ -66,7 +66,7 @@ def make_handler(lm, token=None, steps=256):
                 if not isinstance(prompt, str):
                     raise ValueError("prompt must be text")
                 with request_lock:
-                    result = lm.generate(prompt, steps=steps, stop=stop)
+                    result = lm.generate(prompt, steps=steps, stop=stop, **({"draft": draft} if draft else {}))
                 choice = {"index": 0, "finish_reason": "stop" if result["finish_reason"] == "stop" else "length"}
                 choice.update({"message": {"role": "assistant", "content": result["text"]}} if chat else {"text": result["text"]})
                 self.send_json(200, {"object": "chat.completion" if chat else "text_completion", "model": lm.core.identity["model"],
@@ -96,6 +96,9 @@ def main(argv):
     p.add_argument("--neighbors", type=int, default=32)
     p.add_argument("--retrieval-temperature", type=float, default=1.0)
     p.add_argument("--steps", type=int, default=256, help="explicit decoding resource budget; exhaustion is reported")
+    p.add_argument("--draft", type=int, default=0, help="exact retrieval drafts: up to N stored tokens verified per forward pass (0 = off)")
+    p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"],
+                   help="model precision; float32 keeps states reproducible across lengths (drafts are exact only in float32)")
     p.add_argument("--bind", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8776)
     p.add_argument("--token-file")
@@ -121,7 +124,7 @@ def main(argv):
                 raise ValueError("inference and ingestion require --model")
             if args.action == "serve" and args.bind not in ("127.0.0.1", "::1", "localhost") and not args.token_file:
                 raise ValueError("a non-loopback inference listener requires --token-file")
-            core = TransformersCore.load(args.model, args.revision, args.device)
+            core = TransformersCore.load(args.model, args.revision, args.device, args.dtype)
             store = Datastore(args.store, core.identity)
             lm = KNNLanguageModel(core, store, weight=args.weight, k=args.neighbors, temperature=args.retrieval_temperature)
             if args.action == "add":
@@ -139,7 +142,7 @@ def main(argv):
                 token = Path(args.token_file).read_text().strip() if args.token_file else None
                 if args.token_file and not token:
                     raise ValueError("empty token file")
-                with ThreadingHTTPServer((args.bind, args.port), make_handler(lm, token, args.steps)) as server:
+                with ThreadingHTTPServer((args.bind, args.port), make_handler(lm, token, args.steps, args.draft)) as server:
                     server.serve_forever()
                 return 0
             elif args.action == "evaluate":
@@ -148,7 +151,7 @@ def main(argv):
                 with Path(args.data).open(encoding="utf-8") as f:
                     value = lm.evaluate(json.loads(line) for line in f)
             elif args.action == "generate":
-                value = lm.generate(args.prompt, args.steps)
+                value = lm.generate(args.prompt, args.steps, draft=args.draft)
             else:
                 result = lm.predict(args.prompt)
                 token, base = result["token"], result["base_token"]

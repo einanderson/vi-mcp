@@ -78,6 +78,22 @@ Changing token memory does not authorize a generated program to invoke a shell o
 model client refuses as incomplete. The backend supports greedy text generation; streaming, model-native tool calls and sampling are
 refused with a reason. Its compatibility covers the VI text-program frontend, not the entire OpenAI API.
 
+## Retrieval drafts (exact speculative decoding)
+
+`generate(draft=N)`, `vi-mcp knn generate|serve --draft N` uses the stored text as drafts. This follows REST
+(arXiv 2311.08252) and NEST (arXiv 2405.19325), but without NEST's relaxed acceptance:
+- A shard keeps a source's targets in order. When the nearest neighbor of the last verified state predicted the token just
+  emitted, the tokens that followed it in its source are the draft.
+- One forward pass over context plus draft gives the mixed distribution at every draft position.
+- A drafted token is kept only if it is the greedy choice there. The first mismatch is replaced by the greedy token.
+- The text therefore equals `draft=0`, with fewer forward passes. The result reports `forward_passes`, `drafted` and
+  `accepted_from_memory`, plus `spans` (which source supplied which generated tokens: attribution).
+
+Exactness needs float32, the default of `TransformersCore.load` and `--dtype`. Measured on Qwen3-0.6B (CPU) in bfloat16, the
+logits of the same position differed by up to 0.625 between sequence lengths: 8 of 16 lengths. In float32 they differed by 0.0:
+0 of 16. In bfloat16, 2 of 72 drafted runs flipped a near-tie (0.352 against 0.351). Outside float32 the result says so in
+`acceptance`.
+
 ## Persistence and isolation
 
 Each datastore is a private inference-host directory. Immutable NumPy shards hold vectors and integer token targets; a manifest is
