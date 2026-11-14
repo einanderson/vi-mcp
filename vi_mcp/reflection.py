@@ -60,10 +60,9 @@ def question(system: str, user: str, **extra) -> str:
     body.update(extra)
     if config.get("model"):  # 0.51.0: config key model (modell in older files, translated by config.normalize)
         body["model"] = config["model"]
-    req = urllib.request.Request(config["url"], data=json.dumps(body).encode(), headers=header)
-    op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with op.open(req, timeout=TIMEOUT_S) as a:
-        d = json.load(a)
+    from clingo_object.agent import chat_post  # 0.63.3: retries once without llama.cpp fields if the provider refuses them
+    d = chat_post(config["url"], body, {k: v for k, v in header.items() if k != "Content-Type"}, TIMEOUT_S,
+                  urllib.request.build_opener(urllib.request.ProxyHandler({})))
     choice = d["choices"][0]
     if choice.get("finish_reason") == "length":
         raise ValueError("answer cut off (finish_reason=length) — thinking is off; check the model's context size")

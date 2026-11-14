@@ -610,10 +610,9 @@ def _server_llm(messages: list[dict]) -> str:
         raise LogicError("no language model configured on this server (configuration classify.url)")
     body = {"messages": messages, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False},
             **({"model": cfg["model"]} if cfg.get("model") else {})}
-    header = {"Content-Type": "application/json", **({"Authorization": f"Bearer {cfg['token']}"} if cfg.get("token") else {})}
-    req = urllib.request.Request(cfg["url"], json.dumps(body).encode(), header)
-    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=300) as r:
-        choice = json.load(r)["choices"][0]
+    from clingo_object.agent import chat_post  # 0.63.3: retries once without llama.cpp fields if the provider refuses them
+    header = {"Authorization": f"Bearer {cfg['token']}"} if cfg.get("token") else {}
+    choice = chat_post(cfg["url"], body, header, 300, urllib.request.build_opener(urllib.request.ProxyHandler({})))["choices"][0]
     if choice.get("finish_reason") == "length":
         raise LogicError("the language model's answer was cut off — thinking is off; check the model's context size")
     return choice["message"]["content"] or ""

@@ -41,6 +41,38 @@ ans(H) <= at(H) & ~served(H)
 ```"""
 
 
+#: fields only llama.cpp understands — other OpenAI-compatible providers may refuse the whole request because of them
+LLAMA_FIELDS = ("chat_template_kwargs",)
+#: endpoints that refused them once: they are sent without (for the life of the process)
+_PLAIN_ENDPOINTS: set[str] = set()
+
+
+def chat_post(url: str, body: dict, headers: dict | None = None, timeout: float = 300, opener=None) -> dict:
+    """POST to an OpenAI-compatible /chat/completions and return the parsed JSON. 0.63.3: if the endpoint answers HTTP 400 to a body
+    with llama.cpp fields (chat_template_kwargs, used to switch thinking off instead of capping tokens), retry once without them and
+    remember the endpoint. Found at CentralStation (13.11.2026): llmbase.ai answered chat_template_kwargs with the misleading "does not
+    support the requested features: tools, max_tokens" — no max_tokens had been sent."""
+    import urllib.error
+    op = opener or urllib.request.build_opener()
+    h = {"Content-Type": "application/json", **(headers or {})}
+
+    def send(b: dict) -> dict:
+        req = urllib.request.Request(url, data=json.dumps(b).encode(), headers=h, method="POST")
+        with op.open(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    plain = {k: v for k, v in body.items() if k not in LLAMA_FIELDS}
+    if url in _PLAIN_ENDPOINTS:
+        return send(plain)
+    try:
+        return send(body)
+    except urllib.error.HTTPError as e:
+        if e.code != 400 or plain == body:
+            raise
+        result = send(plain)  # if this fails too, its own error is the true one
+        _PLAIN_ENDPOINTS.add(url)
+        return result
+
+
 def openai_chat(url: str | None = None, model: str | None = None, thinking: bool = False, timeout: float = 300):
     """A language model behind an OpenAI-compatible /v1/chat/completions — no max_tokens (cut-off output: thinking off instead)."""
     url = url or os.environ.get("VI_LLM_URL")
@@ -51,9 +83,7 @@ def openai_chat(url: str | None = None, model: str | None = None, thinking: bool
     def ask(messages: list[dict]) -> str:
         body = {"model": model, "messages": messages, "temperature": 0,
                 **({} if thinking else {"chat_template_kwargs": {"enable_thinking": False}})}
-        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())["choices"][0]["message"]["content"] or ""
+        return chat_post(url, body, timeout=timeout)["choices"][0]["message"]["content"] or ""
     return ask
 
 

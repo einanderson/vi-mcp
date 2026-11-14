@@ -125,10 +125,9 @@ def _ask_schema(system: str, user: str, schema: dict, name: str) -> str:
             "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}}
     if cfg.get("model"):
         body["model"] = cfg["model"]
-    header = {"Content-Type": "application/json", **({"Authorization": f"Bearer {cfg['token']}"} if cfg.get("token") else {})}
-    req = urllib.request.Request(cfg["url"], json.dumps(body).encode(), header)
-    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=600) as r:
-        return json.load(r)["choices"][0]["message"]["content"]
+    from clingo_object.agent import chat_post  # 0.63.3: retries once without llama.cpp fields if the provider refuses them
+    header = {"Authorization": f"Bearer {cfg['token']}"} if cfg.get("token") else {}
+    return chat_post(cfg["url"], body, header, 600, urllib.request.build_opener(urllib.request.ProxyHandler({})))["choices"][0]["message"]["content"]
 
 
 def valid(answer: dict) -> str | None:

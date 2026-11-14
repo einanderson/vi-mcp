@@ -3,6 +3,18 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.63.3 — not yet released — language models of other providers
+
+### What was fixed
+
+- **A provider other than llama.cpp could refuse every language-model call.** vi-mcp switches thinking off with the llama.cpp field
+  `chat_template_kwargs` (instead of capping tokens, a project rule). *Found at CentralStation (13.11.2026):* llmbase.ai refused that
+  field with the misleading HTTP 400 "does not support the requested features: tools, max_tokens" — no max_tokens had been sent — and
+  184 analyses failed in seven minutes. Every language-model call (sleep reflection, classification and relevance grading, the
+  clingo-object agent, `vi_logic answer`) now goes through one helper, `clingo_object.agent.chat_post`: on HTTP 400 to a body with
+  llama.cpp fields it retries once without them and remembers the endpoint; any other error stays the error. Test:
+  `tests/test_clingo_object.py` (1 new).
+
 ## 0.63.2 — 2026-11-14 — answered questions become training data; Windows console output
 
 ### What is new

@@ -245,7 +245,11 @@ def test_the_agent_never_sends_max_tokens(monkeypatch):
 
         def read(self):
             return _json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode()
-    monkeypatch.setattr(agent.urllib.request, "urlopen", lambda req, timeout=0: sent.append(_json.loads(req.data)) or R())
+    class Op:
+        def open(self, req, timeout=0):
+            sent.append(_json.loads(req.data))
+            return R()
+    monkeypatch.setattr(agent.urllib.request, "build_opener", lambda *a: Op())
     assert agent.openai_chat("http://127.0.0.1:1/v1/chat/completions", "m")([{"role": "user", "content": "x"}]) == "ok"
     assert "max_tokens" not in sent[0] and "n_predict" not in sent[0] and sent[0]["chat_template_kwargs"] == {"enable_thinking": False}
 
@@ -294,3 +298,42 @@ def test_memory_reads_the_hook_command_of_claude_code(tmp_path, monkeypatch):
         {"type": "command", "command": cmd, "timeout": 5}]}]}}))
     url, tf = client._config()
     assert url == "https://vi.example/vi-mcp/mcp" and tf == tmp_path / ".config" / "vi-mcp" / "token-claude"
+
+
+def test_a_provider_that_refuses_llama_fields_gets_the_request_without_them():
+    """0.63.3, found at CentralStation (13.11.2026): llmbase.ai refused chat_template_kwargs with "does not support … tools, max_tokens".
+    The call retries once without the llama.cpp fields and remembers the endpoint; other errors stay errors."""
+    import io
+    import json as _json
+    import urllib.error
+    from clingo_object import agent
+    sent = []
+
+    class R(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class Op:
+        def open(self, req, timeout=0):
+            b = _json.loads(req.data)
+            sent.append(b)
+            if "chat_template_kwargs" in b:
+                raise urllib.error.HTTPError(req.full_url, 400, "does not support tools, max_tokens", {}, None)
+            return R(_json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+    url = "http://provider.example/v1/chat/completions"
+    agent._PLAIN_ENDPOINTS.discard(url)
+    body = {"messages": [], "chat_template_kwargs": {"enable_thinking": False}}
+    assert agent.chat_post(url, body, opener=Op())["choices"][0]["message"]["content"] == "ok"
+    assert len(sent) == 2 and "chat_template_kwargs" not in sent[1] and "max_tokens" not in sent[1]
+    agent.chat_post(url, body, opener=Op())
+    assert len(sent) == 3  # remembered: straight without the field
+    agent._PLAIN_ENDPOINTS.discard(url)
+
+    class Down:
+        def open(self, req, timeout=0):
+            raise urllib.error.HTTPError(req.full_url, 500, "down", {}, None)
+    with pytest.raises(urllib.error.HTTPError):
+        agent.chat_post("http://down.example/x", body, opener=Down())
