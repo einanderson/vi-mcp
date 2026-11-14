@@ -3,7 +3,7 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
-## 0.64.0 — not yet released — executable virtual intelligence and checked program learning
+## 0.64.0 — 2026-11-14 — executable virtual intelligence and checked program learning
 
 ### What is new
 
@@ -306,7 +306,7 @@ Linked from [README.md](README.md).
   program answers replace that gate. Later training stages also accept an explicit parent adapter (`--from-adapter`) so a logic or
   preference stage can continue the intended previous stage. Evidence: `tests/test_finetune.py`, `tests/test_training_audit.py`.
 
-## 0.63.3 — not yet released — language models of other providers
+## 0.63.3 — not released separately, part of 0.64.0 — language models of other providers
 
 ### What was fixed
 
