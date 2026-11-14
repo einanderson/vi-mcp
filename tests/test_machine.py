@@ -174,6 +174,33 @@ def test_teach_never_publishes_imported_private_objects_or_private_context(gd, t
     assert call("teach", name="ctx", receipt=ex2["receipt"], include_context=True)["state"] == "taught"
 
 
+def test_machine_example_over_an_evaluation_target_stays_held_out(gd, tmp_path, monkeypatch):
+    """Review 14.11.2026 (Claude), item 4: QA, agentic and logic rows hold out the evaluation targets and their source pages;
+    machine rows did not look at the objects they carry. A machine that imported an evaluation target put its id and text into
+    the training prompt ("Frozen machine objects")."""
+    from vi_mcp import dataset, evaluation
+    monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
+    target = g.new_object("erkenntnis", "evaluation target API", ["service:api", "port:80"], {"quelle": "https://docs.example/api"})
+    sibling = g.new_object("erkenntnis", "sibling chunk of the same page", ["service:api", "port:81"],
+                           {"quelle": "https://docs.example/api · Version 2"})
+    (tmp_path / "eval").mkdir()
+    (tmp_path / "eval/recall.json").write_text(json.dumps([{"target": target.id, "group": evaluation.group_of(target),
+                                                            "frage": "which port does the documented api use"}]))
+    call("create")
+    call("import", filters=["service:api"])
+    ex = run()
+    call("execute", instruction="rate " + ex["receipt"], payload={"expected_answers": ['ans("80")', 'ans("81")'],
+         "reference": "independent fixture", "question": "List the API ports."})
+    call("teach", receipt=ex["receipt"])
+    data = dataset.build()
+    built = json.dumps(data)
+    assert target.id not in built and sibling.id not in built and "evaluation target API" not in built
+    assert data["skipped"]["machine_eval_object"] == 1  # held out, counted — nothing disappears silently
+    # Without an evaluation target the same machine example is kept: the hold-out is the reason, not the machine.
+    (tmp_path / "eval/recall.json").write_text("[]")
+    assert target.id in json.dumps(dataset.build()["logic"])
+
+
 def test_receipt_history_yields_before_the_machine_locks_up(gd):
     """Review 14.11.2026 (Claude): every receipt carries copies of the world. With 100 of the allowed 500 objects the sixth query
     was refused and the machine was stuck (even a deletion needs a save). Now the oldest receipts give way, counted, and the newest

@@ -143,7 +143,7 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     skipped.update(agentic_skipped)
     logic_sft, logic_kto, logic_skipped = logic_examples(index, audit, targets, eval_qs, eval_groups) if agentic else ([], [], Counter())
     skipped.update(logic_skipped)
-    machine_sft, machine_kto, machine_dpo = machine_examples(index, audit, targets, eval_qs) if agentic else ([], [], [])
+    machine_sft, machine_kto, machine_dpo = machine_examples(index, audit, targets, eval_qs, eval_groups, skipped) if agentic else ([], [], [])
     logic_sft += machine_sft
     logic_kto += machine_kto
     dpo += machine_dpo
@@ -256,9 +256,13 @@ def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None
     return sft, kto, skipped
 
 
-def machine_examples(index, audit, targets, eval_qs):
-    """Only examples explicitly published by a machine owner; private state and snapshots are never traversed."""
-    from . import training_eval
+def machine_examples(index, audit, targets, eval_qs, eval_groups=None, skipped=None):
+    """Only examples explicitly published by a machine owner; private state and snapshots are never traversed. An example whose
+    frozen input objects include an evaluation target or another part of its source page is held out like a QA row (counted in
+    skipped["machine_eval_object"]): its objects are part of the training prompt."""
+    from . import evaluation, training_eval
+    eval_groups = eval_groups or set()
+    skipped = skipped if skipped is not None else Counter()
     sft, kto, dpo, pairs = [], [], [], {}
     tool = _tool_schema("vi_machine")
     for _s, o, _w in g.recall("art:regel thema:machine-training", limit=5000, viewer=None):
@@ -269,6 +273,11 @@ def machine_examples(index, audit, targets, eval_qs):
             continue
         ex = e["execution"]
         if not ex.get("complete") or not ex.get("determinate"):
+            continue
+        inputs = ex["input_objects"] if "input_objects" in ex else (ex.get("world") or {}).get("objects") or []
+        imported = [x["id"] for x in inputs if isinstance(x, dict) and "instance" in x and isinstance(x.get("id"), str)]
+        if set(imported) & targets or any(evaluation.group_of(x) in eval_groups for x in g.load_many(imported).values()):
+            skipped["machine_eval_object"] += 1
             continue
         question = _clean(e["question"], audit, "question")
         case = {"objects": _clean_json(ex["world"], audit), "expected": _clean_json(e["expected"], audit), "predicate": "ans",

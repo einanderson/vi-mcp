@@ -65,6 +65,12 @@ Linked from [README.md](README.md).
   written into the machine itself stay the owner's explicit content. Evidence:
   `tests/test_machine.py::test_teach_never_publishes_imported_private_objects_or_private_context` — failed without the fix ("DID NOT
   RAISE"), passes with it.
+- **Machine examples could carry evaluation targets into training** (Claude's review, 14.11.2026, item 4). QA, agentic and logic rows
+  hold out the fixed question set's targets and their source pages; machine rows checked only their own id and question, not the
+  frozen objects they put into the prompt. A machine that had imported an evaluation target published its id and text into the
+  training set. Now such an example is held out and counted (`skipped.machine_eval_object`). Evidence:
+  `tests/test_machine.py::test_machine_example_over_an_evaluation_target_stays_held_out` (failed before: the target id was in the
+  build).
 - **A broken reference answer booked a correct program as wrong** (Claude's review, 14.11.2026). A variable (`ans(X)`) or another
   predicate (`port("80")`) in the expected answers was accepted by `vi_machine rate`; `vi_logic verify` checked the predicate
   but not groundness. The program was rated "refuted", and in the machine that became a KTO negative for training. Now one shared
