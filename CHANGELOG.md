@@ -23,6 +23,14 @@ Linked from [README.md](README.md).
   - A hybrid query no longer runs a second, unused full-text search.
   - The vector count comes from the cache.
   Evidence: `tests/test_search_scale.py`.
+- **Tested and not adopted: the object's content in its single vector.** An A/B test on a 5,000-object universe from the
+  production copy used the same 300 queries and the same code; only the vectors differed.
+  - A, key statement only (as today): Hit@1 0.88, **Hit@4 0.963**, MRR 0.923.
+  - B, key statement plus the first 3,600 characters of content in one vector: Hit@1 0.77, **Hit@4 0.843**, MRR 0.807.
+    Natural questions fell from 0.94 to 0.747.
+  - 45 queries ranked worse and 13 better. One long vector per object dilutes the key statement.
+  - Next to test instead: content in chunks, each with its heading path, as it-aikb indexes it.
+  Evidence: `measure.py` on two copies (`vi_subA.db` and `vi_subB.db`), 15.11.2026.
 
 
 ### What is new
