@@ -5,6 +5,34 @@ Linked from [README.md](README.md).
 
 ## Unreleased
 
+### What was measured and changed in the search (branch search-top4)
+
+- **Hit@4 is measured.** The answers show 4 results, and the nightly figures now include hit4.
+- **Baseline on a production copy**, 150 questions × 2 styles = 300 queries:
+  - hybrid: Hit@1 0.80, **Hit@4 0.933** (natural questions 0.90, keywords 0.967), MRR 0.864, median 2.5 s;
+  - full text: Hit@4 0.56.
+- **Time per hybrid query:** the reranker 1,868 ms of 2,366 ms; embedding 65 ms; candidates 87 ms.
+- **Scale test with 500,310 knowledge objects:** the copy plus distractors copied from source pages without evaluation targets,
+  vectors with noise. This is a proxy for future data, not a picture of it.
+  - Hit@4 holds: 0.930.
+  - The median time grew from 2.4 s to 6.4 s, mostly from full text: two calls per query, 1.74 s each.
+- **Fixes on the branch.** None of them changes a ranking: 300 of 300 ranks are identical, and a test checks it.
+  - The vector matrix is kept between queries. It is invalidated by writes and by the table's signature.
+  - Full text matches first, and visibility is filtered on its hits only. The exact query runs when invisible rows fill the pool.
+    Measured on the 500k copy: 1,826 ms → 80 + 10 ms.
+  - A hybrid query no longer runs a second, unused full-text search.
+  - The vector count comes from the cache.
+  Evidence: `tests/test_search_scale.py`.
+- **Tested and not adopted: the object's content in its single vector.** An A/B test on a 5,000-object universe from the
+  production copy used the same 300 queries and the same code; only the vectors differed.
+  - A, key statement only (as today): Hit@1 0.88, **Hit@4 0.963**, MRR 0.923.
+  - B, key statement plus the first 3,600 characters of content in one vector: Hit@1 0.77, **Hit@4 0.843**, MRR 0.807.
+    Natural questions fell from 0.94 to 0.747.
+  - 45 queries ranked worse and 13 better. One long vector per object dilutes the key statement.
+  - Next to test instead: content in chunks, each with its heading path, as it-aikb indexes it.
+  Evidence: `measure.py` on two copies (`vi_subA.db` and `vi_subB.db`), 15.11.2026.
+
+
 ### What is new
 
 - **One kit for the whole seed path: language → seed → GRPO, with its evaluation.** The user decided the order on 15.11.2026:

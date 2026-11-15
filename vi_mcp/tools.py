@@ -795,13 +795,14 @@ def search(args: dict, only: str | None, first: str | None) -> tuple[list, str, 
         raise Rejected(f"VIL {u.act}: vi_recall answers questions (ask) only — tell is vi_learn, rate is vi_feedback, def is a word in the "
                        "vocabulary; do is never run from a message, it is a proposal for a human")
     f = u.filter
-    hits = g.recall(f, limit=min(int(args.get("limit") or 10), 50), or_fallback=True)
     groups, remove, words = g.parse_filter(f, g.known_kinds())
     # 0.57.0: meaning + full text by default when an embedding service is configured and the filter has free text — measured on a
     # production copy (150 known targets × 2 queries): full text MRR 0.42, hybrid 0.75. semantic=false forces full text only.
     explicit = args.get("semantic")
     semantic = bool(explicit) if explicit is not None else (vector.available() and bool(words))
-    kind_used = g.word_search.get() or ("tags" if not words else "volltext")
+    hits = None  # search-top4: the plain full-text search runs only when it is the answer — before, every hybrid query paid for it
+    query = f  # the filter as asked: notes appended to f for the reader must never become search words
+    kind_used = "tags" if not words else "volltext"
     if semantic:
         if not vector.available():
             raise Rejected("semantic: no embedding service configured (config: embed)")
@@ -825,7 +826,7 @@ def search(args: dict, only: str | None, first: str | None) -> tuple[list, str, 
         if near is not None:
             # Hybrid: add the full-text ranking (Reciprocal Rank Fusion, Cormack et al. 2009, k = 60). Freshly learned knowledge has no
             # vector until the next sleep and would be unfindable exactly then; exact terms (error messages, options) are found better by full text.
-            fulltext = [o.id for _, o, _g in g.recall(f, limit=pool * 3, kinds=() if groups else ("erkenntnis", "regel", "suche", "bild", "seite"), or_fallback=True)]
+            fulltext = [o.id for _, o, _g in g.recall(query, limit=pool * 3, kinds=() if groups else ("erkenntnis", "regel", "suche", "bild", "seite"), or_fallback=True)]
             rrf: dict[str, float] = {}
             for leaderboard in ([i for i, _c in near], fulltext):
                 for rank_pos, oid in enumerate(leaderboard):
@@ -853,6 +854,9 @@ def search(args: dict, only: str | None, first: str | None) -> tuple[list, str, 
             # 0.63.0: whether the reranker ran is part of the search kind — the relevance grades (UMBRELA) of searches before and after
             # it was switched on were mixed in one number (found on production, 13.11.2026)
             kind_used = "hybrid+rerank" if reranked else "hybrid"
+    if hits is None:  # full text alone: no meaning search requested, or it failed (named in f)
+        hits = g.recall(query, limit=min(int(args.get("limit") or 10), 50), or_fallback=True)
+        kind_used = g.word_search.get() or kind_used
     if not semantic or not kind_used.startswith("hybrid"):
         if g.word_search.get() == "oder":
             f += " · OR search: no or too few objects contain all words, filled up by number of matching words (BM25)"

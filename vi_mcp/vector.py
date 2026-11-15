@@ -110,6 +110,7 @@ def save(oid: str, v, model: str) -> None:
     with g.lock:
         g.db().execute("INSERT OR REPLACE INTO vektor (id, dim, modell, zeit, roh) VALUES (?,?,?,?,?)", (oid, len(v), model, g.now(), _pack(v)))
         g.db().commit()
+    _invalidate()
 
 
 def remove_entry(oid: str) -> None:
@@ -118,6 +119,7 @@ def remove_entry(oid: str) -> None:
     with g.lock:
         g.db().execute("DELETE FROM vektor WHERE id = ?", (oid,))
         g.db().commit()
+    _invalidate()
 
 
 def load(oid: str) -> np.ndarray | None:
@@ -135,11 +137,10 @@ def all_() -> dict[str, np.ndarray]:
 
 
 def present(ids: list[str]) -> int:
-    """How many of the IDs have a vector (without loading the vectors)."""
-    _table()
-    with g.lock:
-        all_ids = {r[0] for r in g.db().execute("SELECT id FROM vektor")}
-    return len(all_ids & set(ids))
+    """How many of the IDs have a vector — from the cached matrix (search-top4: reading every vector id from SQLite per query cost
+    hundreds of milliseconds at 500,000 objects)."""
+    _ids, pos, _m = matrix()
+    return sum(1 for i in set(ids) if i in pos)
 
 
 #: vi_mcp.code_facts.FACT_TAGS (not imported: vector is loaded early and code_facts is not needed for anything else here)
@@ -250,16 +251,46 @@ def cap(per_object: int | None = None) -> int:
     return deleted
 
 
+#: The normalized vector matrix, kept between queries (search-top4 branch, 15.11.2026). Before, every query loaded and unpacked every
+#: vector from SQLite (all_()): 2.5 s median per hybrid query on a production copy with 24,811 vectors. The ranking is unchanged —
+#: only where the vectors come from. Invalidated by save/remove in this process and by the table's (count, newest time) signature,
+#: which another process (sleep, CLI) changes when it writes vectors.
+_cache: dict = {"sig": None, "ids": [], "pos": {}, "m": np.zeros((0, 0), dtype=np.float32)}
+
+
+def _signature() -> tuple:
+    _table()
+    with g.lock:
+        return tuple(g.db().execute("SELECT COUNT(*), MAX(zeit) FROM vektor").fetchone())
+
+
+def matrix() -> tuple[list[str], dict[str, int], np.ndarray]:
+    """(ids, id -> row, normalized matrix) of every stored vector of the most common dimension — cached (see _cache)."""
+    sig = _signature()
+    if _cache["sig"] != sig:
+        with g.lock:
+            rows = g.db().execute("SELECT id, dim, roh FROM vektor").fetchall()
+        ids, m = _matrix({oid: _unpack(raw, dim) for oid, dim, raw in rows})
+        _cache.update(sig=sig, ids=ids, pos={oid: i for i, oid in enumerate(ids)}, m=m)
+    return _cache["ids"], _cache["pos"], _cache["m"]
+
+
+def _invalidate() -> None:
+    _cache["sig"] = None
+
+
 def similar(text: str, candidates: list[str], limit: int = 10, timeout: float | None = None) -> list[tuple[str, float]]:
-    """Embed free text now and order candidates by cosine (vi_recall: by default since 0.57.0, with QUERY_TIMEOUT_S)."""
+    """Embed free text now and order candidates by cosine (vi_recall: by default since 0.57.0, with QUERY_TIMEOUT_S). Only the
+    candidates count (the caller's visibility filter), so refuted or archived objects never come back through a cached vector."""
     q = np.asarray(embed_texts([text], timeout=timeout)[0], dtype=np.float32)
     n = float(np.linalg.norm(q)) or 1.0
-    vs = all_()
-    ids, m = _matrix({k: vs[k] for k in candidates if k in vs and len(vs[k]) == len(q)})
-    if not ids:
+    ids, pos, m = matrix()
+    rows = [pos[k] for k in dict.fromkeys(candidates) if k in pos]
+    if not rows or m.shape[1] != len(q):
         return []
-    proximity = m @ (q / n)
-    return sorted(((ids[i], float(proximity[i])) for i in range(len(ids))), key=lambda x: -x[1])[:limit]
+    proximity = m[rows] @ (q / n)
+    order = np.argsort(-proximity)[:limit]
+    return [(ids[rows[i]], float(proximity[i])) for i in order]
 
 
 # ── 0.57.0: cross-encoder reranker (optional) ──────────────────────────────────────────────────────────────────────────────────────

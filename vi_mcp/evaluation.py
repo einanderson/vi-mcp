@@ -49,7 +49,8 @@ def page_ranking(ids: list[str]) -> list[str]:
 def query_metrics(pages: list[str], target: str) -> dict:
     """Metrics of one query with one relevant page. Pure."""
     rank = pages.index(target) + 1 if target in pages[:LIMIT] else None
-    return {"rang": rank, "rr": 1.0 / rank if rank else 0.0, "hit1": rank == 1, "hit5": bool(rank and rank <= 5),
+    # hit4: the VI's own answers show 4 results (user, 15.11.2026: "wir liefern nur 4 Ergebnisse") — the figure that matters
+    return {"rang": rank, "rr": 1.0 / rank if rank else 0.0, "hit1": rank == 1, "hit4": bool(rank and rank <= 4), "hit5": bool(rank and rank <= 5),
             "hit10": bool(rank), "ndcg10": 1.0 / math.log2(rank + 1) if rank else 0.0}
 
 
@@ -115,7 +116,8 @@ def summarize(rows: list[dict]) -> dict:
     if not rows:
         return {"n": 0}
     return {"n": len(rows), "mrr": round(statistics.mean(r["rr"] for r in rows), 3),
-            "hit1": round(statistics.mean(r["hit1"] for r in rows), 3), "hit5": round(statistics.mean(r["hit5"] for r in rows), 3),
+            "hit1": round(statistics.mean(r["hit1"] for r in rows), 3), "hit4": round(statistics.mean(r.get("hit4", False) for r in rows), 3),
+            "hit5": round(statistics.mean(r["hit5"] for r in rows), 3),
             "hit10": round(statistics.mean(r["hit10"] for r in rows), 3), "ndcg10": round(statistics.mean(r["ndcg10"] for r in rows), 3),
             "ms_median": int(statistics.median(r["ms"] for r in rows)), "fehler": sum(1 for r in rows if r.get("fehler"))}
 
