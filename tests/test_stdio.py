@@ -100,7 +100,7 @@ def test_service_restart_renews_the_session_transparently(local):
     b = Bridge(sock, out)
     b.handle(json.dumps(INIT).encode())
     first = b.sid
-    session.end_all("unterbrochen")  # what a restart does to the sessions
+    session.end_all("interrupted")  # what a restart does to the sessions
     b.handle(json.dumps(call(2, "vi_status", {})).encode())
     answers = [json.loads(x) for x in out.getvalue().decode().splitlines()]
     assert answers[1]["id"] == 2 and "result" in answers[1] and b.sid and b.sid != first

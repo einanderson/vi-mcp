@@ -227,12 +227,12 @@ def open_items() -> list[Session]:
         return list(_sessions.values())
 
 
-def persist(s: Session, state: str = "offen") -> None:
+def persist(s: Session, state: str = "open") -> None:
     """Summary + hashtags on the conversation object, raw history compressed next to it. Idempotent."""
     with s.lock:
         turns = list(s.turns)
     o = g.load_keyed("conversation", s.serial)
-    if not o or (not turns and state == "offen"):
+    if not o or (not turns and state == "open"):
         return
     tools: dict[str, int] = {}
     hosts: set[str] = set()
@@ -250,7 +250,7 @@ def persist(s: Session, state: str = "offen") -> None:
                "gesichert": g.now()}
     o.hashtags = sorted({t for t in o.hashtags if not t.startswith("state:")} | {f"state:{state}"}
                         | {f"tool:{k}" for k in tools} | {f"skill:{k.split('_')[0]}" for k in tools}
-                        | {f"host:{h}" for h in hosts} | ({"ok:nein"} if error else {"ok:ja"} if turns else set()))
+                        | {f"host:{h}" for h in hosts} | ({"ok:no"} if error else {"ok:yes"} if turns else set()))
     o.last_at = g.now()
     g.save(o)
     raw = zlib.compress(json.dumps(turns, ensure_ascii=False).encode())
@@ -260,7 +260,8 @@ def persist(s: Session, state: str = "offen") -> None:
     s.secured_until = len(turns)
 
 
-def finish(session_id: str, state: str = "beendet") -> bool:
+def finish(session_id: str, state: str = "ended") -> bool:
+    state = names.english(names.STATES, state)  # 0.67.0: beendet/unterbrochen of older callers
     from . import intuition  # late: intuition imports session
     with _reg_lock:
         s = _sessions.pop(session_id, None)
@@ -280,7 +281,7 @@ def tidy_up(idle_s: float = IDLE_S) -> list[str]:
     serials = []
     for sid in old:
         s = find_without_touching(sid)
-        if s and finish(sid, "abgelaufen"):
+        if s and finish(sid, "expired"):
             serials.append(s.serial)
     return serials
 
@@ -304,7 +305,7 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
         raise ValueError(f"conversation {serial} belongs to instance {o.instance}, not {instance}")
     if any(s.serial == serial for s in open_items()):
         raise ValueError(f"conversation {serial} is still open — end it first (DELETE)")
-    if o.data.get("zustand") == "geloescht":
+    if o.data.get("zustand") == "deleted":
         raise ValueError(f"conversation {serial} is already deleted ({o.data['geloescht']['zeit']})")
     with g.lock:
         ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE conversation = ? AND visibility = 'private'", (serial,))]
@@ -314,9 +315,9 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
     archive.delete_raw(serial)
     g.delete(ids)
     o.text = f"Conversation {serial} ({o.data.get('client', '?')}, instance {o.instance}): content deleted on {g.now()[:16]} — {reason.strip()[:200]}"
-    o.data = {"serial": serial, "client": o.data.get("client"), "zustand": "geloescht",
+    o.data = {"serial": serial, "client": o.data.get("client"), "zustand": "deleted",
                "geloescht": {"zeit": g.now(), "wer": f"ki@{instance}", "grund": reason.strip()[:300], "objekte": len(ids)}}
-    o.hashtags = [t for t in o.hashtags if t.startswith(("serial:", "tag:"))] + ["state:geloescht"]
+    o.hashtags = [t for t in o.hashtags if t.startswith(("serial:", "tag:"))] + ["state:deleted"]
     o.change(f"ki@{instance}", "deleted", reason)
     g.save(o)
     return {"serial": serial, "objekte": len(ids)}
@@ -326,7 +327,7 @@ def delete_instance_data(instance: str, reason: str) -> dict:
     """Admin (CLI, not via MCP): all private data of an instance — each of its conversations gets a tombstone."""
     with g.lock:
         serials = [names.id_key(r[0]) for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.zustand') <> 'geloescht'", (instance,))]
+            "SELECT id FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.zustand') <> 'deleted'", (instance,))]
     n = 0
     for s in serials:
         n += delete_conversation(s, instance, reason)["objekte"]
@@ -336,7 +337,7 @@ def delete_instance_data(instance: str, reason: str) -> dict:
     return {"gespraeche": len(serials), "objekte": n}
 
 
-def end_all(state: str = "beendet") -> int:
+def end_all(state: str = "ended") -> int:
     with _reg_lock:
         ids = list(_sessions)
     return sum(1 for sid in ids if finish(sid, state))

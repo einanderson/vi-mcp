@@ -60,9 +60,9 @@ def test_table_lists_real_tools_only(gd):
     """0.53.3: names guessed from manual prose were often wrong (checked against the real tool list by a Claude Code session, 11.11.2026)."""
     ov = _overview("gitlab-api", "gitlab", "Verbindet sich mit GitLab und führt API-Aufrufe aus (Projekte, Pipelines, z.B. CI-Variablen).")
     g.new_object("insight", "[gitlab-api › MCP-Tools] gitlab_get_tree lists a directory, gitlab_get_file reads a file; old: gitlab_old_endpoint",
-                 ["origin:skills-ordner", "docs:gitlab-api"], {"quelle": "skills folder", "inhalt": "gitlab_get_tree(project, path) · gitlab_get_file(project, path)"},
+                 ["origin:skills-folder", "docs:gitlab-api"], {"quelle": "skills folder", "inhalt": "gitlab_get_tree(project, path) · gitlab_get_file(project, path)"},
                  instance="alice")
-    g.new_object("insight", "Vendor docs mention gitlab_vendor_thing", ["knowledge_kind:doku-extern", "docs:gitlab-api"], {"quelle": "vendor"}, instance="alice")
+    g.new_object("insight", "Vendor docs mention gitlab_vendor_thing", ["knowledge_kind:external-docs", "docs:gitlab-api"], {"quelle": "vendor"}, instance="alice")
     _overview("agents", "agents", "(Abschnitte: Skills Documentation, API Skills, Other Skills)")
     rows = {r["skill"]: r for r in capabilities.table("a")}
     assert rows["gitlab-api"]["tools"] == []  # nothing registered, nothing used: no guess from prose
@@ -70,7 +70,7 @@ def test_table_lists_real_tools_only(gd):
     r = capabilities.register("team-skills", ["gitlab_get_tree", "gitlab_get_file", "gitlab_get_projects", "jira_search_issues"], "a")
     assert r["tools"] == 4 and r["gone"] == []
     for _ in range(3):
-        g.new_object("experience", "gitlab_get_file run", ["tool:gitlab_get_file", "ok:ja"], {}, instance="a")
+        g.new_object("experience", "gitlab_get_file run", ["tool:gitlab_get_file", "ok:yes"], {}, instance="a")
     rows = {r["skill"]: r for r in capabilities.table("a")}
     assert rows["gitlab-api"]["tools"] == ["gitlab_get_file", "gitlab_get_tree"]  # real and named by the manual; most used first
     assert rows["gitlab-api"]["id"] == ov.id and rows["agents"]["description"].startswith("sections: Skills Documentation")
@@ -84,8 +84,8 @@ def test_table_lists_real_tools_only(gd):
 def test_two_skills_with_one_prefix_get_their_own_tools(gd):
     _overview("jira-api", "jira", "Jira Data Center per REST API.")
     _overview("jira-servicedesk-api", "jira", "Jira Service Desk.")
-    g.new_object("insight", "[jira-api › Tools] jira_acme_search, jira_acme_get_issue", ["origin:skills-ordner", "docs:jira-api"], {"quelle": "x"}, instance="alice")
-    g.new_object("insight", "[jira-servicedesk-api › Tools] jira_create_ticket, jira_search_issues", ["origin:skills-ordner", "docs:jira-servicedesk-api"],
+    g.new_object("insight", "[jira-api › Tools] jira_acme_search, jira_acme_get_issue", ["origin:skills-folder", "docs:jira-api"], {"quelle": "x"}, instance="alice")
+    g.new_object("insight", "[jira-servicedesk-api › Tools] jira_create_ticket, jira_search_issues", ["origin:skills-folder", "docs:jira-servicedesk-api"],
                  {"quelle": "x"}, instance="alice")
     capabilities.register("team-skills", ["jira_acme_search", "jira_acme_get_issue", "jira_create_ticket", "jira_search_issues"], "a")
     rows = {r["skill"]: set(r["tools"]) for r in capabilities.table("a")}

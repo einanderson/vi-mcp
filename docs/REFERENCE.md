@@ -36,7 +36,7 @@ VI hook for clients, AFTER an action: report the result → experience, remember
 
 ### `vi_ask`
 
-VI collective: ask another instance (or all). The question appears to the target instance at its next action (vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), your own instance (its other conversations — e.g. other Claude Code sessions), '<instance>#<conversation>' (one conversation; yours is in the instructions and in vi_questions), or 'netz' / 'net:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on an answer rates it for the whole network. · German alias `vi_frage`
+VI collective: ask another instance (or all). The question appears to the target instance at its next action (vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'all', your own instance (its other conversations — e.g. other Claude Code sessions), '<instance>#<conversation>' (one conversation; yours is in the instructions and in vi_questions), or 'netz' / 'net:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on an answer rates it for the whole network. · German alias `vi_frage`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -98,7 +98,7 @@ VI housekeeping: long-term archive for entries no longer used — status and stu
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string |  | id of an archived entry: its full content |
-| `filter` | string |  | e.g. (topic:oom OR topic:disk-full) !ok:ja |
+| `filter` | string |  | e.g. (topic:oom OR topic:disk-full) !ok:yes |
 | `limit` | integer |  | how many at most |
 
 ### `vi_archive_restore`
@@ -133,7 +133,7 @@ VI skill: all skills (name, version, mode, benefit, steps); filter optional (has
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string |  | e.g. (topic:oom OR topic:disk-full) !ok:ja |
+| `filter` | string |  | e.g. (topic:oom OR topic:disk-full) !ok:yes |
 
 ### `vi_skill`
 
@@ -472,7 +472,7 @@ VI: search memory. When: before starting any task, before changing actions on sy
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:ja |
+| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:yes |
 | `limit` | integer |  | how many hits at most (default 10) |
 | `semantic` | boolean |  | true: hybrid search — meaning (embedding) plus full text (German: `semantisch`) |
 | `reinforce` | boolean |  | default true; false = read only (access count and last use stay unchanged) |
@@ -573,7 +573,7 @@ VI: learn a search as a mnemonic — the hashtag combination (AND/OR) that finds
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `name` | string | yes | name: letters, digits, - |
-| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:ja |
+| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:yes |
 | `triggers` | array of string | yes | hashtags kind:value at which it appears (e.g. tool:ssh, host:web1, error:timeout) (German: `reize`) |
 | `story` | string | yes | why this search finds the thing — a mnemonic (German: `geschichte`) |
 | `source` | string | yes | source: command, host and time, or URL (for vi_ask: why you ask) (German: `quelle`) |
@@ -584,7 +584,7 @@ VI: drill-down — search, add the most distinctive hashtag of the hits, search 
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:ja |
+| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:yes |
 | `levels` | integer |  | how many levels at most (default 3) (German: `stufen`) |
 
 ### `vi_set_visibility`
@@ -593,7 +593,7 @@ VI: switch objects between shared and internal (e.g. company knowledge learned a
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string | yes | e.g. knowledge_kind:handbuch |
+| `filter` | string | yes | e.g. knowledge_kind:manual |
 | `visibility` | string (shared, internal) | yes | shared or internal (German: `sicht`) |
 | `reason` | string | yes | why — required, stored in the object's history (German: `grund`) |
 | `apply` | boolean |  | false (default): only count |

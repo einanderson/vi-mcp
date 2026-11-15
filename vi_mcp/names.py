@@ -225,11 +225,40 @@ TAG_KINDS: dict[str, str] = {
     "importiert": "imports", "importiert_spaet": "imports_late", "sprache": "language", "standort": "site", "kunde": "customer",
     "nutzer": "user", "ausgang": "outcome", "zustaendig": "responsible", "pfad": "path", "bild": "image", "sicht": "visibility",
     "direktive": "directive", "reflexart": "reflex_kind", "selbstbild": "self_image",
+    # features of the router model (learning.py): the age of a hint when shown, and a feature of 0.2x no longer computed
+    "alter": "age", "naehe": "proximity",
 }
 #: spellings of the same German kind that are not the canonical one (read, never written)
 TAG_KIND_ALIASES: dict[str, str] = {"art-wissen": "knowledge_kind"}
-#: hashtags whose value is a stored enum, by English kind (step 2: kind:, mode:)
-TAG_VALUES: dict[str, dict[str, str]] = {"kind": KINDS, "mode": MODES}
+#: step 3b: the states of a conversation and of a question (hashtag state:, data.zustand of those objects)
+STATES: dict[str, str] = {"offen": "open", "beendet": "ended", "unterbrochen": "interrupted", "abgelaufen": "expired", "fertig": "done",
+                          "beantwortet": "answered", "fehler": "error", "zugestellt": "delivered", "geloescht": "deleted"}
+ORIGINS: dict[str, str] = {"log-ueberwachung": "log-watch", "skills-ordner": "skills-folder", "schlaf-llm": "sleep-llm", "schlaf": "sleep",
+                           "gespraech": "conversation", "uebernahme": "take"}
+OK_VALUES: dict[str, str] = {"ja": "yes", "nein": "no", "unbekannt": "unknown"}
+SURPRISES: dict[str, str] = {"erholt": "recovered", "keine": "none", "chronisch": "chronic", "unbekannt": "unknown", "neu": "new",
+                             "wiederholt": "repeated"}
+KNOWLEDGE_KINDS: dict[str, str] = {"firmendoku": "company-docs", "doku-extern": "external-docs", "handbuch": "manual", "ueberblick": "overview",
+                                   "loesung": "solution"}
+SOURCE_KINDS: dict[str, str] = {"cs-befund": "cs-finding", "cs-konsole": "cs-console"}
+GRADES: dict[str, str] = {"gut": "good", "mittel": "medium", "schlecht": "bad"}
+REVIEWERS: dict[str, str] = {"ausstehend": "pending", "ausfall": "outage"}
+#: values of hashtags the system sets, by English kind
+TAG_VALUES: dict[str, dict[str, str]] = {
+    "kind": KINDS, "mode": MODES, "state": STATES, "origin": ORIGINS, "ok": OK_VALUES, "surprise": SURPRISES,
+    "knowledge_kind": KNOWLEDGE_KINDS, "source_kind": SOURCE_KINDS, "grade": GRADES, "scorer": {"modell": "model", "mensch": "human"},
+    "conflict": {"offen": "open"}, "fusion": {"vorschlag": "proposal"}, "duplicate": {"moeglich": "possible"}, "reviewer": REVIEWERS,
+    "rule_kind": {"wiederholter-fehler": "repeated-error"}, "collective": {"ja": "yes", "nein": "no"}, "self_area": SELF_AREAS,
+    "self": {"kern": "core"}, "field_kind": {"quellfeld": "source-field"}, "to": {"alle": "all", "netz": "net"},
+    "topic": {"vorgabe": "requirement", "offen": "open"},  # the two topics the rules of every session name
+    "hint_kind": KINDS, "age": {"neu": "new"},  # router features
+}
+#: data values that mirror a hashtag value: (object kinds, data path, mapping). Rewritten with the tags in step 3b.
+DATA_VALUES: tuple[tuple[tuple[str, ...], tuple[str, ...], dict[str, str]], ...] = (
+    (("conversation", "question"), ("zustand",), STATES), (("question",), ("an",), {"alle": "all", "netz": "net"}),
+    (("experience",), ("ueberraschung", "stufe"), SURPRISES), (("rating",), ("scorer",), {"modell": "model", "mensch": "human"}),
+    (("rating",), ("sicherheit",), {"niedrig": "low", "mittel": "medium", "hoch": "high"}),
+)
 #: the German kind of each English hashtag kind whose value step 2 rewrote (for the migration: the tags still carry the German kind then)
 _TAG_VALUES_GERMAN_KIND = {"art": "kind", "modus": "mode"}
 
@@ -283,12 +312,25 @@ def id_key(oid: str) -> str:
     return oid.split(":", 1)[1] if isinstance(oid, str) and ":" in oid else oid
 
 
+def canonical_target(to: str) -> str:
+    """The addressee of a question (vi_ask to, data.an, hashtag to:) in its English form: alle → all, netz → net, netz:<n> → net:<n>."""
+    if not isinstance(to, str):
+        return to
+    if to == "alle":
+        return "all"
+    if to == "netz":
+        return "net"
+    return "net:" + to[5:] if to.startswith("netz:") else to
+
+
 def canonical_tag(tag: str) -> str:
     """A hashtag as stored since 0.67.0 — for tool input, search filters and imports that still carry the German form."""
     if not isinstance(tag, str) or ":" not in tag:
         return tag
     k, v = tag.split(":", 1)
     k = TAG_KINDS.get(k) or TAG_KIND_ALIASES.get(k) or k
+    if k == "to":
+        return f"to:{canonical_target(v)}"
     m = TAG_VALUES.get(k)
     if m and not v.endswith("*"):
         v = english(m, v)
@@ -366,6 +408,11 @@ def _self_areas(con: Any) -> int:
     return n
 
 
+def _german_value_tags() -> list[str]:
+    """Every hashtag with an English kind and a German system value (state:offen, ok:ja, …) — what step 3b rewrites."""
+    return [f"{k}:{o}" for k, m in TAG_VALUES.items() for o, n in m.items() if o != n]
+
+
 def _german_tag_kinds() -> list[str]:
     return [k for k in {**TAG_KINDS, **TAG_KIND_ALIASES} if (TAG_KINDS.get(k) or TAG_KIND_ALIASES.get(k)) != k]
 
@@ -403,8 +450,9 @@ def migrate_tags(con: Any) -> dict[str, int]:
     present = _tables(con)
     counts: dict[str, int] = {}
     if "tag" in present:
-        kinds = _german_tag_kinds()
-        rows = con.execute(f"SELECT DISTINCT tag FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))})", kinds).fetchall()
+        kinds, values = _german_tag_kinds(), _german_value_tags()
+        rows = con.execute(f"SELECT DISTINCT tag FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))}) "
+                           f"OR tag IN ({','.join('?' * len(values))})", kinds + values).fetchall()
         n = 0
         # 0.1.x kept its search cache as frage:<hash>; since 0.2.0 that is cache:<hash> (before, memory._migrate did it on every start)
         legacy = con.execute("SELECT COUNT(*) FROM tag WHERE tag LIKE 'frage:%'").fetchone()[0]
@@ -432,6 +480,40 @@ def migrate_tags(con: Any) -> dict[str, int]:
                 n += 1
         if n:
             counts["hashtags in data"] = n
+    if "object" in present:
+        n = 0
+        for oid, raw in con.execute("SELECT id, data FROM object WHERE kind IN ('model', 'modell') AND data LIKE '%gewichte%'").fetchall():
+            try:
+                d = json.loads(raw or "{}")
+            except ValueError:
+                continue
+            if _model_features(d):
+                con.execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d, ensure_ascii=False), oid))
+                n += 1
+        if n:
+            counts["model features"] = n
+    if "object" in present:  # step 3b: data values that mirror a hashtag value (a question's zustand, an experience's surprise, …)
+        n = 0
+        for kinds, path, m in DATA_VALUES:
+            all_kinds = list(kinds) + [wire(KINDS, k) for k in kinds]
+            rows = con.execute(f"SELECT id, data FROM object WHERE kind IN ({','.join('?' * len(all_kinds))}) AND data LIKE ?",
+                               (*all_kinds, f'%"{path[-1]}"%')).fetchall()
+            for oid, raw in rows:
+                try:
+                    d = json.loads(raw or "{}")
+                except ValueError:
+                    continue
+                holder = d
+                for key in path[:-1]:
+                    holder = holder.get(key) if isinstance(holder, dict) else None
+                v = holder.get(path[-1]) if isinstance(holder, dict) else None
+                new = (canonical_target(v) if path == ("an",) else m.get(v, v)) if isinstance(v, str) else v
+                if new != v:
+                    holder[path[-1]] = new
+                    con.execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d, ensure_ascii=False), oid))
+                    n += 1
+        if n:
+            counts["values in data"] = n
     if "centre" in present:
         n = 0
         for (old,) in con.execute("SELECT tag FROM centre").fetchall():
@@ -460,12 +542,27 @@ def migrate_tags(con: Any) -> dict[str, int]:
     return counts
 
 
+def _model_features(d: dict) -> bool:
+    """A learned model keeps its weights by feature name, and the features are hashtags (hint:<id>, hour:HH, topic:x, …): the router's
+    weights and its LLM layer's deltas get the English names with the tags, so the model fits the features it sees from the first
+    start on — no silent gap until it is trained again. True if something changed."""
+    changed = False
+    for holder, key in ((d, "gewichte"), (d.get("llm_schicht") or {}, "deltas")):
+        w = holder.get(key) if isinstance(holder, dict) else None
+        if isinstance(w, dict) and w:
+            new = {canonical_tag(k): v for k, v in w.items()}
+            if list(new) != list(w):
+                holder[key], changed = new, True
+    return changed
+
+
 def _tags_pending(con: Any) -> bool:
     present = _tables(con)
     if "tag" not in present:
         return False
-    kinds = _german_tag_kinds()
-    return bool(con.execute(f"SELECT 1 FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))}) LIMIT 1", kinds).fetchone())
+    kinds, values = _german_tag_kinds(), _german_value_tags()
+    return bool(con.execute(f"SELECT 1 FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))}) LIMIT 1", kinds).fetchone()
+                or con.execute(f"SELECT 1 FROM tag WHERE tag IN ({','.join('?' * len(values))}) LIMIT 1", values).fetchone())
 
 
 def migrate_values(con: Any, columns) -> dict[str, int]:

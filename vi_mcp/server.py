@@ -308,7 +308,7 @@ class Handler(BaseHTTPRequestHandler):
         s = session.find_without_touching(sid or "")
         if not s or s.instance != inst.name:
             return self._send(404, "session unknown")
-        session.finish(s.id, "beendet")
+        session.finish(s.id, "ended")
         log(f"session {s.serial} ended (DELETE)")
         self._send(204)
 
@@ -437,7 +437,7 @@ def build(k: config.Config) -> list[Server]:
 def finish(srvs) -> None:
     main_loop.stop_background()
     on_demand.stop_background()
-    n = session.end_all("unterbrochen")
+    n = session.end_all("interrupted")
     g.close_db()
     log(f"stopped; {n} open conversation(s) saved as unterbrochen")
 

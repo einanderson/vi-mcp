@@ -163,7 +163,7 @@ def _cold_start(known: set[str]) -> list[g.MemoryObject]:
     for _s, o, _g in g.recall("(kind:skill OR kind:insight OR kind:rule) !origin:p2p", limit=400, viewer=None):
         if o.ts < since or o.mode not in ("active", "test") or f"hint:{o.id}" in known:
             continue
-        if any(t.startswith(("knowledge_kind:firmendoku", "knowledge_kind:doku-extern")) for t in o.hashtags):
+        if any(t.startswith(("knowledge_kind:company-docs", "knowledge_kind:external-docs")) for t in o.hashtags):
             continue  # imported documentation is shown only via exploration (0.57.1)
         out.append(o)
         if len(out) >= COLD_MAX:

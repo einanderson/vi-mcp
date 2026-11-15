@@ -70,7 +70,7 @@ def test_a_withdrawal_by_the_author_is_not_a_refutation_but_two_foreign_families
 
 def test_model_made_and_copied_origins_add_nothing(gd):
     base = _obj("Backups run at 02:00", quelle="https://ops.example/backup")
-    llm = _obj("Backups run nightly", quelle=f"derived from {base.id}", instance=g.SERVER_INSTANCE, tags=("origin:schlaf-llm",))
+    llm = _obj("Backups run nightly", quelle=f"derived from {base.id}", instance=g.SERVER_INSTANCE, tags=("origin:sleep-llm",))
     o = _obj("The nightly backup starts at 02:00", quelle="https://ops.example/runbook")
     o = g.load(o.id).confirm("ki@vi", "sleep", instance=g.SERVER_INSTANCE, family="vi")  # automatic, no source: model-made
     o = g.load(o.id).confirm("ki@x", "agrees", instance="x", family="gpt", source=llm.id)  # cites a model-made object

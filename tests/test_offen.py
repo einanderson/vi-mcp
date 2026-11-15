@@ -78,7 +78,7 @@ def test_proposal_lands_in_quarantine(open_):
     hid = harmless.split()[1]
     o = g.load(hid)
     o.data["pruefung"]["pruefer"] = {"status": "zulassen", "gruende": []}
-    o.hashtags = [t for t in o.hashtags if t != "reviewer:ausstehend"] + ["reviewer:zulassen"]
+    o.hashtags = [t for t in o.hashtags if t != "reviewer:pending"] + ["reviewer:zulassen"]
     g.save(o)
     error, text = _call(port, sa, "vi_freigabe", {"id": hid, "grund": "geprüft"}, tok)
     assert not error and g.load(hid).mode == "test"

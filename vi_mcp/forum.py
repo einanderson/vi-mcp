@@ -3,9 +3,9 @@ one server (questions.py), carried by the logbooks.
 
 A post is a logbook entry of type `beitrag` {faden, eltern, art (frage|antwort), text, inhalt, hashtags, reize, autor, netz_id,
 loesch_hash, zeit}; its id is the SHA-256 of its content. A thread (faden) is the id of its question.
-  ask      vi_ask(to="netz" or "net:<name>") — the local question as before, plus a post for the network
+  ask      vi_ask(to="net" or "net:<name>"; netz/netz:<name> of older clients are read the same) — the local question as before, plus a post for the network
   ingest   a foreign post: fixed rules, then quarantine like every import (the user's decision: only after review)
-             question → a question object to "alle", delivered at the next vi_before after release
+             question → a question object to "all", delivered at the next vi_before after release
              answer   → only to an own question; an object of kind erkenntnis (it is knowledge, with evidence) — after release it is
                         appended to the question and reaches the asker like a local answer; vi_confirm/vi_refute on it are ratings
                         and feed the network score (net_score)
@@ -84,7 +84,7 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
     _tables()
     with g.lock:
         n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? AND json_extract(data, '$.an') LIKE 'net:%' "
-                           "AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (instance,)).fetchone()[0]
+                           "AND json_extract(data, '$.zustand') IN ('open', 'delivered')", (instance,)).fetchone()[0]
     if n >= MAX_OPEN_PER_INSTANCE:
         raise ValueError(f"{n} questions of {instance} to the network are still open (at most {MAX_OPEN_PER_INSTANCE}); they expire after {questions.EXPIRY_DAYS} days")
     content = _post(instance, net, "frage", text, source, [], triggers, None, None, f"beitrag|frage|{instance}|{g.now()}|{text[:40]}")
@@ -147,11 +147,11 @@ def ingest(raw: dict, header: dict, net: str) -> str:
     herkunft = {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": pid, "netz_id": raw["netz_id"], "netz": net}
     common = {"herkunft": herkunft, "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": raw["text"], "fremd_hashtags": raw["hashtags"] + raw["reize"],
               "beitrag": {"netz": net, "id": pid, "faden": raw["faden"] or pid, "art": raw["art"], "autor": raw["autor"], "richtung": "ein"}}
-    tags = ["origin:p2p", "origin:gespraech", f"publisher:{name}", "reviewer:ausstehend", "mode:quarantine", f"net:{net}"]
+    tags = ["origin:p2p", "origin:conversation", f"publisher:{name}", "reviewer:pending", "mode:quarantine", f"net:{net}"]
     if raw["art"] == "frage":
-        data = {**common, "von": f"{raw['autor']}@{net}", "an": "alle", "zustand": "offen", "quelle": raw["inhalt"] or f"question in network {net}",
+        data = {**common, "von": f"{raw['autor']}@{net}", "an": "all", "zustand": "open", "quelle": raw["inhalt"] or f"question in network {net}",
                 "zugestellt_an": [], "antworten": [], "gemeldet": 0}
-        o = g.new_object("question", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["to:alle", "state:offen"])), data, importance=2,
+        o = g.new_object("question", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["to:all", "state:open"])), data, importance=2,
                          who=f"import@{name}", reason=f"question from {raw['autor']} in {net}", oid=g.keyed_id("question", f"post-{pid[:32]}"), mode="quarantine",
                          instance=f"p2p-{name}", visibility="internal" if company else None)
     else:
@@ -177,9 +177,9 @@ def release_questions() -> int:
     from . import p2p
     n = 0
     value = p2p.publisher_value(fresh=True)
-    for _, o, _g in g.recall("kind:question mode:quarantine origin:gespraech", limit=200, viewer=None):
+    for _, o, _g in g.recall("kind:question mode:quarantine origin:conversation", limit=200, viewer=None):
         b = o.data.get("beitrag") or {}
-        if b.get("richtung") != "ein" or b.get("art") != "frage" or "reviewer:ausstehend" in o.hashtags:
+        if b.get("richtung") != "ein" or b.get("art") != "frage" or "reviewer:pending" in o.hashtags:
             continue
         if p2p.sensitive(o) or value.get(o.data["herkunft"]["herausgeber"], {}).get("gesperrt"):
             continue  # a rule finding, a reviewer doubt or a blocked publisher: a person decides
@@ -208,7 +208,7 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
     if q and q.kind == "question":
         q.data["antworten"] = q.data["antworten"] + [{"instanz": f"{b['autor']}@{b['netz']}", "text": o.text[:2000], "belege": str(o.data.get("inhalt") or "")[:500],
                                                         "zeit": g.now(), "objekt": o.id}]
-        questions._set_state(q, "beantwortet")
+        questions._set_state(q, "answered")
         q.change("vi", f"answer from the network ({b['autor']})", "released after review")
         g.save(q)
 
@@ -243,7 +243,7 @@ def stats(days: float = 7) -> dict:
         if not q:
             continue
         net_answers = [a for a in q.data.get("antworten") or [] if a.get("objekt")]
-        expired += q.data.get("zustand") == "abgelaufen"
+        expired += q.data.get("zustand") == "expired"
         per_q.append(len(net_answers))
         if net_answers:
             answered += 1

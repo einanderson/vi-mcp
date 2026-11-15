@@ -131,14 +131,14 @@ def test_question_between_instances(from_seq):
     a, b = from_seq
     r = as_user(a, "vi_frage", {"an": "b", "text": "Warum ist srv0111 nachts langsam?", "reize": ["host:srv0111"], "quelle": "Graylog"})
     fid = r.split()[1]
-    assert g.load(fid).data["zustand"] == "offen"
+    assert g.load(fid).data["zustand"] == "open"
     own = as_user(a, "vi_frage", {"an": "a", "text": "Frage an die anderen Gespräche von a"})  # since Unreleased: a's other conversations
     assert "other conversations of this instance" in own
     with pytest.raises(ValueError, match="needs a conversation"):  # without a conversation there is nobody else to ask
         questions.ask("a", "a", "Frage ohne Gespräch gestellt", [], "")
     hb = intuition.before("x", {}, "b")["hinweise"]
     assert any(fid in h and "Question from a" in h for h in hb)
-    assert g.load(fid).data["zustand"] == "zugestellt"
+    assert g.load(fid).data["zustand"] == "delivered"
     assert not [h for h in intuition.before("x", {}, "b")["hinweise"] if "Question from" in h]  # only once per instance
     with pytest.raises(tools.Rejected, match="belege"):
         as_user(b, "vi_antwort", {"id": fid, "text": "Backup-Job um 2 Uhr", "belege": ""})
@@ -149,7 +149,7 @@ def test_question_between_instances(from_seq):
     with session.on_behalf(a):
         ha = intuition.before("x", {}, "a")["hinweise"]  # …but to the asking one, which is still open
     assert any("Answer from b" in h and "Backup-Job" in h for h in ha)
-    assert "beantwortet" in as_user(a, "vi_fragen") and "Backup-Job" in as_user(a, "vi_fragen")
+    assert "answered" in as_user(a, "vi_fragen") and "Backup-Job" in as_user(a, "vi_fragen")
 
 
 def test_question_expires(from_seq):
@@ -159,7 +159,7 @@ def test_question_expires(from_seq):
         g.db().execute("UPDATE object SET ts = ? WHERE kind = 'question'", (old,))
         g.db().commit()
     assert questions.let_expire() == 1
-    assert "state:abgelaufen" in g.recall("kind:question", viewer=None)[0][1].hashtags
+    assert "state:expired" in g.recall("kind:question", viewer=None)[0][1].hashtags
 
 
 def test_collective_rule(gd):
@@ -167,7 +167,7 @@ def test_collective_rule(gd):
         v = intuition.before("graylog_search", {"q": inst}, inst)
         intuition.after("graylog_search", {"q": inst}, False, 1, "ConnectionError: refused 10.0.0.1", None, v["vorher_id"], inst)
     assert main_loop.step() == 1
-    r = g.recall("kind:rule collective:ja", viewer=None)[0][1]
+    r = g.recall("kind:rule collective:yes", viewer=None)[0][1]
     assert r.instance == g.SERVER_INSTANCE and r.data["instanzen"] == ["a", "b"] and "at 2 instances" in r.text
 
 
@@ -240,15 +240,15 @@ def test_surprise_determines_importance(gd):
         v = intuition.before("graylog_search", {"q": i}, "a")
         return g.load(intuition.after("graylog_search", {"q": i}, False, 1, "ConnectionError: refused 10.0.0.9", None, v["vorher_id"], "a")["erfahrung"])
     levels = [fail(i).data["ueberraschung"]["stufe"] for i in range(5)]
-    assert levels == ["neu", "wiederholt", "wiederholt", "chronisch", "chronisch"]
-    assert g.recall("surprise:neu", viewer=None)[0][1].importance == 3
-    assert g.recall("surprise:chronisch", viewer=None)[0][1].importance == 1
+    assert levels == ["new", "repeated", "repeated", "chronic", "chronic"]
+    assert g.recall("surprise:new", viewer=None)[0][1].importance == 3
+    assert g.recall("surprise:chronic", viewer=None)[0][1].importance == 1
     v = intuition.before("graylog_search", {"q": "x"}, "a")
     e = g.load(intuition.after("graylog_search", {"q": "x"}, True, 1, None, "ok", v["vorher_id"], "a")["erfahrung"])
-    assert e.data["ueberraschung"]["stufe"] == "erholt" and e.importance == 2
+    assert e.data["ueberraschung"]["stufe"] == "recovered" and e.importance == 2
     v = intuition.before("netbox_get_sites", {}, "a")
     e = g.load(intuition.after("netbox_get_sites", {}, True, 1, None, "ok", v["vorher_id"], "a")["erfahrung"])
-    assert e.data["ueberraschung"]["stufe"] == "keine" and e.importance == 0
+    assert e.data["ueberraschung"]["stufe"] == "none" and e.importance == 0
 
 
 def test_hint_lift_measurement_point(gd):
@@ -285,19 +285,19 @@ def test_delete_conversation_tombstone(from_seq):
         assert g.db().execute("SELECT COUNT(*) FROM conversation_raw WHERE serial = ?", (a.serial,)).fetchone()[0] == 0
         assert g.db().execute("SELECT COUNT(*) FROM edge WHERE a = ? OR b = ?", (e, e)).fetchone()[0] == 0
     gs = g.load_keyed("conversation", a.serial)
-    assert gs.data["zustand"] == "geloescht" and gs.data["geloescht"]["objekte"] == 2 and "state:geloescht" in gs.hashtags
+    assert gs.data["zustand"] == "deleted" and gs.data["geloescht"]["objekte"] == 2 and "state:deleted" in gs.hashtags
     assert "geheim" not in gs.text and "Zugangsdaten im Verlauf" in gs.text
     with pytest.raises(tools.Rejected, match="already deleted"):
         as_user(a, "vi_loesche_gespraech", {"serial": a.serial, "grund": "nochmal"})
     session.finish(b.id)
     r = session.delete_instance_data("b", "Admin: Instanz aufgelöst")  # admin path (CLI): all conversations → tombstones
-    assert r["gespraeche"] == 1 and g.load_keyed("conversation", b.serial).data["zustand"] == "geloescht"
+    assert r["gespraeche"] == 1 and g.load_keyed("conversation", b.serial).data["zustand"] == "deleted"
 
 
 
 def test_llm_hypothesis_hint_only_after_foreign_confirmation(gd):
     """0.21.1: an unconfirmed sleep hypothesis was the most-shown hint (719×). Only a foreign confirmation makes it a hint."""
-    o = g.new_object("insight", "Auf Host web4 deuten Latenzen auf Instabilität hin", ["host:web4", "origin:schlaf-llm"],
+    o = g.new_object("insight", "Auf Host web4 deuten Latenzen auf Instabilität hin", ["host:web4", "origin:sleep-llm"],
                        {"quelle": "Schlaf-Reflexion"}, reason="T", instance="vi")
     assert not any("web4 deuten" in x for x in intuition.before("Bash", {"command": "ssh web4 uptime"}, "a")["hinweise"])
     g.load(o.id).confirm("ki@b", "Latenz selbst gemessen", "b")
@@ -356,7 +356,7 @@ def test_a_pending_network_question_is_not_readable_before_release(from_seq):
     """Codex's review: network questions arrive with an='alle' in quarantine without a fixed-rule suspicion (forum.py); they are not
     delivered before review, so vi_questions(id) refuses them for ordinary instances, and vi_object marks them as unreviewed data."""
     a, b = from_seq
-    o = g.new_object("question", "How do I rotate the backup keys on db1?", ["to:alle", "state:offen"],
+    o = g.new_object("question", "How do I rotate the backup keys on db1?", ["to:all", "state:open"],
                      {"von": "x@net", "an": "alle", "zustand": "offen", "quelle": "net", "zugestellt_an": [], "antworten": [], "gemeldet": 0,
                       "pruefung": {"regeln": [], "pruefer": None}}, mode="quarantine", instance="p2p-peer", reason="import")
     with pytest.raises(tools.Rejected, match="not delivered yet"):

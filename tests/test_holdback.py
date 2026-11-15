@@ -51,7 +51,7 @@ def test_holdback_effect_recovers_a_known_effect(gd):
 def test_too_few_held_back_says_so(gd):
     for i in range(20):
         v = {"gezeigt": [] if i < 5 else ["erkenntnis:h"], "zurueckgehalten": ["erkenntnis:h"] if i < 5 else [], "haltewahrscheinlichkeit": 0.05}
-        g.new_object("experience", f"rsync {i}", ["tool:rsync", "ok:ja"], {"vorher": v}, instance="a")
+        g.new_object("experience", f"rsync {i}", ["tool:rsync", "ok:yes"], {"vorher": v}, instance="a")
     metrics._GRADES["db"] = None
     e = metrics.holdback_effect()
     assert e["zustand"] == "zu_wenig" and "at least 30" in e["urteil"]

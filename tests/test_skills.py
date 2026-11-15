@@ -41,7 +41,7 @@ def test_skill_from_recovery_in_sleep(gd):
     action(s, "checkmk_get_host", False, "ConnectionError: refused")
     action(s, "Bash", True)  # e.g. service restarted
     e_ok, _ = action(s, "checkmk_get_host", True)
-    assert "surprise:erholt" in g.load(e_ok).hashtags
+    assert "surprise:recovered" in g.load(e_ok).hashtags
     b = sleep_cycle.run("Test")
     assert b.data["schritte"]["4c_skills"]["neu"] == 1
     sk = [o for _, o, _g in g.recall("kind:skill", viewer=None)][0]
@@ -72,7 +72,7 @@ def test_merge_with_reference_and_proposal(gd):
     a = skills.new("a-weg", ["tool:t_x", "error:f_1"], ["t_a", "t_x"], "Weg A: erst t_a dann t_x", "Testlauf", [], "a")
     b = skills.new("b-weg", ["tool:t_x", "error:f_1", "host:h9"], ["t_b", "t_x"], "Weg B: erst t_b dann t_x", "Testlauf", [], "b")
     v = sleep_cycle.run("Test").data["schritte"]["4c_skills"]
-    assert v["vorschlaege"] == 2 and "fusion:vorschlag" in g.load(a.id).hashtags
+    assert v["vorschlaege"] == 2 and "fusion:proposal" in g.load(a.id).hashtags
     r = tools.call_tool("vi_skill_fusion", {"a": a.id, "b": b.id, "name": "t_x Störung", "grund": "beide lösen dasselbe"}, "c", True)
     assert "merged into" in r
     new_o = [o for _, o, _g in g.recall("kind:skill", viewer=None)][0]  # the only one not merged

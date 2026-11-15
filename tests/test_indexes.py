@@ -176,9 +176,9 @@ def test_backfill_puts_old_project_data_into_its_index_and_rename_merges(gd, mon
     monkeypatch.setattr(indexes, "_config", lambda: {"ignore": ["scratch"]})
     s = session.begin("a", "claude-code-hook 1", "cue-print")  # before 0.61.0 the session recorded its project, objects stayed global
     t = session.begin("a", "claude-code-hook 1", "scratch")
-    e1 = g.new_object("experience", "rsync 1", ["tool:rsync", "ok:ja"], {}, instance="a", conversation=s.serial, index="global")
+    e1 = g.new_object("experience", "rsync 1", ["tool:rsync", "ok:yes"], {}, instance="a", conversation=s.serial, index="global")
     k1 = g.new_object("insight", "learned in cue-print", ["topic:a"], {"quelle": "t"}, instance="a", conversation=s.serial, index="global")
-    e2 = g.new_object("experience", "rsync 2", ["tool:rsync", "ok:ja"], {}, instance="a", conversation=t.serial, index="global")
+    e2 = g.new_object("experience", "rsync 2", ["tool:rsync", "ok:yes"], {}, instance="a", conversation=t.serial, index="global")
     dry = indexes.backfill()
     assert dry == {"angewendet": False, "objekte": 2, "je_index": {"cue-print": {"experience": 1, "insight": 1}}}
     assert g.load(e1.id).idx == "global"  # counting changes nothing

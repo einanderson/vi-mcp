@@ -73,7 +73,7 @@ def test_run_proposes_measures_offline_and_starts_the_online_test(gd, monkeypatc
 def test_a_harmful_layer_is_rejected_offline(gd, monkeypatch):
     h = g.new_object("insight", "Helpful hint", ["tool:rsync"], {"quelle": "t"}, instance="a")
     for i in range(300):
-        g.new_object("experience", f"rsync {i}", ["tool:rsync", "ok:ja" if i % 2 == 0 else "ok:nein"],
+        g.new_object("experience", f"rsync {i}", ["tool:rsync", "ok:yes" if i % 2 == 0 else "ok:no"],
                      {"vorher": {"reize": ["tool:rsync"], "gezeigt": [h.id] if i % 2 == 0 else []}}, instance="a")
     _model({"tool:rsync": 0.0})
     monkeypatch.setattr(reflection, "ask_fn", lambda system, user: json.dumps(

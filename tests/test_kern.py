@@ -97,8 +97,8 @@ def test_session_conversation_and_persist(gd):
     assert o.conversation == s.serial
     assert session.finish(s.id)
     gs = g.load_keyed("conversation", s.serial)
-    assert gs.data["aufrufe"] == 1 and gs.data["zustand"] == "beendet"
-    assert {"tool:netbox_get_devices", "host:web1", "instance:test", "state:beendet", "ok:ja"} <= set(gs.hashtags)
+    assert gs.data["aufrufe"] == 1 and gs.data["zustand"] == "ended"
+    assert {"tool:netbox_get_devices", "host:web1", "instance:test", "state:ended", "ok:yes"} <= set(gs.hashtags)
     assert session.find(s.id) is None
 
 
@@ -152,7 +152,7 @@ def test_loop_error_becomes_rule_and_hint(gd):
         intuition.after("graylog_search", {"q": i}, False, 30000, f"TimeoutError: read timed out after {30 + i} s", None, v["vorher_id"])
     assert main_loop.step() == 1
     assert main_loop.step() == 0  # idempotent: the same rule not twice
-    rule = [o for _, o, _g in g.recall("kind:rule rule_kind:wiederholter-fehler")][0]
+    rule = [o for _, o, _g in g.recall("kind:rule rule_kind:repeated-error")][0]
     assert rule.mode == "test" and rule.data["treffer"] == 3 and rule.conversation is None
     v = intuition.before("graylog_search", {"q": "neu"})
     assert any(h.startswith("Rule [") and "failed 3×" in h for h in v["hinweise"])
@@ -163,7 +163,7 @@ def test_before_without_after_does_not_vanish(gd):
     with session.on_behalf(s):
         intuition.before("netbox_get_vms", {"host": "a"})
     session.finish(s.id)
-    e = [o for _, o, _g in g.recall("tool:netbox_get_vms ok:unbekannt")]
+    e = [o for _, o, _g in g.recall("tool:netbox_get_vms ok:unknown")]
     assert len(e) == 1 and e[0].conversation == s.serial and e[0].data["vorher"]["ohne_nachher"]
 
 
@@ -278,7 +278,7 @@ def test_manual_paragraphs_do_not_displace_experience(gd):
     """0.19.3: before `docker logs` four Docker doc paragraphs took all slots; the matching ssh hint dropped out."""
     from vi_mcp import tools
     for i in range(6):
-        tools.call_tool("vi_lerne", {"text": f"Docker-Doku, Abschnitt {i}: allgemeiner Text", "hashtags": ["skill:docker", "knowledge_kind:doku-extern"],
+        tools.call_tool("vi_lerne", {"text": f"Docker-Doku, Abschnitt {i}: allgemeiner Text", "hashtags": ["skill:docker", "knowledge_kind:external-docs"],
                                     "quelle": "Herstellerdoku"}, "a", False)
     tools.call_tool("vi_lerne", {"text": "ssh nach web1 nur mit Schlüssel und BatchMode", "hashtags": ["host:web1.example", "tool:ssh"], "quelle": "Erfahrung"}, "a", False)
     h = intuition.before("Bash", {"command": "ssh web1.example 'docker logs nginx'"}, "a", False)["hinweise"]
@@ -357,7 +357,7 @@ def test_exploration_adds_a_slot_instead_of_displacing_the_only_hint(gd, monkeyp
     import random
     from vi_mcp import tools
     for i in range(3):
-        tools.call_tool("vi_learn", {"text": f"Docker docs, section {i}: general text", "hashtags": ["skill:docker", "knowledge_kind:doku-extern"],
+        tools.call_tool("vi_learn", {"text": f"Docker docs, section {i}: general text", "hashtags": ["skill:docker", "knowledge_kind:external-docs"],
                                     "source": "vendor docs"}, "a", False)
     tools.call_tool("vi_learn", {"text": "ssh to web1 only with key and BatchMode", "hashtags": ["host:web1.example", "tool:ssh"], "source": "experience"}, "a", False)
     monkeypatch.setattr(random, "random", lambda: 0.0)

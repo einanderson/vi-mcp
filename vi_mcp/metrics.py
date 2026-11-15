@@ -29,14 +29,14 @@ def _ok(o) -> bool:
     from . import scorer
     if time.time() - _GRADES["t"] > 60 or _GRADES["db"] is not g.db():  # another database (tests, migration): read again
         _GRADES.update(t=time.time(), v=scorer.grade_details(), db=g.db())
-    lab = scorer.label(o.data, "ok:ja" in o.hashtags, o.conversation, _GRADES["v"])
+    lab = scorer.label(o.data, "ok:yes" in o.hashtags, o.conversation, _GRADES["v"])
     return bool(lab and lab[0])
 
 
 def hint_lift(hours: float = 24, tool: str | None = None, viewer: str | None = None) -> dict:
     """{'mit': {'n', 'ok'}, 'ohne': {'n', 'ok'}, 'quote_mit', 'quote_ohne', 'lift', 'urteil', 'je_tool': {...}}"""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
-    filt = "kind:experience (ok:ja OR ok:nein)" + (f" tool:{tool}" if tool else "")
+    filt = "kind:experience (ok:yes OR ok:no)" + (f" tool:{tool}" if tool else "")
     per_tool: dict[str, dict] = {}
     total = {"mit": {"n": 0, "ok": 0}, "ohne": {"n": 0, "ok": 0}}
     for _, o, _g in g.recall(filt, limit=5000, viewer=viewer):
@@ -58,7 +58,7 @@ def hint_lift_matched(hours: float = 24, viewer: str | None = None) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
     strata: dict[tuple[str, str], dict] = {}
     warned = 0
-    for _, o, _g in g.recall("kind:experience (ok:ja OR ok:nein)", limit=20000, viewer=viewer):
+    for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=20000, viewer=viewer):
         if o.ts < since or (o.data.get("vorher") or {}).get("aus_gedaechtnis"):
             continue
         if (o.data.get("vorher") or {}).get("warnung"):
@@ -149,7 +149,7 @@ def lift_by_age(hours: float = 24 * 7, viewer: str | None = None, new_days: floa
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
     acc = {k: {"n": 0, "ok": 0, "vorteil": 0.0} for k in ("neu", "alt", "unbekannt")}
     born: dict[str, str | None] = {}
-    for _, o, _g in g.recall("kind:experience (ok:ja OR ok:nein)", limit=5000, viewer=viewer):
+    for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=5000, viewer=viewer):
         v = o.data.get("vorher") or {}
         if o.ts < since or v.get("aus_gedaechtnis"):
             continue
@@ -194,7 +194,7 @@ def age_line(l: dict) -> str:
 def _randomized(hours: float, viewer: str | None):
     """Actions in which the ε-exploration could have happened (a candidate further back existed), with their label. Pure apart from reading."""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
-    for _, o, _g in g.recall("kind:experience (ok:ja OR ok:nein)", limit=50000, viewer=viewer):
+    for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=50000, viewer=viewer):
         v = o.data.get("vorher") or {}
         if o.ts < since or v.get("aus_gedaechtnis") or not v.get("rest_n") or not v.get("gezeigt"):
             continue
@@ -239,7 +239,7 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
     with its standard error. Positive = hints raise the success of an action. Causal, because holding back is random."""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
     strata: dict[tuple, dict] = {}
-    for _, o, _g in g.recall("kind:experience (ok:ja OR ok:nein)", limit=50000, viewer=viewer):
+    for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=50000, viewer=viewer):
         v = o.data.get("vorher") or {}
         if o.ts < since or v.get("aus_gedaechtnis") or "haltewahrscheinlichkeit" not in v:
             continue
@@ -316,7 +316,7 @@ def arm_effect(since: str | None = None, viewer: str | None = None) -> dict:
     """0.58.0: the randomized test of the LLM weight layer — actions ranked with the layer (arm llm) minus without (arm basis), Mantel-
     Haenszel within (instance, tool). Which arm an action is in is a coin flip (weight_writer.AB_SHARE), so the difference is causal."""
     strata: dict[tuple, dict] = {}
-    for _, o, _g in g.recall("kind:experience (ok:ja OR ok:nein)", limit=50000, viewer=viewer):
+    for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=50000, viewer=viewer):
         v = o.data.get("vorher") or {}
         a = v.get("arm")
         if a not in ("llm", "basis") or (since and o.ts < since) or v.get("aus_gedaechtnis"):
@@ -367,12 +367,12 @@ def error_hint_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict
                 continue
             t = next((x for x in o.hashtags if x.startswith("tool:")), "tool:?")
             later = [a for a in acts[i + 1:] if not (a.data.get("vorher") or {}).get("aus_gedaechtnis")][:RECOVER_WINDOW]  # answered from memory: no action
-            nxt = next((a for a in later if t in a.hashtags and ("ok:ja" in a.hashtags or "ok:nein" in a.hashtags)), None)
+            nxt = next((a for a in later if t in a.hashtags and ("ok:yes" in a.hashtags or "ok:no" in a.hashtags)), None)
             if nxt is None:
                 no_retry += 1
                 continue
             c = strata.setdefault((o.instance or "?", t), {True: [0, 0], False: [0, 0]})[not o.data.get("fehler_zurueckgehalten")]
-            c[0] += "ok:ja" in nxt.hashtags
+            c[0] += "ok:yes" in nxt.hashtags
             c[1] += 1
     num = den = var = 0.0
     n_s = n_h = used = 0

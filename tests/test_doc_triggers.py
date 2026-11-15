@@ -10,7 +10,7 @@ def _known():
         g.new_object("insight", f"mariadb tmpdir lesson {i}", ["topic:mariadb", "host:web7.example.org"], {"quelle": "x"}, instance="a")
 
 
-def _doc(text, content, tag="knowledge_kind:firmendoku"):
+def _doc(text, content, tag="knowledge_kind:company-docs"):
     return g.new_object("insight", text, [tag, "space:002it", "source_kind:confluence"], {"quelle": "wiki", "inhalt": content},
                         instance="m", visibility="internal")
 
@@ -72,7 +72,7 @@ def test_imported_docs_only_via_exploration_manuals_regularly(gd, monkeypatch):
     company = _doc("Confluence IT: db0137 Wartung", "db0137 wird freitags gewartet")
     company.hashtags = company.hashtags + ["topic:mysql"]
     g.save(company)
-    manual = g.new_object("insight", "Handbuch mysql: Verbindung zu db0137", ["knowledge_kind:handbuch", "topic:mysql"], {"quelle": "skills"}, instance="m")
+    manual = g.new_object("insight", "Handbuch mysql: Verbindung zu db0137", ["knowledge_kind:manual", "topic:mysql"], {"quelle": "skills"}, instance="m")
     s = session.begin("a", "t")
     with session.on_behalf(s):
         v = intuition.before("Bash", {"command": "mysql -h db0137.example.org"}, "a", False)

@@ -8,7 +8,7 @@ from vi_mcp import memory as g
 
 
 def _manual(text, instance="a", visibility="shared"):
-    return g.new_object("insight", text, ["knowledge_kind:handbuch", "skill:x"], {"quelle": "SKILL.md"}, reason="T", instance=instance,
+    return g.new_object("insight", text, ["knowledge_kind:manual", "skill:x"], {"quelle": "SKILL.md"}, reason="T", instance=instance,
                         visibility=visibility)
 
 
@@ -16,18 +16,18 @@ def test_dry_run_then_apply_with_history(gd):
     own, other = _manual("Handbuch x: Abschnitt 1"), _manual("Handbuch x: Abschnitt 2", instance="b")
     done = _manual("Handbuch x: Abschnitt 3", visibility="internal")
     mine_private = _manual("Handbuch x: privat", visibility="private")
-    out = tools.call_tool("vi_set_visibility", {"filter": "knowledge_kind:handbuch", "visibility": "internal", "reason": "company host names"}, "a", False)
+    out = tools.call_tool("vi_set_visibility", {"filter": "knowledge_kind:manual", "visibility": "internal", "reason": "company host names"}, "a", False)
     assert "4 object(s)" in out and "1 would be switched to internal" in out and "1 already internal" in out
     assert "1 private (never switched)" in out and "1 of other instances (need the release right)" in out and "dry run" in out
     assert g.load(own.id).visibility == "shared"  # nothing changed
-    out = tools.call_tool("vi_set_visibility", {"filter": "knowledge_kind:handbuch", "visibility": "internal", "reason": "company host names",
+    out = tools.call_tool("vi_set_visibility", {"filter": "knowledge_kind:manual", "visibility": "internal", "reason": "company host names",
                                                 "apply": True}, "a", False)
     assert "1 switched to internal" in out and "vi_net_forget" in out
     o = g.load(own.id)
     assert o.visibility == "internal" and o.changes[-1]["was"] == "visibility shared → internal" and o.changes[-1]["grund"] == "company host names"
     assert g.load(other.id).visibility == "shared" and g.load(mine_private.id).visibility == "private" and g.load(done.id).visibility == "internal"
     # with the release right also objects of other instances
-    out = tools.call_tool("vi_set_visibility", {"filter": "knowledge_kind:handbuch", "visibility": "internal", "reason": "operator", "apply": True},
+    out = tools.call_tool("vi_set_visibility", {"filter": "knowledge_kind:manual", "visibility": "internal", "reason": "operator", "apply": True},
                           "a", False, True)
     assert "1 switched to internal" in out and g.load(other.id).visibility == "internal"
 
@@ -60,8 +60,8 @@ def test_cli_goes_through_the_running_service(monkeypatch, capsys):
         spec.loader.exec_module(main)
     calls = []
     monkeypatch.setattr(main, "_local_tool", lambda tool, a: calls.append((tool, a)) or 0)
-    assert main._cli(["visibility", "knowledge_kind:handbuch", "internal", "company host names"]) == 0
-    assert main._cli(["visibility", "knowledge_kind:handbuch", "internal", "company host names", "--apply"]) == 0
-    assert calls == [("vi_set_visibility", {"filter": "knowledge_kind:handbuch", "visibility": "internal", "reason": "company host names", "apply": False}),
-                     ("vi_set_visibility", {"filter": "knowledge_kind:handbuch", "visibility": "internal", "reason": "company host names", "apply": True})]
-    assert main._cli(["visibility", "knowledge_kind:handbuch", "private", "x"]) == 2  # refused, usage shown
+    assert main._cli(["visibility", "knowledge_kind:manual", "internal", "company host names"]) == 0
+    assert main._cli(["visibility", "knowledge_kind:manual", "internal", "company host names", "--apply"]) == 0
+    assert calls == [("vi_set_visibility", {"filter": "knowledge_kind:manual", "visibility": "internal", "reason": "company host names", "apply": False}),
+                     ("vi_set_visibility", {"filter": "knowledge_kind:manual", "visibility": "internal", "reason": "company host names", "apply": True})]
+    assert main._cli(["visibility", "knowledge_kind:manual", "private", "x"]) == 2  # refused, usage shown

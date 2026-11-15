@@ -159,7 +159,7 @@ def test_reviewer_can_only_tighten(net, monkeypatch):
     x = test_case(_answer(kanarie="GRÜN"))
     assert "reviewer:kanarie" in x.hashtags and p2p.sensitive(x)
     x = test_case("kein json")
-    assert "reviewer:ausfall" in x.hashtags and x.mode == "quarantine"
+    assert "reviewer:outage" in x.hashtags and x.mode == "quarantine"
     x = test_case(json.dumps({"urteil": "zulassen"}))
     assert "reviewer:unbrauchbar" in x.hashtags
     x = test_case(_answer(urteil="ablehnen"))
@@ -172,7 +172,7 @@ def test_without_reviewer_everything_stays_sensitive(net, monkeypatch):
     monkeypatch.setattr(reviewer, "prompt_path", None)
     p2p.inbox(_bundle(net, [GOOD]), in_background=False)
     o = g.recall("mode:quarantine", viewer=None)[0][1]
-    assert reviewer.work_off()["zustand"] == "uebersprungen" and "reviewer:ausstehend" in o.hashtags
+    assert reviewer.work_off()["zustand"] == "uebersprungen" and "reviewer:pending" in o.hashtags
     with pytest.raises(ValueError, match="still pending"):
         p2p.approve(o, "a", True, False, "grund")
 
@@ -247,4 +247,4 @@ def test_selftest_stops_the_run(net, monkeypatch):
     p2p.inbox(_bundle(net, [GOOD]), in_background=False)
     monkeypatch.setattr(reflection, "ask_fn", lambda s, u: _answer(kanarie="GRÜN"))  # model falls for it
     r = reviewer.work_off()
-    assert r["zustand"] == "selbsttest_gescheitert" and "reviewer:ausstehend" in g.recall("mode:quarantine", viewer=None)[0][1].hashtags
+    assert r["zustand"] == "selbsttest_gescheitert" and "reviewer:pending" in g.recall("mode:quarantine", viewer=None)[0][1].hashtags

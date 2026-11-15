@@ -87,14 +87,14 @@ def test_model_scorer_and_calibration(gd, monkeypatch):
     serial = _conversation()
     r = scorer.model_run()
     assert r["modell_bewertet"] == 1 and "<transcript>" in seen["u"]
-    b = g.recall("kind:rating scorer:modell", viewer=None)[0][1]
+    b = g.recall("kind:rating scorer:model", viewer=None)[0][1]
     assert b.data["note"] == 0.75 and b.data["belege"] == [1, 2] and b.visibility == "private" and b.instance == "a"
     assert scorer.model_run()["modell_bewertet"] == 0  # once per version
     assert not scorer.calibration()["geeicht"] and serial not in scorer.conversation_grades()  # uncalibrated does not count
     for i in range(scorer.CAL_MIN):
         z = _conversation(0) if i else serial
-        g.new_object("rating", "m", [f"scorer:mensch", f"target:{z}"], {"scorer": "mensch", "ziel": z, "note": 0.7}, reason="T", oid=f"bewertung:m{i}", conversation=z)
-        g.new_object("rating", "k", [f"scorer:modell", f"target:{z}"], {"scorer": "modell", "ziel": z, "note": 0.75}, reason="T", oid=f"bewertung:k{i}", conversation=z)
+        g.new_object("rating", "m", [f"scorer:human", f"target:{z}"], {"scorer": "human", "ziel": z, "note": 0.7}, reason="T", oid=f"bewertung:m{i}", conversation=z)
+        g.new_object("rating", "k", [f"scorer:model", f"target:{z}"], {"scorer": "model", "ziel": z, "note": 0.75}, reason="T", oid=f"bewertung:k{i}", conversation=z)
     k = scorer.calibration()
     assert k["geeicht"] and k["paare"] == scorer.CAL_MIN and k["quote"] == 1.0
 

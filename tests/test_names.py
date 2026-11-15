@@ -60,6 +60,17 @@ def _assert_no_german_values(con) -> None:
         n = con.execute(f"SELECT COUNT(*) FROM tag WHERE tag IN ({','.join('?' * len(old))})", old).fetchone()[0]
         if n:
             left[f"tag {k}:"] = n
+    vals = names._german_value_tags()
+    n = con.execute(f"SELECT COUNT(*) FROM tag WHERE tag IN ({','.join('?' * len(vals))})", vals).fetchone()[0]
+    if n:
+        left["tag values"] = n
+    import json as _json
+    for kinds, path, m in names.DATA_VALUES:
+        for (raw,) in con.execute(f"SELECT data FROM object WHERE kind IN ({','.join('?' * len(kinds))})", kinds):
+            v = _json.loads(raw)
+            for key in path:
+                v = v.get(key) if isinstance(v, dict) else None
+            assert not (isinstance(v, str) and (v in m and m[v] != v or v.startswith("netz:"))), (path, "German value in data")
     kinds = names._german_tag_kinds()
     n = con.execute(f"SELECT COUNT(*) FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))})", kinds).fetchone()[0]
     if n:

@@ -2,7 +2,7 @@
 
 Proposed by a Claude Code session that worked a whole day next to the right manuals without opening them (11.11.2026): it looked for a
 GitLab repository with a local `git grep` because nothing told it that a GitLab skill with its own tools existed. The memory knows it:
-  - every imported skill manual has one overview object (tag `art-wissen:ueberblick` or `knowledge_kind:ueberblick`, plus `docs:<skill>`);
+  - every imported skill manual has one overview object (tag `art-wissen:ueberblick` or `knowledge_kind:overview`, plus `docs:<skill>`);
   - which tools belong to a skill it has measured: experiences tagged `tool:<prefix>_…` with the skill's prefix.
 `table()` joins both; `text()` renders one line per skill. Visibility as everywhere: what the instance may read. The hook puts it into the
 first prompt of a session (it is too long for the instructions, which some clients cut at about 2,000 characters); `vi_capabilities` returns
@@ -15,10 +15,10 @@ import time
 
 from . import memory as g
 
-OVERVIEW_TAGS = ("art-wissen:ueberblick", "knowledge_kind:ueberblick")
+OVERVIEW_TAGS = ("art-wissen:ueberblick", "knowledge_kind:overview")
 TOOLS_PER_SKILL = 8
 DESCRIPTION_CHARS = 90
-EXTERNAL_TAG = "knowledge_kind:doku-extern"
+EXTERNAL_TAG = "knowledge_kind:external-docs"
 CACHE_S = 600
 _cache: dict = {}
 

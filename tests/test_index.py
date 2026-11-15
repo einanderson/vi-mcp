@@ -15,11 +15,11 @@ def _k(text, tags, instance="anna", **kw):
 
 
 def test_sections_requirements_proven_and_own(gd):
-    req = _k("The user requires: deploys only after explicit approval", ["topic:vorgabe", "topic:deploy"], instance="bert")
+    req = _k("The user requires: deploys only after explicit approval", ["topic:requirement", "topic:deploy"], instance="bert")
     proven = _k("ssh to the build host only with the key file", ["topic:ssh"], instance="bert")
     proven.confirm("ki@carl", "worked", "carl", family="gpt")
     own = _k("Port 8765 is the default of the VI server", ["topic:port"])
-    imported = _k("Manual section: how to install NetBox", ["knowledge_kind:handbuch"])
+    imported = _k("Manual section: how to install NetBox", ["knowledge_kind:manual"])
     imported.confirm("ki@carl", "x", "carl", family="gpt")
     refuted = _k("A wrong statement learned by anna", ["topic:x"])
     refuted.refute("ki@anna", "wrong", "anna")
@@ -36,14 +36,14 @@ def test_sections_requirements_proven_and_own(gd):
 
 
 def test_internal_only_with_a_token(gd):
-    o = _k("Internal requirement: tickets go to the IMIT queue", ["topic:vorgabe"], visibility="internal")
+    o = _k("Internal requirement: tickets go to the IMIT queue", ["topic:requirement"], visibility="internal")
     assert o.id in index.text("anna")
     assert o.id not in index.text(config.OPEN)
 
 
 def test_bounded_and_the_cut_is_named(gd, monkeypatch):
     for i in range(30):
-        _k(f"Requirement number {i}: " + "x" * 200, ["topic:vorgabe"])
+        _k(f"Requirement number {i}: " + "x" * 200, ["topic:requirement"])
     monkeypatch.setattr(index, "MAX_CHARS", 600)
     t = index.text("anna")
     assert len(t) <= 600 + 80 and t.endswith("(index cut at its size limit — vi_recall finds the rest)")
@@ -57,7 +57,7 @@ def test_empty_memory_sends_no_index(gd):
 def test_images_are_marked(gd):
     from vi_mcp import images
     from test_images import png
-    o = g.new_object("image", "Screenshot of the setup dialog", ["topic:vorgabe"], {"quelle": "q", "bild": images.store(png())}, instance="anna")
+    o = g.new_object("image", "Screenshot of the setup dialog", ["topic:requirement"], {"quelle": "q", "bild": images.store(png())}, instance="anna")
     assert f"- [{o.id}] image: Screenshot of the setup dialog" in index.text("anna")
 
 
@@ -79,7 +79,7 @@ def srv(tmp_path, monkeypatch):
 
 def test_initialize_carries_the_index_after_the_rules(srv):
     port, tok = srv
-    o = _k("The user decided: images are their own memory kind", ["topic:vorgabe"])
+    o = _k("The user decided: images are their own memory kind", ["topic:requirement"])
     _, _, a = request(port, "POST", {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"clientInfo": {"name": "t"}}}, tok)
     ins = a["result"]["instructions"]
     assert "[Index] Memory index for instance anna" in ins and o.id in ins

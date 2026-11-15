@@ -37,11 +37,11 @@ ASK (vi_recall with free text — meaning and full text, hybrid by default — o
 2. Before any changing action on a system (deploy, restart, configuration, playbook, delete), unless step 1 already covered it.
 3. On an error or unexpected result: search for the tool and the error text before looking for the cause yourself.
 4. For questions about internal systems, processes and responsibilities: the VI first, then other sources. If vi_recall finds nothing, vi_net_search asks the members of a network live (unreviewed hits; take one to have it reviewed).
-If a question stays open and the hits on the topic come mostly from another instance ("from <instance>"): ask that instance with vi_ask (to, text, triggers) instead of guessing — it answers from its own context; the answer appears before your next action or via vi_questions. If nobody here knows it: vi_ask(to="netz") asks the AIs of the other servers in the network; confirm the answer that helped (vi_confirm), refute a wrong one.
+If a question stays open and the hits on the topic come mostly from another instance ("from <instance>"): ask that instance with vi_ask (to, text, triggers) instead of guessing — it answers from its own context; the answer appears before your next action or via vi_questions. If nobody here knows it: vi_ask(to="net") asks the AIs of the other servers in the network; confirm the answer that helped (vi_confirm), refute a wrong one.
 Not needed for general programming knowledge or files you have in front of you. Hints "[VI memory …]" (older hooks: "[VI-Gedächtnis …]") before an action are already hits: read and follow them, or contradict them with a reason.
 LEARN (vi_learn: text = one concrete key statement; content = complete, with commands and code; hashtags host:/tool:/skill:/thema:/fehler:; source = command, host and time, or URL):
 5. A problem is solved whose solution was not obvious (more than one attempt, troubleshooting): cause, solution, evidence — the working code, script or commands of the solution unabridged in content. Found on the web or in documentation: vi_solved with the URL in the instructions — it becomes a hint for every agent.
-6. The user states a rule, requirement or decision that applies beyond this session — with the hashtag topic:vorgabe: those are listed in the index every session receives.
+6. The user states a rule, requirement or decision that applies beyond this session — with the hashtag topic:requirement: those are listed in the index every session receives.
 7. A reusable fact about a system was looked up or measured (path, port, version, peculiarity, access route without secrets).
 8. Something turns out to be wrong — a hint contradicts what you just measured or read, or the user corrects it: correct it at once, in the same step, not at the end of the session: vi_refute the wrong object (reason with evidence), vi_learn the correction (with source).
 Search before learning: if it is already there, vi_confirm instead of creating it again. After hints: vi_feedback(helped=[ids], wrong=[ids]) — one call, no reason needed; it is how the VI learns which hint to show. vi_confirm / vi_refute when you checked the knowledge itself.
@@ -70,7 +70,7 @@ TOOLS = [
      "inputSchema": _schema({"tool": _S, "args": _O, "ok": {"type": "boolean"}, "duration_ms": {"type": "integer"}, "error": _S, "result": _S, "before_id": _S, "read_only": {"type": "boolean"}}, ["tool", "ok"])},
     {"name": "vi_ask",
      "description": "VI collective: ask another instance (or all). The question appears to the target instance at its next action "
-                    "(vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), your own instance "
+                    "(vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'all', your own instance "
                     "(its other conversations — e.g. other Claude Code sessions), '<instance>#<conversation>' (one conversation; yours is in "
                     "the instructions and in vi_questions), or 'netz' / "
                     "'net:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on "
@@ -100,7 +100,7 @@ TOOLS = [
     {"name": "vi_archive",
      "description": "VI housekeeping: long-term archive for entries no longer used — status and stubs (filter optional), or the full "
                     "content of one entry (id). Does not restore anything.",
-     "inputSchema": _schema({"id": _S, "filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:ja"}, "limit": {"type": "integer"}})},
+     "inputSchema": _schema({"id": _S, "filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:yes"}, "limit": {"type": "integer"}})},
     {"name": "vi_archive_restore",
      "description": "VI housekeeping: restore an entry from the long-term archive into active memory — with a reason.",
      "inputSchema": _schema({"id": _S, "reason": _S}, ["id", "reason"])},
@@ -116,7 +116,7 @@ TOOLS = [
      "inputSchema": _schema({"name": _S, "triggers": _TAGS, "steps": _TAGS, "instructions": _S, "reason": _S, "evidence": _TAGS}, ["name", "triggers", "steps", "instructions", "reason"])},
     {"name": "vi_skills",
      "description": "VI skill: all skills (name, version, mode, benefit, steps); filter optional (hashtags).",
-     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:ja"}})},
+     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:yes"}})},
     {"name": "vi_skill",
      "description": "VI skill: one skill with problem, solution, versions, evidence, merge origin.",
      "inputSchema": _schema({"id": _S}, ["id"])},
@@ -361,7 +361,7 @@ TOOLS = [
                     "Ranked by relevance, recency and importance; every hit is reinforced. semantic=true searches hybrid: meaning "
                     "(embedding — takes a few seconds, is reported) plus full text, merged by rank fusion. reinforce=false for measurements "
                     "and probes (benchmarks, evaluations): read only, the hits are not reinforced.",
-     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:ja"}, "limit": {"type": "integer"},
+     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:yes"}, "limit": {"type": "integer"},
                              "semantic": {"type": "boolean"},
                              "reinforce": {"type": "boolean", "description": "default true; false = read only (access count and last use stay unchanged)"},
                              "index": {"type": "string", "description": "optional: search only this index (a project or special VI); without it, hits from your project's index come first and everything else stays visible"},
@@ -410,17 +410,17 @@ TOOLS = [
      "description": "VI: learn a search as a mnemonic — the hashtag combination (AND/OR) that finds something again. triggers = hashtags "
                     "at which the search runs automatically before an action (e.g. tool:graylog_search, host:web1.example); story = "
                     "why/what for.",
-     "inputSchema": _schema({"name": _S, "filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:ja"}, "triggers": _TAGS, "story": _S, "source": {"type": "string", "description": "source: command, host and time, or URL (for vi_ask: why you ask)"}}, ["name", "filter", "triggers", "story", "source"])},
+     "inputSchema": _schema({"name": _S, "filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:yes"}, "triggers": _TAGS, "story": _S, "source": {"type": "string", "description": "source: command, host and time, or URL (for vi_ask: why you ask)"}}, ["name", "filter", "triggers", "story", "source"])},
     {"name": "vi_drilldown",
      "description": "VI: drill-down — search, add the most distinctive hashtag of the hits, search again (up to 3 levels). filter = "
                     "filter text OR id of a learned search (suche:…) / of an object (its hashtags become the filter).",
-     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:ja"}, "levels": {"type": "integer"}}, ["filter"])},
+     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:yes"}, "levels": {"type": "integer"}}, ["filter"])},
     {"name": "vi_set_visibility",
      "description": "VI: switch objects between shared and internal (e.g. company knowledge learned as shared). filter selects them "
                     "(at least one kind:value condition); without apply=true it only counts. Your own objects, or any with the release right; "
                     "private objects are never switched. Every change goes into the object's history with the reason. internal stops "
                     "further sharing with the network; copies already published are recalled with vi_net_forget.",
-     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. knowledge_kind:handbuch"},
+     "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. knowledge_kind:manual"},
                              "visibility": {"type": "string", "enum": ["shared", "internal"]}, "reason": _S,
                              "apply": {"type": "boolean", "description": "false (default): only count"}}, ["filter", "visibility", "reason"])},
     {"name": "vi_capabilities",
@@ -734,7 +734,7 @@ def _proposal(text: str, tags: list[str], data: dict, importance: int) -> str:
     from . import reviewer, checks
     rules = [f"{field_name}: {t}" for field_name in ("text", "inhalt", "quelle") for t in checks.directives(str(data.get(field_name, text if field_name == "text" else "")))]
     data = {**data, "herkunft": {"herausgeber": config.OPEN}, "pruefung": {"regeln": rules, "pruefer": None}, "fremd_text": text, "fremd_hashtags": tags}
-    o = g.new_object("insight", text, sorted(set(tags + ["origin:offen", "reviewer:ausstehend", "mode:quarantine"])), data, importance=max(0, min(3, importance)),
+    o = g.new_object("insight", text, sorted(set(tags + ["origin:offen", "reviewer:pending", "mode:quarantine"])), data, importance=max(0, min(3, importance)),
                        who=f"ki@{config.OPEN}", reason="proposal without token", mode="quarantine", instance=config.OPEN)
     if reviewer.available():
         import threading
@@ -992,9 +992,9 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         return json.dumps(intuition.before(args["tool"].strip(), args.get("args") or {}, instance, args.get("read_only"),
                                            args.get("context_hashtags") or []), ensure_ascii=False)
     if name == "vi_ask":
-        to = (args.get("to") or "").strip()
+        to = names.canonical_target((args.get("to") or "").strip())  # 0.67.0: alle/netz/netz:<n> of older clients
         try:
-            if to == "netz" or to.startswith("net:"):  # 0.43.0: a question to the network
+            if to == "net" or to.startswith("net:"):  # 0.43.0: a question to the network
                 from . import forum
                 o = forum.ask(instance, to.split(":", 1)[1] if ":" in to else p2p.STANDARD, args.get("text") or "", args.get("triggers") or [], args.get("source") or "")
                 return (f"Question {o.id} sent to network {o.data['beitrag']['netz']} — it goes out with the next round of the network service; members "
@@ -1027,7 +1027,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 # A question in quarantine is not delivered yet (network questions are released after review) — Codex's review.
                 raise Rejected(f"{o.id} waits in quarantine for review and is not delivered yet — readable after its release")
             d = o.data
-            if o.kind != "question" or instance not in (d.get("von"), d.get("an")) and d.get("an") != "alle" and instance not in d.get("zugestellt_an", []):
+            if o.kind != "question" or instance not in (d.get("von"), d.get("an")) and d.get("an") != "all" and instance not in d.get("zugestellt_an", []):
                 raise Rejected(f"{args['id']} is not a question to or from {instance}")
             frm = d["von"] + (f"#{d['von_gespraech']}" if d.get("von_gespraech") else "")
             to_ = d["an"] + (f"#{d['an_gespraech']}" if d.get("an_gespraech") else "")
@@ -1176,7 +1176,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         # 0.66.1: the token stays in the memory — a tool result lands in the agent's conversation (reported from Windows, 15.11.2026)
         t = p2p.issue_token(instance)
         return (f"Network token {t['id']} {'created' if t['new'] else 'exists since ' + str(t['since'])[:16]} for instance {instance}. "
-                f"It is stored by the memory itself ({t['location']}) and never shown; vi_page_write, vi_ask(to=\"netz\") and vi_net_forget "
+                f"It is stored by the memory itself ({t['location']}) and never shown; vi_page_write, vi_ask(to=\"net\") and vi_net_forget "
                 f"use it from there. Recalling entries as an administrator: vi-mcp net-token {instance} --forget (--all | --ids ID,…) --reason R.")
     if name == "vi_net_forget":
         if bool(args.get("ids")) == bool(args.get("all")):
@@ -1308,13 +1308,13 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'experience' AND ts >= ?", (since,)).fetchone()[0]
             outputs = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'experience' AND ts >= ? AND data LIKE '%\"aus_gedaechtnis\": true%'",
                                  (since,)).fetchone()[0]
-            error = g.db().execute("SELECT COUNT(*) FROM tag WHERE tag = 'ok:nein' AND object_id IN "
+            error = g.db().execute("SELECT COUNT(*) FROM tag WHERE tag = 'ok:no' AND object_id IN "
                                     "(SELECT id FROM object WHERE kind = 'experience' AND ts >= ?)", (since,)).fetchone()[0]
             edges = g.db().execute("SELECT COUNT(*) FROM edge").fetchone()[0]
             per_inst = g.db().execute("SELECT instance, COUNT(*) FROM object WHERE visibility = 'shared' AND kind IN "
                                      "('insight', 'rule', 'search', 'reflex', 'image') GROUP BY instance ORDER BY 2 DESC").fetchall()
             open_questions = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND "
-                                          "json_extract(data, '$.zustand') IN ('offen', 'zugestellt')").fetchone()[0]
+                                          "json_extract(data, '$.zustand') IN ('open', 'delivered')").fetchone()[0]
         s = session.current()
         open_ = session.open_items()
         ls = loop_progress
@@ -1390,7 +1390,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 held = checks.suspicion("\n".join([text, str(data.get("inhalt") or ""), str(data.get("quelle") or "")]))
                 extra = {"pruefung": {"regeln": held, "pruefer": None, "verdacht": True}} if held else {}
                 o = g.new_object("image" if data.get("bild") else "insight", text,
-                                 tags + (["reviewer:ausstehend", "mode:quarantine"] if held else []),
+                                 tags + (["reviewer:pending", "mode:quarantine"] if held else []),
                                  {**data, **({"key": key, "repeats": 1} if key else {}), **extra},
                                  importance=int(args.get("importance") or 1), who=f"ki@{instance}", reason="vi_learn",
                                  visibility=args.get("visibility"), instance=instance, index=idx, mode="quarantine" if held else "active")

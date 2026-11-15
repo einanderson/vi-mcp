@@ -76,7 +76,7 @@ def hint_features(hid: str, triggers: list[str] | None = None, ts: str | None = 
         from .metrics import NEW_DAYS
         from datetime import datetime
         if (datetime.fromisoformat(ts) - datetime.fromisoformat(b)).total_seconds() <= NEW_DAYS * 86400:
-            m["alter:neu"] = 1.0
+            m["age:new"] = 1.0
     if CONTENT:
         from . import content
         if (c := content.group(hid)) is not None:
@@ -108,8 +108,8 @@ def weighted_observations(since: str | None = None, index: str | None = None, ip
     with g.lock:
         rows = g.db().execute("SELECT id, ts, data, conversation FROM object WHERE kind = 'experience' AND mode = 'active'" + cond + " ORDER BY ts",
                               tuple(par)).fetchall()
-        labeled = {r[0] for r in g.db().execute("SELECT DISTINCT object_id FROM tag WHERE tag IN ('ok:ja', 'ok:nein')")}
-        ok_yes = {r[0] for r in g.db().execute("SELECT object_id FROM tag WHERE tag = 'ok:ja'")}
+        labeled = {r[0] for r in g.db().execute("SELECT DISTINCT object_id FROM tag WHERE tag IN ('ok:yes', 'ok:no')")}
+        ok_yes = {r[0] for r in g.db().execute("SELECT object_id FROM tag WHERE tag = 'ok:yes'")}
     from . import scorer
     grades = scorer.grade_details()
     born: dict = {}

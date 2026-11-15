@@ -1,7 +1,7 @@
 """The loop — exactly one, because there is exactly one server process.
 
 Every LOOP_S seconds: delete expired answers, condense repeated errors into rules (mode test) —
-across all instances; if the error occurred at ≥ 2 instances, the rule carries `collective:ja` —, unanswered
+across all instances; if the error occurred at ≥ 2 instances, the rule carries `collective:yes` —, unanswered
 questions become `abgelaufen` after 7 days,
 save open conversations, close idle conversations as `abgelaufen`, checkpoint the WAL.
 Errors of a run are counted and named in the status — nothing vanishes silently.
@@ -43,7 +43,7 @@ def step() -> int:
                 g.new_object("rule", f"{tool_tag[5:]} failed {n}× in 24 h the same way ({error_tag.split(":", 1)[-1]})"
                                         + (f", at {n_inst} instances" if collective else "")
                                         + " — check arguments or reachability before the next call",
-                               [tool_tag, f"skill:{tool_tag[5:].split('_')[0]}", error_tag, "rule_kind:wiederholter-fehler", "mode:test",
+                               [tool_tag, f"skill:{tool_tag[5:].split('_')[0]}", error_tag, "rule_kind:repeated-error", "mode:test",
                                 f"collective:{'ja' if collective else 'nein'}"],
                                data, importance=2, oid=rid, mode="test",
                                reason=f"{n} identical errors in 24 h")  # author: the server (instance vi), no conversation

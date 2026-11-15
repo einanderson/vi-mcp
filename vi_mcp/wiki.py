@@ -171,7 +171,7 @@ def ingest(raw: dict, header: dict, net: str) -> str:
             "herkunft": {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": rev, "netz_id": raw["netz_id"], "netz": net},
             "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": f"{raw['titel']} — {raw['notiz'] or 'edit of the page'}"[:1000],
             "fremd_hashtags": raw["hashtags"], "wiki": {"netz": net, "seite": slug, "rev": rev, "geloescht": raw["geloescht"]}}
-    tags = sorted(set(raw["hashtags"] + ["origin:p2p", f"publisher:{name}", "reviewer:ausstehend", "mode:quarantine", f"net:{net}", "origin:wiki"]))
+    tags = sorted(set(raw["hashtags"] + ["origin:p2p", f"publisher:{name}", "reviewer:pending", "mode:quarantine", f"net:{net}", "origin:wiki"]))
     g.new_object("page", data["fremd_text"], tags, data, who=f"import@{name}", reason=f"wiki revision from {name}", oid=oid, mode="quarantine",
                  instance=f"p2p-{name}", visibility="internal" if p2p.is_company(net) else None)
     with g.lock:

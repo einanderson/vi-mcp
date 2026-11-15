@@ -5,7 +5,7 @@ state: every imported object stays in quarantine until it is released. Before ea
 attack checks whether the model holds; otherwise nothing is reviewed. The answer field `kanarie` must always be ROT:
 if an object makes the model change it, that counts as an incident. A test line mixed into every object was rated
 by the real model as an attack by the object (measured 08.11.2026) and was dropped. The prompt lives outside the repo
-(config `reviewer_prompt`). Without prompt or model the object stays in quarantine with `reviewer:ausfall`.
+(config `reviewer_prompt`). Without prompt or model the object stays in quarantine with `reviewer:outage`.
 """
 from __future__ import annotations
 
@@ -121,19 +121,19 @@ def work_off(limit: int = 100) -> dict:
         return {"zustand": "laeuft_bereits"}
     counter: dict[str, int] = {}
     try:
-        open_ = g.recall("reviewer:ausstehend mode:quarantine", limit=1, viewer=None)
+        open_ = g.recall("reviewer:pending mode:quarantine", limit=1, viewer=None)
         if not open_:
             return {"zustand": "nichts_offen"}
         reason = selftest(system)
         if reason:
             log(f"reviewer halted: {reason}")
             return {"zustand": "selbsttest_gescheitert", "grund": reason}
-        for _, o, _g in g.recall("reviewer:ausstehend mode:quarantine", limit=limit, viewer=None):
+        for _, o, _g in g.recall("reviewer:pending mode:quarantine", limit=limit, viewer=None):
             cand = _candidates(o)
             try:
                 result = postprocess(_answer(system, user_input(o, cand)), {k["id"] for k in cand})
             except (urllib.error.URLError, OSError, ValueError, KeyError, json.JSONDecodeError, TypeError) as e:
-                result = {"status": "ausfall", "gruende": [f"reviewer answer not evaluable: {type(e).__name__}: {str(e)[:120]}"]}
+                result = {"status": "outage", "gruende": [f"reviewer answer not evaluable: {type(e).__name__}: {str(e)[:120]}"]}
             _set(o, result)
             counter[result["status"]] = counter.get(result["status"], 0) + 1
     finally:

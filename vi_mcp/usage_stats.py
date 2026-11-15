@@ -118,7 +118,7 @@ def data(days: float = 7) -> dict:
         calls = db.execute("SELECT ts, instance, client, tool, outcome, ms, hits, search_kind FROM usage WHERE ts >= ? ORDER BY ts",
                              (since,)).fetchall()
         exps = db.execute("SELECT o.ts, o.instance, o.conversation, o.data, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'tool:%'), "
-                         "(SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag IN ('ok:ja', 'ok:nein')) FROM object o "
+                         "(SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag IN ('ok:yes', 'ok:no')) FROM object o "
                          "WHERE o.kind = 'experience' AND o.ts >= ? ORDER BY o.ts", (since,)).fetchall()
         knowledge_new = db.execute("SELECT kind, visibility, accesses, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'source_kind:%') "
                                 "FROM object o WHERE kind IN ('insight', 'rule', 'skill', 'search', 'image') AND ts >= ?", (since,)).fetchall()
@@ -172,16 +172,16 @@ def data(days: float = 7) -> dict:
             conv_with_action.add(tot)
         pr = per_project.setdefault(projects_of.get(tot) or "—", {"n": 0, "ok": 0, "ok_known": 0, "fehler": {}})
         pr["n"] += 1
-        pr["ok"] += oktag == "ok:ja"
+        pr["ok"] += oktag == "ok:yes"
         pr["ok_known"] += bool(oktag)
-        if oktag == "ok:nein":  # 14.11.2026: a low rate needs its reason — which error class, how many, when
+        if oktag == "ok:no":  # 14.11.2026: a low rate needs its reason — which error class, how many, when
             cls = re.sub(r"\d+", "#", str(d.get("fehler") or "unknown error"))[:70]
             f = pr["fehler"].setdefault(cls, [0, z, z])
             f[0], f[1], f[2] = f[0] + 1, min(f[1], z), max(f[2], z)
         if oktag:
             target = warn if v.get("warnung") else without_warn
             target["n"] += 1
-            target["ok"] += oktag == "ok:ja"
+            target["ok"] += oktag == "ok:yes"
         tool = (tooltag or "tool:?")[5:]
         if not mutating(tool, d.get("args")) or calls_since is None or z < calls_since:
             continue

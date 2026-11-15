@@ -72,7 +72,7 @@ def test_model_learns_the_content(knowledge, monkeypatch):
         topic = rng.choice(["tls", "disk"])
         hid = rng.choice(knowledge[topic])
         ok = rng.random() < (0.9 if topic == "tls" else 0.2)
-        g.new_object("experience", "Bash", ["tool:Bash", f"topic:{topic}", "ok:ja" if ok else "ok:nein"],
+        g.new_object("experience", "Bash", ["tool:Bash", f"topic:{topic}", "ok:yes" if ok else "ok:no"],
                        {"vorher": {"reize": ["tool:Bash", f"topic:{topic}"], "gezeigt": [hid]}, "args": {"n": n}}, reason="T", instance="a")
     b = learning.train("Test")
     w = learning.model().data["gewichte"]

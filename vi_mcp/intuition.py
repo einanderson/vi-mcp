@@ -56,12 +56,12 @@ _daily: dict[tuple[str, str], list[float]] = {}
 #: so that manual paragraphs do not push experience knowledge (warnings, pitfalls) out of the budget. Measured 09.11.2026: before `docker logs`
 #: four general Docker doc paragraphs took all slots.
 # 0.26.0: company docs and manuals count as reference material too — documentation now carries host:/thema: triggers
-LOOKUP = ("knowledge_kind:doku-extern", "knowledge_kind:firmendoku", "knowledge_kind:handbuch")
+LOOKUP = ("knowledge_kind:external-docs", "knowledge_kind:company-docs", "knowledge_kind:manual")
 LOOKUP_MAX = 1
 #: 0.57.1: imported company and vendor documentation only via exploration, not regularly — measured on production (bandit, success over the
 #: tool's base rate, 12.11.2026): Confluence imports −12.3 ± 3.5 points over 52 showings, Docker docs −4.8 ± 0.8 over 314, while the
 #: skill manuals (~/skills) stood at +7.0 ± 5.6 over 40. They stay findable with vi_recall; the ε slot keeps measuring them (propensities).
-LOOKUP_EXPLORE_ONLY = ("knowledge_kind:doku-extern", "knowledge_kind:firmendoku")
+LOOKUP_EXPLORE_ONLY = ("knowledge_kind:external-docs", "knowledge_kind:company-docs")
 HOSTKEYS = ("host", "hostname", "host_name", "node", "device")
 OPEN_MAX_S = 3600
 
@@ -280,7 +280,7 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
     cand = [o for _, o, _g in g.recall("(" + " OR ".join(search_triggers) + ")", limit=HINT_BUDGET + 24, kinds=("insight", "rule", "skill", "image", "page"))]
     # 0.21.1: disputed items and unconfirmed language-model hypotheses only on request (vi_recall), not unasked before actions.
     # Measured 09.11.: a disputed sleep hypothesis was the most shown hint with 719 reinforcements and pushed out evidenced knowledge.
-    only_on_request = [o for o in cand if o.mode == "disputed" or ("origin:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
+    only_on_request = [o for o in cand if o.mode == "disputed" or ("origin:sleep-llm" in o.hashtags and not o.foreign_confirmations())]
     cand = [o for o in cand if o not in only_on_request]
     cand = [o for o in cand if "knowledge_kind:code" not in o.hashtags]  # 0.61.0: imported code is found by search and the file line, no hint
     from . import p2p  # sources that proved harmful are no longer shown
@@ -620,7 +620,7 @@ def adopted(o: g.MemoryObject) -> list[str]:
     """0.59.0: the implicit feedback of a successful action — which hints shown before one of the previous ADOPT_WINDOW actions of this
     conversation it took a distinctive token from. Marks them on that earlier experience as `genutzt` (scorer.label: a positive label
     for the pair, weight WEIGHT["genutzt"]). Returns the hint ids."""
-    if not o.conversation or "ok:ja" not in o.hashtags:
+    if not o.conversation or "ok:yes" not in o.hashtags:
         return []
     here = json.dumps(o.data.get("args") or {}, ensure_ascii=False)
     with g.lock:
@@ -644,7 +644,7 @@ def adopted(o: g.MemoryObject) -> list[str]:
 
 
 def close_open(conversation: str | None = None, only_older_than_s: float | None = None) -> int:
-    """before without after → experience with ok:unbekannt (named state instead of silent vanishing).
+    """before without after → experience with ok:unknown (named state instead of silent vanishing).
     Choice: all of one conversation (at session end) or all older than only_older_than_s."""
     with _open_lock:
         if conversation is not None:
@@ -663,14 +663,14 @@ def close_open(conversation: str | None = None, only_older_than_s: float | None 
 
 
 #: Surprise (prediction error as learning signal, docs/FORSCHUNG.md A7): level → importance. Exhaustive.
-SURPRISE = {"neu": 3, "wiederholt": 2, "erholt": 2, "chronisch": 1, "keine": 0, "unbekannt": 0}
+SURPRISE = {"new": 3, "repeated": 2, "recovered": 2, "chronic": 1, "none": 0, "unknown": 0}
 
 
 def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, str]:
     """(level, reason). First error of this kind in 24 h = neu; 2nd–3rd = wiederholt; from the 4th = chronisch;
     success after errors of the same tool = erholt; otherwise keine. Counts across all instances (server view)."""
     if ok is None:
-        return "unbekannt", "no result reported"
+        return "unknown", "no result reported"
     since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
     with g.lock:
         if not ok and error_sig:
@@ -678,17 +678,17 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
                                "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = ? WHERE o.kind = 'experience' AND o.ts >= ?",
                                (f"tool:{tool}", f"error:{error_sig}", since)).fetchone()[0]
             if n == 0:
-                return "neu", "first error of this kind in 24 h"
+                return "new", "first error of this kind in 24 h"
             if n <= 2:
-                return "wiederholt", f"same error #{n + 1} in 24 h"
-            return "chronisch", f"same error #{n + 1} in 24 h — known, no longer surprising"
+                return "repeated", f"same error #{n + 1} in 24 h"
+            return "chronic", f"same error #{n + 1} in 24 h — known, no longer surprising"
         if ok:
             n = g.db().execute("SELECT COUNT(*) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? "
-                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = 'ok:nein' WHERE o.kind = 'experience' AND o.ts >= ?",
+                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = 'ok:no' WHERE o.kind = 'experience' AND o.ts >= ?",
                                (f"tool:{tool}", since)).fetchone()[0]
             if n:
-                return "erholt", f"success after {n} error(s) of the same tool in 24 h"
-    return "keine", "expected outcome"
+                return "recovered", f"success after {n} error(s) of the same tool in 24 h"
+    return "none", "expected outcome"
 
 
 def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: str | None, result: str | None,
@@ -781,7 +781,7 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
     skip = set(shown or [])
     hits = g.recall(" ".join(words), limit=PROMPT_HINTS * 6, kinds=PROMPT_KINDS, viewer=instance, or_fallback=True)
     cand = [o for _s, o, _g in hits if o.id not in skip and o.mode not in ("disputed", "quarantine", "refuted", "withdrawn", "archived")
-            and not ("origin:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
+            and not ("origin:sleep-llm" in o.hashtags and not o.foreign_confirmations())]
     cand = p2p.without_blocked(cand)
     lw = [w.lower() for w in words]
     scored = []

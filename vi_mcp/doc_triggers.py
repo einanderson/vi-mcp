@@ -21,7 +21,7 @@ import re
 from . import memory as g
 
 VERSION = 1
-DOC_TAGS = ("knowledge_kind:firmendoku", "knowledge_kind:doku-extern", "knowledge_kind:handbuch")
+DOC_TAGS = ("knowledge_kind:company-docs", "knowledge_kind:external-docs", "knowledge_kind:manual")
 HOST_MAX, THEMA_MAX = 5, 5
 THEMA_MIN = 3
 BATCH = 3000

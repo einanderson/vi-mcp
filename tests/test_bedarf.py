@@ -93,7 +93,7 @@ def test_sleep_does_not_stop_the_loop(gd, monkeypatch):
         with sleep_cycle._running:
             started.set()
             free.wait(5)
-        return g.new_object("sleep", "Testschlaf", ["state:fertig"], {}, reason="T")
+        return g.new_object("sleep", "Testschlaf", ["state:done"], {}, reason="T")
     monkeypatch.setattr(sleep_cycle, "due", lambda: "Test")
     monkeypatch.setattr(sleep_cycle, "run", run)
     t0 = time.monotonic()

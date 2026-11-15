@@ -18,7 +18,7 @@ import urllib.error
 import zlib
 
 from . import bandit
-from . import memory as g
+from . import memory as g, names
 from . import reflection, session
 from .log_output import log
 from .reflection import angle_safe as _protection
@@ -56,7 +56,7 @@ belege = numbers of the turns that support your verdict (at least one).
 Answer ONLY with JSON: {"note": 0.0, "begruendung": "one sentence", "belege": [1], "sicherheit": "niedrig|mittel|hoch"}"""
 MODEL_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["note", "begruendung", "belege", "sicherheit"],
                  "properties": {"note": {"type": "number"}, "begruendung": {"type": "string"}, "belege": {"type": "array", "items": {"type": "integer"}, "maxItems": 10},
-                                "sicherheit": {"enum": ["niedrig", "mittel", "hoch"]}}}
+                                "sicherheit": {"enum": ["low", "medium", "high"]}}}
 
 
 def _key(e: dict) -> tuple:
@@ -102,7 +102,7 @@ def rate_conversation(experiences: list[dict], signals: list[dict]) -> dict[str,
 
 def _form(o: g.MemoryObject) -> dict:
     tool = next((t[5:] for t in o.hashtags if t.startswith("tool:")), "?")
-    ok = True if "ok:ja" in o.hashtags else False if "ok:nein" in o.hashtags else None
+    ok = True if "ok:yes" in o.hashtags else False if "ok:no" in o.hashtags else None
     return {"id": o.id, "zeit": o.ts, "tool": tool, "args": o.data.get("args"), "ok": ok, "fehler_sig": next((t for t in o.hashtags if t.startswith("error:")), None)}
 
 
@@ -131,7 +131,7 @@ def code_run() -> dict:
             n += 1
             if s["note"] < GOOD_FROM:
                 bad += 1
-                if "ok:ja" in o.hashtags and not old:  # the counter assumed "succeeded"; the scorer knows better now
+                if "ok:yes" in o.hashtags and not old:  # the counter assumed "succeeded"; the scorer knows better now
                     rebooked += bandit.rebook((o.data.get("vorher") or {}).get("gezeigt", []), next((t[5:] for t in o.hashtags if t.startswith("tool:")), None))
         if changes:
             with g.lock:
@@ -142,7 +142,7 @@ def code_run() -> dict:
 
 
 def _create_rating(scorer: str, version: int, serial: str, instance: str, grade: float, justification: str, data: dict, oid: str, who: str) -> g.MemoryObject:
-    level = "gut" if grade >= 0.75 else "mittel" if grade >= GOOD_FROM else "schlecht"
+    level = "good" if grade >= 0.75 else "medium" if grade >= GOOD_FROM else "bad"
     return g.new_object("rating", f"{scorer}: {grade:.2f} — {justification}"[:500], [f"scorer:{scorer}", f"target:{serial}", f"grade:{level}"],
                           {"scorer": scorer, "version": version, "ziel": serial, "note": grade, "begruendung": justification[:500], **data},
                           importance=1, who=who, oid=oid, reason=f"rating by {scorer}", conversation=serial, instance=instance)
@@ -151,7 +151,8 @@ def _create_rating(scorer: str, version: int, serial: str, instance: str, grade:
 def human(serial: str, instance: str, grade: float) -> g.MemoryObject:
     if not 0 <= grade <= 1:
         raise ValueError("note must be between 0 and 1")
-    return _create_rating("mensch", 1, serial, instance, round(grade, 2), "grade given by the user", {}, f"bewertung:mensch-{serial}-{int(time.time() * 1000)}", "mensch")
+    return _create_rating("human", 1, serial, instance, round(grade, 2), "grade given by the user", {},
+                          names.new_id("rating", f"human-{serial}-{int(time.time() * 1000)}"), "human")
 
 
 def _log_output(serial: str) -> list[dict] | None:
@@ -184,7 +185,8 @@ def check_answer(a: dict, n_turns: int) -> dict:
     evidence_list = [b for b in a.get("belege") or [] if isinstance(b, int) and 1 <= b <= n_turns]
     if not evidence_list:
         raise ValueError("no valid evidence")
-    if a.get("sicherheit") not in ("niedrig", "mittel", "hoch"):
+    a["sicherheit"] = {"niedrig": "low", "mittel": "medium", "hoch": "high"}.get(a.get("sicherheit"), a.get("sicherheit"))  # a model may answer in German
+    if a.get("sicherheit") not in ("low", "medium", "high"):
         raise ValueError("sicherheit unusable")
     return {"note": round(float(grade), 2), "begruendung": str(a.get("begruendung", ""))[:500], "belege": evidence_list, "sicherheit": a["sicherheit"]}
 
@@ -199,7 +201,7 @@ def model_run(limit: int = MODEL_PER_RUN) -> dict:
             break
         d, serial = o.data, o.data.get("serial")
         oid = g.keyed_id("rating", f"modell-{serial}-v{MODEL_VERSION}")
-        if d.get("zustand") not in ("beendet", "abgelaufen", "unterbrochen") or d.get("aufrufe", 0) < MIN_TURNS_MODEL or g.load(oid):
+        if d.get("zustand") not in ("ended", "expired", "interrupted") or d.get("aufrufe", 0) < MIN_TURNS_MODEL or g.load(oid):
             continue
         turns = _log_output(serial)
         if not turns:
@@ -212,7 +214,7 @@ def model_run(limit: int = MODEL_PER_RUN) -> dict:
             error.append(f"{serial}: {type(e).__name__}: {str(e)[:100]}")
             log(f"Model scorer {serial}: {e}")
             continue
-        _create_rating("modell", MODEL_VERSION, serial, o.instance, a["note"], a["begruendung"], {"belege": a["belege"], "sicherheit": a["sicherheit"]}, oid, "vi")
+        _create_rating("model", MODEL_VERSION, serial, o.instance, a["note"], a["begruendung"], {"belege": a["belege"], "sicherheit": a["sicherheit"]}, oid, "vi")
         n += 1
     return {"modell_bewertet": n, "modell_fehler": error[:5]}
 
@@ -227,7 +229,7 @@ def _grades(scorer: str) -> dict[str, float]:
 
 def calibration() -> dict:
     """How well does the model match the human grades? Purely from the database."""
-    m, k = _grades("mensch"), _grades("modell")
+    m, k = _grades("human"), _grades("model")
     pairs = [(m[s], k[s]) for s in m if s in k]
     hits = sum(1 for a, b in pairs if abs(a - b) <= CAL_GAP)
     ratio = hits / len(pairs) if pairs else None
@@ -237,9 +239,9 @@ def calibration() -> dict:
 #: 0.55.0: the weight of a label by its source (scikit-learn sample_weight). A human grade outweighs everything; direct feedback on a
 #: hint is a direct statement; code-stage and ok tag are the plentiful base. An uncalibrated model grade counts a little instead of not
 #: at all (human grades are optional — the user, 12.11.2026); its certainty scales it.
-WEIGHT = {"mensch": 3.0, "rueckmeldung": 2.0, "genutzt": 1.5, "modell": 1.0, "code": 1.0, "ok": 1.0}
+WEIGHT = {"human": 3.0, "rueckmeldung": 2.0, "genutzt": 1.5, "model": 1.0, "code": 1.0, "ok": 1.0}
+CERTAINTY = {"low": 0.3, "medium": 0.6, "high": 1.0}
 UNCALIBRATED = 0.3
-CERTAINTY = {"niedrig": 0.3, "mittel": 0.6, "hoch": 1.0}
 
 
 def grade_details() -> dict[str, dict]:
@@ -251,11 +253,11 @@ def grade_details() -> dict[str, dict]:
     calibrated = calibration()["geeicht"]
     out: dict[str, dict] = {}
     for serial, note, who, certainty in rows:
-        if who == "modell" and out.get(serial, {}).get("quelle") != "mensch":
-            out[serial] = {"note": note, "quelle": "modell",
-                           "gewicht": round(WEIGHT["modell"] * CERTAINTY.get(certainty or "", 0.6) * (1.0 if calibrated else UNCALIBRATED), 3)}
-        elif who == "mensch":
-            out[serial] = {"note": note, "quelle": "mensch", "gewicht": WEIGHT["mensch"]}
+        if who == "model" and out.get(serial, {}).get("quelle") != "human":
+            out[serial] = {"note": note, "quelle": "model",
+                           "gewicht": round(WEIGHT["model"] * CERTAINTY.get(certainty or "", 0.6) * (1.0 if calibrated else UNCALIBRATED), 3)}
+        elif who == "human":
+            out[serial] = {"note": note, "quelle": "human", "gewicht": WEIGHT["human"]}
     return out
 
 
@@ -286,7 +288,7 @@ def label(data: dict, ok_tag: bool | None, serial: str | None, grades: dict[str,
 
 def conversation_grades() -> dict[str, float]:
     """Conversation grades that count for learning: human always, model only when calibrated."""
-    return {**(_grades("modell") if calibration()["geeicht"] else {}), **_grades("mensch")}
+    return {**(_grades("model") if calibration()["geeicht"] else {}), **_grades("human")}
 
 
 def line() -> str:
@@ -294,8 +296,8 @@ def line() -> str:
         n, good = g.db().execute("SELECT COUNT(*), SUM(CASE WHEN CAST(json_extract(data, '$.score.note') AS REAL) >= ? THEN 1 ELSE 0 END) FROM object WHERE kind = 'experience' AND json_extract(data, '$.score.version') IS NOT NULL", (GOOD_FROM,)).fetchone()
     k = calibration()
     q = "—" if k["quote"] is None else f"{k['quote'] * 100:.0f} %"
-    return (f"code {good or 0}/{n} succeeded · model {len(_grades('modell'))} conversations ({'calibrated' if k['geeicht'] else 'not calibrated, does not count for learning'}) · "
-            f"human {len(_grades('mensch'))} grades (given with #gut, #schlecht or #note 0.8 in a message to the AI) · "
+    return (f"code {good or 0}/{n} succeeded · model {len(_grades('model'))} conversations ({'calibrated' if k['geeicht'] else 'not calibrated, does not count for learning'}) · "
+            f"human {len(_grades('human'))} grades (given with #gut, #schlecht or #note 0.8 in a message to the AI) · "
             f"agreement {q} from {k['paare']} pairs")
 
 
@@ -309,6 +311,6 @@ def report() -> str:
                 tally[str(m)] = tally.get(str(m), 0) + 1
         features = sorted(tally.items(), key=lambda kv: -kv[1])
     z.append("Features: " + (", ".join(f"{m} {n}" for m, n in features) or "—"))
-    for _, o, _g in g.recall("kind:rating scorer:modell", limit=5, viewer=None):
+    for _, o, _g in g.recall("kind:rating scorer:model", limit=5, viewer=None):
         z.append(f"  {o.data['ziel']}: {o.data['note']:.2f} ({o.data.get('sicherheit')}) — {o.data['begruendung'][:140]}")
     return "\n".join(z)

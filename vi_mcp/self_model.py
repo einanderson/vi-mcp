@@ -18,7 +18,7 @@ from datetime import datetime
 from . import memory as g
 
 def core_id() -> str:
-    """The id of the self model (selbst:kern up to 0.66, self:kern for a memory created later)."""
+    """The id of the self model (selbst:kern up to 0.66, self:core for a memory created later)."""
     return g.keyed_id("self", "kern")
 AREAS = ("values", "goals", "style", "limits")
 EVIDENCE_MIN, DAYS_MIN = 3, 2
@@ -57,7 +57,7 @@ def core() -> g.MemoryObject:
     o = g.load(core_id())
     if o:
         return o
-    o = g.new_object("self", "Self of the VI (version 1)", ["self:kern"],
+    o = g.new_object("self", "Self of the VI (version 1)", ["self:core"],
                        {"version": 1, "soll": json.loads(json.dumps(DEFAULT_TARGET)), "ist": {}, "erzaehlung": ""},
                        importance=3, who="vi", oid=core_id(), reason="created from the project rules (CLAUDE.md, ARCHITECTURE.md)",
                        instance=g.SERVER_INSTANCE)

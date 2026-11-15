@@ -9,11 +9,11 @@ A skill is a shared object `skill:<name>`:
 Origin:
   vi_solved      an instance reports: problem X was solved like this (steps, reason, evidence)
   sleep 4c        automatically: an action succeeded after errors of the same tool in the same conversation
-                  (`surprise:erholt`) — the tool sequence from the first error to the success is the solution path
+                  (`surprise:recovered`) — the tool sequence from the first error to the success is the solution path
 Merging:
   vi_skill_merge(a, b, reason) new skill from both (triggers united, steps in sequence, evidence united);
                   a and b get mode `aufgegangen` with a reference — they do not vanish, they are merged.
-  sleep           same problem key (tool + error signature) or vector proximity ≥ 0.95 → `fusion:vorschlag` + edge;
+  sleep           same problem key (tool + error signature) or vector proximity ≥ 0.95 → `fusion:proposal` + edge;
                   merging is done only by an instance, never by the server.
 """
 from __future__ import annotations
@@ -185,7 +185,7 @@ def from_recovery(since: str) -> dict:
     damaged: set[str] = set()
     with g.lock:
         recovered = g.db().execute(
-            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'surprise:erholt' "
+            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'surprise:recovered' "
             "WHERE o.kind = 'experience' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     for (eid,) in recovered:
         e = g.load(eid)
@@ -195,7 +195,7 @@ def from_recovery(since: str) -> dict:
         with g.lock:
             rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND conversation = ? AND ts < ? ORDER BY ts", (e.conversation, e.ts)).fetchall()
         episode = [g.load(r[0]) for r in rows]
-        error_idx = [i for i, x in enumerate(episode) if x and f"tool:{tool}" in x.hashtags and "ok:nein" in x.hashtags]
+        error_idx = [i for i, x in enumerate(episode) if x and f"tool:{tool}" in x.hashtags and "ok:no" in x.hashtags]
         if not error_idx:
             continue
         remove = [x for x in episode[error_idx[0]:] if x] + [e]
@@ -263,7 +263,7 @@ def rate() -> dict:
 
 
 def fusion_proposals() -> dict:
-    """Same problem key (tool + error signature) for two skills → fusion:vorschlag + edge. An instance decides."""
+    """Same problem key (tool + error signature) for two skills → fusion:proposal + edge. An instance decides."""
     skills = [o for _, o, _g in g.recall("kind:skill !mode:merged", limit=500, viewer=None)]
     by_key: dict[tuple, list[g.MemoryObject]] = {}
     for o in skills:
@@ -279,9 +279,9 @@ def fusion_proposals() -> dict:
             continue
         for o in group:
             others = [x.id for x in group if x.id != o.id]
-            if "fusion:vorschlag" not in o.hashtags:
-                o.hashtags = o.hashtags + ["fusion:vorschlag"]
-                o.change("vi", "fusion:vorschlag", f"sleep: same problem as {', '.join(others)} — an instance decides with vi_skill_merge")
+            if "fusion:proposal" not in o.hashtags:
+                o.hashtags = o.hashtags + ["fusion:proposal"]
+                o.change("vi", "fusion:proposal", f"sleep: same problem as {', '.join(others)} — an instance decides with vi_skill_merge")
                 g.save(o)
                 n += 1
             for a in others:

@@ -26,7 +26,7 @@ def test_parse(text, act, qtype, flt, since, notes):
 def _seed():
     plain = g.new_object("insight", "deploy notes for web1: the deploy took 4 minutes", ["host:web1.example", "topic:deploy"],
                          {"quelle": "t"}, importance=3)
-    how = g.new_object("insight", "deploy web1: stop, copy, start", ["host:web1.example", "topic:deploy", "knowledge_kind:loesung"],
+    how = g.new_object("insight", "deploy web1: stop, copy, start", ["host:web1.example", "topic:deploy", "knowledge_kind:solution"],
                        {"quelle": "https://wiki.example/deploy", "nuetzlich": {"ja": 9, "nein": 1, "n": 10}})
     return plain, how
 
@@ -56,7 +56,7 @@ def test_order_is_off_by_default_and_lifts_labelled_hits_at_most_lift_places_whe
     assert out.index(hits[5]) == 5 - vil.LIFT  # moved up, but not past the more relevant hits further ahead
     assert [h for h in out if h is not hits[5]] == hits[:5]  # the rest keeps its relevance order
     assert vil.order(hits, "how", "off") == hits and vil.order(hits, None) == hits
-    skill = [(0, _O(["topic:x"]), 0), (0, _O(["knowledge_kind:loesung"]), 0)]
+    skill = [(0, _O(["topic:x"]), 0), (0, _O(["knowledge_kind:solution"]), 0)]
     assert vil.order(skill, "how", "labels") == skill  # the fixed prior alone moves nothing
     assert vil.order(skill, "how", "prior")[0] is skill[1]  # the old, measured-harmful mode stays available to measure against
 
@@ -71,7 +71,7 @@ def test_since_other_acts_and_evidence(gd):
     with pytest.raises(tools.Rejected, match="never run from a message"):
         tools.call_tool("vi_recall", {"filter": "do restart @web1", "semantic": False}, "a", False)
     foreign = g.new_object("insight", "imported", ["topic:x"], {"quelle": "t"}, instance="p2p-vi-abc")
-    llm = g.new_object("insight", "derived", ["topic:x", "origin:schlaf-llm"], {"quelle": "sleep"})
+    llm = g.new_object("insight", "derived", ["topic:x", "origin:sleep-llm"], {"quelle": "sleep"})
     assert [vil.evidence_of(o) for o in (g.load(how.id), g.load(plain.id), foreign, llm)] == ["measured", "unknown", "hearsay", "inferred"]
     doc = g.new_object("insight", "documented", ["topic:x"], {"quelle": "https://docs.example/x"})
     assert vil.evidence_of(doc) == "documented"

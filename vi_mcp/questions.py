@@ -1,7 +1,7 @@
 """Questions between instances — instances learn from each other by asking each other.
 
 A question is an object `kind:question` (geteilt) with `daten`:
-  von, an (instance name or "alle"), text, reize, zustand, zugestellt_an [instances], antworten [{instanz, text,
+  von, an (instance name or "all"), text, reize, zustand, zugestellt_an [instances], antworten [{instanz, text,
   belege, zeit}], gemeldet (answers the asker has already seen).
 States (exhaustive): `offen` (not yet shown to any target instance) · `zugestellt` (shown to at least one) ·
 `beantwortet` (at least one answer) · `abgelaufen` (after EXPIRY_DAYS without an answer; set by the loop).
@@ -21,13 +21,14 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
-from . import memory as g
+from . import memory as g, names
 
-STATES = ("offen", "zugestellt", "beantwortet", "abgelaufen")
+STATES = ("open", "delivered", "answered", "expired")
 EXPIRY_DAYS = 7
 
 
 def _set_state(o: g.MemoryObject, state: str) -> None:
+    state = names.english(names.STATES, state)  # 0.67.0
     o.data["zustand"] = state
     o.hashtags = [t for t in o.hashtags if not t.startswith("state:")] + [f"state:{state}"]
 
@@ -55,10 +56,11 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str, conver
     if len((text or "").strip()) < 10:
         raise ValueError("text (the question, one sentence) is required")
     to, target = split_target(to)
+    to = names.canonical_target(to)  # 0.67.0: alle/netz/netz:<n> of older clients
     if not to or not (all(c.isalnum() or c in "-_." for c in to) or re.fullmatch(r"net:[a-z][a-z0-9-]{1,30}", to)):
-        raise ValueError("to: name of an instance, 'alle', or net:<network> (0.43.0: a question to the network); "
+        raise ValueError("to: name of an instance, 'all', or net:<network> (0.43.0: a question to the network); "
                          "<instance>#<conversation> asks one conversation")
-    if target is not None and (not CONVERSATION.fullmatch(target) or to in ("alle",) or to.startswith("net:")):
+    if target is not None and (not CONVERSATION.fullmatch(target) or to in ("all",) or to.startswith("net:")):
         raise ValueError(f"#{target}: a conversation is its serial number (e.g. claude-code#20261115004), and only after an instance name")
     if to == from_ and not conversation:
         raise ValueError("a question to your own instance needs a conversation to come from (an MCP session) — otherwise use vi_recall")
@@ -69,8 +71,8 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str, conver
     if len(text) > ANSWER_MAX:
         raise ValueError(f"a question has at most {ANSWER_MAX} characters — put longer material into an object (vi_learn) and name its id")
     # 14.11.2026: the question used to be cut to 1000 characters without notice; the whole text is now kept in inhalt
-    o = g.new_object("question", text[:1000], tags + [f"to:{to}", f"from:{from_}", "state:offen"],
-                       {"von": from_, "an": to, "zustand": "offen", "quelle": (source or "").strip()[:500],
+    o = g.new_object("question", text[:1000], tags + [f"to:{to}", f"from:{from_}", "state:open"],
+                       {"von": from_, "an": to, "zustand": "open", "quelle": (source or "").strip()[:500],
                         "zugestellt_an": [], "antworten": [], "gemeldet": 0, **({"inhalt": text} if len(text) > 1000 else {}),
                         **({"von_gespraech": conversation} if conversation else {}), **({"an_gespraech": target} if target else {}),
                         **({"zugestellt_gespraeche": []} if to == from_ or target else {})},
@@ -91,7 +93,7 @@ def _who(d: dict, a: dict | None = None) -> str:
 
 def _due_here(d: dict, instance: str, conv: str | None) -> bool:
     """Is this question to be shown in this conversation now? Exhaustive over the two delivery kinds."""
-    if d["zustand"] == "abgelaufen" or d["an"] not in (instance, "alle"):
+    if d["zustand"] == "expired" or d["an"] not in (instance, "all"):
         return False
     if _per_conversation(d):
         if not conv or (d["von"] == instance and d.get("von_gespraech") == conv):
@@ -122,9 +124,9 @@ def deliver(instance: str | None, conversation: str | None = None) -> list[str]:
     hints = []
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt', 'beantwortet') "
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('open', 'delivered', 'answered') "
             "AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "  # 0.43.0: a question from the network only after review
-            "AND (json_extract(data, '$.an') IN (?, 'alle') OR json_extract(data, '$.von') = ?) ORDER BY ts", (instance, instance))]
+            "AND (json_extract(data, '$.an') IN (?, 'all') OR json_extract(data, '$.von') = ?) ORDER BY ts", (instance, instance))]
         for oid in ids:
             o = g.load(oid)
             d = o.data
@@ -138,8 +140,8 @@ def deliver(instance: str | None, conversation: str | None = None) -> list[str]:
                 else:
                     d["zugestellt_an"] = d["zugestellt_an"] + [instance]
                     where = instance
-                if d["zustand"] == "offen":
-                    _set_state(o, "zugestellt")
+                if d["zustand"] == "open":
+                    _set_state(o, "delivered")
                 o.change("vi", f"delivered to {where}", "next vi_before of the target")
                 g.save(o)
             if _answers_due_here(d, instance, conv):  # not elif: another conversation of the asker may get the question and its answers
@@ -159,11 +161,11 @@ def answer_question(oid: str, instance: str, text: str, evidence_list: str, conv
     if not o or o.kind != "question":
         raise ValueError(f"question {oid} unknown")
     d = o.data
-    if d["zustand"] == "abgelaufen":
+    if d["zustand"] == "expired":
         raise ValueError(f"question {oid} has expired ({EXPIRY_DAYS} days without an answer)")
     if d["von"] == instance and (not d.get("von_gespraech") or d["von_gespraech"] == conversation):
         raise ValueError("you do not answer your own question — use vi_learn if you found it out yourself")
-    if d["an"] not in (instance, "alle"):
+    if d["an"] not in (instance, "all"):
         raise ValueError(f"the question went to {d['an']}, not to {instance}")
     if d.get("an_gespraech") and d["an_gespraech"] != conversation:
         raise ValueError(f"the question went to conversation {d['an']}#{d['an_gespraech']}, not to this one ({conversation or 'none'})")
@@ -182,7 +184,7 @@ def answer_question(oid: str, instance: str, text: str, evidence_list: str, conv
         raise ValueError(f"this answer does not fit: the question already holds {len(d['antworten'])} answers near the size limit "
                          f"({g.DATA_MAX} characters) — ask a new question or put the material into an object (vi_learn) and name its id")
     d["antworten"] = d["antworten"] + [entry]
-    _set_state(o, "beantwortet")
+    _set_state(o, "answered")
     o.change(f"ki@{instance}", "answered", "vi_answer")
     return g.save(o)
 
@@ -192,8 +194,8 @@ def listing(instance: str, conversation: str | None = None) -> tuple[list[g.Memo
     the instance's other conversations are to me, and my own are those this conversation asked (and questions asked without one)."""
     with g.lock:
         to_me = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "
-            "AND json_extract(data, '$.an') IN (?, 'alle') ORDER BY ts DESC LIMIT 200", (instance,))]
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('open', 'delivered') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "
+            "AND json_extract(data, '$.an') IN (?, 'all') ORDER BY ts DESC LIMIT 200", (instance,))]
         mine = [r[0] for r in g.db().execute(
             "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? ORDER BY ts DESC LIMIT 200", (instance,))]
 
@@ -215,10 +217,10 @@ def let_expire() -> int:
     bound = (datetime.now(timezone.utc) - timedelta(days=EXPIRY_DAYS)).isoformat(timespec="seconds")
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'question' AND ts < ? AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (bound,))]
+            "SELECT id FROM object WHERE kind = 'question' AND ts < ? AND json_extract(data, '$.zustand') IN ('open', 'delivered')", (bound,))]
         for oid in ids:
             o = g.load(oid)
-            _set_state(o, "abgelaufen")
+            _set_state(o, "expired")
             o.change("vi", "expired", f"{EXPIRY_DAYS} days without an answer")
             g.save(o)
     return len(ids)

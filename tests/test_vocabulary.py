@@ -55,7 +55,7 @@ def test_vi_vocabulary_tool_and_statistics_split(gd):
 def test_a_search_that_excludes_the_only_matches_is_named_not_a_search_problem(gd):
     """0.62.5, found on production: CentralStation's host lookups exclude its own experiences; when only those carry the host, the
     empty answer is right, and it was counted as "known words, not together (a search problem)"."""
-    g.new_object("experience", "Bash on web9", ["host:web9.example", "tool:Bash", "ok:ja"], {}, instance="centralstation")
+    g.new_object("experience", "Bash on web9", ["host:web9.example", "tool:Bash", "ok:yes"], {}, instance="centralstation")
     g.new_object("insight", "db1 backup", ["host:db1.example"], {"quelle": "t"})
     assert vocabulary.empty_reason("(host:web9.example) !instance:centralstation !kind:experience", None)[0] == "ausgeschlossen"
     assert vocabulary.empty_reason("host:web9.example host:db1.example", None)[0] == "missed"  # both known, never together

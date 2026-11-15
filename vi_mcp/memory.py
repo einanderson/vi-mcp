@@ -248,8 +248,8 @@ def _migrate(con: Any) -> None:
     con.execute("""CREATE VIEW beobachtung AS
         SELECT o.id AS erfahrung_id, o.ts, o.instance,
                (SELECT substr(tag, 6) FROM tag WHERE object_id = o.id AND tag LIKE 'tool:%') AS tool,
-               CASE WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:ja') THEN 1
-                    WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:nein') THEN 0 END AS ok,
+               CASE WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:yes') THEN 1
+                    WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:no') THEN 0 END AS ok,
                json_array_length(COALESCE(json_extract(o.data, '$.vorher.gezeigt'), json_extract(o.data, '$.vorher.gefunden'), '[]')) AS hinweise_n,
                json_extract(o.data, '$.ueberraschung.stufe') AS ueberraschung,
                json_extract(o.data, '$.vorher.router') AS router,

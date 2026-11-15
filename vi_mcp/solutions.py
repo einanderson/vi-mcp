@@ -70,7 +70,7 @@ def episode(e: g.MemoryObject) -> list[g.MemoryObject] | None:
                               (e.conversation, e.ts)).fetchall()
     loaded = g.load_many([r[0] for r in rows])
     before = [loaded[r[0]] for r in rows if r[0] in loaded]
-    first = next((i for i, x in enumerate(before) if _tool(x) == tool and "ok:nein" in x.hashtags), None)
+    first = next((i for i, x in enumerate(before) if _tool(x) == tool and "ok:no" in x.hashtags), None)
     return None if first is None else before[first:] + [e]
 
 
@@ -84,7 +84,7 @@ def evidence(ep: list[g.MemoryObject]) -> dict:
             steps.append(t)
     for x in ep[1:-1]:
         t, a = _tool(x), _args(x)
-        if "ok:ja" not in x.hashtags or not t:
+        if "ok:yes" not in x.hashtags or not t:
             continue
         if t in WEB_TOOLS:
             web.append({"tool": t, "query": a.get("query") or a.get("prompt"), "url": a.get("url"),
@@ -228,7 +228,7 @@ def from_episodes(since: str) -> dict:
     """Sleep step 4c: every recovery since `since` → solution with content, or counted with the reason it is not one."""
     with g.lock:
         rows = g.db().execute(
-            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'surprise:erholt' "
+            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'surprise:recovered' "
             "WHERE o.kind = 'experience' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     out = {"episoden": 0, "neu": 0, "weiterentwickelt": 0, "mit_web": 0, "ohne_inhalt": 0, "unverwandt": 0, "unspezifisch": 0, "nicht_allgemein": 0,
            "abgelehnt": 0, "fehler": []}

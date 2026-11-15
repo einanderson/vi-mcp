@@ -4,7 +4,7 @@ A file memory works because nobody has to decide to look into it: its index is i
 entry, and the entry itself is read when a line fits. The VI had only the pull side (vi_recall) — and was consulted before 63 % of
 changing actions (vi_stats, 7 days to 10.11.2026). So `initialize` now sends a short index with the instructions, built per instance:
 
-  Requirements   objects tagged topic:vorgabe (rule 6: what the user decided or requires beyond one session), newest first
+  Requirements   objects tagged topic:requirement (rule 6: what the user decided or requires beyond one session), newest first
   Proven         knowledge confirmed by an independent line, then the most used (accesses) — imports excluded
   Learned here   what this instance learned itself, newest first — imports excluded
 
@@ -22,7 +22,7 @@ KINDS = ("insight", "rule", "skill", "image")
 PER_SECTION = {"vorgaben": 8, "bewaehrt": 6, "hier": 6}
 #: bulk imports (manuals, Confluence, Stibo, findings of the log monitor, the network) fill the store but are no index entries
 IMPORT_PREFIXES = ("source_kind:", "knowledge_kind:", "docs:")
-IMPORT_TAGS = {"origin:skills-ordner", "origin:p2p", "origin:offen", "origin:schlaf-llm", "origin:log-ueberwachung", "origin:schlaf"}
+IMPORT_TAGS = {"origin:skills-folder", "origin:p2p", "origin:offen", "origin:sleep-llm", "origin:log-watch", "origin:sleep"}
 
 
 #: 0.38.1: imports are left out in SQL already — an instance that imported thousands of manual sections today otherwise found only a few
@@ -59,7 +59,7 @@ def _pick(ids: list[str], instance: str, n: int, taken: set[str], imports_ok: bo
 def sections(instance: str) -> dict[str, list]:
     kinds = ",".join("?" * len(KINDS))
     taken: set[str] = set()
-    req = _pick(_ids(f"SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'topic:vorgabe' "
+    req = _pick(_ids(f"SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'topic:requirement' "
                      f"WHERE o.kind IN ({kinds}) AND o.mode = 'active' ORDER BY o.ts DESC LIMIT 60", KINDS), instance, PER_SECTION["vorgaben"], taken,
                 imports_ok=True)
     proven = _pick(_ids(f"SELECT o.id FROM object o WHERE o.kind IN ({kinds}) AND o.mode = 'active' AND (o.confirmed > 0 OR o.accesses > 0) "
@@ -81,7 +81,7 @@ def text(instance: str) -> str:
         sec = sections(instance)
     except Exception:  # noqa: BLE001 — an index must never break initialize
         return ""
-    titles = {"vorgaben": "Requirements and decisions (topic:vorgabe)", "bewaehrt": "Proven or most used", "hier": f"Learned by {instance} recently"}
+    titles = {"vorgaben": "Requirements and decisions (topic:requirement)", "bewaehrt": "Proven or most used", "hier": f"Learned by {instance} recently"}
     head = (f"[Index] Memory index for instance {instance}, like a MEMORY.md: one line per entry — vi_object <id> reads it whole, "
             "vi_recall searches everything else.")
     try:  # 0.53.0: the skills are too many for this budget — one line says where they are

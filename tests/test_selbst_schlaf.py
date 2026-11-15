@@ -90,8 +90,8 @@ def test_sleep_abstraction_schema_conflict_and_report(gd):
     assert sleep_cycle.due(datetime(2026, 11, 9, 3, 5, tzinfo=timezone.utc)) == "nightly run 03:00 UTC (no sleep in 24 h)"
     assert sleep_cycle.due(datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)) is None  # importance 0, not night
     b = sleep_cycle.run("Test")
-    assert b.kind == "sleep" and "state:fertig" in b.hashtags and b.data["schritte"]["4_abstraktion"] == 1
-    e = [o for _, o, _g in g.recall("origin:schlaf", viewer=None)][0]
+    assert b.kind == "sleep" and "state:done" in b.hashtags and b.data["schritte"]["4_abstraktion"] == 1
+    e = [o for _, o, _g in g.recall("origin:sleep", viewer=None)][0]
     assert e.mode == "test" and e.data["ausgang"] == "gut" and "web5" in e.text and len(e.edges()) == 4
     assert b.text.startswith("Sleep finished") and sleep_cycle.last().id == b.id
     # second run, same cluster with the opposite outcome → conflict, no silent change
@@ -100,7 +100,7 @@ def test_sleep_abstraction_schema_conflict_and_report(gd):
     b2 = sleep_cycle.run("Test 2")
     assert b2.data["schritte"]["3_schema"]["konflikte"] == 1 and b2.data["schritte"]["4_abstraktion"] == 0
     e = g.load(e.id)
-    assert "conflict:offen" in e.hashtags and e.mode == "test" and e.data["konflikte"][0]["ausgang"] == "schlecht"
+    assert "conflict:open" in e.hashtags and e.mode == "test" and e.data["konflikte"][0]["ausgang"] == "schlecht"
     # a sleep confirmation does not count as a foreign instance
     assert e.foreign_confirmations() == 0
     assert "Sleep finished" in tools.call_tool("vi_status", {}, "a", True)
@@ -135,7 +135,7 @@ def test_sleep_at_most_every_two_hours(gd):
         g.new_object("experience", f"Handlung {i}", ["tool:x"], {}, importance=3, reason="T")
     now = datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)
     assert sleep_cycle.due(now) is not None  # 90 ≥ 80, never slept yet
-    g.new_object("sleep", "Schlaf fertig", ["state:fertig"], {}, reason="T")
+    g.new_object("sleep", "Schlaf fertig", ["state:done"], {}, reason="T")
     assert sleep_cycle.due(now) is None  # just slept
 
 

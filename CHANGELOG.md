@@ -126,7 +126,7 @@ Linked from [README.md](README.md).
 ### What has changed in the stored names (0.67.0: German → English, migrated in place)
 
 The user, 15.11.2026: "die deutschen wörter aus memory müssen auch ins englische übersetzt werden. Ohne das der bestehende datesatz
-unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert werden". Steps 1, 2 and 3a of the migration are done:
+unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert werden". Steps 1, 2, 3a and 3b of the migration are done:
 
 - **Tables, columns and indexes are English.** 37 tables of the memory (`objekt` → `object`, `kante` → `edge`, `netz_stand` →
   `net_state`, …), 8 of a network logbook (`eintrag` → `entry`, `grab` → `tombstone`, …), the archive's two. The columns of `object` are
@@ -148,6 +148,19 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
   experiences, a saved search's filter, the kinds of `derived_triggers`; the content centres and index tags. A German kind that still
   comes in (tool input, search filter, `MemoryObject.tag`, a logic program's `O.thema`, a model's reflection, an import) is read as the
   English one. The values of hashtags other than `kind:`/`mode:` (`state:offen`, `ok:ja`, …) follow in step 3b.
+- **Step 3b: the system values of hashtags are English, together with the same values in object data.** `state:offen` →
+  `state:open` (and the `zustand` of conversations and questions: `beendet` → `ended`, `unterbrochen` → `interrupted`, …), `ok:ja` →
+  `ok:yes`, `origin:schlaf` → `origin:sleep`, `surprise:keine` → `surprise:none` (and an experience's `ueberraschung.stufe`),
+  `grade:gut` → `grade:good`, `scorer:modell` → `scorer:model`, `reviewer:ausstehend` → `reviewer:pending`, `topic:vorgabe` →
+  `topic:requirement`, `knowledge_kind:handbuch` → `knowledge_kind:manual`, … (`names.TAG_VALUES`, `DATA_VALUES`). A question's
+  addressee: `alle` → `all`, `netz`/`netz:<n>` → `net`/`net:<n>`; `vi_ask` still takes the German forms. A model's German certainty
+  (`mittel`) is read as `medium`.
+- **The router keeps its quality across the migration.** Its stored weights are keyed by feature names, and the features are hashtags
+  (`hint:<id>`, `hour:HH`, `topic:…`); without care the router would have seen English names it never trained on. The migration renames
+  the keys of the weights and of the LLM layer's deltas with the tags. Measured on the production copy, 22,828 stored observations,
+  router score before (code of 0.66.1) and after: without the renaming the mean change would be 0.074 (max 0.487, 21,165 observations
+  moved by more than 0.01); with it 0.000003 (max 0.022, 3 observations above 0.01 — one traced to a stored feature value 0.87 vs 0.867,
+  not to a name).
 - **Reserved and location hashtags are refused in both languages.** The fixed import rules knew only the German forms: a peer could have
   set `net:firma`, `mode:active` or `location:MUC-1`, or a search filter `mode:archived`. Now both forms are reserved or refused (test).
 - **Older clients keep working.** German values are read as English where they come in: tool arguments (`visibility: "geteilt"`),
@@ -182,6 +195,10 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
     `kind:insight`, `art:erkenntnis` and `kinds=("insight",)`; a conversation of 0.66 found by its serial; a new one is
     `conversation:<serial>`). On the migrated production copy the router, student and self models and the conversations are found
     under their German ids, and the migration changed 0 ids. Full suite 1138 passed / 8 skipped on SQLite, 1139 / 7 on PostgreSQL 16.
+  - Step 3b on a fresh copy: all steps in 11.0 s with the backup; 248,503 hashtags with a German kind or value, 21,517 mirrored data
+    values, the router's weights; afterwards no German table, column, enum value, hashtag kind or hashtag system value, and no German
+    mirrored data value (test helper); `thema:vorgabe` and `topic:requirement` find the same 22 objects; second start 0.21 s. Full suite
+    1138 passed / 8 skipped on SQLite, 1139 / 7 on PostgreSQL 16; code-check ok.
   - Step 2: full suite 1133 passed on SQLite, the 3 failing tests (expecting German values) corrected and rerun green; PostgreSQL 16
     1137 passed / 7 skipped; code-check ok.
   - Full suite 1134 passed / 8 skipped on SQLite; code-check ok. On PostgreSQL 16: 1132 passed, 3 failed, all in `tests/test_db.py`
@@ -249,11 +266,9 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
 
 ### What is missing
 
-- **Steps 3b and 4 of the English names are not done yet:** the system values of hashtags other than `kind:`/`mode:` (`state:offen`,
-  `ok:ja`, `origin:schlaf`, …) together with the same values in object data, and the keys inside `object.data` (`quelle`, `inhalt`, …)
-  are still German in the database. They follow in the same migration, with the same backup and counts.
-- The router model stores its weights by feature name; the features are hashtags (`hint:<id>`, `hour:HH`, `error:…`). A model trained
-  before the migration carries the German names until it is trained again (on demand, about a minute after new experiences).
+- **Step 4 of the English names is not done yet:** the keys inside `object.data` (`quelle`, `inhalt`, `vorher`, …), the values of data
+  fields that mirror no hashtag (the states of learned models, sleep steps, …), the view `beobachtung` and its column names. They follow
+  in the same migration, with the same backup and counts.
 - **Old object ids stay German, new ones are English** — the user's decision (15.11.2026), not an oversight: renaming existing ids would
   break every reference to them. A memory therefore holds both kinds of prefix; `vi_object` shows ids as they are.
 - The change log of an object (`changes`: who, what, why) keeps its entries as written; a mode named in an old entry stays German there.

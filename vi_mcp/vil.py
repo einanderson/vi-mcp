@@ -39,9 +39,9 @@ _SHORT = re.compile(r"(?<![\w:])([!(]*)([@#])([A-Za-z0-9][\w.\-:/]*)")
 
 #: which kinds of knowledge usually answer which question — the fixed prior (hashtag or kind prefixes, in order of preference)
 PRIOR = {
-    "how": ("kind:skill", "knowledge_kind:loesung", "knowledge_kind:runbook", "knowledge_kind:handbuch", "knowledge_kind:doku-extern"),
-    "why": ("error:", "outcome:schlecht", "knowledge_kind:loesung"),
-    "rule": ("kind:rule", "topic:vorgabe"),
+    "how": ("kind:skill", "knowledge_kind:solution", "knowledge_kind:runbook", "knowledge_kind:manual", "knowledge_kind:external-docs"),
+    "why": ("error:", "outcome:schlecht", "knowledge_kind:solution"),
+    "rule": ("kind:rule", "topic:requirement"),
     "who": ("person:", "team:", "responsible:"),
     "where": ("host:", "path:", "port:", "url:"),
     "what": (),
@@ -147,7 +147,7 @@ def memory_of(o) -> str:
         return lab
     if o.kind in MEMORY:
         return MEMORY[o.kind]
-    if any(t.startswith("knowledge_kind:loesung") for t in o.hashtags):
+    if any(t.startswith("knowledge_kind:solution") for t in o.hashtags):
         return "procedure"
     return "fact"
 
@@ -159,7 +159,7 @@ def evidence_of(o) -> str:
     yes, no = bandit.counter(o)
     if yes + no > 0:
         return "measured"
-    if "origin:schlaf-llm" in o.hashtags:  # derived by a language model in sleep — not every object of instance vi is
+    if "origin:sleep-llm" in o.hashtags:  # derived by a language model in sleep — not every object of instance vi is
         return "inferred"
     if re.search(r"https?://", str(o.data.get("quelle") or "")):
         return "documented"

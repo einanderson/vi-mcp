@@ -13,14 +13,14 @@ from vi_mcp import intuition, reflexes, session
 def gd(tmp_path):
     """Frisches Gedächtnis je Test, ohne Sitzungen, ohne Reflexe."""
     g.open_db(tmp_path / "vi.db")
-    session.end_all("unterbrochen")
+    session.end_all("interrupted")
     reflexes.loaded.clear()
     intuition.ttl_per_tool.clear()
     intuition._daily.clear()  # 0.49.0: the daily cap is module state — it must not leak from one test into the next
     from vi_mcp import capabilities
     capabilities._cache.clear()  # 0.53.0: the skill table is cached per instance
     yield tmp_path / "vi.db"
-    session.end_all("unterbrochen")
+    session.end_all("interrupted")
     g.close_db()
 
 

@@ -1,5 +1,5 @@
 """Export vi-mcp experiences → training matrix. Only sqlite3/json/numpy/scipy (no sklearn).
-X = CSR (n_experiences × n_features, 0/1), y = ok (1/0); ok:unbekannt is left out (no label)."""
+X = CSR (n_experiences × n_features, 0/1), y = ok (1/0); ok:unknown is left out (no label)."""
 import json, sqlite3, sys
 import numpy as np, scipy.sparse as sp
 
@@ -9,8 +9,8 @@ def load_observations(db_path):
              WHERE o.kind = 'experience' GROUP BY o.id"""
     for oid, ts, data, tags in con.execute(sql):
         tags, d = set(tags.split()), json.loads(data)
-        ok = "ok:ja" in tags
-        if "ok:unbekannt" in tags: continue                       # no label → no example
+        ok = "ok:yes" in tags
+        if "ok:unknown" in tags: continue                       # no label → no example
         before = d.get("vorher") or {}
         features = {t for t in tags if t.startswith(("tool:", "skill:", "host:"))}
         features |= {t for t in before.get("reize", []) if t.startswith("topic:")}   # only in the JSON, not in tag

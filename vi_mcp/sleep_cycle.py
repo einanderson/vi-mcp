@@ -7,14 +7,14 @@ importance trigger wait for quiet too.
 Steps — each one counts, each one is in the report (object `schlaf:<zeit>`, state `fertig` or `fehler`):
   1 Triage      experiences since the last run, priority = surprise + importance/3 + future relevance
   2 Replay      clusters by (host, skill) over the top experiences, plus k older ones with the same hashtags per cluster
-  3 Schema      does an insight fit the cluster? same outcome → evidence edge; different → `conflict:offen`
+  3 Schema      does an insight fit the cluster? same outcome → evidence edge; different → `conflict:open`
   4b Reflection the language model phrases at most one insight per cluster without schema (test, reviewed, evidence edges) — reflection.py
   4 Abstraction template fallback for clusters without reflection: ≥ 3 experiences on ≥ 2 days → insight (test)
-  4c Skills     success after errors in the same conversation → skill (solution path); failing skills → disputed; same problems → fusion:vorschlag
+  4c Skills     success after errors in the same conversation → skill (solution path); failing skills → disputed; same problems → fusion:proposal
   4d Scorer     rate actions by fixed features, finished conversations by the language model (scorer.py)
   5 Housekeeping unused entries and old raw transcripts go to the long-term archive (archive.py; a stub stays)
   6 Self actual recompute competence per skill, weaknesses, relations
-  7 Vectors     add missing embeddings of shared knowledge objects (batch), semantic proximity → edges / duplicate:moeglich
+  7 Vectors     add missing embeddings of shared knowledge objects (batch), semantic proximity → edges / duplicate:possible
   7c Content    centroids per trigger and meaning groups for the router (content.py)
   7d Hints      recompute hint counters from the experiences, measured by the advantage over the tool without a hint (bandit.py)
   8 Learning    train the router model (learning.py)
@@ -175,7 +175,7 @@ def _run(reason: str) -> g.MemoryObject:
             report["fehler"].append(f"{name}: {type(exc).__name__}: {exc}")
             log(f"Sleep {name} failed: {exc}")
 
-    new_items = [o for _, o, _g in g.recall("kind:experience (ok:ja OR ok:nein)", limit=5000, viewer=None) if o.ts > since]
+    new_items = [o for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=5000, viewer=None) if o.ts > since]
     step("1_triage", lambda: _triage(new_items, report))
     step("2_replay", lambda: _replay(report))
     step("3_schema", lambda: _schema(report))
@@ -272,7 +272,7 @@ def _replay(report: dict) -> int:
 
 
 def _outcome(exps: list[g.MemoryObject]) -> tuple[str, float]:
-    ok = sum(1 for o in exps if "ok:ja" in o.hashtags)
+    ok = sum(1 for o in exps if "ok:yes" in o.hashtags)
     q = ok / len(exps) if exps else 0
     return ("gut" if q >= 0.8 else "schlecht" if q <= 0.2 else "gemischt"), q
 
@@ -299,9 +299,9 @@ def _schema(report: dict) -> dict:
             else:
                 s.data.setdefault("konflikte", []).append({"zeit": g.now(), "ausgang": outbox, "quote": round(q, 2),
                                                              "erfahrungen": [o.id for o in c["neue"]][:20]})
-                if "conflict:offen" not in s.hashtags:
-                    s.hashtags = s.hashtags + ["conflict:offen"]
-                s.change("vi", "conflict:offen", f"sleep: cluster with outcome {outbox} ({q * 100:.0f} % ok) contradicts {s.data.get('ausgang')}")
+                if "conflict:open" not in s.hashtags:
+                    s.hashtags = s.hashtags + ["conflict:open"]
+                s.change("vi", "conflict:open", f"sleep: cluster with outcome {outbox} ({q * 100:.0f} % ok) contradicts {s.data.get('ausgang')}")
                 g.save(s)
                 report["geaendert"].append(s.id)
                 conflicts += 1
@@ -327,7 +327,7 @@ def _reflection(report: dict) -> dict:
     if r.get("neu"):
         for c in report.get("cluster", []):  # do not abstract reflected clusters again via template
             host, skill = c["key"]
-            for o in g.recall(f"{host} {skill} origin:schlaf-llm", limit=1, kinds=("insight",), viewer=None):
+            for o in g.recall(f"{host} {skill} origin:sleep-llm", limit=1, kinds=("insight",), viewer=None):
                 c["schema"] = o[1].id
     return r
 
@@ -350,7 +350,7 @@ def _abstraction(report: dict) -> int:
         rid = f"erkenntnis:schlaf-{g.hash_value(host, skill)}"
         if g.load(rid):
             continue
-        e = g.new_object("insight", text, [host, skill, "mode:test", "origin:schlaf"],
+        e = g.new_object("insight", text, [host, skill, "mode:test", "origin:sleep"],
                            {"quelle": f"sleep: {len(c['erfahrungen'])} experiences, evidence edges", "ausgang": c["ausgang"],
                             "quote": round(q, 2), "belege_n": len(c["erfahrungen"])},
                            importance=1, who="vi", oid=rid, mode="test", reason="sleep: abstraction from a cluster without schema",
@@ -412,7 +412,7 @@ def _self_actual() -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=PERIOD_IN_DAYS)).isoformat(timespec="seconds")
     with g.lock:
         comp = g.db().execute(
-            "SELECT t.tag, COUNT(*), SUM(CASE WHEN EXISTS (SELECT 1 FROM tag x WHERE x.object_id = o.id AND x.tag = 'ok:ja') THEN 1 ELSE 0 END) "
+            "SELECT t.tag, COUNT(*), SUM(CASE WHEN EXISTS (SELECT 1 FROM tag x WHERE x.object_id = o.id AND x.tag = 'ok:yes') THEN 1 ELSE 0 END) "
             "FROM object o JOIN tag t ON t.object_id = o.id AND t.tag LIKE 'skill:%' WHERE o.kind = 'experience' AND o.ts >= ? "
             "GROUP BY t.tag ORDER BY 2 DESC LIMIT 12", (since,)).fetchall()
         weak = g.db().execute(

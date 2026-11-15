@@ -8,7 +8,7 @@ numbers of the experiences that support it.
 Protection — the model can talk itself into things, therefore:
   - the output is checked strictly (JSON, sentence length, hashtags by the TAG rule, evidence must be real numbers of the cluster,
     at least EVIDENCE_MIN; no directive patterns in the sentence — see checks.directives); otherwise discarded and named in the report.
-  - the result is always mode `test`, hashtag `origin:schlaf-llm`, with evidence edges to every named experience;
+  - the result is always mode `test`, hashtag `origin:sleep-llm`, with evidence edges to every named experience;
     it takes effect only after confirmation by another instance (vi_confirm), like any other insight.
   - The system prompt is static (prompt caching), no `max_tokens` (CLAUDE.md), thinking off, temperature 0.2.
   - This is an action in memory, not in the world (docs/ARCHITECTURE.md, "Reporting an action").
@@ -105,7 +105,7 @@ def check(answer: dict, n_experiences: int) -> tuple[dict | None, str]:
 
 
 def _describe(o: g.MemoryObject) -> str:
-    ok = "ok" if "ok:ja" in o.hashtags else "ERROR" if "ok:nein" in o.hashtags else "unknown"
+    ok = "ok" if "ok:yes" in o.hashtags else "ERROR" if "ok:no" in o.hashtags else "unknown"
     tool = next((t[5:] for t in o.hashtags if t.startswith("tool:")), "?")
     error = o.data.get("fehler")
     return f"{o.ts[:16]} {tool} → {ok}" + (f": {str(error)[:120]}" if error else f", {o.data.get('dauer_ms', 0)} ms")
@@ -137,7 +137,7 @@ def reflect(cluster: list[dict]) -> dict:
             discarded.append(f"{host} {skill}: {reason}")
             continue
         evidence_list = [exps[i - 1] for i in ins["belege"]]
-        o = g.new_object("insight", ins["satz"], sorted(set(ins["hashtags"]) | {host, skill, "mode:test", "origin:schlaf-llm"}),
+        o = g.new_object("insight", ins["satz"], sorted(set(ins["hashtags"]) | {host, skill, "mode:test", "origin:sleep-llm"}),
                            {"quelle": f"sleep reflection (language model) from {len(evidence_list)} experiences — evidence edges", "belege_n": len(evidence_list),
                             "ausgang": c.get("ausgang"), "modell": (config or {}).get("model") or "llm"},
                            importance=1, who="vi", oid=rid, mode="test", reason="sleep: reflection by the language model, checked",

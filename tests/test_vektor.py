@@ -51,8 +51,8 @@ def test_vectors_in_sleep_and_proximity_edges(fake):
     s7b = report.data["schritte"]["7b_naehe"]
     assert s7b["kanten_neu"] == 1 and s7b["dubletten_moeglich"] == 1
     assert any("semantisch ähnlich" in gr for _, gr in g.load(a.id).edges())
-    assert "duplicate:moeglich" in g.load(a.id).hashtags and "duplicate:moeglich" in g.load(b.id).hashtags
-    assert "duplicate:moeglich" not in g.load(c.id).hashtags
+    assert "duplicate:possible" in g.load(a.id).hashtags and "duplicate:possible" in g.load(b.id).hashtags
+    assert "duplicate:possible" not in g.load(c.id).hashtags
     assert sleep_cycle.run("Test 2").data["schritte"]["7_vektoren"]["neu"] == 0  # idempotent
 
 

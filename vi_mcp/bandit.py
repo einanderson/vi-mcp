@@ -53,7 +53,7 @@ def _observations(since: str | None = None):
         v = d.get("vorher") or {}
         if v.get("aus_gedaechtnis"):
             continue
-        ok_tag = True if "ok:ja" in tags else False if "ok:nein" in tags else None
+        ok_tag = True if "ok:yes" in tags else False if "ok:no" in tags else None
         lab = scorer.label(d, ok_tag, serial, grades)
         tool = next((t[5:] for t in tags if t.startswith("tool:")), None)
         if lab is None or not tool:

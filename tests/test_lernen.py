@@ -38,7 +38,7 @@ def test_observation_view_and_features(gd):
     assert "topic:oom" in with_hint and "hint_kind:insight" in with_hint and "hint_n:1" in with_hint and any(k.startswith("hint:insight:") for k in with_hint)
     without = next(m for m, y, _ in b if y == 0)
     assert "hint_n:0" in without and not any(k.startswith("hint:") for k in without)
-    assert "topic:oom" in g.recall("tool:checkmk_get_host ok:ja", viewer=None)[0][1].hashtags  # context stimulus is a tag
+    assert "topic:oom" in g.recall("tool:checkmk_get_host ok:yes", viewer=None)[0][1].hashtags  # context stimulus is a tag
 
 
 def test_exploration_is_tagged(gd, monkeypatch):
@@ -102,8 +102,8 @@ def test_router_learns_which_hint_helps(gd):
             ok_new = random.random() < (0.9 if only == [r.id] else 0.2)
             d["vorher"]["gezeigt"] = only
             g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d), oid))
-            g.db().execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('ok:ja', 'ok:nein')", (oid,))
-            g.db().execute("INSERT INTO tag VALUES (?, ?)", (oid, "ok:ja" if ok_new else "ok:nein"))
+            g.db().execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('ok:yes', 'ok:no')", (oid,))
+            g.db().execute("INSERT INTO tag VALUES (?, ?)", (oid, "ok:yes" if ok_new else "ok:no"))
         g.db().commit()
     b = learning.train("Test")
     assert b["zustand"] == "aktiv", b
@@ -152,13 +152,13 @@ def test_ineffective_hint_stays_at_half(gd):
     empty = g.new_object("rule", "Bash scheiterte und gelang danach", ["tool:Bash"], {"quelle": "x"}, reason="T")
     rng = random.Random(4)
     for i in range(400):  # Bash without hint: 94 %
-        g.new_object("experience", "Bash", ["tool:Bash", "ok:ja" if rng.random() < 0.94 else "ok:nein"], {"vorher": {"gezeigt": []}, "args": {"i": i}}, reason="T")
+        g.new_object("experience", "Bash", ["tool:Bash", "ok:yes" if rng.random() < 0.94 else "ok:no"], {"vorher": {"gezeigt": []}, "args": {"i": i}}, reason="T")
     for i in range(300):  # with the empty hint: also 94 %
-        g.new_object("experience", "Bash", ["tool:Bash", "ok:ja" if rng.random() < 0.94 else "ok:nein"], {"vorher": {"gezeigt": [empty.id]}, "args": {"j": i}}, reason="T")
+        g.new_object("experience", "Bash", ["tool:Bash", "ok:yes" if rng.random() < 0.94 else "ok:no"], {"vorher": {"gezeigt": [empty.id]}, "args": {"j": i}}, reason="T")
     helps = g.new_object("rule", "Zeitraum halbieren", ["tool:graylog_search"], {"quelle": "x"}, reason="T")
     for i in range(200):  # graylog without hint 50 %, with hint 90 %
-        g.new_object("experience", "g", ["tool:graylog_search", "ok:ja" if rng.random() < 0.5 else "ok:nein"], {"vorher": {"gezeigt": []}, "args": {"k": i}}, reason="T")
-        g.new_object("experience", "g", ["tool:graylog_search", "ok:ja" if rng.random() < 0.9 else "ok:nein"], {"vorher": {"gezeigt": [helps.id]}, "args": {"l": i}}, reason="T")
+        g.new_object("experience", "g", ["tool:graylog_search", "ok:yes" if rng.random() < 0.5 else "ok:no"], {"vorher": {"gezeigt": []}, "args": {"k": i}}, reason="T")
+        g.new_object("experience", "g", ["tool:graylog_search", "ok:yes" if rng.random() < 0.9 else "ok:no"], {"vorher": {"gezeigt": [helps.id]}, "args": {"l": i}}, reason="T")
     r = bandit.recompute()
     assert r["hinweise"] == 2
     e_empty, e_helps = bandit.expectation(g.load(empty.id)), bandit.expectation(g.load(helps.id))
@@ -230,9 +230,9 @@ def test_contributions_add_up_to_the_prediction(gd):
     """0.29.0: vi_why lays open the same arithmetic as the router — the contributions plus intercept are the logit."""
     import math
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                     {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 1.5, "hint_kind:regel": 0.25, "hint_n:1": -0.2, "skill:x": 0.5},
+                     {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 1.5, "hint_kind:rule": 0.25, "hint_n:1": -0.2, "skill:x": 0.5},
                       "achsenabschnitt": -0.3}, oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
-    f = {"skill:x": 1.0, "hint_n:1": 1.0, "hint:regel:gut": 1.0, "hint_kind:regel": 1.0, "unbekannt:y": 1.0}
+    f = {"skill:x": 1.0, "hint_n:1": 1.0, "hint:regel:gut": 1.0, "hint_kind:rule": 1.0, "unbekannt:y": 1.0}
     c = learning.contributions(m, f)
     assert c[0] == ("hint:regel:gut", 1.5) and "unbekannt:y" not in dict(c)
     p = learning.prediction(m, f)
@@ -270,7 +270,7 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
         g.db().commit()
     for i in range(24):
         ok = i % 4 != 0  # 75 % ok
-        e = g.new_object("experience", f"checkmk_get_host {i}", ["tool:checkmk_get_host", "ok:ja" if ok else "ok:nein"],
+        e = g.new_object("experience", f"checkmk_get_host {i}", ["tool:checkmk_get_host", "ok:yes" if ok else "ok:no"],
                          {"vorher": {"gezeigt": [old.id, new.id if i % 2 else gone.id]}}, reason="T", instance="a")
     with g.lock:
         g.db().execute("DELETE FROM object WHERE id = ?", (gone.id,))
@@ -299,11 +299,11 @@ def test_hint_age_is_a_feature(gd):
     from datetime import datetime, timedelta, timezone
     h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
     now = datetime.now(timezone.utc)
-    assert learning.hint_features(h.id, [], now.isoformat())["alter:neu"] == 1.0
-    assert "alter:neu" not in learning.hint_features(h.id, [], (now + timedelta(days=8)).isoformat())
-    assert "alter:neu" not in learning.hint_features(h.id, [])  # no time, no age claim
+    assert learning.hint_features(h.id, [], now.isoformat())["age:new"] == 1.0
+    assert "age:new" not in learning.hint_features(h.id, [], (now + timedelta(days=8)).isoformat())
+    assert "age:new" not in learning.hint_features(h.id, [])  # no time, no age claim
     action("checkmk_get_host", "web1", True)
-    assert any(m.get("alter:neu") == 1.0 and f"hint:{h.id}" in m for m, _y, _o in learning.observations())
+    assert any(m.get("age:new") == 1.0 and f"hint:{h.id}" in m for m, _y, _o in learning.observations())
 
 
 @pytest.mark.skipif(not HAS_SKLEARN, reason="scikit-learn fehlt")
@@ -316,7 +316,7 @@ def test_good_auc_without_ranking_utility_stays_test(gd):
         broken = i % 2 == 0
         ok = rnd.random() < (0.05 if broken else 0.95)
         host = "host:kaputt1" if broken else "host:gut1"
-        g.new_object("experience", "deploy", ["tool:deploy_run", host, "ok:ja" if ok else "ok:nein"],
+        g.new_object("experience", "deploy", ["tool:deploy_run", host, "ok:yes" if ok else "ok:no"],
                      {"vorher": {"reize": ["tool:deploy_run", host], "gezeigt": [rnd.choice([r.id, e.id])]}, "args": {"i": i}},
                      reason="T", instance="a")
     b = learning.train("Test")
@@ -395,9 +395,9 @@ def test_ips_factors_follow_the_logged_offer_probabilities(gd):
     from vi_mcp import learning
     h1 = g.new_object("insight", "hint one", ["tool:Bash"], {"quelle": "t"}).id
     h2 = g.new_object("insight", "hint two", ["tool:Bash"], {"quelle": "t"}).id
-    g.new_object("experience", "Bash ok", ["tool:Bash", "ok:ja"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h1, h2],
+    g.new_object("experience", "Bash ok", ["tool:Bash", "ok:yes"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h1, h2],
                                                                             "angebot": {h1: 0.9, h2: 0.02}}})
-    g.new_object("experience", "Bash failed", ["tool:Bash", "ok:nein"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": []}})
+    g.new_object("experience", "Bash failed", ["tool:Bash", "ok:no"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": []}})
     ips: list = []
     obs = learning.weighted_observations(ips_out=ips)
     assert len(ips) == len(obs) == 3

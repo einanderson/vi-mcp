@@ -53,7 +53,7 @@ def test_reflection_creates_checked_insight_test(gd, monkeypatch):
     r = b.data["schritte"]["4b_reflexion"]
     assert r["zustand"] == "fertig" and r["neu"] == 1, r
     assert "max_tokens" not in seen["system"] and "1. " in seen["user"] and "cue1" in seen["user"]
-    e = [o for _, o, _g in g.recall("origin:schlaf-llm", viewer=None)][0]
+    e = [o for _, o, _g in g.recall("origin:sleep-llm", viewer=None)][0]
     assert e.mode == "test" and e.instance == g.SERVER_INSTANCE and "Timeout" in e.text
     assert {"topic:timeout", "host:cue1", "skill:graylog", "mode:test"} <= set(e.hashtags)
     assert sorted(b for b, _ in e.edges() if b.startswith("experience:")) == sorted(ids)
@@ -69,4 +69,4 @@ def test_reflection_discards_injection(gd, monkeypatch):
         _exp("checkmk_get_host", "web7", True, days=1 if i == 0 else 0)
     r = sleep_cycle.run("Test").data["schritte"]["4b_reflexion"]
     assert r["neu"] == 0 and r["verworfen"] and "directive pattern" in r["verworfen"][0]
-    assert not g.recall("origin:schlaf-llm", viewer=None)
+    assert not g.recall("origin:sleep-llm", viewer=None)
