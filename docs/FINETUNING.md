@@ -134,6 +134,75 @@ python train.py --stage sft --fp32 --lora-rank 64 --epochs 4
 
 Speed: about 310 trained tokens/s at batch 1. Run 2 used rank 16, 3 epochs and every row; it learned less (below).
 
+## 4b. A philosophy as the reward: GRPO
+
+The seed of a philosophy package (`docs/PHILOSOPHY.md`) is a verifiable reward: the solver computes the verdict, the model writes
+its own in words, and `philosophy_train.reward` scores it. The user's decision (15.11.2026): the seed is baked into the model, and
+the solver is the teacher.
+
+```sh
+vi-mcp finetune kit /srv/ft/kit --base Qwen/Qwen3-0.6B --force --philosophy kollektiv   # also writes philosophy/ and split/grpo.train.jsonl
+python train.py --stage grpo --tokenizer-only                       # re-solves every gold verdict with the bundled seed; no weights
+python train.py --stage grpo --preflight --fp32 --from-adapter out/sft   # samples and scores one batch, 0 optimizer steps
+python train.py --stage grpo --fp32 --from-adapter out/sft
+```
+
+**The data (kit option, not a separate kit).** GRPO continues from an adapter of the same kit. A separate kit would split the
+lineage (base model, run.json, `record`). `--philosophy NAME` writes the following:
+- the checked package to `philosophy/`;
+- the prompts to `split/grpo.train.jsonl` (`--philosophy-prompts`, default 1000);
+- `run.json` → `philosophy`: the package hash, labels, counterfactual pairs and the hash of the prompt file.
+
+**The pool:**
+- Prompts are drawn by the package's generator and labeled with the seed's verdict on the first statement (t, f, b, n or none).
+- Prompts are interleaved round-robin by that label, and the dataset is not shuffled. So one generation batch holds every label once
+  (`--prompts-per-step`, default = number of labels).
+- About 30 % are **counterfactual pairs**, kept adjacent: the package's own counterfactual worlds, and random worlds with one fact
+  removed that change the verdict.
+- A label the generator rarely draws is reported in `short_of_balance`, not hidden.
+
+**The reward** (`philosophy-reward-v1`, per slot, averaged, in [−1, 1]):
+
+| | reward |
+|---|---|
+| right answer value with the seed's reasons | +1 |
+| right value, reasons differ | +0.5 |
+| missing value, or a wrong value that is not firm | −0.5 |
+| a firm value (t/f, or a package's `answers.<pred>.firm`) where the seed has a weaker one or none | −1 |
+| duties exactly the seed's | +1 |
+| duties differ | −0.5 |
+| duties differ with an invented permission (`may(...)`) | −1 |
+| the explicit abstention "I cannot formalize this situation." | 0 |
+| unparseable | −1 |
+| cut by the generation budget | −1 (never parsed) |
+
+- There is no length term. Padding an answer changes nothing.
+- An answer that always suspends judgement scores far below the seed's verdict: a mean below 0.25 on a pool where the seed's own
+  verdict scores 1.0 (tests).
+- The reward follows TruthRL (arXiv 2509.25760): a ternary reward cut hallucination from 43.5 % to 19.4 %.
+- It also follows FormaRL: a reward that only checks the form is gamed, so this reward compares the content with the solver.
+
+**Guards:**
+- **The seed is immutable.** The stage refuses to train when:
+  - the kit's package hash differs from `run.json`;
+  - a prompt carries another hash;
+  - the bundled solver gives any stored gold verdict differently now (`seed_check` re-solves every prompt before weights load).
+- **Generation budget.** Sampling needs `max_completion_length`. This is a resource bound of local generation, not an API token cap
+  (the project rule against `max_tokens` concerns API calls). By default it is twice the longest spoken gold verdict in tokens, at
+  least 64; `--max-completion-length` sets it. The report names the budget and its rule. A completion that reaches the budget gets
+  −1 and is not masked, so the model learns to finish.
+- **Named settings in the report:**
+  - `loss_type dapo` (no length bias);
+  - `beta 0` (no reference model);
+  - `scale_rewards group`;
+  - `mask_truncated_completions false`;
+  - `shuffle_dataset false`;
+  - thinking off.
+
+**Before GRPO**, the model must already speak the verdict format. Train the seed's SFT examples first (`philosophy_train.examples`,
+as in the seed run of 15.11.2026). A model that never saw the format gets −1 for everything, and the group then has no reward
+variance to learn from.
+
 ## 5. Measure: the knowledge probe
 
 ```sh

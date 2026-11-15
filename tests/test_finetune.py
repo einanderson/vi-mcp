@@ -358,3 +358,29 @@ def test_qa_v4_english_pairs_are_grounded_by_names_and_a_model_check_that_may_on
     verdicts["value"] = [True]  # a verdict missing for two pairs: nothing is stored as checked
     r = classify.make_pairs(g.load(o.id))
     assert r["state"] == "error" and "incomplete" in r["reason"] and r["pairs"] == []
+
+
+def test_a_kit_with_a_philosophy_carries_the_checked_seed_and_grpo_prompts(vi, monkeypatch):
+    """vi-mcp finetune kit DIR --philosophy NAME: the package as checked (philosophy/), split/grpo.train.jsonl and the hash in run.json.
+    The GRPO stage refuses to train when any of them changed (training_runtime.seed_check)."""
+    from clingo_object import philosophy as ph
+    from vi_mcp.training_runtime import seed_check
+    d = vi / "kit"
+    r = finetune.kit(str(d), base_model="Qwen/Qwen3-4B", force=True, philosophy="kollektiv", philosophy_prompts=20)
+    meta = r["philosophy"]
+    assert meta["hash"] == ph.package_hash(ph.load("kollektiv")) == ph.package_hash(ph.load(str(d / "philosophy")))
+    cf = sum(1 for w in ph.load("kollektiv")["worlds"] if w.get("counterfactual_of"))
+    assert meta["prompts"] >= 20 and meta["counterfactual_pairs"] >= cf and meta["reward_version"] == "philosophy-reward-v1"
+    rows = [json.loads(x) for x in (d / "split" / "grpo.train.jsonl").read_text().splitlines()]
+    assert len(rows) == meta["prompts"] and json.loads((d / "run.json").read_text())["philosophy"] == meta
+    monkeypatch.chdir(d)
+    run = json.loads((d / "run.json").read_text())
+    pkg, report = seed_check(rows, run)
+    assert report["gold_mismatch"] == 0 and report["gold_resolved"] == len(rows) and pkg["name"] == "kollektiv"
+    forged = next(r for r in rows if '"value": "t"' in r["gold_json"])
+    with pytest.raises(ValueError, match="differ from the seed"):
+        seed_check([dict(forged, gold_json=forged["gold_json"].replace('"value": "t"', '"value": "f"'))], run)
+    seed = d / "philosophy" / "seed.co"
+    seed.write_text(seed.read_text() + "value(S, t) <= closed(S)\n")  # a changed seed is a different package
+    with pytest.raises(ValueError, match="differs from the hash in run.json"):
+        seed_check(rows, run)

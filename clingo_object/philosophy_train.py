@@ -16,6 +16,7 @@ in words, with reasons". Tasks:
 """
 from __future__ import annotations
 
+import json
 import random
 import re
 
@@ -250,3 +251,179 @@ def prose_examples(pkg: dict, paraphrases: dict[str, list[str]] | None = None) -
         out.append({"messages": [{"role": "system", "content": _system(pkg)}, {"role": "user", "content": q}, {"role": "assistant", "content": recite}],
                     "meta": {"task": "recite", "package": pkg["name"]}})
     return out
+
+
+# ── GRPO: the seed as a verifiable reward (vi_mcp/training_runtime.py --stage grpo) ─────────────────────────────────────────────────
+# User (15.11.2026): "der Samen wird beim Fine-Tuning ins Modell gebacken; der Solver ist der Lehrer". The model writes a verdict in
+# words; parse_verdict reads it back and it is scored against the seed's verdict. Built after TruthRL (arXiv 2509.25760: a ternary
+# reward — right, abstain, wrong — cut hallucination from 43.5 % to 19.4 %), FormaRL (a reward that only checks the form is gamed) and
+# Codex's review (frage:e05f78b192e7fdb964119b82): no reward for being shorter, none for saying "unknown" more often, and invented
+# certainty costs most. Every term is per slot and averaged, so the number of statements does not change the scale.
+REWARD_VERSION = "philosophy-reward-v1"
+CANNOT = "I cannot formalize this situation."
+#: firm answer values by semantics profile: a firm value where the seed has none or a weaker one is invented certainty (−1). Other
+#: answer predicates name theirs in answers.<pred>.firm; without it none of their values counts as firm (a wrong one costs −0.5).
+FIRM_BY_PROFILE = {"fde-signed-v1": {"value": ("t", "f")}}
+REWARD = {"right": 1.0, "right_reason_wrong": 0.5, "missing": -0.5, "wrong": -0.5, "invented_certainty": -1.0,
+          "duties_exact": 1.0, "duties_wrong": -0.5, "duty_invented_permission": -1.0,
+          "unparseable": -1.0, "truncated": -1.0, "cannot_formalize": 0.0}
+
+
+def firm_values(pkg: dict) -> dict[str, set]:
+    out = {p: set(v) for p, v in FIRM_BY_PROFILE.get((pkg.get("profile") or {}).get("semantics"), {}).items()}
+    for pred, spec in pkg["answers"].items():
+        if spec.get("firm"):
+            out[pred] = set(spec["firm"])
+    return out
+
+
+def _subject_lines(pkg: dict, text: str, s: str) -> list[str]:
+    sp = pkg["speak"]
+    phrases = [ph_.format(S=s) for vals in sp["answers"].values() for ph_ in vals.values()]
+    return [line for line in text.splitlines() if any(p in line for p in phrases)]
+
+
+def _reasons_said(pkg: dict, lines: list[str], s: str) -> set[str] | None:
+    sp = pkg["speak"]
+    rx = re.escape(sp["reason"]).replace(re.escape("{S}"), re.escape(s)).replace(re.escape("{R}"), "(?P<R>.+?)")
+    found = [m.group("R") for line in lines for m in re.finditer(rx, line)]
+    return set("; ".join(found).split("; ")) if found else None
+
+
+def _reasons_gold(pkg: dict, gold: dict, s: str) -> set[str] | None:
+    sp = pkg["speak"]
+    why = gold["reasons"].get(s)
+    if not why:
+        return None
+    return {sp["reason_items"].get(x.split(",")[0], "{x}").format(x=x, a=x.split(",")[-1]) for x in why}
+
+
+def reward(pkg: dict, gold: dict, text: str, truncated: bool = False) -> dict:
+    """The seed's reward for one spoken answer: {reward in [-1, 1], kind, slots}. kind: scored · truncated (the generation budget was
+    reached — never parsed, the cut answer could be anything) · unparseable · cannot_formalize (the explicit abstention, 0)."""
+    sp = pkg["speak"]
+    if truncated:
+        return {"reward": REWARD["truncated"], "kind": "truncated", "slots": {}}
+    said = parse_verdict(pkg, text)
+    no_verdict = {m.group("S") for m in re.finditer(_phrase_regex(sp["no_answer"]), text)}
+    parseable = bool(said["answers"] or said["duties"] or no_verdict or sp["duties_head"] in text)
+    if not parseable:
+        kind = "cannot_formalize" if sp.get("cannot_formalize", CANNOT) in text else "unparseable"
+        return {"reward": REWARD[kind], "kind": kind, "slots": {}}
+    firm = firm_values(pkg)
+    slots: dict[str, int] = {}
+    total, n = 0.0, 0
+
+    def book(k):
+        nonlocal total, n
+        slots[k] = slots.get(k, 0) + 1
+        total += REWARD[k]
+        n += 1
+
+    for s in sorted(set(gold["subjects"]) | set(said["answers"])):
+        g_ans, m_ans = gold["answers"].get(s) or {}, said["answers"].get(s) or {}
+        reasons_ok = _reasons_said(pkg, _subject_lines(pkg, text, s), s) == _reasons_gold(pkg, gold, s)
+        if not g_ans:  # the seed gives no verdict (e.g. an open view): saying so is right, any value is not
+            if not m_ans:
+                book("right" if s in no_verdict or s not in gold["subjects"] else "missing")
+            for pred, m in m_ans.items():
+                book("invented_certainty" if m in firm.get(pred, ()) else "wrong")
+            continue
+        for pred in pkg["answers"]:
+            g, m = g_ans.get(pred), m_ans.get(pred)
+            if g is None and m is None:
+                continue
+            if m == g:
+                book("right" if reasons_ok else "right_reason_wrong")
+            elif m is None:
+                book("missing")
+            elif m in firm.get(pred, ()):
+                book("invented_certainty")
+            else:
+                book("wrong")
+    if said["duties"] == gold["duties"]:
+        book("duties_exact")
+    elif any(d.startswith("may(") for d in set(said["duties"]) - set(gold["duties"])):
+        book("duty_invented_permission")
+    else:
+        book("duties_wrong")
+    return {"reward": round(total / n, 6), "kind": "scored", "slots": slots}
+
+
+def _parse_facts(text: str) -> list[tuple]:
+    """Facts in notation (one per line, e.g. line(s1, pos, fam_a, x)) as tuples (pred, args...) — the world format of draw_world."""
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            name, rest = line.split("(", 1)
+            out.append((name, *[a.strip() for a in ph._args(name + "(" + rest)]))
+    return out
+
+
+def grpo_label(pkg: dict, v: dict) -> str:
+    """The class a prompt is balanced by: the first answer of the first subject, or none (no verdict)."""
+    first = next(iter(pkg["answers"]))
+    s1 = v["subjects"][0] if v["subjects"] else None
+    return str(((v["answers"].get(s1) or {}).get(first)) or "none")
+
+
+def grpo_prompt(pkg: dict, facts: list[tuple], rnd: random.Random) -> list[dict]:
+    user = (f"Situation: {render(pkg, facts, rnd)}\n{pkg['speak']['question']}\n"
+            f"If you cannot write the situation in the philosophy's terms, say exactly: {pkg['speak'].get('cannot_formalize', CANNOT)}")
+    return [{"role": "system", "content": _system(pkg)}, {"role": "user", "content": user}]
+
+
+def grpo_pool(pkg: dict, n: int, seed: int, pair_share: float = 0.3) -> dict:
+    """Prompts for GRPO with the seed's verdict as gold. Balanced: single prompts are interleaved round-robin over their gold label,
+    so consecutive prompts (one generation batch, with the dataset not shuffled) carry different labels. Counterfactual pairs —
+    the package's own counterfactual worlds and random worlds with one fact removed that change the verdict — stay adjacent, so a
+    batch also contains two situations that differ in one piece of evidence and must be judged differently."""
+    rnd = random.Random(seed)
+    h = ph.package_hash(pkg)
+
+    def row(facts, pair=""):
+        v = verdict(pkg, facts)
+        return {"prompt": grpo_prompt(pkg, facts, rnd), "gold_json": json.dumps(v, sort_keys=True), "label": grpo_label(pkg, v),
+                "pair": pair, "facts_json": json.dumps([list(f) for f in facts]), "reference": speak(pkg, v), "hash": h}
+
+    pairs: list[list[dict]] = []
+    names = {w["name"]: w for w in pkg["worlds"]}
+    for w in pkg["worlds"]:
+        base = names.get(w.get("counterfactual_of") or "")
+        if base:
+            pid = f"world:{base['name']}>{w['name']}"
+            pairs.append([row(_parse_facts(base["facts"]), pid), row(_parse_facts(w["facts"]), pid)])
+    want_pairs = int(n * pair_share / 2)
+    tries = 0
+    while len(pairs) < want_pairs and tries < want_pairs * 20:
+        tries += 1
+        facts = draw_world(pkg, rnd)
+        if len(facts) < 2:
+            continue
+        cut = [f for i, f in enumerate(facts) if i != rnd.randrange(len(facts))]
+        a, b = verdict(pkg, facts), verdict(pkg, cut)
+        if a["answers"] != b["answers"] or a["duties"] != b["duties"]:
+            pid = f"drawn:{len(pairs)}"
+            pairs.append([row(facts, pid), row(cut, pid)])
+    first = next(iter(pkg["answers"]))
+    labels = sorted(pkg["answers"][first]["values"]) + ["none"]
+    need = -(-max(0, n - 2 * len(pairs)) // len(labels))
+    singles: dict[str, list[dict]] = {lb: [] for lb in labels}
+    tries = 0
+    while any(len(v) < need for v in singles.values()) and tries < max(n, 1) * 30:
+        tries += 1
+        r = row(draw_world(pkg, rnd))
+        if len(singles[r["label"]]) < need:
+            singles[r["label"]].append(r)
+    order: list[dict] = []
+    for i in range(need):
+        order += [singles[lb][i] for lb in labels if i < len(singles[lb])]
+        if pairs and i % 2 == 1:
+            order += pairs.pop(0)
+    for p in pairs:
+        order += p
+    counts = {lb: sum(1 for r in order if r["label"] == lb) for lb in labels}
+    short = {lb: need - len(v) for lb, v in singles.items() if len(v) < need}  # the generator rarely draws them: named, not hidden
+    return {"rows": order, "labels": counts, "pairs": sum(1 for r in order if r["pair"]) // 2,
+            "short_of_balance": short, "draws": tries, "reward_version": REWARD_VERSION, "hash": h}

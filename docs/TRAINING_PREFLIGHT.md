@@ -18,7 +18,7 @@ python train.py --stage logic --preflight --from-base
 python train.py --stage logic --preflight --from-adapter out/agentic
 ```
 
-The stages are `sft`, `agentic`, `logic`, `kto` and `dpo`. Use `--cpu` where the model fits in RAM. Without a GPU, preflight selects
+The stages are `sft`, `agentic`, `logic`, `kto`, `dpo` and `grpo` (a philosophy's seed as reward; kit with `--philosophy NAME`, see docs/FINETUNING.md section 4b). Use `--cpu` where the model fits in RAM. Without a GPU, preflight selects
 CPU automatically. `--revision COMMIT` pins a remote base/tokenizer. `--from-base` deliberately starts a fresh adapter directly from
 the base for the selected stage; without it, later stages expect `out/sft` or an explicit `--from-adapter`. A preflight can probe a
 missing parent with a fresh adapter, but reports `parent_ready=false`. Actual training refuses that missing dependency.
