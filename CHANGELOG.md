@@ -3,6 +3,20 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.66.1 — 2026-11-15 — security: two example values removed from the whole history
+
+### What was fixed
+
+- **Two example values in the code resembled real credentials.** A comment in `vi_mcp/anonymize.py` and a test in
+  `tests/test_anonym.py` used them as examples of a password shape. They had been public since 0.13.0 (08.11.2026).
+  - Both are replaced by invented values of the same shape, and the tests check the same detection.
+  - The whole git history was rewritten (git filter-repo; every commit hash changed), and every tag was moved to the rewritten
+    commit.
+  - The packages of every earlier release were removed from GitHub Releases and from the apt/dnf repository, because they were built
+    from the old tree. This release is the first clean one.
+  - Code is otherwise identical to 0.66.0.
+  Evidence: a fresh clone of the repository, every reachable blob searched, 0 hits; 217 old release assets deleted, 0 left.
+
 ## 0.66.0 — 2026-11-15 — the philosophical seed: philosophies as clingo, checked by round trip, trained by GRPO; search at 500k objects
 
 ### What was measured and changed in the search
