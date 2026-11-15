@@ -99,3 +99,30 @@ def test_the_published_guide_is_generated_from_the_code():
     from pathlib import Path
     doc = Path(__file__).resolve().parent.parent / "docs" / "PHILOSOPHY.md"
     assert doc.read_text(encoding="utf-8").strip() == ph.GUIDE.strip(), "regenerate: vi-mcp philosophy guide > docs/PHILOSOPHY.md"
+
+
+def test_training_data_is_the_seeds_verdict_spoken_and_read_back_without_loss():
+    """philosophy_train: the solver is the teacher. Every example's answer is the seed's verdict in words; parse_verdict reads it back
+    exactly (else scoring a model would measure the parser); held-out phrasings and pressure never appear in training."""
+    import random
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load("kollektiv")
+    rnd = random.Random(3)
+    values = set()
+    for _ in range(200):
+        facts = pt.draw_world(pkg, rnd)
+        v = pt.verdict(pkg, facts)
+        sc = pt.score(pkg, v, pt.parse_verdict(pkg, pt.speak(pkg, v)))
+        assert sc["duties_exact"] and all(x["wrong"] == x["missing"] == 0 for x in sc["answers"].values())
+        values |= {a.get("value") for a in v["answers"].values()}
+    assert values >= {"t", "f", "b", "n"}
+    train = pt.examples(pkg, 300, seed=1)
+    text = " ".join(m["content"] for r in train for m in r["messages"])
+    assert {r["meta"]["task"] for r in train} == {"judge", "formalize", "pressure"}
+    assert not any(p in text for p in pkg["pressure_test"])
+    assert "Speaking for claim" not in text and "awaiting review" not in text  # render_test phrasings stay out of training
+    test = pt.examples(pkg, 50, seed=2, test=True, weights=(1, 0, 0))
+    assert any("claim" in r["messages"][1]["content"] for r in test)
+    prose = pt.prose_examples(pkg)
+    assert {r["meta"]["task"] for r in prose} == {"explain", "recite"} and len(prose) == len(pkg["principles"]) + 3
+    assert "counts(S, P, O) <= line" in prose[0]["messages"][1]["content"] and prose[0]["messages"][2]["content"].startswith("P1 ")
