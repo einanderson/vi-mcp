@@ -756,6 +756,8 @@ def ids_for_filter(filter_text: str, kinds: tuple[str, ...] = (), viewer: str | 
 
 #: full-text hits fetched before the visibility filter (search-top4): enough to keep 500 visible ones in the usual case
 FTS_POOL = 2000
+#: ids per visibility query — below SQLite's variable limit (999 in older builds; a pool of 10^9 failed with "too many SQL variables")
+VISIBLE_CHUNK = 900
 
 #: How the last word search in this context ran: "und" (all words), "oder" (fallback, because too few contained all words) or None.
 word_search: contextvars.ContextVar[str | None] = contextvars.ContextVar("wortsuche", default=None)
@@ -792,7 +794,11 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
                     # 10 ms. When invisible or filtered rows exhaust the pool, the exact query runs — the ranking is the same either way.
                     pool = db().execute("SELECT id, rank FROM objekt_fts WHERE objekt_fts MATCH ? ORDER BY rank LIMIT ?", (q, FTS_POOL)).fetchall()
                     if pool:
-                        visible = {r[0] for r in db().execute(f"{sql} AND id IN ({','.join('?' * len(pool))})", (*par, *[r[0] for r in pool]))}
+                        visible = set()
+                        ids = [r[0] for r in pool]
+                        for i in range(0, len(ids), VISIBLE_CHUNK):  # chunks: SQLite's variable limit (999 in older builds)
+                            part = ids[i:i + VISIBLE_CHUNK]
+                            visible |= {r[0] for r in db().execute(f"{sql} AND id IN ({','.join('?' * len(part))})", (*par, *part))}
                         hits = [(oid, rank) for oid, rank in pool if oid in visible][:500]
                         if len(hits) >= 500 or len(pool) < FTS_POOL:
                             return {oid: -float(rank) for oid, rank in hits}

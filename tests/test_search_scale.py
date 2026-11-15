@@ -16,4 +16,7 @@ def test_the_full_text_pool_gives_the_same_hits_as_the_exact_query_also_when_inv
     exact, exact_tag = run(), run_tag()
     monkeypatch.setattr(g, "FTS_POOL", 5)  # the pool is filled by invisible rows: the exact query must run
     assert run() == exact and run_tag() == exact_tag
+    monkeypatch.setattr(g, "FTS_POOL", 100000)
+    monkeypatch.setattr(g, "VISIBLE_CHUNK", 2)  # the visibility check in chunks gives the same hits
+    assert run() == exact and run_tag() == exact_tag
     assert len(exact) == 8 and len(exact_tag) == 4 and not any(g.load(i).visibility == "privat" for i in exact)
