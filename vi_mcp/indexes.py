@@ -250,6 +250,9 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["import-code"]:  # runs where the repository is and talks MCP to the server — no local database
         from . import code_import
         return code_import.main(argv[1:])
+    if argv[:1] == ["code-check"]:  # local too: the structure of a repository against the architecture rules (philosophy `code`)
+        from . import code_facts
+        return code_facts.main(argv[1:])
     a = argparse.ArgumentParser(prog="vi-mcp index", description="indexes of the memory: projects and special VIs")
     u = a.add_subparsers(dest="cmd", required=True)
     u.add_parser("list", help="every index with its objects, experiences, knowledge and own model")

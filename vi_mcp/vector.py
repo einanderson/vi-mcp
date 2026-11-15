@@ -142,6 +142,10 @@ def present(ids: list[str]) -> int:
     return len(all_ids & set(ids))
 
 
+#: vi_mcp.code_facts.FACT_TAGS (not imported: vector is loaded early and code_facts is not needed for anything else here)
+FACT_TAGS = ("code:funktion", "code:modul", "code:konstante")
+
+
 def catch_up(max_s: float | None = None) -> dict:
     """Sleep step 7: compute missing vectors of shared knowledge objects, newest first, at most CATCHUP_MAX_S seconds per sleep."""
     if not available():
@@ -150,7 +154,11 @@ def catch_up(max_s: float | None = None) -> dict:
     with g.lock:
         missing = g.db().execute(
             f"SELECT o.id, o.text FROM objekt o LEFT JOIN vektor v ON v.id = o.id WHERE v.id IS NULL AND o.art IN ({','.join('?' * len(VECTOR_KINDS))}) "
-            "AND o.modus NOT IN ('widerlegt', 'archiviert', 'quarantaene') AND length(o.text) > 0 ORDER BY o.zeit DESC", VECTOR_KINDS).fetchall()
+            "AND o.modus NOT IN ('widerlegt', 'archiviert', 'quarantaene') AND length(o.text) > 0 "
+            # code structure facts: generated one-line summaries, found by hashtag and clingo — embedding them would only add near
+            # duplicates (and proximity edges between them)
+            f"AND o.id NOT IN (SELECT objekt_id FROM tag WHERE tag IN ({','.join('?' * len(FACT_TAGS))})) ORDER BY o.zeit DESC",
+            (*VECTOR_KINDS, *FACT_TAGS)).fetchall()
     n, error, end, paused = 0, None, time.monotonic() + (CATCHUP_MAX_S if max_s is None else max_s), 0.0
     model = (config or {}).get("model") or "embed"
     for i in range(0, len(missing), BATCH):

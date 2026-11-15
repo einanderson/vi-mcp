@@ -67,6 +67,9 @@ def test_import_is_incremental_internal_and_archives_what_is_gone(gd, repo):
     assert r["dateien"] == 2 and r["geaendert"] == 2 and r["stuecke"] == 4  # msi.py: 3 pieces, README: 1
     assert r["gruende"] == {"generated or vendored": 2, "not a text/code file type": 1}  # node_modules, lock file; the png
     held = ci._held("toolbox", "toolbox")
+    facts = [o for o in held if ci._is_fact(o)]  # structure facts (code_facts): the module, decode_name, Compound.read
+    assert sorted(o.data.get("name") or o.data.get("modul") for o in facts) == ["pkg.msi", "pkg.msi.Compound.read", "pkg.msi.decode_name"]
+    held = [o for o in held if not ci._is_fact(o)]
     assert len(held) == 4 and all(o.visibility == "intern" and o.idx == "toolbox" and "art_wissen:code" in o.hashtags for o in held)
     assert not g.db().execute("SELECT 1 FROM kante WHERE a IN (%s)" % ",".join("?" * len(held)), [o.id for o in held]).fetchone()  # no links
     assert ci.run(repo, "toolbox", _call)["geaendert"] == 0  # nothing changed: nothing sent
@@ -76,10 +79,12 @@ def test_import_is_incremental_internal_and_archives_what_is_gone(gd, repo):
     _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "two")
     r2 = ci.run(repo, "toolbox", _call)
     assert r2["geaendert"] == 1 and r2["entfernt"] == 1
-    syms = {o.data["symbol"]: o for o in ci._held("toolbox", "toolbox")}
+    syms = {o.data["symbol"]: o for o in ci._held("toolbox", "toolbox") if not ci._is_fact(o)}
     assert set(syms) == {"(module)", "decode_name", "Archive"} and "name.upper()" in syms["decode_name"].data["inhalt"]
     gone = g.load(ci.piece_id("toolbox", "toolbox", "pkg/msi.py", "Compound"))
     assert gone.mode == "archiviert" and "removed in commit" in gone.data["grund"]  # nothing vanishes silently
+    gone_fact = g.load(ci.piece_id("toolbox", "toolbox", "pkg/msi.py", "#funktion:Compound.read"))
+    assert gone_fact.mode == "archiviert"  # a removed function's facts go to the archive like its piece
     with pytest.raises(ValueError, match="project index"):
         ci.run(repo, "global", _call)
 

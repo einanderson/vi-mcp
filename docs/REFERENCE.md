@@ -429,7 +429,7 @@ VI, for `vi-mcp index import-code`: the code of a git repository in an index. ac
 | `index` | string | yes | the project index (not global) |
 | `repo` | string | yes | repository name |
 | `commit` | string |  | the commit the pieces come from |
-| `files` | array of object |  | changed files: {path, sha, lang, chunks: [{symbol, art, von, bis, code, signatur}]} |
+| `files` | array of object |  | changed files: {path, sha, lang, chunks: [{symbol, art, von, bis, code, signatur}], struktur: structure facts of a Python file (vi_mcp.code_facts)} |
 | `removed` | array of string |  | paths removed from the repository (their pieces are archived) |
 
 ### `vi_context`
@@ -654,6 +654,7 @@ python3 -m vi_mcp embed setup|auto|compare|status|remove [--backend auto|cuda|vu
                                         detected (CUDA, Vulkan, CPU). auto = what the packages run: never replaces an external service
 python3 -m vi_mcp index list|move ID INDEX|rename OLD NEW|backfill [--apply]|train INDEX   (--reason for move/rename)
 python3 -m vi_mcp index import-code REPO --index X [--url URL --token-file F] [--dry-run]
+python3 -m vi_mcp index code-check REPO [--profile vi-mcp|FILE] [--facts] [--json]
 python3 -m vi_mcp index export INDEX FILE | import FILE --as INDEX | compare INDEX [--dry-run]   (0.62.0)
 python3 -m vi_mcp classify [--limit N] [--dry-run]  label knowledge for the AI language (which question it answers); sleep
                                         does it when config classify names a model (0.62.0)
@@ -1108,6 +1109,7 @@ First line of each module's docstring.
 | `capabilities` | 0.53.0: which skills exist, which system each one serves, which tools it has, and where its manual is — at the start of a session. |
 | `checks` | Deterministic check of foreign content — always runs first; only it may reject for good. |
 | `classify` | Classify knowledge for the AI language (0.62.0): which question an object answers, what kind of memory it is. |
+| `code_facts` | Structure facts of code (Unreleased): what a Python file defines, calls, imports, writes, raises — read by clingo-object rules. |
 | `code_import` | Code in the index (0.61.0): `vi-mcp index import-code <repo> --index X` puts the code of a git repository into an index. |
 | `config` | Configuration — one file, readable by the owner only. |
 | `configure` | 0.48.0: configuring the server after installation — one catalogue of questions, two front ends. |
