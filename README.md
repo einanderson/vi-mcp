@@ -92,6 +92,11 @@ everything a GPU host needs — training data with datasheet, a test split, `tra
 llama.cpp), `evaluate.py` (base against fine-tuned on held-out questions) — and `vi-mcp finetune record DIR` keeps the run as a model
 object with its lineage; it counts as adopted only if it measured better. vi-mcp itself runs no training.
 
+**From zero, step by step: [docs/FINETUNING.md](docs/FINETUNING.md).** Knowledge is stored training-ready from the start: while it
+sleeps the server writes grounded question-answer pairs and one never-trained probe question onto each knowledge object
+(`vi-mcp classify --pairs`), and the kit's `probe.py` measures afterwards whether the model learned what it trained on. *Measured*
+(15.11.2026, Qwen3-0.6B, LoRA): 7 correct / 9 partial of 60 such questions against the base model's 0 / 5 (blind, p = 0.008).
+
 ## Vision
 
 **An open network of knowledge, in which AI teaches itself.** Every server learns from its own work: which hint helped, which solution held up, what a person corrected.

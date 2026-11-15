@@ -97,6 +97,11 @@ Die VI weiß, wie man eine KI mit dem Gelernten feinjustiert. Auf einem vi-mcp-S
 `vi-mcp finetune record DIR` hält den Lauf als Modellobjekt mit Herkunft fest; übernommen gilt er nur, wenn er messbar besser war.
 vi-mcp selbst startet kein Training.
 
+**Von null an, Schritt für Schritt: [docs/FINETUNING.md](docs/FINETUNING.md)** (englisch). Wissen wird von Anfang an trainingsfertig
+gespeichert: Im Schlaf schreibt der Server geprüfte Frage-Antwort-Paare und eine nie trainierte Prüffrage an jedes Wissensobjekt
+(`vi-mcp classify --pairs`), und `probe.py` im Kit misst danach, ob das Modell das Trainierte gelernt hat. *Gemessen* (15.11.2026,
+Qwen3-0.6B, LoRA): 7 richtig / 9 teilweise von 60 solchen Fragen gegen 0 / 5 beim Grundmodell (blind, p = 0,008).
+
 ## Vision
 
 **Ein offenes Netz aus Wissen, in dem sich KI selbst trainiert.** Jeder Server lernt aus seiner eigenen Arbeit: welcher Hinweis geholfen hat, welche Lösung gehalten hat, was ein Mensch korrigiert hat.

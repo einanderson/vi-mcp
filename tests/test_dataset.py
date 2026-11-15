@@ -40,8 +40,11 @@ def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd
     # documents.jsonl for the kit's QA synthesis
     assert all(x["messages"][0]["content"] != bad.text for x in qa) and all(x["meta"]["id"] != bad.id for x in qa)
     docs = [json.loads(line) for line in (out / "documents.jsonl").read_text().splitlines()]
-    assert [d["meta"]["id"] for d in docs] == [bad.id] and m["counts"]["documents"] == 1
-    assert docs[0]["document"].startswith(bad.text) and docs[0]["source"] == "https://docs.example/x"
+    # 0.65.0: every object without stored training pairs is a document for synthesis, also one whose doc2query rows are trained
+    assert bad.id in [d["meta"]["id"] for d in docs] and m["counts"]["documents"] == len(docs)
+    assert m["quality"]["stored_pairs"] == {"no stored training pairs yet: exported to documents.jsonl (vi-mcp classify --pairs, or the kit's synth_qa.py)": len(docs)}
+    bad_doc = next(d for d in docs if d["meta"]["id"] == bad.id)
+    assert bad_doc["document"].startswith(bad.text) and bad_doc["source"] == "https://docs.example/x"
     assert (out / "documents.jsonl").stat().st_mode & 0o077 == 0 and "documents.jsonl" in (out / "DATASHEET.md").read_text()
     kto = [json.loads(line) for line in (out / "kto.jsonl").read_text().splitlines()]
     assert {(x["meta"]["id"], x["label"]) for x in kto} == {(good.id, True), (bad.id, False)}

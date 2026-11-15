@@ -281,19 +281,26 @@ def run(limit: int = 20, who: str = "sleep") -> dict:
 
 
 def main(argv: list[str]) -> int:
-    """vi-mcp classify [--limit N] [--dry-run] — label pending knowledge now (otherwise sleep step 8f does it with a classify model)."""
+    """vi-mcp classify [--limit N] [--dry-run] — label pending knowledge now (otherwise sleep step 8f does it with a classify model).
+    vi-mcp classify --pairs [--limit N] [--workers W] [--stale] [--dry-run] — grounded training pairs and a probe question per object
+    (otherwise sleep step 8i does a few per sleep)."""
     import argparse
     from . import config
     a = argparse.ArgumentParser(prog="vi-mcp classify", description="label knowledge for the AI language: which question it answers")
     a.add_argument("--limit", type=int, default=20)
     a.add_argument("--dry-run", action="store_true", help="only count what is pending")
+    a.add_argument("--pairs", action="store_true", help="store grounded training pairs and a probe question on knowledge (data.qa)")
+    a.add_argument("--workers", type=int, default=1, help="with --pairs: parallel model calls")
+    a.add_argument("--stale", action="store_true", help="with --pairs: also renew pairs whose knowledge changed since")
     o = a.parse_args(argv)
     from . import reflection
     k = config.load()
     reflection.config = k.llm or {}
     g.open_db(k.db)
     try:
-        if o.dry_run:
+        if o.pairs:
+            print(json.dumps(pairs_report() if o.dry_run else run_pairs(o.limit, "admin", o.workers, o.stale), indent=2, ensure_ascii=False))
+        elif o.dry_run:
             print(json.dumps({"ausstehend": len(pending(o.limit)), "prompt": prompt_hash(), "schema": SCHEMA_VERSION}, indent=2))
         else:
             print(json.dumps(run(o.limit, "admin"), indent=2, ensure_ascii=False))
@@ -541,3 +548,147 @@ def truth_check(humans: set[str] | None = None) -> dict:
                 "grund": "needs measured objects that people confirmed and others they refuted"}
     pairs = sum(1.0 if c > r else 0.5 if c == r else 0.0 for c in conf for r in ref)
     return {"zustand": "gemessen", "auc": round(pairs / (len(conf) * len(ref)), 3), "bestaetigt": len(conf), "widerlegt": len(ref)}
+
+
+# ── training pairs: knowledge stored training-ready (0.65.0) ──────────────────────────────────────────────────────────────────────
+# The user (15.11.2026): "Es muss alles so dokumentiert werden, dass jeder aus dem Stand ein Modell trainieren kann. D.h. die Daten
+# müssen von Anfang an in der richtigen Art und Weise gespeichert sein." The first fine-tuning runs had to synthesise question-answer
+# pairs for 23,585 documents on the trainer (~25 h with a 35B model). Now the server writes them onto each knowledge object while it
+# sleeps (step 8i, the classify model, PAIRS_PER_SLEEP objects) or on `vi-mcp classify --pairs`: data.qa = {state, pairs, probe,
+# rejected, content_sha256, version {model, prompt, schema}, time}. One definition of a good pair for server and kit: qa_pairs.py.
+# Changed knowledge makes its pairs stale (content hash): the export leaves them out and the next run makes new ones.
+
+PAIRS_RETRY_AFTER_S = 86400  # a failed generation (model down, no JSON) is retried after a day, not at every sleep
+
+
+def pairs_per_sleep() -> int:
+    """Objects per sleep that get training pairs (config classify.pairs_per_sleep, default 5: one call each, ~40 s measured)."""
+    from . import config
+    try:
+        return max(0, min(int((config.read_raw(config.fpath()).get("classify") or {}).get("pairs_per_sleep", 5)), 500))
+    except Exception:  # noqa: BLE001
+        return 5
+
+
+def document_of(o: g.MemoryObject) -> str:
+    """Exactly the text the training export uses as this object's answer (scrubbed, with source) — pairs are grounded in it."""
+    from collections import Counter
+    from . import dataset
+    return dataset._answer(o, Counter())
+
+
+def make_pairs(o: g.MemoryObject) -> dict:
+    """Ask the classify model once for grounded pairs and keep only what qa_pairs.select admits (pure apart from the model call)."""
+    from . import qa_pairs
+    doc = document_of(o)
+    version = {"model": _config().get("model") or "?", "prompt": qa_pairs.prompt_sha256(), "schema": qa_pairs.SCHEMA_VERSION}
+    # named, not silent: a long page gets pairs only from its first DOC_CHARS characters (anchored chunks are the next step)
+    base = {"content_sha256": qa_pairs.content_sha256(doc), "version": version, "truncated": len(doc) > qa_pairs.DOC_CHARS,
+            "chars": len(doc)}
+    try:
+        raw = _ask_schema(qa_pairs.system_for(), doc[:qa_pairs.DOC_CHARS], qa_pairs.SCHEMA, "pairs")
+    except Exception as e:  # noqa: BLE001 — named, retried after PAIRS_RETRY_AFTER_S
+        return {**base, "state": "error", "reason": f"{type(e).__name__}: {str(e)[:120]}", "pairs": [], "probe": None, "rejected": {}}
+    pairs = qa_pairs.parse(raw)
+    if pairs is None:
+        return {**base, "state": "error", "reason": "no JSON answer", "pairs": [], "probe": None, "rejected": {}}
+    kept, rejected = qa_pairs.select(pairs, doc)
+    train, probe, close = qa_pairs.split_probe(o.id, kept)
+    if close:
+        rejected["too close to the object's probe question"] = close
+    return {**base, "state": "ok" if train else "empty", "pairs": train, "probe": probe, "rejected": rejected}
+
+
+def store_pairs(o: g.MemoryObject, res: dict, who: str = "vi") -> bool:
+    """Write the result onto the CURRENT object: the model call takes up to minutes, and saving the copy loaded before it would undo
+    whatever changed meanwhile (lost update, Codex's review 15.11.2026). Knowledge that changed during the call keeps no pairs made
+    from its old text. False if nothing was stored."""
+    from . import qa_pairs
+    cur = g.load(o.id)
+    if (cur is None or cur.visibility == "privat" or cur.mode in ("quarantaene", "widerlegt", "aufgegangen", "archiviert")
+            or qa_pairs.content_sha256(document_of(cur)) != res["content_sha256"]):
+        return False
+    cur.data = {**cur.data, "qa": {**res, "time": g.now()}}
+    cur.change(who, f"training pairs: {len(res['pairs'])}" + (" + probe" if res.get("probe") else ""),
+               f"state {res['state']} ({res['version']['schema']}, prompt {res['version']['prompt'][:12]})")
+    g.save(cur)
+    return True
+
+
+STALE_SAMPLE = 200  # per sleep: stored pairs checked against today's text in a random sample (the full scan is --stale)
+
+
+def pairs_pending(limit: int = 20, stale: bool = False, sample: int = 0) -> list[str]:
+    """Knowledge without current training pairs, newest first: none yet, another prompt or schema, or a failed try older than a day.
+    Then knowledge whose text changed since its pairs were made (any state): stale=True checks all of it (command line), sample=N a
+    random N per call (sleep) — the content hash is not in SQL. The export checks every object anyway: stale pairs are never trained."""
+    from . import qa_pairs
+    ph = qa_pairs.prompt_sha256()
+    live = ("SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', "
+            "'aufgegangen', 'archiviert') AND sicht <> 'privat' AND NOT EXISTS (SELECT 1 FROM tag t WHERE t.objekt_id = objekt.id "
+            "AND t.tag = 'art_wissen:code') ")
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=PAIRS_RETRY_AFTER_S)).isoformat(timespec="milliseconds")
+    with g.lock:
+        rows = g.db().execute(live + "AND (json_extract(daten, '$.qa.version.prompt') IS NULL OR json_extract(daten, '$.qa.version.prompt') <> ? "
+                              "OR (json_extract(daten, '$.qa.state') = 'error' AND json_extract(daten, '$.qa.time') < ?)) ORDER BY zeit DESC LIMIT ?",
+                              (ph, cutoff, int(limit))).fetchall()
+    out = [r[0] for r in rows]
+    if (stale or sample) and len(out) < limit:
+        q = live + "AND json_extract(daten, '$.qa.state') IN ('ok', 'empty') AND json_extract(daten, '$.qa.version.prompt') = ? "
+        with g.lock:
+            cand = [r[0] for r in (g.db().execute(q + "ORDER BY zeit DESC", (ph,)) if stale else
+                                   g.db().execute(q + "ORDER BY RANDOM() LIMIT ?", (ph, int(sample))))]
+        for oid in cand:
+            o = g.load(oid)
+            if o is not None and (o.data.get("qa") or {}).get("content_sha256") != qa_pairs.content_sha256(document_of(o)):
+                out.append(oid)
+                if len(out) >= limit:
+                    break
+    return out
+
+
+def run_pairs(limit: int = 20, who: str = "sleep", workers: int = 1, stale: bool = False, sample: int = 0) -> dict:
+    """Training pairs for up to `limit` pending objects (sleep step 8i, or `vi-mcp classify --pairs`). Counts per state."""
+    import concurrent.futures as cf
+    if not available():
+        return {"zustand": "uebersprungen", "grund": "no language model for training pairs (config classify or llm)"}
+    out = {"ok": 0, "empty": 0, "error": 0, "pairs": 0, "probes": 0, "changed_meanwhile": 0, "truncated": 0, "rejected": {}, "reasons": {}}
+    objs = [o for o in (g.load(i) for i in pairs_pending(limit, stale, sample)) if o is not None]
+    with cf.ThreadPoolExecutor(max(1, int(workers))) as pool:
+        for o, res in zip(objs, pool.map(make_pairs, objs)):  # model calls in parallel, database writes here, one at a time
+            if not store_pairs(o, res, who):
+                out["changed_meanwhile"] += 1
+                continue
+            out[res["state"]] += 1
+            out["truncated"] += 1 if res.get("truncated") else 0
+            out["pairs"] += len(res["pairs"])
+            out["probes"] += 1 if res.get("probe") else 0
+            for k, v in res["rejected"].items():
+                out["rejected"][k] = out["rejected"].get(k, 0) + v
+            if res["state"] == "error":
+                out["reasons"][res["reason"][:80]] = out["reasons"].get(res["reason"][:80], 0) + 1
+    return out
+
+
+def pairs_report() -> dict:
+    """How much knowledge is training-ready: objects by pair state (vi_stats, vi-mcp classify --pairs --dry-run)."""
+    from . import qa_pairs
+    with g.lock:
+        rows = g.db().execute(
+            "SELECT json_extract(daten, '$.qa.state'), json_extract(daten, '$.qa.version.prompt') = ?, COUNT(*), "
+            "COALESCE(SUM(json_array_length(json_extract(daten, '$.qa.pairs'))), 0), SUM(json_extract(daten, '$.qa.probe') IS NOT NULL) "
+            "FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', 'aufgegangen', 'archiviert') "
+            "AND sicht <> 'privat' GROUP BY 1, 2", (qa_pairs.prompt_sha256(),)).fetchall()
+    out = {"objects": 0, "ok": 0, "empty": 0, "error": 0, "none": 0, "other_prompt": 0, "pairs": 0, "probes": 0}
+    for state, current, n, pairs, probes in rows:
+        out["objects"] += n
+        if state is None:
+            out["none"] += n
+            continue
+        if not current:
+            out["other_prompt"] += n
+        out[state if state in ("ok", "empty", "error") else "error"] += n
+        out["pairs"] += int(pairs or 0)
+        out["probes"] += int(probes or 0)
+    return out

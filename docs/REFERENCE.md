@@ -1,6 +1,6 @@
 # vi-mcp reference
 
-Generated from the code of vi-mcp 0.64.1 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
+Generated from the code of vi-mcp 0.65.0 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
 
 Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server configuration](#server-configuration-configjson) · [Network service configuration](#network-service-configuration-etcvi-p2pnetworkjson) · [Configuration catalogue](#configuration-catalogue-debconf-vi-mcp-configure-vi_mcp_key) · [Environment variables](#environment-variables) · [HTTP endpoints](#http-endpoints) · [Modules](#modules-vi_mcp)
 
@@ -1134,6 +1134,7 @@ First line of each module's docstring.
 | `net_torrent` | Torrent as a second way for large backlogs. Direct connection to known peers, marked private: no DHT, no LSD, no PEX, no UPnP. |
 | `on_demand` | Training on demand (since 0.20.0) — instead of only in the nightly sleep. |
 | `p2p` | The memory on the network: anonymous outbox, checked inbox, quarantine, right to be forgotten, value per publisher. |
+| `qa_pairs` | Grounded question-answer pairs for knowledge — the training form of a VI's knowledge (0.65.0). |
 | `questions` | Questions between instances — instances learn from each other by asking each other. |
 | `redteam` | Memory-poisoning test (0.62.0) — how often does planted knowledge reach an agent? Runs in a throw-away memory, never in the real one. |
 | `reflection` | Reflection — the language model thinks about experiences during sleep (stage 4; Park et al. 2023, section 4.2). |

@@ -112,14 +112,18 @@ once end to end on 14.11.2026 (Qwen/Qwen3-0.6B, AMD Strix Halo gfx1151, ROCm). T
 - `run.json` → `split.stages` shows train/test/withheld rows and `test_groups` per stage. Every stage with at least 5 groups gets
   held-out groups. A stage with 0 test rows cannot be measured; say so in the report.
 - The datasheet in `dataset/DATASHEET.md` lists what was held out or scrubbed and why.
-- Questions: `qa.jsonl` holds only real questions (doc2query). Knowledge without one is in `dataset/documents.jsonl` and is never
-  trained as "its own text → itself". The first production run did that for 96 % of its rows (20,066 of 20,957). The model then
-  echoed and continued Confluence pages, looped in 55 % of its answers and answered no real question better (blind test 14.11.2026,
-  VI `erkenntnis:0758b794…`). Synthesize pairs before training:
-  `python synth_qa.py --url http://HOST/v1 --model NAME --limit N` (an instruction model, thinking off, no token cap; keeps only
-  grounded pairs; resumable; `synth_report.json`), then `vi-mcp finetune split DIR`. Measured with Qwen3.6-35B-A3B Q4 on
-  the AMD gfx1151 host, 4 workers: 12 documents in 38 s, 14 pairs kept, 21 rejected (19 not grounded, 2 named "the document").
-  Check `run.json` → `split.qa_question_sources` before training.
+- Questions: never train an object's own text as its question. The first production run did that for 96 % of its rows
+  (20,066 of 20,957); the model echoed and continued Confluence pages, looped in 55 % of its answers and answered no real question
+  better (blind test 14.11.2026, VI `erkenntnis:0758b794…`).
+- Since 0.65.0 the server stores the training form on each knowledge object (`data.qa`: grounded pairs, one never-trained probe,
+  rejections, content hash, generator version), in sleep step 8i or with `vi-mcp classify --pairs [--workers W] [--stale]`
+  (`--dry-run` counts states). One definition of a good pair: `vi_mcp/qa_pairs.py`. The export trains the pairs, writes the probes
+  to `probe.jsonl`, and puts every object without usable pairs into `documents.jsonl`.
+- For what the server has not reached yet: `python synth_qa.py --url http://HOST/v1 --model NAME --limit N` (thinking off, no token
+  cap, resumable, `synth_report.json`; it also writes one probe per document), then `vi-mcp finetune split DIR`. Measured with
+  Qwen3.6-35B-A3B Q4 on the AMD gfx1151 host, 4 workers: 12 documents in 38 s, 14 pairs kept, 21 rejected.
+- Check `run.json` → `split.qa_question_sources` and `split.probe` (probes of train-side objects) before training.
+- The person-facing guide with every step: `docs/FINETUNING.md`.
 
 **2. Training environment.** Use its own container on the GPU host and do not change the host's services.
 - AMD: the `rocm/pytorch:<rocm>_<os>_<py>_pytorch_release_<ver>` image. Pick a tag listing your GPU arch (gfx1151 from ROCm 7.1).
@@ -178,9 +182,9 @@ Scale E to the time the person allows. A full epoch would have been about 16 h.
   measure generalization to unseen documents. Closed-book fine-tuning cannot answer them, because the model only knows what
   it trained on. Run 2 (15.11.2026) showed no gain there (p ≈ 0.1).
 - **Knowledge injection is measured with a knowledge probe:** new questions about TRAINED documents that are themselves never
-  trained (Allen-Zhu & Li 2309.14316; EntiGraph 2409.07431).
-  - Write one new grounded question per sampled trained document with the generator.
-  - Keep these questions out of training with `synth_qa.py --hold-out` (word Jaccard < 0.5) and check the final train file again.
+  trained (Allen-Zhu & Li 2309.14316; EntiGraph 2409.07431). Since 0.65.0 the kit has it: `split/probe.jsonl` (the stored probes
+  of train-side objects) and `probe.py answer|judge|summarize` → `probe/probe_eval.json` (blind A/B, key apart, per-question
+  writing, sign-flip test strict and lenient; the judge is named and a judge that wrote the probes is flagged).
 - **What worked (run 3):** 500 trained documents, about 5 varied pairs each (`synth_qa.py --pairs 8 --more`), `--lora-rank 64`,
   4 epochs, 2,558 rows, 53 min on gfx1151 fp32.
   - Results on the 60-question probe: base 0 correct / 5 partial, run 2 (r16, 3 epochs, all rows) 4/3, run 3 7/9.

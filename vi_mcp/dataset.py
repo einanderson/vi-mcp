@@ -82,13 +82,13 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     """All examples and the bookkeeping, in memory (export writes them). agentic=False skips the trajectories — they run two searches
     per object (up to AGENTIC_MAX), which a status check must not pay: found on a copy of production (40,861 objects), where
     vi_incubator ran for more than 10 minutes."""
-    from . import evaluation, vil
+    from . import evaluation, qa_pairs, vil
     targets, eval_qs, eval_groups = _eval_hold_out()
     eval_objects = g.load_many(list(targets))
     eval_groups |= {evaluation.group_of(o) for o in eval_objects.values()}
     eval_bodies = {_norm(str(o.data.get("inhalt") or "")) for o in eval_objects.values() if o.data.get("inhalt")}
-    skipped, audit = Counter(), Counter()
-    qa, rated, qa_objects, documents = [], [], [], []
+    skipped, audit, pair_states = Counter(), Counter(), Counter()
+    qa, rated, qa_objects, documents, probes = [], [], [], [], []
     for o in _objects(index):
         if o.data.get("machine_example"):
             skipped["machine execution evidence belongs to checked program formats, not generic question-to-itself QA"] += 1
@@ -112,18 +112,43 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
         w, n = vil.weight_of(o)
         if n >= MIN_RATINGS:  # hint ratings (KTO/DPO) do not depend on a question
             rated.append((o, w, n))
+        # the source line goes into every answer: scrubbed like the answer itself (Codex's review 15.11.2026: a credential the scrubber
+        # removed from the answer came back through the raw source line of pairs, probes and documents)
+        source = _clean(str(o.data.get("quelle") or o.id), audit, "source")
+        stored, why = stored_pairs(o, answer)
+        pair_states[why or "stored pairs used"] += 1  # not "left out": an object without pairs may still train its doc2query rows
+        if stored:
+            # 0.65.0: grounded pairs the server stored while it slept (classify.run_pairs) — training-ready since the object was learned
+            gen = {"question_source": "synthetic", "generator": stored["version"].get("model"), "prompt_sha256": stored["version"].get("prompt")}
+            for p in stored["pairs"]:
+                if _norm(p["question"]) in eval_qs:
+                    skipped["question equal to an evaluation question"] += 1
+                    continue
+                qa.append({"messages": [{"role": "user", "content": _clean(p["question"], audit, "question")},
+                                        {"role": "assistant", "content": _clean(p["answer"], audit, "answer") + f"\n\nSource: {source}"}],
+                           "meta": {**meta, **gen}})
+            if stored.get("probe"):
+                probes.append({"id": o.id, "question": _clean(stored["probe"]["question"], audit, "question"),
+                               "answer": _clean(stored["probe"]["answer"], audit, "answer"), "source": source,
+                               "meta": {**meta, **gen, "question_source": "probe"}})
+        else:
+            documents.append({"document": answer, "source": source, "meta": {**meta, "question_source": None}})
         if not questions:
             # 14.11.2026: the object's own text is never its question. 20,066 of 20,957 SFT rows of the first production run were
             # "question = the document's beginning, answer = the document"; the model learned to echo and continue documents (blind
             # test: no gain on 60 real questions, loops in 55 % of answers). Such objects go to documents.jsonl, from which the kit's
-            # synth_qa.py writes grounded question-answer pairs.
-            skipped["no real question yet: exported to documents.jsonl for QA synthesis, never trained as its own question"] += 1
-            documents.append({"document": answer, "source": str(o.data.get("quelle") or o.id), "meta": {**meta, "question_source": None}})
+            # synth_qa.py writes grounded question-answer pairs (since 0.65.0 the server stores them on the object, stored_pairs).
+            if not stored:
+                skipped["no real question yet: exported to documents.jsonl for QA synthesis, never trained as its own question"] += 1
             continue
         qa_objects.append((o, questions))
+        probe_q = (stored or {}).get("probe") or {}
         for q in questions:
             if _norm(q) in eval_qs:
                 skipped["question equal to an evaluation question"] += 1
+                continue
+            if probe_q and qa_pairs.jaccard(q, probe_q["question"]) >= qa_pairs.HOLD_OUT_JACCARD:
+                skipped["doc2query question too close to the object's probe (the probe stays untrained)"] += 1
                 continue
             qa.append({"messages": [{"role": "user", "content": _clean(q, audit, "question")}, {"role": "assistant", "content": answer}],
                        "meta": meta})
@@ -156,7 +181,23 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     logic_kto += machine_kto
     dpo += machine_dpo
     return {"qa": qa, "kto": kto + logic_kto, "dpo": dpo, "agentic": agentic_rows, "logic": logic_sft, "documents": documents,
-            "skipped": dict(skipped), "scrubbed": dict(audit), "held_out": len(targets)}
+            "probe": probes, "pair_states": dict(pair_states), "skipped": dict(skipped), "scrubbed": dict(audit), "held_out": len(targets)}
+
+
+def stored_pairs(o: g.MemoryObject, document: str) -> tuple[dict | None, str]:
+    """(the object's stored training pairs, or None with the named reason they cannot be used). Pairs made from another text are
+    stale: the knowledge changed after they were generated, so they could teach what is no longer true."""
+    from . import qa_pairs
+    s = o.data.get("qa")
+    if not isinstance(s, dict) or s.get("state") is None:
+        return None, "no stored training pairs yet: exported to documents.jsonl (vi-mcp classify --pairs, or the kit's synth_qa.py)"
+    if s.get("state") != "ok" or not s.get("pairs"):
+        return None, f"stored training pairs in state {s.get('state')}: exported to documents.jsonl"
+    if (s.get("version") or {}).get("schema") != qa_pairs.SCHEMA_VERSION:
+        return None, f"stored training pairs of an older schema ({(s.get('version') or {}).get('schema')}): exported to documents.jsonl"
+    if s.get("content_sha256") != qa_pairs.content_sha256(document):
+        return None, "stored training pairs are stale (the knowledge changed since): exported to documents.jsonl"
+    return s, ""
 
 
 #: 0.63.0: the logic programs are run as a viewer that is no instance — it sees shared and internal objects, never anyone's private ones
@@ -443,8 +484,9 @@ A VI out of the incubator fine-tunes an AI: question → answer from its knowled
 ## Composition
 | file | examples | what |
 |---|---|---|
-| qa.jsonl | {c['qa']} | question → knowledge with source; only real questions from the classification (doc2query) |
-| documents.jsonl | {c.get('documents', 0)} | knowledge without a real question yet — input for the kit's synth_qa.py, never trained directly |
+| qa.jsonl | {c['qa']} | question → answer with source: doc2query questions of the classification (answer = the knowledge) and grounded pairs the server stored on the object (question_source synthetic) |
+| probe.jsonl | {c.get('probe', 0)} | one stored pair per object kept out of training: after training it asks whether the model learned that object (knowledge probe) |
+| documents.jsonl | {c.get('documents', 0)} | knowledge without usable stored pairs yet — input for the kit's synth_qa.py, never trained directly |
 | kto.jsonl | {c['kto']} | situation → hint, desirable if its measured success ≥ {GOOD} (≤ {BAD}: undesirable), ≥ {MIN_RATINGS} ratings |
 | dpo.jsonl | {c['dpo']} | the same trigger, one hint helped ≥ {DPO_MARGIN} more than the other |
 | agentic.jsonl | {c['agentic']} | tool use: the model asks the VI with vi_recall in VIL (relaxing once if needed) and answers from the target |
@@ -473,9 +515,10 @@ Credentials are removed at save time; this export ran the scrubber again — cha
 - Ordinary client user prompts are masked and never stored. Explicit logic/machine questions can become checked program examples; retrieval trajectories are constructed, not complete recorded task histories.
 - solver_only and observational labels describe inspection material, not independently verified program/preference examples; the kit withholds these from default program/DPO training.
 - The hint data are aggregated counters, not single actions; a hint shown more often weighs more.
-- doc2query questions exist only for objects the classification has labelled. The rest are in documents.jsonl; their text is never
-  used as their own question (the first production run, 14.11.2026, learned to echo documents that way). Synthesized pairs come from
-  a language model and are only checked for grounding in the document (word overlap), not verified by a person.
+- doc2query questions exist only for objects the classification has labelled; stored pairs only for objects the server has reached
+  (sleep step 8i or `vi-mcp classify --pairs`). The rest are in documents.jsonl; their text is never used as their own question (the
+  first production run, 14.11.2026, learned to echo documents that way). Pairs come from a language model and are only checked for
+  grounding in the document (word overlap, qa_pairs.check), not verified by a person; probe questions come from the same generator.
 """
 
 
@@ -487,12 +530,13 @@ def export(directory: str | Path, index: str | None = None) -> dict:
     d.mkdir(parents=True, exist_ok=True)
     os.chmod(d, 0o700)
     data = build(idx)
-    manifest = {"index": idx, "counts": {k: len(data[k]) for k in ("qa", "kto", "dpo", "agentic", "logic", "documents")}, "skipped": data["skipped"],
+    manifest = {"index": idx, "counts": {k: len(data[k]) for k in ("qa", "kto", "dpo", "agentic", "logic", "documents", "probe")}, "skipped": data["skipped"],
                 "scrubbed": data["scrubbed"], "held_out": data["held_out"], "versions": _versions(),
                 "quality": {"qa_question_sources": dict(Counter(r["meta"]["question_source"] for r in data["qa"])),
+                            "stored_pairs": data["pair_states"],
                             "qa_evidence": dict(Counter(r["meta"]["evidence"] for r in data["qa"])),
                             "program_validation": dict(Counter(r["meta"].get("validation", "unknown") for r in data["logic"]))}}
-    for name in ("qa", "kto", "dpo", "agentic", "logic", "documents"):
+    for name in ("qa", "kto", "dpo", "agentic", "logic", "documents", "probe"):
         _write(d / f"{name}.jsonl", "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in data[name]))
     _write(d / "manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
     _write(d / "DATASHEET.md", datasheet(manifest))

@@ -3,7 +3,7 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
-## Unreleased
+## 0.65.0 — 2026-11-15 — knowledge stored training-ready; the knowledge probe in the kit; fine-tuning from zero
 
 ### What was fixed
 
@@ -22,6 +22,33 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Knowledge becomes training-ready after it is learned, without a later synthesis step.** While it sleeps (step 8i, `classify.pairs_per_sleep`, default 5) or on
+  `vi-mcp classify --pairs [--limit N] [--workers W] [--stale]`, the server writes onto each shared or internal knowledge object
+  `data.qa`. It holds grounded question-answer pairs, one never-trained probe question, rejections per reason, the hash of the text
+  the pairs came from, and the generator version. `--dry-run` counts the objects per state. Before this, every run had to
+  synthesize pairs for all documents on the trainer: about 25 h for 23,585 documents with a 35B model.
+  - The export trains the pairs (`question_source: synthetic`) and writes the probes to `probe.jsonl`.
+  - Pairs of knowledge that changed since are named stale and left out (`manifest.quality.stored_pairs`).
+  - A failed generation is retried after a day.
+  - Private knowledge is never sent.
+  - Server and kit share one definition of a good pair (`vi_mcp/qa_pairs.py`, copied into the kit).
+  Evidence: `tests/test_finetune.py::test_server_stores_training_pairs_with_a_probe_and_the_export_uses_them`.
+- **The knowledge probe is part of the kit.** `split/probe.jsonl` holds the probes of objects whose rows are on the train side.
+  `probe.py answer|judge|summarize` does what run 3 did by hand:
+  - base and base+adapter answer from the same weights, written per question, with the A/B key in a separate file;
+  - an OpenAI-compatible judge, or a person, grades each answer correct, partial or wrong;
+  - `summarize` unblinds and runs the sign-flip test, strict and lenient, into `probe/probe_eval.json`;
+  - an answer cut at the generation budget counts at most partial;
+  - a judge that also wrote the probes is flagged (self-preference).
+  
+  `synth_qa.py` writes one probe per document as well. `vi-mcp finetune record` records the probe result; it is not the adoption gate.
+  Evidence: `tests/test_finetune.py::test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo_rows`.
+- **[docs/FINETUNING.md](docs/FINETUNING.md): fine-tuning from zero.** It covers the data fields, turning on pair generation, the
+  kit, the container, training with the recipe that worked, the probe, recording, and the limits. It ends with ranked next
+  improvements from research of 15.11.2026: retrieval plus a fine-tuned reader (RAFT), abstention training, more exposures per
+  fact, QA before documents, short canonical answers, rank against forgetting, and cleaner probes. The handbook
+  (`vi_finetune guide`, version 2026-11-15) and AGENTS.md follow the same steps.
+
 - **`synth_qa.py` in the fine-tuning kit** turns `documents.jsonl` into question-answer pairs with an instruction model over an
   OpenAI-compatible API (thinking off, no token cap). It keeps only grounded pairs: at least 80 % of the answer's words occur in the
   document, the question names its subject instead of "the document", and nothing is copied from the document's beginning.
@@ -36,8 +63,38 @@ Linked from [README.md](README.md).
   (arXiv 2312.05934, 2411.00686). `train.py --lora-rank R` sets the adapter rank (alpha 2R; default 16 as before).
   Evidence: `tests/test_finetune.py::test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo_rows`.
 
+### What was reviewed
+
+- **Codex reviewed 0.65.0 before release.** It answered through the VI (`frage:2b8276601a6c8b429ee5e54c`), read-only, with
+  reproductions; everything it reproduced is fixed:
+  - A pair result is written onto the CURRENT object, and only if its text is unchanged and it is still shared, internal and live.
+    Before, the copy loaded before the minutes-long model call was saved whole, which could undo a refutation or a switch to private.
+  - The source line is scrubbed like the answer. A credential the scrubber removed came back through the raw source of pairs,
+    probes and documents.
+  - No training question may come close to its object's probe (word Jaccard ≥ 0.5), whatever made it: doc2query, stored pairs,
+    synth_qa.py or agentic rows. This is checked in the export and in the split.
+  - probe.py summarize accepts only answers of today's probe file and adapter, every probe judged exactly once. Before, six old
+    judgments with no current probe gave decision = true under the current hash.
+  - Changed knowledge is renewed in sleep, from a random sample of 200 per sleep, in any state. Pairs of an older schema are never
+    exported. The content hash is exact (whitespace is content in code).
+  - qa-v3: every number in an answer must occur in the document (port 22 vs 80 passed before), and the question must name the
+    document's subject. Long pages are flagged `truncated`.
+  
+  Evidence: `tests/test_finetune.py::test_codex_review_findings_on_stored_pairs_are_fixed` and
+  `::test_grounding_counts_facts_not_function_words`. With the real model, qa-v3 kept 23 pairs and 10 probes on 15 of 20 objects.
+
 ### What was measured
 
+- **Stored pairs with the real model.** Qwen3.6-35B-A3B Q4 wrote pairs for 20 of the newest objects of a production copy, through
+  `vi-mcp classify --pairs --workers 4`.
+  - The first grounding rule (qa-v1, as in synth_qa.py of runs 2 and 3) kept only 1 of 25 pairs on six short German findings,
+    because function words such as "die", "wurde" and "auf" counted as ungrounded, and so did "host" and "dns01" inside
+    `host:dns01.…`.
+  - qa-v2 counts content words only and matches the parts of compound tokens: 25 pairs and 11 probes on 14 of 20 objects,
+    51 pairs rejected.
+  - Invented hosts, dates and IPs still fail the check.
+  
+  Evidence: `tests/test_finetune.py::test_grounding_counts_facts_not_function_words`.
 - **Second run (corrected data):** 3 epochs, LoRA r16, on 894 doc2query plus 2,042 synthesized rows. Loops fell from 55 to 6 of
   100 answers. On questions about held-out documents there is no significant gain (p ≈ 0.1). A test set of held-out documents
   cannot show knowledge injection, because closed-book fine-tuning only knows what it was trained on. On 60 new questions
@@ -53,8 +110,15 @@ Linked from [README.md](README.md).
 ### What is still missing
 
 - Synthesized pairs are model output checked for word overlap, not verified by a person.
-- The kit's own split measures generalization to unseen documents; a knowledge probe (new questions about trained documents)
-  is not built into the kit yet.
+- Probe questions come from the same generator as the training pairs, and a word-Jaccard guard misses rephrased duplicates
+  (arXiv 2311.04850). A probe set written by people or by another model family is not built yet.
+- The tuned model does not abstain; abstention training is described in docs/FINETUNING.md but not implemented.
+- Grounding is lexical: a reversed negation ("must not" → "can") still passes (reproduced by Codex). An entailment check by a model
+  is not built.
+- Long pages get pairs only from their first 6,000 characters (flagged `truncated`); pairs per anchored chunk are not built.
+- Stored QA questions are not yet indexed for search (full text indexes `text`, vectors `o.text`), so they do not help retrieval yet.
+- `vi-mcp classify --pairs` for the existing production knowledge has to be started once by an operator. Until then, the kit's
+  `synth_qa.py` covers the rest.
 
 ## 0.64.1 — 2026-11-14 — fine-tuning on a GPU end to end; statistics that measured nothing now measure
 

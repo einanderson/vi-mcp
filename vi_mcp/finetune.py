@@ -24,7 +24,7 @@ from pathlib import Path
 from . import __version__
 from . import memory as g
 
-GUIDE_VERSION = "2026-11-14"
+GUIDE_VERSION = "2026-11-15"
 TEST_SHARE = 0.15
 STRATIFY_MIN = 5  # a stage with at least this many groups always gets held-out groups
 
@@ -36,11 +36,14 @@ model's size). **QLoRA** loads the frozen model in 4 bit so it fits into little 
 stays in the house; only the base model is downloaded once.
 
 ## Training formats of `vi-mcp dataset export`
-- **SFT** — `qa.jsonl`: a real question (doc2query) → knowledge with source; imported examples are not automatically verified
-  answers, the manifest reports their evidence and question source. Knowledge without a real question is in `documents.jsonl`
-  and is never trained as its own question: the first production run (14.11.2026) did that for 96 % of its rows and learned to
-  echo and continue documents (no gain on real questions, loops). The kit's `synth_qa.py` turns documents into grounded
-  question-answer pairs (`qa_synth.jsonl`); diverse QA pairs inject knowledge better than raw text (arXiv 2409.07431, 2412.14964).
+- **SFT** — `qa.jsonl`: a real question (doc2query) → knowledge with source, and the grounded question-answer pairs the server
+  stored on each object (0.65.0, `vi-mcp classify --pairs`, sleep step 8i); the manifest reports evidence and question source.
+  An object's text is never trained as its own question: the first production run (14.11.2026) did that for 96 % of its rows and
+  learned to echo and continue documents (no gain on real questions, loops). Knowledge without stored pairs is in `documents.jsonl`;
+  the kit's `synth_qa.py` writes pairs for it (`qa_synth.jsonl`). Diverse QA pairs inject knowledge better than raw text
+  (arXiv 2409.07431, 2412.14964).
+- **probe** — `probe.jsonl`: one stored pair per object that is never trained; after training it asks whether the model learned
+  that object (knowledge probe, `probe.py`).
 - **KTO** — `kto.jsonl`: an answer was good or not (binary). Exactly the VI's helped/not-helped signal (Ethayarajh et al., arXiv 2402.01306).
 - **DPO** — `dpo.jsonl`: in the same situation this answer was better than that one (Rafailov et al., arXiv 2305.18290).
 - **agentic** — `agentic.jsonl`: the model asks the VI with `vi_recall` in VIL and answers from what it found (tool-use SFT).
@@ -71,9 +74,11 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
 
 ## The steps
 1. The VI is mature enough: `vi-mcp incubator status` (a run before is a trial).
-2. `vi-mcp finetune kit DIR` — data, test split, scripts. Then `python synth_qa.py --url http://HOST/v1 --model NAME [--limit N]`
-   (an instruction model writes up to 3 grounded pairs per document; resumable; report in synth_report.json) and
-   `vi-mcp finetune split DIR` so the pairs join the shared split. Check `run.json` → split → qa_question_sources.
+2. The server stores pairs and probes while it sleeps (config `classify` with url and model); existing knowledge once with
+   `vi-mcp classify --pairs --limit 25000 --workers 4` (`--dry-run` counts). Then `vi-mcp finetune kit DIR` — data, split, scripts.
+   For knowledge without stored pairs: `python synth_qa.py --url http://HOST/v1 --model NAME [--limit N]` (the same definition of a
+   grounded pair, qa_pairs.py; resumable; synth_report.json) and `vi-mcp finetune split DIR`. Check `run.json` → split →
+   qa_question_sources and probe.
 3. On the training host install its hardware-appropriate PyTorch, then `python -m pip install -r requirements-train.txt`.
    First run `python train.py --stage logic --tokenizer-only --from-base` (no model weights), then
    `python train.py --stage logic --preflight --from-base` (real trainer, one no-grad loss, zero optimizer steps).
@@ -86,7 +91,11 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
    program training directly on a fresh adapter without a prior QA stage. Solver-only examples and
    observational hint pairs are withheld from default program/DPO training. Checked machine examples are published explicitly with vi_machine teach.
 5. `convert.sh` → GGUF adapter; start llama-server with base and adapter.
-6. `evaluate.py` collects paired predictions; supply independent --judgments for correctness. For program writing use
+6. Knowledge probe: `python probe.py answer --adapter out/sft`, `python probe.py judge --url URL --model NAME` (or a person writes
+   probe/judgments.jsonl), `python probe.py summarize` → probe/probe_eval.json. Measured 15.11.2026 (Qwen3-0.6B, LoRA rank 64,
+   4 epochs, 500 documents × ~5 pairs): 7 correct / 9 partial of 60 probes against the base model's 0 / 5, strict p 0.008.
+   `evaluate.py` collects paired predictions on held-out objects (generalisation, which closed-book tuning does not give);
+   supply independent --judgments for correctness. For program writing use
    `program_evaluate.py --base URL --tuned URL`: full solver answers on frozen held-out worlds, not word overlap.
    The kit bundles the solver's Python sources, so it works without a VI checkout. Truncated model outputs cannot count as correct.
    `heldout_loss.py --stage sft|agentic|logic` measures the held-out loss on the assistant targets, for base and adapter, with the
@@ -131,6 +140,8 @@ def plan(index: str | None = None, base_model: str | None = None) -> dict:
          "install hardware-appropriate torch and requirements-train.txt first; real trainer check, no training"),
         ("train", "python train.py --stage sft   (then optionally --stage logic, --stage kto or --stage dpo)", "only on an explicit training decision; a preflight alone changes no weights"),
         ("convert", "./convert.sh", "the adapter as GGUF for llama.cpp, and the llama-server line"),
+        ("probe", "python probe.py answer; python probe.py judge --url URL --model NAME; python probe.py summarize",
+         "did training teach the trained knowledge? blind, never-trained questions about trained objects"),
         ("evaluate", "python evaluate.py --base URL --tuned URL", "same held-out questions to both; adopt only if better"),
         ("record", "vi-mcp finetune record /srv/vi-finetune", "the run as a model object with its lineage"),
     ]
@@ -213,71 +224,35 @@ else:
 '''
 
 
-SYNTH_QA_PY = r'''"""Question-answer pairs for documents that have no real question yet (dataset/documents.jsonl -> dataset/qa_synth.jsonl).
+SYNTH_QA_PY = r'''"""Question-answer pairs for documents the server has not stored pairs for (dataset/documents.jsonl -> dataset/qa_synth.jsonl).
 
-Why (14.11.2026): training "question = the document's own text, answer = the document" taught a model to echo and continue documents
-and to loop; it answered no real question better. Knowledge injection works better from diverse question-answer pairs than from raw
-text (Yang et al., Synthetic continued pretraining, arXiv 2409.07431; Kujanpaeae et al., arXiv 2412.14964).
-A language model writes up to 3 pairs per document through an OpenAI-compatible API. Each pair is kept only if it is grounded: most
-answer words occur in the document, the question names its subject instead of "the document", nothing is copied from the document's
-beginning. Rejections are counted per reason. Resumable: documents already in qa_synth.jsonl or synth_rejected.jsonl are skipped.
-No token cap (the model ends its own answer); thinking is switched off. Then run `vi-mcp finetune split KIT` (or rerun the kit) so the
-pairs join the shared split. The pairs are model output checked for word overlap, not verified by a person.
+Since 0.65.0 the server stores grounded pairs and a probe question on each knowledge object while it sleeps (`vi-mcp classify --pairs`);
+the export puts them into qa.jsonl and probe.jsonl. This script fills in the rest, with the SAME definition of a good pair (qa_pairs.py,
+copied from the server): self-contained question, not copied from the document's beginning, >= 80 % of the answer's words in the document.
+Per document one kept pair becomes its probe (dataset/probe_synth.jsonl) unless it already has one: never trained, it measures after
+training whether the model learned that document. Pairs too close to a probe or a --hold-out question are rejected. Rejections are
+counted per reason. Resumable: documents already in qa_synth.jsonl or synth_rejected.jsonl are skipped. No token cap (the model ends its
+own answer); thinking is switched off. Then run `vi-mcp finetune split KIT` so the pairs and probes join the shared split.
+The pairs are model output checked for word overlap, not verified by a person.
 """
-import argparse, concurrent.futures as cf, hashlib, json, random, re, threading, time, urllib.request
-
-PAIRS = 3
-SYSTEM = ("You write training questions for a company knowledge base. You get one document. Write up to 3 questions that an employee "
-          "would really ask and that this document answers, each with a short answer of one to three sentences. Vary the facts and the "
-          "wording; when asked for more than 3, ask about the same facts in different words too. Use only facts stated "
-          "in the document; copy names, paths, hosts, commands and numbers exactly. Each question must make sense without seeing the "
-          "document: name the system, host or topic, never write 'the document', 'this page' or 'the text'. Write in the language of "
-          "the document. If the document states no answerable fact (an empty table, only a title), return an empty list. "
-          'Reply with JSON only: {"pairs": [{"question": "...", "answer": "..."}]}')
-PROMPT_SHA256 = hashlib.sha256(SYSTEM.encode()).hexdigest()
-DOC_CHARS = 6000
-GROUNDED = 0.8
-META = re.compile(r"\b(the|this|that) (document|page|text|article)\b|\b(dieses?|das|der|die|im) (dokument|seite|text|artikel)\b", re.I)
-WORD = re.compile(r"[\w./:-]{3,}")
+import argparse, concurrent.futures as cf, json, random, threading, time, urllib.request
+from qa_pairs import DOC_CHARS, PAIRS, key, parse, prompt_sha256, select, split_probe, system_for
 
 
-def words(text):
-    return {w.lower().strip(".:/-") for w in WORD.findall(text)} - {""}
-
-
-def check(pair, document):
-    q, a = (pair.get("question") or "").strip(), (pair.get("answer") or "").strip()
-    if not 15 <= len(q) <= 300 or not 2 <= len(a) <= 800:
-        return "length"
-    if META.search(q):
-        return "refers to the document instead of its subject"
-    head = re.sub(r"\s+", " ", document[:200]).lower()
-    if re.sub(r"\s+", " ", q).lower()[:60] in head:
-        return "copied from the document's beginning"
-    aw, dw = words(a), words(document)
-    if not aw or len(aw & dw) / len(aw) < GROUNDED:
-        return "not grounded in the document"
-    return None
-
-
-def system_for(pairs):
-    return SYSTEM.replace("Write up to 3 questions", f"Write up to {pairs} questions")
-
-
-def jaccard(a, b):
-    x, y = words(a), words(b)
-    return len(x & y) / max(1, len(x | y))
-
-
-def ask(url, model, document, system=SYSTEM):
+def ask(url, model, document, system):
     body = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": document[:DOC_CHARS]}],
             "temperature": 0.3, "chat_template_kwargs": {"enable_thinking": False}}
     req = urllib.request.Request(url.rstrip("/") + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
         choice = json.load(r)["choices"][0]
-    text = choice["message"].get("content") or ""
-    m = re.search(r"\{.*\}", text, re.S)
-    return json.loads(m.group(0))["pairs"] if m else None, choice.get("finish_reason")
+    return parse(choice["message"].get("content") or ""), choice.get("finish_reason")
+
+
+def rows(name):
+    try:
+        return [json.loads(l) for l in open(name, encoding="utf-8") if l.strip()]
+    except FileNotFoundError:
+        return []
 
 
 def main():
@@ -293,36 +268,28 @@ def main():
     a.add_argument("--hold-out", help="JSONL of {id, question} kept out of training (evaluation probes): a pair whose question is "
                    "this close (word Jaccard >= 0.5) to one of them is rejected")
     o = a.parse_args()
-    system = system_for(o.pairs)
-    prompt_sha256 = hashlib.sha256(system.encode()).hexdigest()
+    system, psha = system_for(o.pairs), prompt_sha256(o.pairs)
     held = {}
-    if o.hold_out:
-        for l in open(o.hold_out, encoding="utf-8"):
-            if l.strip():
-                h = json.loads(l)
-                held.setdefault(h["id"], []).append(h["question"])
+    for h in rows(o.hold_out) if o.hold_out else []:
+        held.setdefault(h["id"], []).append(h["question"])
+    probed = set()
+    for name in ("dataset/probe.jsonl", "dataset/probe_synth.jsonl"):  # the probes are held out of every later pair, too
+        for h in rows(name):
+            held.setdefault(h["id"], []).append(h["question"])
+            probed.add(h["id"])
     asked = {}
-    try:
-        for l in open("dataset/qa_synth.jsonl", encoding="utf-8"):
-            if l.strip():
-                r = json.loads(l)
-                asked.setdefault(r["meta"]["id"], set()).add(" ".join(sorted(words(r["messages"][0]["content"]))))
-    except FileNotFoundError:
-        pass
-    docs = [json.loads(l) for l in open("dataset/documents.jsonl", encoding="utf-8") if l.strip()]
-    done = set()
-    for name in ("dataset/qa_synth.jsonl", "dataset/synth_rejected.jsonl"):
-        try:
-            done |= {json.loads(l)["meta"]["id"] for l in open(name, encoding="utf-8") if l.strip()}
-        except FileNotFoundError:
-            pass
+    for r in rows("dataset/qa_synth.jsonl"):
+        asked.setdefault(r["meta"]["id"], set()).add(key(r["messages"][0]["content"]))
+    docs = rows("dataset/documents.jsonl")
+    done = {r["meta"]["id"] for name in ("dataset/qa_synth.jsonl", "dataset/synth_rejected.jsonl") for r in rows(name)}
     again = {l.strip() for l in open(o.more, encoding="utf-8") if l.strip()} if o.more else set()
     todo = [d for d in docs if d["meta"]["id"] in again] if o.more else [d for d in docs if d["meta"]["id"] not in done]
     random.Random(o.seed).shuffle(todo)
     todo = todo[: o.limit] if o.limit else todo
-    lock, stats, t0 = threading.Lock(), {"documents": 0, "pairs": 0, "rejected": {}}, time.time()
+    lock, stats, t0 = threading.Lock(), {"documents": 0, "pairs": 0, "probes": 0, "rejected": {}}, time.time()
     out = open("dataset/qa_synth.jsonl", "a", encoding="utf-8")
     rej = open("dataset/synth_rejected.jsonl", "a", encoding="utf-8")
+    probe_f = open("dataset/probe_synth.jsonl", "a", encoding="utf-8")
 
     def one(d):
         try:
@@ -336,39 +303,213 @@ def main():
     with cf.ThreadPoolExecutor(o.workers) as pool:
         for d, pairs, error in pool.map(one, todo):
             with lock:
+                oid = d["meta"]["id"]
                 stats["documents"] += 1
-                kept, reasons = [], []
-                for p in pairs or []:
-                    why = check(p, d["document"]) if isinstance(p, dict) else "format"
-                    if not why and any(jaccard(p["question"], h) >= 0.5 for h in held.get(d["meta"]["id"], [])):
-                        why = "too close to a held-out evaluation question"
-                    key = " ".join(sorted(words(str(p.get("question") or "")))) if isinstance(p, dict) else ""
-                    if not why and key in asked.setdefault(d["meta"]["id"], set()):
-                        why = "duplicate question"
-                    if why:
-                        reasons.append(why)
-                    else:
-                        asked[d["meta"]["id"]].add(key)
-                        kept.append(p)
+                kept, rejected = select(pairs, d["document"], held.get(oid, []), asked.setdefault(oid, set()))
+                probe = None
+                if oid not in probed:
+                    kept, probe, close = split_probe(oid, kept)
+                    if close:
+                        rejected["too close to the object's probe question"] = close
                 if error:
-                    reasons.append(error)
-                for why in reasons:
-                    stats["rejected"][why] = stats["rejected"].get(why, 0) + 1
-                meta = {**d["meta"], "question_source": "synthetic", "generator": o.model, "prompt_sha256": prompt_sha256}
+                    rejected[error] = rejected.get(error, 0) + 1
+                for why, n in rejected.items():
+                    stats["rejected"][why] = stats["rejected"].get(why, 0) + n
+                meta = {**d["meta"], "question_source": "synthetic", "generator": o.model, "prompt_sha256": psha}
                 for p in kept:
-                    answer = p["answer"].strip() + f"\n\nSource: {d['source']}"
-                    out.write(json.dumps({"messages": [{"role": "user", "content": p["question"].strip()},
-                                                       {"role": "assistant", "content": answer}], "meta": meta}, ensure_ascii=False) + "\n")
+                    out.write(json.dumps({"messages": [{"role": "user", "content": p["question"]},
+                                                       {"role": "assistant", "content": p["answer"] + f"\n\nSource: {d['source']}"}],
+                                          "meta": meta}, ensure_ascii=False) + "\n")
+                if probe:
+                    probed.add(oid)
+                    held.setdefault(oid, []).append(probe["question"])
+                    probe_f.write(json.dumps({"id": oid, **probe, "source": d["source"], "meta": {**meta, "question_source": "probe"}},
+                                             ensure_ascii=False) + "\n")
+                    stats["probes"] += 1
                 stats["pairs"] += len(kept)
                 if not kept and not (error or "").startswith("request failed"):
-                    rej.write(json.dumps({"meta": {"id": d["meta"]["id"]}, "reasons": reasons}, ensure_ascii=False) + "\n")
-                out.flush(); rej.flush()
+                    rej.write(json.dumps({"meta": {"id": oid}, "reasons": rejected}, ensure_ascii=False) + "\n")
+                out.flush(); rej.flush(); probe_f.flush()
                 if stats["documents"] % 20 == 0:
                     print(f"{stats['documents']}/{len(todo)} documents, {stats['pairs']} pairs, {round(time.time() - t0)} s", flush=True)
-    stats.update(seconds=round(time.time() - t0), generator=o.model, prompt_sha256=prompt_sha256, pairs_asked=o.pairs,
+    stats.update(seconds=round(time.time() - t0), generator=o.model, prompt_sha256=psha, pairs_asked=o.pairs,
                  remaining=len([d for d in docs if d["meta"]["id"] not in done]) - (0 if o.more else len(todo)))
     json.dump(stats, open("synth_report.json", "w"), indent=1)
     print(json.dumps(stats, indent=1))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+PROBE_PY = r'''"""Knowledge probe: did training teach the model the knowledge it was trained on? (0.65.0)
+
+split/probe.jsonl holds one question per TRAINED object that was never trained (a stored pair held out by the server or synth_qa.py).
+A split by object cannot show this: unseen objects test generalisation, which fine-tuning does not give (measured 14.11.2026). Steps:
+  python probe.py answer [--adapter out/sft]      base and base+adapter answer every probe question; written per question, resumable:
+                                                  probe/answers_blind.jsonl (sides A/B in seeded random order) and probe/ab_key.jsonl
+  python probe.py judge --url URL --model NAME    an OpenAI-compatible model grades A and B against the reference without the key:
+                                                  probe/judgments.jsonl (a person may write the same file by hand instead)
+  python probe.py summarize                       unblinds and tests: probe/probe_eval.json
+Grades: correct (states the reference's key fact, nothing contradicting), partial (part of it, or right with a wrong detail), wrong
+(wrong, missing, "I don't know", loop). An answer that hit the generation budget counts at most partial. The decision is the kit's
+gate: one-sided sign-flip test over object groups, p < 0.05 and a positive difference, strict (correct) and lenient (correct or
+partial). Measured with this procedure (14.11.2026, Qwen3-0.6B, 60 probes): run 3 tuned 7 correct / 9 partial, base 0 / 5, strict p 0.008.
+Limits: the probe questions come from the same generator as the training pairs; a judge model of the same family as the generator may
+favour its own wording (self-preference, arXiv 2306.05685) — the judge is recorded and named in the result.
+"""
+import argparse, hashlib, json, os, sys, time
+
+SYSTEM = "Answer the question factually and concisely. If you do not know the answer, say so."
+GRADES = ("correct", "partial", "wrong")
+JUDGE = ("You grade answers to a question against a reference answer. For EACH of the answers A and B decide: correct = it states the "
+         "reference's key fact(s) and nothing contradicting them; partial = it states part of the key facts, or the right fact with a wrong "
+         "detail; wrong = wrong, missing, evasive, 'I don't know', repetitive or garbled. Judge facts, not style or length. An answer marked "
+         "as cut off is at most partial. Reply with JSON only: {\"A\": \"correct|partial|wrong\", \"B\": \"correct|partial|wrong\", "
+         "\"reason\": \"one sentence\"}")
+
+
+def rows(name):
+    try:
+        return [json.loads(l) for l in open(name, encoding="utf-8") if l.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def sha(name):
+    return hashlib.sha256(open(name, "rb").read()).hexdigest() if os.path.exists(name) else None
+
+
+def answer(o):
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    base = json.load(open("run.json"))["base_model"]
+    device = "cuda" if torch.cuda.is_available() and not o.cpu else "cpu"
+    tok = AutoTokenizer.from_pretrained(base)
+    model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.float32).to(device)
+    model = PeftModel.from_pretrained(model, o.adapter).eval()
+    os.makedirs("probe", exist_ok=True)
+    done = {r["id"] for r in rows("probe/answers_blind.jsonl")}
+
+    def one(question):
+        text = tok.apply_chat_template([{"role": "system", "content": SYSTEM}, {"role": "user", "content": question}],
+                                       add_generation_prompt=True, enable_thinking=False, tokenize=False)
+        ids = tok(text, return_tensors="pt", add_special_tokens=False).to(device)
+        with torch.no_grad():  # greedy; the budget is a resource bound against endless loops of a small model, named, never a silent cut
+            out = model.generate(**ids, do_sample=False, max_new_tokens=o.budget, eos_token_id=tok.eos_token_id,
+                                 pad_token_id=tok.pad_token_id or tok.eos_token_id)
+        new = out[0, ids["input_ids"].shape[1]:].tolist()
+        return tok.decode(new, skip_special_tokens=True).strip(), "stop" if new and new[-1] == tok.eos_token_id else "budget"
+
+    probes = rows("split/probe.jsonl")
+    if done:  # resuming: only the same probe file and the same adapter (Codex's review 15.11.2026)
+        prev = json.load(open("probe/answer_run.json")) if os.path.exists("probe/answer_run.json") else {}
+        if prev.get("probe_sha256") != sha("split/probe.jsonl") or prev.get("adapter_sha256") != sha(os.path.join(o.adapter, "adapter_model.safetensors")):
+            raise SystemExit("probe/ holds answers of another probe file or adapter — move it away first")
+    else:
+        json.dump({"adapter": o.adapter, "adapter_sha256": sha(os.path.join(o.adapter, "adapter_model.safetensors")),
+                   "probe_sha256": sha("split/probe.jsonl")}, open("probe/answer_run.json", "w"), indent=1)
+    blind, keyf, t0 = open("probe/answers_blind.jsonl", "a"), open("probe/ab_key.jsonl", "a"), time.time()
+    for i, p in enumerate(probes):
+        if p["id"] in done:
+            continue
+        with model.disable_adapter():
+            b = one(p["question"])
+        t = one(p["question"])
+        tuned_first = hashlib.sha256(f"probe:{p['id']}".encode()).digest()[0] < 128  # depends only on the id: a resumed run keeps it
+        x, y = (t, b) if tuned_first else (b, t)
+        blind.write(json.dumps({"id": p["id"], "group": (p.get("meta") or {}).get("group") or p["id"], "question": p["question"],
+                                "reference": p["answer"], "A": x[0], "A_finish": x[1], "B": y[0], "B_finish": y[1]}, ensure_ascii=False) + "\n")
+        keyf.write(json.dumps({"id": p["id"], "A": "tuned" if tuned_first else "base", "B": "base" if tuned_first else "tuned"}) + "\n")
+        blind.flush(); keyf.flush()
+        print(f"{i + 1}/{len(probes)} {round(time.time() - t0)} s", flush=True)
+    json.dump({"adapter": o.adapter, "adapter_sha256": sha(os.path.join(o.adapter, "adapter_model.safetensors")), "budget": o.budget,
+               "base_model": base, "device": device, "system_prompt": SYSTEM, "probe_sha256": sha("split/probe.jsonl")},
+              open("probe/answer_run.json", "w"), indent=1)
+
+
+def judge(o):
+    import urllib.request
+    done = {r["id"] for r in rows("probe/judgments.jsonl")}
+    out = open("probe/judgments.jsonl", "a")
+    for r in rows("probe/answers_blind.jsonl"):
+        if r["id"] in done:
+            continue
+        user = (f"Question: {r['question']}\n\nReference answer: {r['reference']}\n\nAnswer A"
+                + (" (cut off at the generation budget)" if r["A_finish"] != "stop" else "") + f": {r['A']}\n\nAnswer B"
+                + (" (cut off at the generation budget)" if r["B_finish"] != "stop" else "") + f": {r['B']}")
+        body = {"model": o.model, "messages": [{"role": "system", "content": JUDGE}, {"role": "user", "content": user}], "temperature": 0,
+                "chat_template_kwargs": {"enable_thinking": False}}
+        req = urllib.request.Request(o.url.rstrip("/") + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            text = json.load(resp)["choices"][0]["message"].get("content") or ""
+        import re
+        m = re.search(r"\{.*\}", text, re.S)
+        g = json.loads(m.group(0)) if m else {}
+        if g.get("A") not in GRADES or g.get("B") not in GRADES:
+            print(f"{r['id']}: judge answer outside the grades, left for a rerun or a person", file=sys.stderr)
+            continue
+        out.write(json.dumps({"id": r["id"], "A": g["A"], "B": g["B"], "reason": g.get("reason", ""), "judge": o.model}, ensure_ascii=False) + "\n")
+        out.flush()
+
+
+def summarize(o):
+    from evaluation_core import summarize_judgments
+    answers = {r["id"]: r for r in rows("probe/answers_blind.jsonl")}
+    key = {r["id"]: r for r in rows("probe/ab_key.jsonl")}
+    judged = rows("probe/judgments.jsonl")
+    if not judged or any(j["id"] not in key or j["id"] not in answers for j in judged):
+        raise SystemExit("judgments must belong to probe/answers_blind.jsonl and probe/ab_key.jsonl")
+    # The answers must belong to TODAY's probe file (Codex's review 15.11.2026: old judgments were relabelled with the current probe hash)
+    run = json.load(open("probe/answer_run.json")) if os.path.exists("probe/answer_run.json") else {}
+    current = {p["id"] for p in rows("split/probe.jsonl")}
+    if run.get("probe_sha256") != sha("split/probe.jsonl") or not set(answers) <= current:
+        raise SystemExit("probe/answers_blind.jsonl was made from another split/probe.jsonl — move probe/ away and run probe.py answer again")
+    if len(judged) != len({j["id"] for j in judged}):
+        raise SystemExit("a probe question is judged twice — keep one judgment per question")
+    if {j["id"] for j in judged} != current:
+        raise SystemExit(f"judgments cover {len({j['id'] for j in judged})} of {len(current)} probe questions — judge all of them first")
+    sides = []
+    for j in judged:
+        a, k = answers[j["id"]], key[j["id"]]
+        grade = {}
+        for s in ("A", "B"):
+            gr = j[s] if a[s + "_finish"] == "stop" or j[s] != "correct" else "partial"  # a cut answer is at most partial
+            grade[k[s]] = gr
+        sides.append({"id": j["id"], "group": a["group"], "reference": a["reference"], "base": grade["base"], "tuned": grade["tuned"]})
+    def test(ok):
+        return summarize_judgments([{"id": x["id"], "group": x["group"], "reference": x["reference"],
+                                     "base_correct": x["base"] in ok, "tuned_correct": x["tuned"] in ok} for x in sides])
+    result = {"metric": "knowledge_probe", "n": len(sides), "grades": {who: {g: sum(x[who] == g for x in sides) for g in GRADES}
+                                                                      for who in ("base", "tuned")},
+              "strict": test(("correct",)), "lenient": test(("correct", "partial")),
+              "judges": sorted({j.get("judge", "person") for j in judged}),
+              "generators": sorted({(p.get("meta") or {}).get("generator") or "?" for p in rows("split/probe.jsonl")}),
+              "answers_sha256": sha("probe/answers_blind.jsonl"), "judgments_sha256": sha("probe/judgments.jsonl"),
+              "probe_sha256": run["probe_sha256"], "answer_run": run}
+    result["decision"] = bool(result["strict"]["decision"])
+    if set(result["judges"]) & set(result["generators"]):
+        result["warning"] = "the judge is the model that wrote the probe questions: self-preference is possible; a person or another model family should check a sample"
+    json.dump(result, open("probe/probe_eval.json", "w"), indent=2)
+    print(json.dumps({k: result[k] for k in ("n", "grades", "decision")} | {"strict_p": result["strict"]["p_one_sided"],
+                                                                          "lenient_p": result["lenient"]["p_one_sided"]}, indent=2))
+
+
+def main():
+    a = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    u = a.add_subparsers(dest="cmd", required=True)
+    x = u.add_parser("answer")
+    x.add_argument("--adapter", default="out/sft")
+    x.add_argument("--budget", type=int, default=2048, help="new-token resource bound against loops; reaching it is named 'budget'")
+    x.add_argument("--cpu", action="store_true")
+    j = u.add_parser("judge")
+    j.add_argument("--url", required=True)
+    j.add_argument("--model", required=True)
+    u.add_parser("summarize")
+    o = a.parse_args()
+    {"answer": answer, "judge": judge, "summarize": summarize}[o.cmd](o)
 
 
 if __name__ == "__main__":
@@ -395,6 +536,24 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
     synth = qa_path.parent / "qa_synth.jsonl"  # synth_qa.py output: QA rows like qa.jsonl, split with their source object's group
     if synth.exists():
         data["qa"] += [json.loads(s) for s in synth.read_text().splitlines() if s.strip()]
+    probes = [json.loads(s) for name in ("probe.jsonl", "probe_synth.jsonl") if (qa_path.parent / name).exists()
+              for s in (qa_path.parent / name).read_text().splitlines() if s.strip()]
+    # A probe stays untrained: no training question of its object may come close to it, whatever produced the question (doc2query,
+    # stored pairs, synth_qa.py) — the one place every training row passes (Codex's review 15.11.2026).
+    from .qa_pairs import HOLD_OUT_JACCARD, jaccard
+    held = {}
+    for r in probes:
+        held.setdefault(r["id"], []).append(r["question"])
+    def too_close(r):
+        first = next((m.get("content") or "" for m in r.get("messages") or [] if m.get("role") == "user"), "")
+        return any(jaccard(first, h) >= HOLD_OUT_JACCARD for h in held.get((r.get("meta") or {}).get("id"), []))
+    near = []
+    for stage in ("qa", "agentic"):  # every stage that asks the object's question in plain words
+        out = [r for r in data[stage] if too_close(r)]
+        if out:
+            gone = {id(r) for r in out}
+            data[stage] = [r for r in data[stage] if id(r) not in gone]
+            near += out
     parent = {}
     def root(x):
         parent.setdefault(x, x)
@@ -437,11 +596,19 @@ def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 
                          "groups": len({root(keys(r)[0]) for r in rows}), "test_groups": len({root(keys(r)[0]) for r in test})}
         if counts[stage]["withheld"]:
             counts[stage]["reason"] = "solver-only program demonstration or observational preference; no independent task verification"
+    # 0.65.0 knowledge probe: one stored pair per object, never trained (dataset/probe.jsonl from the server, probe_synth.jsonl from
+    # synth_qa.py). Kept only for objects whose QA rows are on the TRAIN side — it asks whether training taught that object; a probe of a
+    # test-side object would measure generalisation to unseen knowledge, which fine-tuning does not give (14.11.2026, run 2 and 3).
+    trained = {r["meta"]["id"] for r in data["qa"] if root(keys(r)[0]) not in test_groups}
+    kept_probes = [r for r in probes if r["id"] in trained]
+    _write(out_dir / "probe.jsonl", "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in kept_probes))
+    probe_counts = {"trained_objects": len(kept_probes), "objects_not_trained": len(probes) - len(kept_probes),
+                    "training_rows_withheld_as_too_close": len(near)}
     test_ids = {r["meta"]["id"] for r in data["qa"] if root(keys(r)[0]) in test_groups}
     sources = {side: dict(Counter((r.get("meta") or {}).get("question_source") for r in data["qa"] if (root(keys(r)[0]) in test_groups) == (side == "test")))
                for side in ("train", "test")}
     return {**counts["qa"], "objekte_test": len(test_ids), "groups": len(groups), "test_groups": len(test_groups), "stages": counts,
-            "qa_question_sources": sources}
+            "qa_question_sources": sources, "probe": probe_counts}
 
 
 def resplit(directory: str) -> dict:
@@ -453,6 +620,8 @@ def resplit(directory: str) -> dict:
     run["split"] = _split(d / "dataset" / "qa.jsonl", d / "split")
     synth = d / "dataset" / "qa_synth.jsonl"
     run["qa_synth_sha256"] = hashlib.sha256(synth.read_bytes()).hexdigest() if synth.exists() else None
+    probe = d / "dataset" / "probe_synth.jsonl"
+    run["probe_synth_sha256"] = hashlib.sha256(probe.read_bytes()).hexdigest() if probe.exists() else None
     _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
     return run["split"]
 
@@ -616,6 +785,8 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     _write(d / "program_evaluate.py", PROGRAM_EVALUATE_PY, 0o700)
     _write(d / "heldout_loss.py", HELDOUT_LOSS_PY, 0o700)
     _write(d / "synth_qa.py", SYNTH_QA_PY, 0o700)
+    _write(d / "qa_pairs.py", Path(__file__).with_name("qa_pairs.py").read_text(encoding="utf-8"))  # one definition of a good pair
+    _write(d / "probe.py", PROBE_PY, 0o700)
     _write(d / "convert.sh", CONVERT_SH, 0o700)
     _write(d / "README-FINETUNE.md", GUIDE)
     run = {"base_model": base, "kit": g.now(), "vi_mcp": __version__, "handbook": GUIDE_VERSION, "index": index,
@@ -623,7 +794,7 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
            "incubator": manifest.get("inkubator"),
            "kit_code_sha256": {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "heldout_loss.py",
-                                         d / "synth_qa.py",
+                                         d / "synth_qa.py", d / "qa_pairs.py", d / "probe.py",
                                          d / "evaluation_core.py", *sorted(core.glob("*.py"))]}}
     _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
     return {"verzeichnis": str(d), **run, "eval_fragen": len(questions)}
@@ -650,8 +821,19 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
                   and ev.get("n", 0) > 0 and ev.get("decision") is True)
     verdict = ("not evaluated — run evaluate.py" if ev is None else
                f"fine-tuned {ev['tuned']} vs base {ev['base']} on {ev['n']} held-out questions ({ev['better']} better, {ev['worse']} worse)")
+    # 0.65.0: the knowledge probe (probe.py) — did training teach the trained knowledge? Recorded and named; it is not the adoption gate:
+    # a model that learned its facts can still answer real questions no better (runs 2 and 3, 14.11.2026).
+    pp = d / "probe" / "probe_eval.json"
+    probe = json.loads(pp.read_text(encoding="utf-8")) if pp.exists() else None
+    if probe is not None:
+        probe_ok = probe.get("probe_sha256") == (hashlib.sha256((d / "split" / "probe.jsonl").read_bytes()).hexdigest()
+                                                 if (d / "split" / "probe.jsonl").exists() else None)
+        t, b = probe["grades"]["tuned"], probe["grades"]["base"]
+        verdict += (f"; knowledge probe ({probe['n']} questions about trained objects): tuned {t['correct']} correct / {t['partial']} partial,"
+                    f" base {b['correct']} / {b['partial']}, strict p {probe['strict']['p_one_sided']:.4f}"
+                    + ("" if probe_ok else " — NOT for this kit's probe file"))
     oid = f"modell:finetune:{run['kit'][:19].replace(':', '').replace('-', '')}"
-    data = {**run, "adapter_sha256": adapters, "bewertung": ev, "urteil": verdict, "erfasst": g.now()}
+    data = {**run, "adapter_sha256": adapters, "bewertung": ev, "wissensprobe": probe, "urteil": verdict, "erfasst": g.now()}
     text = f"Fine-tuned model on {run['base_model']} ({', '.join(adapters)}): {verdict}"
     o = g.load(oid)
     if o is None:
