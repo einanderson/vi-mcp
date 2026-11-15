@@ -70,7 +70,9 @@ TOOLS = [
      "inputSchema": _schema({"tool": _S, "args": _O, "ok": {"type": "boolean"}, "duration_ms": {"type": "integer"}, "error": _S, "result": _S, "before_id": _S, "read_only": {"type": "boolean"}}, ["tool", "ok"])},
     {"name": "vi_ask",
      "description": "VI collective: ask another instance (or all). The question appears to the target instance at its next action "
-                    "(vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), or 'netz' / "
+                    "(vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), your own instance "
+                    "(its other conversations — e.g. other Claude Code sessions), '<instance>#<conversation>' (one conversation; yours is in "
+                    "the instructions and in vi_questions), or 'netz' / "
                     "'netz:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on "
                     "an answer rates it for the whole network.",
      "inputSchema": _schema({"to": _S, "text": _S, "triggers": _TAGS, "source": {"type": "string", "description": "source: command, host and time, or URL (for vi_ask: why you ask)"}}, ["to", "text"])},
@@ -933,6 +935,19 @@ def _net_hint() -> str:
                else " — these networks are open: internal knowledge of other servers comes only through a company network"))
 
 
+def _pair_conversations(name: str, args: dict, instance: str) -> None:
+    """A hook announces the agent's vi-mcp calls in vi_before; the agent's own call then pairs both conversations (session.py)."""
+    serial = g.current_conversation.get()
+    if not serial or instance == config.OPEN:
+        return
+    if name == "vi_before":
+        tool = api_en.canonical_name(str(args.get("tool") or ""))
+        if tool in _NAMES:
+            session.announce(instance, serial, tool, api_en.canonical_args(args.get("args") or {}))
+    elif name not in ("vi_after", "vi_prompt_context", "vi_context", "vi_capabilities"):
+        session.pair_on_call(instance, serial, name, args)
+
+
 def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, release_permission: bool = False, family: str | None = None) -> str:
     """Run a tool. Returns text; a domain refusal as Rejected(reason).
     Name and arguments may be English (public since 0.22.0) or German (alias) — translated to the internal form here."""
@@ -946,6 +961,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
     _required(name, args)
     if name in REFLEX_PERMISSION and not reflex_permission:
         raise Rejected(f"instance {instance} has no reflex right (configuration: instances.{instance}.reflexes)")
+    _pair_conversations(name, args, instance)
     if name == "vi_before":
         if not (args.get("tool") or "").strip():
             raise Rejected("tool is required")
@@ -959,18 +975,27 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 o = forum.ask(instance, to.split(":", 1)[1] if ":" in to else p2p.STANDARD, args.get("text") or "", args.get("triggers") or [], args.get("source") or "")
                 return (f"Question {o.id} sent to network {o.data['beitrag']['netz']} — it goes out with the next round of the network service; members "
                         "review it before their AIs see it, answers come back reviewed at your next action or via vi_questions")
-            o = questions.ask(instance, to, args.get("text") or "", args.get("triggers") or [], args.get("source") or "")
+            conv = questions.own_conversation()
+            o = questions.ask(instance, to, args.get("text") or "", args.get("triggers") or [], args.get("source") or "", conv)
         except ValueError as e:
             raise Rejected(str(e)) from e
-        return f"Question {o.id} sent to {o.data['an']} — appears there at the next action; the answer comes here at your next action or via vi_questions"
+        target = o.data["an"] + (f"#{o.data['an_gespraech']}" if o.data.get("an_gespraech") else "")
+        same = o.data["an"] == instance
+        return (f"Question {o.id} sent to {target}" + (" (the other conversations of this instance)" if same and not o.data.get("an_gespraech") else "")
+                + f" from conversation {conv or '—'} — appears there at the next action; the answer comes back to this conversation at its "
+                "next action or via vi_questions"
+                + ("" if not same or session.pairing_of(g.current_conversation.get()) else
+                   " · note: this conversation is not paired with a hook yet, so your own hook may show you this question once"))
     if name == "vi_answer":
         try:
-            o = questions.answer_question(args.get("id") or "", instance, args.get("text") or "", args.get("evidence") or "")
+            o = questions.answer_question(args.get("id") or "", instance, args.get("text") or "", args.get("evidence") or "",
+                                          questions.own_conversation())
             from . import forum
             post = forum.reply(instance, o, args.get("text") or "", args.get("evidence") or "")  # 0.43.0: a question from the network
         except ValueError as e:
             raise Rejected(str(e)) from e
-        return f"Answer to {o.id} stored — {o.data['von']} sees it " + ("after the network carried it and its server reviewed it" if post else "at the next action")
+        asker = o.data["von"] + (f"#{o.data['von_gespraech']}" if o.data.get("von_gespraech") else "")
+        return f"Answer to {o.id} stored — {asker} sees it " + ("after the network carried it and its server reviewed it" if post else "at the next action")
     if name == "vi_questions":
         if args.get("id"):
             o = _readable(args["id"], instance, release_permission)
@@ -980,25 +1005,31 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             d = o.data
             if o.kind != "frage" or instance not in (d.get("von"), d.get("an")) and d.get("an") != "alle" and instance not in d.get("zugestellt_an", []):
                 raise Rejected(f"{args['id']} is not a question to or from {instance}")
-            z = [f"[{o.id}] from {d['von']} to {d['an']} · {d['zustand']} · {o.ts[:16]}", "Question:", str(d.get("inhalt") or o.text),
+            frm = d["von"] + (f"#{d['von_gespraech']}" if d.get("von_gespraech") else "")
+            to_ = d["an"] + (f"#{d['an_gespraech']}" if d.get("an_gespraech") else "")
+            z = [f"[{o.id}] from {frm} to {to_} · {d['zustand']} · {o.ts[:16]}", "Question:", str(d.get("inhalt") or o.text),
                  f"Source: {d.get('quelle') or '—'}", f"Answers: {len(d['antworten'])}"]
             for a in d["antworten"]:
-                z += [f"--- {a['instanz']} {a['zeit'][:16]}", a["text"], f"Evidence: {a.get('belege') or '—'}"]
+                z += [f"--- {a['instanz']}{'#' + a['gespraech'] if a.get('gespraech') else ''} {a['zeit'][:16]}", a["text"],
+                      f"Evidence: {a.get('belege') or '—'}"]
             return "\n".join(z)
-        to_me, mine = questions.listing(instance)
-        z = [f"Questions to {instance} (open/delivered): {len(to_me)}"]
-        z += [f"  [{o.id}] from {o.data['von']} {o.ts[:16]}: {o.text[:200]}"
+        conv = questions.own_conversation()
+        to_me, mine = questions.listing(instance, conv)
+        z = [f"This conversation: {instance}#{conv or '—'} — other sessions ask it with vi_ask(to=\"{instance}#{conv or '<conversation>'}\"); "
+             f"to=\"{instance}\" asks every other conversation of {instance}.",
+             f"Questions to {instance}{'#' + conv if conv else ''} (open/delivered): {len(to_me)}"]
+        z += [f"  [{o.id}] from {o.data['von']}{'#' + o.data['von_gespraech'] if o.data.get('von_gespraech') else ''} {o.ts[:16]}: {o.text[:200]}"
               + (f" … (complete: vi_questions(id={o.id}))" if len(str(o.data.get("inhalt") or o.text)) > 200 else "") for o in to_me]
         z.append(f"Own questions: {len(mine)}")
         for o in mine:
-            z.append(f"  [{o.id}] to {o.data['an']} · {o.data['zustand']} · {o.text[:160]}")
+            z.append(f"  [{o.id}] to {o.data['an']}{'#' + o.data['an_gespraech'] if o.data.get('an_gespraech') else ''} · {o.data['zustand']} · {o.text[:160]}")
             for a in o.data["antworten"]:
                 extra = ""
                 if a.get("objekt") and (ao := g.load(a["objekt"])):  # 0.43.0: an answer from the network is an object: rate it with vi_confirm / vi_refute
                     nl = net_score.line(ao)
                     extra = f" [{ao.id}{' · accepted' if ao.confirmed else ''}{' · ' + nl if nl else ''}]"
                 cut = len(a["text"]) > 300 or len(a.get("belege") or "") > 120
-                z.append(f"     ↳ {a['instanz']} {a['zeit'][:16]}: {a['text'][:300]} [evidence: {a['belege'][:120]}]{extra}"
+                z.append(f"     ↳ {a['instanz']}{'#' + a['gespraech'] if a.get('gespraech') else ''} {a['zeit'][:16]}: {a['text'][:300]} [evidence: {a['belege'][:120]}]{extra}"
                          + (f" … (complete: vi_questions(id={o.id}))" if cut else ""))
         return "\n".join(z)
     if name == "vi_after":

@@ -127,7 +127,8 @@ def _initialize(msg: dict, inst: config.Instance, announced: str | None = None) 
     return _answer(msg.get("id"), {
         "protocolVersion": version, "capabilities": {"tools": {"listChanged": False}},
         "serverInfo": {"name": SERVER_NAME, "version": __version__},
-        "instructions": (f"VI memory, conversation {s.serial}, instance {inst.name}. Report vi_before before an action and vi_after "
+        "instructions": (f"VI memory, conversation {s.serial}, instance {inst.name} — other sessions of {inst.name} ask you with "
+                         f"vi_ask(to=\"{inst.name}#{s.serial}\"), all of them with to=\"{inst.name}\". Report vi_before before an action and vi_after "
                          "afterwards; vi_recall/vi_drilldown to look things up, vi_object reads one object completely. vi_learn with a source to learn: code, API tables and commands belong unabridged into the field content, otherwise memory has gaps.\n"
                          + _training_notice() + "\n"  # 0.57.0: early, clients cut long instructions
                          + tools.RULES + "\n"

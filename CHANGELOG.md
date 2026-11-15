@@ -7,6 +7,27 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Sessions of the same instance can ask each other (vi_ask).** Every Claude Code session on a machine uses the instance
+  `claude-code`. Before, `vi_ask` refused a question to the own instance (`questions.py`: `to == from_`) and delivered per instance,
+  so two sessions could not reach each other through the VI.
+  - `vi_ask(to="claude-code")` from a conversation now goes to every other conversation of the instance and never to the asking one.
+  - `to="claude-code#<conversation>"` asks one conversation. Only that one sees the question and may answer it.
+  - The question records `von_gespraech` (and `an_gespraech`). The answer records its `gespraech` and goes back to the asking
+    conversation. Only when that conversation has ended does the answer go to any conversation of the instance, and the hint says so.
+  - `vi_questions` shows "this conversation: claude-code#<serial>", the questions to this conversation, and its own questions.
+  - The instructions header names the address other sessions use.
+  - Questions between different instances behave as before: delivered once per instance.
+  - **Why pairing was needed:** a Claude Code session is two vi-mcp conversations, the agent's MCP client and its hook (which calls
+    `vi_before`, where questions are delivered). Without pairing, a question would have been delivered to its own author through the
+    author's hook.
+  - The hook announces every vi-mcp call of the agent in `vi_before` with the same arguments, so the agent's own call pairs the two
+    conversations (`session.pair_on_call`, fingerprint of tool and arguments). A hook's conversation then counts as its agent's. The
+    pairing and its reason are noted on both conversation objects (`partner`, `partner_grund`).
+  - Tests: `tests/test_ask_same_instance.py` (8). Covered: ask, deliver, answer and deliver back between two conversations; never
+    to the asker or its paired hook; the targeted form; a different instance unchanged; an answer to an ended conversation; both sides
+    in `vi_questions`; ambiguous pairing. `tests/test_kollektiv.py` was adapted: a question to the own instance is now allowed from a
+    conversation, and the answer reaches the asking conversation.
+
 - **qa-v4: training pairs in English, grounded by names and a model check that may only reject.** English is the memory's standard
   language (user, 15.11.2026). Stored questions and answers are written in English whatever the document's language. Word overlap
   cannot ground an English answer in a German page, so grounding has two steps.
@@ -132,6 +153,12 @@ Linked from [README.md](README.md).
   Evidence: `tests/test_logic.py::test_contradictions_are_named_for_every_arity_and_never_confused_with_no_model_or_ambiguity`.
 
 ### What is missing
+
+- Same-instance questions: pairing an agent with its hook needs one vi-mcp call of the agent that its hook announced. Before that
+  call, or without a hook, or when two hooks announce the same call within 60 s (counted in `session.pairing_counts`, not paired),
+  the asker's own hook may show it its own question once. `vi_ask` says so when the asking conversation is not paired yet.
+- Pairings live in the server process. After a restart all conversations are new, and answers to older same-instance questions go
+  to any conversation of the instance.
 
 - Code facts: the QA pairs per function (`code_facts.training_pairs`) are not exported by `vi-mcp dataset`/`finetune kit` yet.
   `dataset.py` skips every `art_wissen:code` object; an opt-in stage per index is the planned step.

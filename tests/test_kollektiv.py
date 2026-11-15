@@ -97,8 +97,10 @@ def test_question_between_instances(from_seq):
     r = as_user(a, "vi_frage", {"an": "b", "text": "Warum ist srv0111 nachts langsam?", "reize": ["host:srv0111"], "quelle": "Graylog"})
     fid = r.split()[1]
     assert g.load(fid).data["zustand"] == "offen"
-    with pytest.raises(tools.Rejected):
-        as_user(a, "vi_frage", {"an": "a", "text": "Frage an mich selbst gestellt"})
+    own = as_user(a, "vi_frage", {"an": "a", "text": "Frage an die anderen Gespräche von a"})  # since Unreleased: a's other conversations
+    assert "other conversations of this instance" in own
+    with pytest.raises(ValueError, match="needs a conversation"):  # without a conversation there is nobody else to ask
+        questions.ask("a", "a", "Frage ohne Gespräch gestellt", [], "")
     hb = intuition.before("x", {}, "b")["hinweise"]
     assert any(fid in h and "Question from a" in h for h in hb)
     assert g.load(fid).data["zustand"] == "zugestellt"
@@ -108,7 +110,9 @@ def test_question_between_instances(from_seq):
     with pytest.raises(tools.Rejected, match="your own question"):
         as_user(a, "vi_antwort", {"id": fid, "text": "weiß ich selbst", "belege": "keine Belege"})
     as_user(b, "vi_antwort", {"id": fid, "text": "Backup-Job um 2 Uhr belegt die Platte", "belege": "crontab -l auf srv0111"})
-    ha = intuition.before("x", {}, "a")["hinweise"]
+    assert not [h for h in intuition.before("x", {}, "a")["hinweise"] if "Answer from" in h]  # not to another of a's conversations…
+    with session.on_behalf(a):
+        ha = intuition.before("x", {}, "a")["hinweise"]  # …but to the asking one, which is still open
     assert any("Answer from b" in h and "Backup-Job" in h for h in ha)
     assert "beantwortet" in as_user(a, "vi_fragen") and "Backup-Job" in as_user(a, "vi_fragen")
 

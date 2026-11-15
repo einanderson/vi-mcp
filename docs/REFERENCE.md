@@ -36,7 +36,7 @@ VI hook for clients, AFTER an action: report the result → experience, remember
 
 ### `vi_ask`
 
-VI collective: ask another instance (or all). The question appears to the target instance at its next action (vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), or 'netz' / 'netz:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on an answer rates it for the whole network. · German alias `vi_frage`
+VI collective: ask another instance (or all). The question appears to the target instance at its next action (vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), your own instance (its other conversations — e.g. other Claude Code sessions), '<instance>#<conversation>' (one conversation; yours is in the instructions and in vi_questions), or 'netz' / 'netz:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on an answer rates it for the whole network. · German alias `vi_frage`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
