@@ -134,18 +134,43 @@ python train.py --stage sft --fp32 --lora-rank 64 --epochs 4
 
 Speed: about 310 trained tokens/s at batch 1. Run 2 used rank 16, 3 epochs and every row; it learned less (below).
 
-## 4b. A philosophy as the reward: GRPO
+## 4b. A philosophy in the model: language → seed → GRPO
 
-The seed of a philosophy package (`docs/PHILOSOPHY.md`) is a verifiable reward: the solver computes the verdict, the model writes
-its own in words, and `philosophy_train.reward` scores it. The user's decision (15.11.2026): the seed is baked into the model, and
-the solver is the teacher.
+The user decided the order on 15.11.2026: "first teach the AI clingo, then the seed". The seed is baked into the model, and the
+solver is the teacher. One kit holds the whole path; there is no hand-made data.
 
 ```sh
-vi-mcp finetune kit /srv/ft/kit --base Qwen/Qwen3-0.6B --force --philosophy kollektiv   # also writes philosophy/ and split/grpo.train.jsonl
-python train.py --stage grpo --tokenizer-only                       # re-solves every gold verdict with the bundled seed; no weights
-python train.py --stage grpo --preflight --fp32 --from-adapter out/sft   # samples and scores one batch, 0 optimizer steps
-python train.py --stage grpo --fp32 --from-adapter out/sft
+vi-mcp finetune kit /srv/ft/kit --base Qwen/Qwen3-0.6B --force --philosophy kollektiv
+python train.py --stage language --fp32 --lora-rank 64        # the clingo-object language, from the base
+python train.py --stage philosophy --fp32                     # the seed, continues out/language
+python train.py --stage grpo --fp32                           # the seed as reward, continues out/philosophy
+python phil_answers.py --adapter out/grpo --fp32              # base and tuned answers to eval/philosophy.jsonl, resumable
+python phil_score.py                                          # eval/philosophy_score.json
 ```
+Run `--tokenizer-only`, then `--preflight` for each stage first. `--from-adapter` or `--from-base` overrides a stage's parent.
+
+**What the kit writes** with `--philosophy NAME`. A package without training data (generator, wording, pressure) is refused, and the
+missing fields are named.
+
+| file | content |
+|---|---|
+| `split/language.{train,test}.jsonl` | clingo-object in both directions (`clingo_prose`), on rule sets that use no predicate of the package (3,000 rows) |
+| `split/philosophy.{train,test}.jsonl` | the seed's judge, formalize and pressure examples (1,700 rows); half of the judge and pressure prompts show the seed's rules first; test rows use held-out phrasings and pressure, and no test world occurs in training |
+| `split/grpo.train.jsonl` | GRPO prompts with the seed's verdict (below) |
+| `eval/philosophy.jsonl` | judge on training phrasings and on held-out phrasings, held-out pressure, held-out formalize, the package worlds, explain the seed (whole and per block), recite, the held-out language; judge items whose world occurs in training are dropped and counted |
+| `phil_answers.py`, `phil_score.py` | answers and the score: world_exact, every answer value, duties_exact, invented certainty, facts_exact for formalize, budget cuts |
+| `philosophy/` | the checked package; its hash is in `run.json` → `philosophy` with the counts and file hashes |
+
+**No principle prose in training.** The user decided that only the clingo seed is stored and that prose is a translation of it. So:
+- no principle text and no comment line of the seed enters any training row (a test asserts this);
+- the seed is shown as rules only;
+- explain_seed and recite are evaluated by the round trip: the prose is translated back to the seed, and the verdicts must match on
+  the package worlds. Where a package still carries principle prose, it stands in the evaluation only as a reference.
+
+The stages `language` and `philosophy` are new stages with SFT mechanics. They do not reuse `logic`, because the kit's logic files
+are vi_logic tool-use episodes from the VI, and the seed path needs its own adapters and lineage.
+
+### GRPO
 
 **The data (kit option, not a separate kit).** GRPO continues from an adapter of the same kit. A separate kit would split the
 lineage (base model, run.json, `record`). `--philosophy NAME` writes the following:
@@ -199,9 +224,14 @@ lineage (base model, run.json, `record`). `--philosophy NAME` writes the followi
   - `shuffle_dataset false`;
   - thinking off.
 
-**Before GRPO**, the model must already speak the verdict format. Train the seed's SFT examples first (`philosophy_train.examples`,
-as in the seed run of 15.11.2026). A model that never saw the format gets −1 for everything, and the group then has no reward
-variance to learn from.
+**Before GRPO**, the model must already speak the verdict format. That is why GRPO continues `out/philosophy` by default. A model
+that never saw the format gets −1 for everything, and the group then has no reward variance to learn from.
+
+**Speed of the verdicts.** The seed is translated once per process, and each world is solved once (`philosophy.solve`). Measured
+15.11.2026 against the double solve before:
+- `messung`: pool of 200 prompts 15.9 → 4.3 s, re-solve 10.9 → 3.1 ms per prompt;
+- `kollektiv`: pool 3.3 → 1.0 s, re-solve 6.8 → 2.0 ms per prompt.
+The gold verdicts are identical (fingerprints compared).
 
 ## 5. Measure: the knowledge probe
 

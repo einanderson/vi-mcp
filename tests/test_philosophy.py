@@ -393,3 +393,19 @@ def test_firm_values_must_be_answer_values():
     pkg["answers"]["acceptance"]["firm"] = ["accepted", "certain"]
     r = ph.check(pkg)
     assert not r["ok"] and any("firm values ['certain']" in e for e in r["errors"])
+
+
+@pytest.mark.parametrize("name", ["kollektiv", "messung"])
+def test_one_solve_with_the_translated_seed_gives_exactly_what_the_full_check_gives(name):
+    """philosophy.solve translates the constant program once and solves once per world (a verdict solved twice before); measured
+    15.11.2026: messung pool of 200 15.9 s → 4.3 s, re-solve 10.9 → 3.1 ms per row. The atoms must not change."""
+    import random
+    from clingo_object import notation as n
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load(name)
+    rnd = random.Random(9)
+    for _ in range(40):
+        facts = pt.facts_text(pt.draw_world(pkg, rnd))
+        a, b = ph.solve(pkg, facts), n.check(ph.program(pkg) + "\n" + facts)
+        assert sorted(a["folgerungen"]) == sorted(b["folgerungen"]) and a["zustand"] == b["zustand"]
+        assert [v["never"] for v in a["verletzt"]] == [v["never"] for v in b["verletzt"]]

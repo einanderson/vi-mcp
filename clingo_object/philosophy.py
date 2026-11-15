@@ -217,9 +217,27 @@ def _signatures(program: str) -> tuple[dict[str, set[int]], list[tuple[str, bool
     return used, rules
 
 
+#: the translated seed (plus profile) per program text: the program is constant, only the facts change — translating it was 72 % of
+#: the time of a verdict (cProfile 15.11.2026: translate_full 5.6 of 7.8 s for 360 verdicts of messung)
+_TRANSLATED: dict[str, tuple[str, list]] = {}
+
+
+def solve(pkg: dict, facts: str) -> dict:
+    """ONE solve of the seed (with its profile's rules) over facts in notation: the same result as n.check(program + facts), with the
+    constant program translated once per process. Every verdict of this module goes through here."""
+    prog = program(pkg)
+    hit = _TRANSLATED.get(prog)
+    if hit is None:
+        asp, stmts, _filters = n.translate_full(prog)
+        if len(_TRANSLATED) >= 32:
+            _TRANSLATED.clear()
+        hit = _TRANSLATED[prog] = (asp, stmts)
+    facts_asp = n.translate_full(facts)[0] if facts.strip() else ""
+    return n.check_result(n.run_program((hit[0] + "\n" + facts_asp) if facts_asp else hit[0], hit[1]))
+
+
 def _solve_world(pkg: dict, world: dict) -> dict:
-    r = n.check(program(pkg) + "\n" + world.get("facts", ""))
-    return r
+    return solve(pkg, world.get("facts", ""))
 
 
 def _depends_on(rules: list[tuple[str, bool, set[str]]], targets: set[str]) -> set[str]:
@@ -390,9 +408,10 @@ def _args(atom: str) -> list[str]:
     return out
 
 
-def evaluate(pkg: dict, facts: str) -> dict:
-    """The seed's verdict on given facts: answers per answer predicate, duties, reasons, violations — what a model must reproduce."""
-    r = n.check(program(pkg) + "\n" + facts)
+def evaluate(pkg: dict, facts: str, result: dict | None = None) -> dict:
+    """The seed's verdict on given facts: answers per answer predicate, duties, reasons, violations — what a model must reproduce.
+    result: an already computed solve(pkg, facts), so a caller that also needs other atoms solves once."""
+    r = result if result is not None else solve(pkg, facts)
     got = [_norm(a) for a in r.get("folgerungen", [])]
     voc = vocabulary(pkg)
     duties = sorted(a for a in got if (voc.get(a.split("(", 1)[0]) or {}).get("kind") == "duty"

@@ -384,3 +384,54 @@ def test_a_kit_with_a_philosophy_carries_the_checked_seed_and_grpo_prompts(vi, m
     seed.write_text(seed.read_text() + "value(S, t) <= closed(S)\n")  # a changed seed is a different package
     with pytest.raises(ValueError, match="differs from the hash in run.json"):
         seed_check(rows, run)
+
+
+def test_one_kit_holds_the_whole_seed_path_without_any_principle_prose(vi, monkeypatch):
+    """vi-mcp finetune kit --philosophy: language → seed SFT → GRPO plus the evaluation, without hand-made data. The user
+    (15.11.2026): "first teach the AI clingo, then the seed", and only the clingo seed is stored — prose is a translation, so no
+    principle prose and no seed comment enters any training row."""
+    import subprocess
+    import sys
+    from clingo_object import philosophy as ph
+    from clingo_object import philosophy_train as pt
+    d = vi / "kit"
+    meta = finetune.kit(str(d), base_model="Qwen/Qwen3-4B", force=True, philosophy="kollektiv", philosophy_prompts=20,
+                        language_rows=200, philosophy_rows=200)["philosophy"]
+    pkg = ph.load("kollektiv")
+    assert meta["order"] == ["language", "philosophy", "grpo"] and meta["prose_in_training"] is False
+    rows = {f: [json.loads(x) for x in (d / "split" / f).read_text().splitlines()]
+            for f in ("language.train.jsonl", "language.test.jsonl", "philosophy.train.jsonl", "philosophy.test.jsonl", "grpo.train.jsonl")}
+    assert len(rows["language.train.jsonl"]) == 200 and len(rows["philosophy.train.jsonl"]) == 200 and rows["language.test.jsonl"]
+    text = json.dumps(rows, ensure_ascii=False)
+    prose = [p["text"] for p in pkg.get("principles") or []] + [p.get("title", "") for p in pkg.get("principles") or [] if p.get("title")]
+    leaked = [t for t in prose + pt.seed_comments(pkg) if t and t in text]
+    assert not leaked, leaked[:2]
+    assert {r["meta"]["task"] for r in rows["philosophy.train.jsonl"]} == {"judge", "formalize", "pressure"}
+    vocab = set(pkg["vocabulary"])
+    lang = " ".join(m["content"] for r in rows["language.train.jsonl"] for m in r["messages"])
+    assert not [p for p in vocab - {"forbidden", "obligatory", "may"} if f"{p}(" in lang]  # the language shares no predicate with the seed
+    judged = [r for r in rows["philosophy.train.jsonl"] if r["meta"]["task"] in ("judge", "pressure")]
+    shown = [r for r in judged if r["messages"][1]["content"].startswith(pt.CODE_HEAD)]
+    assert 0.3 < len(shown) / len(judged) < 0.7 and pt.seed_code(pkg) in shown[0]["messages"][1]["content"]
+    train_facts = {r["meta"]["facts"] for r in rows["philosophy.train.jsonl"]}
+    assert not train_facts & {r["meta"]["facts"] for r in rows["philosophy.test.jsonl"]}
+    items = [json.loads(x) for x in (d / "eval" / "philosophy.jsonl").read_text().splitlines()]
+    sets = {i["set"] for i in items}
+    assert sets >= {"judge_same", "judge_paraphrase", "pressure_heldout", "formalize_heldout", "package_worlds", "explain_seed",
+                    "explain_seed_part", "recite", "language_heldout"}
+    assert not train_facts & {i["meta"].get("facts") for i in items if i["set"].startswith("judge")}
+    assert meta["eval"]["sha256"] and meta["philosophy"]["seed_shown"] == len(shown)
+    # the scorer in the kit, on simulated answers: the seed's own words are exactly right, nonsense is never right
+    answers = [{"id": i["id"], "set": i["set"], "base": "no idea", "base_finish": "stop", "tuned": i["gold_text"] or "", "tuned_finish": "stop"}
+               for i in items]
+    (d / "eval" / "philosophy_answers.jsonl").write_text("".join(json.dumps(a) + "\n" for a in answers))
+    out = subprocess.run([sys.executable, "phil_score.py"], cwd=d, capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr[-2000:]
+    score = json.loads((d / "eval" / "philosophy_score.json").read_text())["sets"]
+    n = score["judge_paraphrase"]["tuned"]["items"]
+    assert score["judge_paraphrase"]["tuned"]["world_exact"] == f"{n}/{n}" and score["judge_paraphrase"]["base"]["world_exact"] == f"0/{n}"
+    assert score["package_worlds"]["tuned"]["invented_certainty"].startswith("0/")
+    assert score["formalize_heldout"]["tuned"]["facts_exact"] == f"{score['formalize_heldout']['tuned']['items']}/{score['formalize_heldout']['tuned']['items']}"
+    assert score["recite"]["tuned"]["scored"].startswith("prose")
+    with pytest.raises(ValueError, match="no training data: missing"):
+        finetune.philosophy_stage(vi / "k2", "code", 10)

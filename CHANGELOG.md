@@ -7,6 +7,36 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **One kit for the whole seed path: language → seed → GRPO, with its evaluation.** The user decided the order on 15.11.2026:
+  "first teach the AI clingo, then the seed". `vi-mcp finetune kit DIR --base M --philosophy NAME` now writes everything, without
+  hand-made data:
+  - `--stage language`: clingo-object in both directions, on rule sets that share no predicate with the package (3,000 rows).
+  - `--stage philosophy`: the seed's judge, formalize and pressure examples (1,700 rows). Half of the judge and pressure prompts show
+    the seed's rules first. The test split uses held-out phrasings and pressure, and none of its worlds occurs in training.
+  - `--stage grpo` (the seed as reward) now continues `out/philosophy` by default.
+  - `language` and `philosophy` are new SFT stages, not `logic`: the kit's logic files are vi_logic episodes from the VI, and the
+    seed path needs its own adapters and lineage.
+  - No principle prose and no seed comment line enters any training row (test). Only the clingo seed is stored, and prose is a
+    translation of it.
+  - `eval/philosophy.jsonl`: judge on training phrasings and on held-out phrasings, held-out pressure, held-out formalize, the
+    package worlds, explain the seed (whole and per block), recite, and the held-out language. A judge item whose world occurs in
+    training is dropped and counted.
+  - `phil_answers.py` writes base and tuned answers, resumable, with a named generation budget. `phil_score.py` scores them against
+    the seed's verdict: world_exact, every answer value, duties_exact, invented certainty, facts_exact, budget cuts.
+  - A package without training data (generator, wording, pressure) is refused, with the missing fields named.
+- **Verdicts are 3–4× faster**, with identical results. The seed is translated once per process, and each world is solved once
+  (`philosophy.solve`); before, every verdict translated and solved twice. Measured 15.11.2026 on the workstation, with gold
+  fingerprints unchanged:
+  - `messung`: pool of 200 prompts 15.9 → 4.3 s, re-solve 10.9 → 3.1 ms per prompt;
+  - `kollektiv`: 3.3 → 1.0 s and 6.8 → 2.0 ms.
+  The GRPO seed check before training uses the same single solve.
+
+  Evidence:
+  - `tests/test_finetune.py::test_one_kit_holds_the_whole_seed_path_without_any_principle_prose`: the kit's own `phil_score.py`
+    on simulated answers gives the seed's words every world exact and nonsense none.
+  - `tests/test_philosophy.py::test_one_solve_with_the_translated_seed_gives_exactly_what_the_full_check_gives`.
+  - `tests/test_training_runtime_neural.py -k seed_path`: real SFT trainers, 0 optimizer steps.
+
 - **Sessions of the same instance can ask each other (vi_ask).** Every Claude Code session on a machine uses the instance
   `claude-code`. Before, `vi_ask` refused a question to the own instance (`questions.py`: `to == from_`) and delivered per instance,
   so two sessions could not reach each other through the VI.
