@@ -114,3 +114,35 @@ def test_explain_store_and_show_mark_the_translation_as_derived(gd, monkeypatch)
     assert "STALE" in philosophy.translation_lines(changed, t)[0]  # a changed seed makes it stale, it never updates itself
     same = philosophy.explain("kollektiv", "http://judge/v1", None, "http://judge/v1", None, random_n=0, per_block=False)
     assert "not independent" in same["warning"]
+
+
+FAKE_CODEX = r'''
+import os, sys
+args = sys.argv[1:]
+if os.listdir(os.getcwd()) or sys.stdin.read():
+    sys.exit(3)  # the judge must see nothing but the prompt: an empty directory, stdin closed
+out = args[args.index("-o") + 1]
+assert args[args.index("-C") + 1] == os.getcwd()
+prompt = args[-1]
+assert prompt.startswith("Do not run any commands and do not read any files") and "[user]" in prompt
+if "FAIL" in prompt:
+    sys.exit(7)
+open(out, "w").write("```\n" + os.environ["FAKE_RULES"] + "\n```\n")
+'''
+
+
+def test_a_command_is_a_back_translator_and_sees_only_the_prompt(tmp_path, monkeypatch):
+    import sys
+    pkg = ph.load("messung")
+    (tmp_path / "fake_codex.py").write_text(FAKE_CODEX)
+    monkeypatch.setenv("FAKE_RULES", _rules(pkg))
+    cmd = f"{sys.executable} {tmp_path / 'fake_codex.py'} exec -s read-only"
+    judge = pe.command_client(cmd, "gpt-x")
+    r = pe.round_trip(pkg, None, judge, prose="the description", random_n=0, per_block=False)
+    assert r["whole"]["agreement"] == 1.0 and r["whole"]["repair_rounds"] == 1  # code fences stripped, like chat_client
+    assert pe.command_name(cmd, "gpt-x") == f"{Path(sys.executable).name} gpt-x"
+    with pytest.raises(RuntimeError, match="exited 7"):
+        judge([{"role": "user", "content": "FAIL"}])  # a broken judge stops the run, it is never the model's failure
+    (tmp_path / "echo.py").write_text("import sys; print(sys.argv[1].split('[user]')[1])")
+    tpl = pe.command_client(f"{sys.executable} {tmp_path / 'echo.py'} {{prompt}}")
+    assert tpl([{"role": "user", "content": "rules here"}]).startswith("rules here")  # a template: {prompt}, reply on stdout
