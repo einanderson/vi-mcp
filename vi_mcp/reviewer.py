@@ -17,6 +17,7 @@ from pathlib import Path
 from . import memory as g
 from . import reflection
 from .log_output import log
+from .reflection import angle_safe as _protection
 
 prompt_path: Path | None = None
 SCHEMA = {"type": "object", "additionalProperties": False,
@@ -39,10 +40,6 @@ def _system() -> str | None:
 
 def available() -> bool:
     return reflection.available() and _system() is not None
-
-
-def _protection(value: str) -> str:
-    return value.replace("<", "‹").replace(">", "›")
 
 
 def user_input(o: g.MemoryObject, candidates: list[dict]) -> str:

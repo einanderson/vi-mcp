@@ -2,10 +2,11 @@
 
 A philosophy is a set of principles an AI works by: when it holds something true, what it may say, what it must do. Here a philosophy
 is a **package**: principles in prose and the same principles as a clingo-object rule set, the **seed**, with test worlds that prove
-the seed says what the prose says. The technique is generic. Two packages are built in: `kollektiv` (how a member of an AI collective
-holds something true) and `messung` (measured-only acceptance) — the second shares nothing with the first but the format, the
-semantics profile and the engine, which is how the engine shows it is not wired to one philosophy. `vi-mcp philosophy guide` prints this
-text; `docs/PHILOSOPHY.md` is generated from it.
+the seed says what the prose says. The technique is generic. Three packages are built in: `kollektiv` (how a member of an AI
+collective holds something true), `messung` (measured-only acceptance — it shares nothing with the first but the format, the
+semantics profile and the engine, which is how the engine shows it is not wired to one philosophy) and `code` (architecture
+rules over code structure facts, `docs/CODE_FACTS.md`). `vi-mcp philosophy guide` prints this text; `docs/PHILOSOPHY.md` is
+generated from it.
 
 ## Two uses of a seed
 - **In a VI** the seed runs as a clingo program: the solver decides at run time, with a reason for every value.

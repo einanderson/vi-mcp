@@ -21,6 +21,7 @@ from . import bandit
 from . import memory as g
 from . import reflection, session
 from .log_output import log
+from .reflection import angle_safe as _protection
 
 CODE_VERSION = 1
 MODEL_VERSION = 1
@@ -159,10 +160,6 @@ def _log_output(serial: str) -> list[dict] | None:
         row = g.db().execute("SELECT roh FROM gespraech_roh WHERE serial = ?", (serial,)).fetchone()
     raw = row[0] if row else archive.raw(serial)
     return json.loads(zlib.decompress(raw)) if raw else None
-
-
-def _protection(value: str) -> str:
-    return value.replace("<", "‹").replace(">", "›")
 
 
 def log_text(turns: list[dict], signals: list[dict]) -> str:

@@ -41,7 +41,8 @@ PROFILES = {"fde-signed-v1": "support pos(S) and opposition neg(S) are ordinary 
 KINDS = ("input", "derived", "closure", "answer", "duty", "interface")
 #: predicates of the notation's prelude (deontic) and internal atoms: usable without declaring them as derived rules of the seed
 BUILTIN_PREDICATES = {"obligatory", "forbidden", "permitted", "conflict", "violation", "done"}
-BUILTIN = {"kollektiv": "clingo_object.philosophy_kollektiv", "messung": "clingo_object.philosophy_messung"}
+BUILTIN = {"kollektiv": "clingo_object.philosophy_kollektiv", "messung": "clingo_object.philosophy_messung",
+           "code": "clingo_object.philosophy_code"}
 
 # ── Defeasible priorities (lex superior / lex posterior) as a reusable profile ─────────────────────────────────────────────────────
 # Codex's review (frage:e05f78b192e7fdb964119b82, question 3): "maximal applicable candidates in each conflict group" — a deliberately
@@ -430,10 +431,11 @@ GUIDE = """# Philosophy packages — equip an AI with a philosophy
 
 A philosophy is a set of principles an AI works by: when it holds something true, what it may say, what it must do. Here a philosophy
 is a **package**: principles in prose and the same principles as a clingo-object rule set, the **seed**, with test worlds that prove
-the seed says what the prose says. The technique is generic. Two packages are built in: `kollektiv` (how a member of an AI collective
-holds something true) and `messung` (measured-only acceptance) — the second shares nothing with the first but the format, the
-semantics profile and the engine, which is how the engine shows it is not wired to one philosophy. `vi-mcp philosophy guide` prints this
-text; `docs/PHILOSOPHY.md` is generated from it.
+the seed says what the prose says. The technique is generic. Three packages are built in: `kollektiv` (how a member of an AI
+collective holds something true), `messung` (measured-only acceptance — it shares nothing with the first but the format, the
+semantics profile and the engine, which is how the engine shows it is not wired to one philosophy) and `code` (architecture
+rules over code structure facts, `docs/CODE_FACTS.md`). `vi-mcp philosophy guide` prints this text; `docs/PHILOSOPHY.md` is
+generated from it.
 
 ## Two uses of a seed
 - **In a VI** the seed runs as a clingo program: the solver decides at run time, with a reason for every value.

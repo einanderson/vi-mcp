@@ -19,6 +19,28 @@ Linked from [README.md](README.md).
     both occur. If any verdict is missing, nothing is stored and the object is retried.
   - The server (`classify.make_pairs`) and the kit (`synth_qa.py`, in its parallel workers) share this definition.
   Evidence: `tests/test_finetune.py::test_qa_v4_english_pairs_are_grounded_by_names_and_a_model_check_that_may_only_reject`.
+- **Code structure as facts, and architecture rules over them.** `vi-mcp index import-code` now also derives the structure of every
+  Python file from the same `ast` pass: what it defines, calls, imports, writes (SQL INSERT/UPDATE/DELETE per table), raises, which
+  tests call it, and which commits last touched it (git blame). It stores these as fact objects next to the code pieces (`code:funktion`,
+  `code:modul`, `code:konstante`).
+  - They are hashtags read by the existing clingo-object path (`objects(…)` → `vi__tag`), not a second fact store.
+    `vi_mcp/code_facts.py`, `docs/CODE_FACTS.md`.
+  - An existing index gets its facts on the next import without a forced re-import.
+  - A server older than this change gets no facts and no re-sends.
+  - New philosophy package **`code`** (`vi-mcp philosophy check code`: 17 worlds, every check passes). It has four rules:
+    `no_import_cycle`, `locked_writes`, `english_tools`, `no_duplicates`. Each finding has a reason and an obligation to fix it. Excused
+    findings stay visible with their written reason. The project specifics (guarded tables, alias tables, exemptions) are a profile of
+    facts, not rules.
+  - `vi-mcp index code-check REPO --profile vi-mcp` runs the rules over a local checkout. Verified on this repository (commit 5c13f32):
+    no import cycle, every guarded write under the lock, every tool alias resolves. One real duplicate was found:
+    `vi_mcp.reviewer._protection` = `vi_mcp.scorer._protection`.
+  - Measured on 20 structure questions about this repository against a truth from grep, git and a separate ast pass
+    (`scripts/measure_code_facts.py`):
+    - clingo over the stored facts answered 20 of 20 exactly, 0.8–0.9 s each;
+    - the plain search over the code pieces answered 1 of 15 text-answerable questions exactly in its top 4 or top 10. For example,
+      "what calls memory.save": recall 0.011 at top 4 against 88 callers.
+  - Training form designed: grounded QA pairs per function straight from the facts, checked by `vi_mcp/qa_pairs.py`. On this
+    repository: 5,601 pairs and 2,335 probes, 0 rejected. Not exported yet (see "What is missing").
 
 - **Philosophy packages: equip an AI with a philosophy.** A philosophy is a package. It holds the principles in prose and the same
   principles as a clingo-object rule set, the **seed**, with typed vocabulary, answer values and test worlds. The technique is generic
@@ -102,6 +124,13 @@ Linked from [README.md](README.md).
   Strong negation is now renamed through clingo's own AST, for every arity, over all answer sets. Two answer sets that disagree give
   `undetermined`, never Belnap `both`.
   Evidence: `tests/test_logic.py::test_contradictions_are_named_for_every_arity_and_never_confused_with_no_model_or_ambiguity`.
+
+### What is missing
+
+- Code facts: the QA pairs per function (`code_facts.training_pairs`) are not exported by `vi-mcp dataset`/`finetune kit` yet.
+  `dataset.py` skips every `art_wissen:code` object; an opt-in stage per index is the planned step.
+- Code facts cover Python only, and a call on a local object (`o.change()`) is not resolved: 10,251 such calls next to 8,818 resolved
+  ones in this repository. They are counted per function.
 
 ## 0.65.0 — 2026-11-15 — knowledge stored training-ready; the knowledge probe in the kit; fine-tuning from zero
 
@@ -719,6 +748,7 @@ first draft (class blocks inside the server's parser): consistent with the cling
   the first 200 kept in the result)"); found during the measurement above. Test: `tests/test_logic.py` (1 new).
 
 ### What is missing
+
 
 - Learning covers unary conclusions over objects (p("object id")) with up to two conditions; more needs more rated examples first.
   `logic.jsonl` and learning stay small until rule sets are saved and conclusions rated.

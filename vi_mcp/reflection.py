@@ -146,3 +146,9 @@ def reflect(cluster: list[dict]) -> dict:
             o.link(b.id, "Beleg (sleep: reflection)")
         new += 1
     return {"zustand": "fertig" if not error else "teilweise", "neu": new, "verworfen": discarded[:10], "fehler": error[:10]}
+
+
+def angle_safe(value: str) -> str:
+    """Text that goes into a prompt between markers cannot close or open one: < and > become ‹ and › (one definition for the reviewer
+    and the scorer — the code-facts check found the same body in both, 15.11.2026)."""
+    return value.replace("<", "‹").replace(">", "›")

@@ -9,6 +9,9 @@ sends the pieces over MCP (vi_code_sync), so the server never needs the reposito
   imports); other text in blocks of at most BLOCK_LINES lines cut at blank lines; a small file (< WHOLE_LINES) stays whole.
 - Incremental: the server knows the blob SHA of every file it holds for (index, repo); only changed files and the list of removed ones
   are sent. Removed pieces go to the long-term archive on the server — nothing disappears silently.
+- Structure facts (Unreleased, vi_mcp/code_facts.py): from the same ast pass every Python file also sends what it defines, calls,
+  imports, writes, raises — stored as fact objects next to the pieces and read by clingo-object rules (philosophy package `code`).
+  A Python file the server holds without facts is sent again once, so an existing index gets its facts without a forced re-import.
 """
 from __future__ import annotations
 
@@ -188,9 +191,10 @@ class Client:
 
 # ── the import ────────────────────────────────────────────────────────────
 
-def run(repo: Path, index: str, call, name: str | None = None, dry_run: bool = False) -> dict:
-    """Send what changed since the server's state. `call(tool, args) -> str` (a Client's call, or the server's tools.call_tool in tests)."""
-    from . import indexes
+def run(repo: Path, index: str, call, name: str | None = None, dry_run: bool = False, history: bool = True) -> dict:
+    """Send what changed since the server's state. `call(tool, args) -> str` (a Client's call, or the server's tools.call_tool in tests).
+    history: git blame per changed Python file for the facts' changed_in (one git call per file)."""
+    from . import code_facts, indexes
     repo = repo.resolve()
     idx = indexes.normalize(index)
     if not idx or idx == indexes.GLOBAL:
@@ -199,10 +203,14 @@ def run(repo: Path, index: str, call, name: str | None = None, dry_run: bool = F
     commit, files, skipped = collect(repo)
     state = json.loads(call("vi_code_sync", {"action": "state", "index": idx, "repo": rname}) or "{}")
     known = state.get("dateien") or {}
-    changed = [p for p, (sha, _l) in files.items() if known.get(p) != sha]
+    facts = "mit_fakten" in state  # a server before the structure facts does not report it: send no facts, resend nothing
+    with_facts = set(state.get("mit_fakten") or [])
+    changed = [p for p, (sha, _l) in files.items() if known.get(p) != sha or (facts and p.endswith(".py") and p not in with_facts)]
+    modules = code_facts.python_modules(files)
     removed = [p for p in known if p not in files]
     report = {"repo": rname, "index": idx, "commit": commit[:12], "dateien": len(files), "geaendert": len(changed),
-              "entfernt": len(removed), "uebersprungen": len(skipped), "stuecke": 0, "gesendet_stapel": 0}
+              "entfernt": len(removed), "uebersprungen": len(skipped), "stuecke": 0, "gesendet_stapel": 0, "fakten_objekte": 0,
+              "ohne_fakten": 0}
     reasons: dict[str, int] = {}
     for r in skipped.values():
         reasons[r] = reasons.get(r, 0) + 1
@@ -224,7 +232,17 @@ def run(repo: Path, index: str, call, name: str | None = None, dry_run: bool = F
             continue
         cs = chunks(path, src)
         pieces += len(cs)
-        batch.append({"path": path, "sha": files[path][0], "lang": files[path][1], "chunks": cs})
+        entry = {"path": path, "sha": files[path][0], "lang": files[path][1], "chunks": cs}
+        if facts and path.endswith(".py"):
+            st = code_facts.structure(path, src, modules)
+            if st is None:
+                report["ohne_fakten"] += 1  # does not parse: text pieces only, counted
+            else:
+                if history:
+                    code_facts.add_history(st, code_facts.blame(repo, path))
+                entry["struktur"] = st
+                report["fakten_objekte"] += 1 + len(st["funktionen"]) + len(st["konstanten"])
+        batch.append(entry)
         if sum(len(f["chunks"]) for f in batch) >= BATCH:
             flush([])
     flush(removed)
@@ -243,6 +261,7 @@ def main(argv: list[str]) -> int:
     a.add_argument("--url", default=os.environ.get("VI_MCP_URL"), help="MCP URL of the server (default: VI_MCP_URL, else the local server)")
     a.add_argument("--token-file", default=os.environ.get("VI_MCP_TOKEN_FILE"), help="file with the instance token (default: VI_MCP_TOKEN_FILE)")
     a.add_argument("--dry-run", action="store_true", help="count what would be sent, send nothing")
+    a.add_argument("--no-history", action="store_true", help="no git blame for the structure facts' changed_in")
     o = a.parse_args(argv)
     url = o.url
     if not url:
@@ -252,7 +271,7 @@ def main(argv: list[str]) -> int:
     try:
         c = Client(url, token)
         c.start()
-        r = run(o.repo, o.index, c.call, o.name, o.dry_run)
+        r = run(o.repo, o.index, c.call, o.name, o.dry_run, history=not o.no_history)
     except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, urllib.error.URLError) as e:
         print(f"vi-mcp index import-code: {e}", file=sys.stderr)
         return 1
@@ -289,24 +308,47 @@ def _held(index: str, repo: str, path: str | None = None) -> list:
 
 
 def server_state(index: str, repo: str) -> dict:
-    """{dateien: {path: blob sha}, commit} of what the index holds of this repository."""
-    files, commit = {}, None
+    """{dateien: {path: blob sha}, commit, mit_fakten: [paths with structure facts]} of what the index holds of this repository."""
+    files, commit, with_facts = {}, None, set()
     held = _held(index, repo)
     for o in held:
         files[o.data.get("datei")] = o.data.get("sha")
         commit = commit or o.data.get("commit")
-    return {"dateien": files, "commit": commit, "stuecke": len(held)}
+        if "code:modul" in o.hashtags:
+            with_facts.add(o.data.get("datei"))
+    return {"dateien": files, "commit": commit, "stuecke": sum(1 for o in held if not _is_fact(o)), "mit_fakten": sorted(with_facts),
+            "fakten_objekte": sum(1 for o in held if _is_fact(o))}
+
+
+def _is_fact(o) -> bool:
+    from . import code_facts
+    return any(t in o.hashtags for t in code_facts.FACT_TAGS)
 
 
 def server_sync(index: str, repo: str, commit: str, files: list[dict], removed: list[str], instance: str) -> dict:
     """Upsert the pieces of the changed files (fixed id per index/repo/path/symbol), archive pieces that are gone. Visibility internal."""
     from . import anonymize, archive
     from . import memory as g
-    out = {"neu": 0, "aktualisiert": 0, "archiviert": 0, "geheimnisse_ersetzt": 0}
+    from . import code_facts
+    out = {"neu": 0, "aktualisiert": 0, "archiviert": 0, "geheimnisse_ersetzt": 0, "fakten_neu": 0, "fakten_aktualisiert": 0}
     reason = f"removed in commit {commit[:12]}"
+
+    def upsert(oid: str, text: str, tags: list[str], data: dict, counter: str) -> None:
+        o = g.load(oid)
+        if o is None:
+            g.new_object("erkenntnis", text, tags, data, who=f"code@{instance}", reason="code import", oid=oid, instance=instance,
+                         visibility="intern", index=index, link=False)
+            out[counter.replace("aktualisiert", "neu")] += 1
+        else:
+            o.text, o.data, o.hashtags, o.mode, o.idx = anonymize.without_secrets(text), data, tags, "aktiv", index
+            o.change(f"code@{instance}", f"updated to commit {commit[:12]}", "code import")
+            g.save(o)
+            out[counter] += 1
+
     for f in files:
         path, sha, lang = str(f["path"]), str(f["sha"]), str(f.get("lang") or "txt")
         keep = set()
+        common = [CODE_TAG, f"datei:{tag_value(path)}", f"sprache:{tag_value(lang)}", f"repo:{tag_value(repo)}"]
         for c in f.get("chunks") or []:
             oid = piece_id(index, repo, path, str(c["symbol"]))
             keep.add(oid)
@@ -317,17 +359,15 @@ def server_sync(index: str, repo: str, commit: str, files: list[dict], removed: 
             text = f"{path}:{c['symbol']} — {c.get('signatur') or c.get('art') or ''}"[:300]
             data = {"quelle": f"{repo}@{commit[:12]}:{path}:{c.get('von')}-{c.get('bis')}", "inhalt": clean, "datei": path, "sha": sha,
                     "symbol": c["symbol"], "stueck": c.get("art"), "von": c.get("von"), "bis": c.get("bis"), "commit": commit, "repo": repo}
-            tags = [CODE_TAG, f"datei:{tag_value(path)}", f"sprache:{tag_value(lang)}", f"repo:{tag_value(repo)}"]
-            o = g.load(oid)
-            if o is None:
-                g.new_object("erkenntnis", text, tags, data, who=f"code@{instance}", reason="code import", oid=oid, instance=instance,
-                             visibility="intern", index=index, link=False)
-                out["neu"] += 1
-            else:
-                o.text, o.data, o.hashtags, o.mode, o.idx = anonymize.without_secrets(text), data, tags, "aktiv", index
-                o.change(f"code@{instance}", f"updated to commit {commit[:12]}", "code import")
-                g.save(o)
-                out["aktualisiert"] += 1
+            upsert(oid, text, list(common), data, "aktualisiert")
+        if isinstance(f.get("struktur"), dict):  # the structure facts of a Python file (code_facts)
+            for sym, text, tags, facts in code_facts.objects(f["struktur"], path):
+                oid = piece_id(index, repo, path, sym)
+                keep.add(oid)
+                data = {**facts, "quelle": f"{repo}@{commit[:12]}:{path}:{facts.get('von', 1)}-{facts.get('bis', '')}", "datei": path,
+                        "sha": sha, "commit": commit, "repo": repo, "stueck": tags[0].split(":", 1)[1],
+                        "inhalt": json.dumps(facts, ensure_ascii=False, sort_keys=True)}
+                upsert(oid, text, list(dict.fromkeys(common + tags)), data, "fakten_aktualisiert")
         for o in _held(index, repo, path):
             if o.id not in keep:
                 archive.store_in_archive(o, reason)
@@ -353,7 +393,7 @@ def file_line(index: str, file_path: str) -> tuple[str | None, str | None]:
     with g.lock:
         ids = [r[0] for r in g.db().execute("SELECT o.id FROM objekt o JOIN tag t ON t.objekt_id = o.id WHERE o.idx = ? AND o.modus = 'aktiv' "
                                             "AND t.tag = ?", (index, f"datei:{best}"))]
-    pieces = sorted(g.load_many(ids).values(), key=lambda o: o.data.get("von") or 0)
+    pieces = sorted((o for o in g.load_many(ids).values() if not _is_fact(o)), key=lambda o: o.data.get("von") or 0)
     names = [str(o.data.get("symbol")) for o in pieces if not str(o.data.get("symbol", "")).startswith("(")]
     commit = next((str(o.data.get("commit"))[:7] for o in pieces if o.data.get("commit")), "?")
     shown = ", ".join(names[:12]) + (f" … (+{len(names) - 12})" if len(names) > 12 else "") if names else f"{len(pieces)} piece(s)"

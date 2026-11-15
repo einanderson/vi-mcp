@@ -20,6 +20,7 @@
                                           detected (CUDA, Vulkan, CPU). auto = what the packages run: never replaces an external service
   python3 -m vi_mcp index list|move ID INDEX|rename OLD NEW|backfill [--apply]|train INDEX   (--reason for move/rename)
   python3 -m vi_mcp index import-code REPO --index X [--url URL --token-file F] [--dry-run]
+  python3 -m vi_mcp index code-check REPO [--profile vi-mcp|FILE] [--facts] [--json]
   python3 -m vi_mcp index export INDEX FILE | import FILE --as INDEX | compare INDEX [--dry-run]   (0.62.0)
   python3 -m vi_mcp classify [--limit N] [--dry-run]  label knowledge for the AI language (which question it answers); sleep
                                           does it when config classify names a model (0.62.0)

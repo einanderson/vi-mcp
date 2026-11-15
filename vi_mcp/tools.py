@@ -322,7 +322,7 @@ TOOLS = [
                              "index": {"type": "string", "description": "the project index (not global)"},
                              "repo": {"type": "string", "description": "repository name"},
                              "commit": {"type": "string", "description": "the commit the pieces come from"},
-                             "files": {"type": "array", "items": {"type": "object"}, "description": "changed files: {path, sha, lang, chunks: [{symbol, art, von, bis, code, signatur}]}"},
+                             "files": {"type": "array", "items": {"type": "object"}, "description": "changed files: {path, sha, lang, chunks: [{symbol, art, von, bis, code, signatur}], struktur: structure facts of a Python file (vi_mcp.code_facts)}"},
                              "removed": {"type": "array", "items": {"type": "string"}, "description": "paths removed from the repository (their pieces are archived)"}},
                             ["action", "index", "repo"])},
     {"name": "vi_context",
