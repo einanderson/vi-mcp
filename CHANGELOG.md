@@ -5,6 +5,26 @@ Linked from [README.md](README.md).
 
 ## Unreleased
 
+### What was measured and changed in the search (branch search-top4)
+
+- **Hit@4 is measured.** The answers show 4 results, and the nightly figures now include hit4.
+- **Baseline on a production copy**, 150 questions × 2 styles = 300 queries:
+  - hybrid: Hit@1 0.80, **Hit@4 0.933** (natural questions 0.90, keywords 0.967), MRR 0.864, median 2.5 s;
+  - full text: Hit@4 0.56.
+- **Time per hybrid query:** the reranker 1,868 ms of 2,366 ms; embedding 65 ms; candidates 87 ms.
+- **Scale test with 500,310 knowledge objects:** the copy plus distractors copied from source pages without evaluation targets,
+  vectors with noise. This is a proxy for future data, not a picture of it.
+  - Hit@4 holds: 0.930.
+  - The median time grew from 2.4 s to 6.4 s, mostly from full text: two calls per query, 1.74 s each.
+- **Fixes on the branch.** None of them changes a ranking: 300 of 300 ranks are identical, and a test checks it.
+  - The vector matrix is kept between queries. It is invalidated by writes and by the table's signature.
+  - Full text matches first, and visibility is filtered on its hits only. The exact query runs when invisible rows fill the pool.
+    Measured on the 500k copy: 1,826 ms → 80 + 10 ms.
+  - A hybrid query no longer runs a second, unused full-text search.
+  - The vector count comes from the cache.
+  Evidence: `tests/test_search_scale.py`.
+
+
 ### What is new
 
 - **Philosophy packages: equip an AI with a philosophy.** A philosophy is a package. It holds the principles in prose and the same

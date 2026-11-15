@@ -398,7 +398,7 @@ def measurement_lines(limit: int = 7) -> list[str]:
         parts = []
         for name, r in (e.get("suche") or {}).items():
             gs = r.get("gesamt") if isinstance(r, dict) else None
-            parts.append(f"{name} MRR {gs['mrr']} Hit@5 {gs['hit5']} ({gs['ms_median']} ms)" if gs else f"{name} {r.get('zustand', '—')}")
+            parts.append(f"{name} MRR {gs['mrr']} Hit@4 {gs.get('hit4', '—')} Hit@5 {gs['hit5']} ({gs['ms_median']} ms)" if gs else f"{name} {r.get('zustand', '—')}")
         rt = e.get("router") or {}
         lift = (e.get("hinweis_lift") or {}).get("differenz_punkte", (e.get("hinweis_lift") or {}).get("lift"))
         out.append(f"    {e['zeit'][:10]}: " + " · ".join(parts) + f" · router AUC {rt.get('auc', '—')} log loss {rt.get('log_loss', '—')} "
