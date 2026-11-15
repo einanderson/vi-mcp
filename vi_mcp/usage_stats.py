@@ -20,7 +20,7 @@ import re
 import statistics
 from datetime import datetime, timedelta, timezone
 
-from . import api_en
+from . import api_en, names
 from . import memory as g
 
 RETENTION_DAYS = 90
@@ -59,7 +59,7 @@ def _hits(tool_parts: str, text: str) -> tuple[int | None, str | None]:
     if tool_parts not in ("vi_recall", "vi_drilldown", "web_search"):  # 0.62.0: the internal web search counts its hits the same way
         return None, None
     # Parses the vi_recall / vi_drilldown output of this version (English since 0.23.0); the German forms of older versions
-    # stay recognised. The kinds "oder"/"volltext" are stored values.
+    # stay recognised. The kinds "or"/"fulltext" are stored values (0.67.0: English; names.SEARCH_KINDS).
     text = text or ""
     m = re.search(r"(\d+) (?:objects? for|Objekte? zu)", text)
     n = int(m.group(1)) if m else (0 if re.search(r"\b(?:no|0) (?:objects|hits)\b|\bnothing in memory\b|\b(?:keine|0) (?:Objekte|Treffer)", text, re.I) else None)
@@ -67,24 +67,26 @@ def _hits(tool_parts: str, text: str) -> tuple[int | None, str | None]:
     if re.search(r"(?:semantic|default|semantisch) hybrid \(embedding", text):
         kind = "hybrid+rerank" if "; reranked " in text else "hybrid"  # 0.63.0
     elif "OR search" in text or "ODER-Suche" in text:
-        kind = "oder"
+        kind = "or"
     else:
         q = re.search(r"(?:objects? for|Objekte? zu|nothing in memory for) “([^”·]*)", text)
-        kind = "tags" if q and not g.parse_filter(q.group(1).strip(), g.known_kinds())[2] else "volltext"  # hashtags only: no full text ran
+        kind = "tags" if q and not g.parse_filter(q.group(1).strip(), g.known_kinds())[2] else "fulltext"  # hashtags only: no full text ran
     return n, kind
 
 
 def record(instance: str, client: str | None, tool_parts: str, outbox: str, ms: int, text: str = "") -> None:
-    """One call of a VI tool; outcome ∈ ok | abgelehnt | fehler. Never fails loudly — statistics must not disturb the answer."""
+    """One call of a VI tool; outcome ∈ ok | rejected | error. Never fails loudly — statistics must not disturb the answer.
+    The tool is recorded by its English name (0.67.0), also when the client called a German alias."""
     try:
         _table()
+        outbox = names.english(names.OUTCOMES, outbox)  # 0.67.0: abgelehnt/fehler of older callers
         n, kind = _hits(tool_parts, text) if outbox == "ok" else (None, None)
         empty = None
         if n == 0:  # 0.62.0: the answer says why (vocabulary.empty_reason)
-            empty = "unbekannt" if "unknown words:" in (text or "") else "verfehlt" if "known words, but" in (text or "") else None
+            empty = "unknown" if "unknown words:" in (text or "") else "missed" if "known words, but" in (text or "") else None
         with g.lock:
             g.db().execute("INSERT INTO usage (ts, instance, client, tool, outcome, ms, hits, search_kind, empty_reason) VALUES (?,?,?,?,?,?,?,?,?)",
-                           (g.now(), instance, client, tool_parts, outbox, int(ms), n, kind, empty))
+                           (g.now(), instance, client, api_en.canonical_name(tool_parts), outbox, int(ms), n, kind, empty))
             g.db().commit()
     except Exception:  # noqa: BLE001
         pass
@@ -117,19 +119,19 @@ def data(days: float = 7) -> dict:
                              (since,)).fetchall()
         exps = db.execute("SELECT o.ts, o.instance, o.conversation, o.data, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'tool:%'), "
                          "(SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag IN ('ok:ja', 'ok:nein')) FROM object o "
-                         "WHERE o.kind = 'erfahrung' AND o.ts >= ? ORDER BY o.ts", (since,)).fetchall()
+                         "WHERE o.kind = 'experience' AND o.ts >= ? ORDER BY o.ts", (since,)).fetchall()
         knowledge_new = db.execute("SELECT kind, visibility, accesses, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'quelle_art:%') "
-                                "FROM object o WHERE kind IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') AND ts >= ?", (since,)).fetchall()
-        knowledge_total = db.execute("SELECT COUNT(*), SUM(accesses > 0) FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
-                                "AND mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchone()
-        top = db.execute("SELECT id, accesses, substr(text, 1, 80) FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
+                                "FROM object o WHERE kind IN ('insight', 'rule', 'skill', 'search', 'image') AND ts >= ?", (since,)).fetchall()
+        knowledge_total = db.execute("SELECT COUNT(*), SUM(accesses > 0) FROM object WHERE kind IN ('insight', 'rule', 'skill', 'search', 'image') "
+                                "AND mode NOT IN ('refuted', 'withdrawn', 'archived')").fetchone()
+        top = db.execute("SELECT id, accesses, substr(text, 1, 80) FROM object WHERE kind IN ('insight', 'rule', 'skill', 'search', 'image') "
                          "ORDER BY accesses DESC LIMIT 5").fetchall()
-        conversations = db.execute("SELECT instance, COUNT(*) FROM object WHERE kind = 'gespraech' AND ts >= ? GROUP BY instance", (since,)).fetchall()
-        sleeps = db.execute("SELECT data FROM object WHERE kind = 'schlaf' AND ts >= ?", (since,)).fetchall()
+        conversations = db.execute("SELECT instance, COUNT(*) FROM object WHERE kind = 'conversation' AND ts >= ? GROUP BY instance", (since,)).fetchall()
+        sleeps = db.execute("SELECT data FROM object WHERE kind = 'sleep' AND ts >= ?", (since,)).fetchall()
         sem_edges = db.execute("SELECT COUNT(*) FROM edge WHERE reason LIKE 'semantisch%'").fetchone()[0]
         first_call = db.execute("SELECT MIN(ts) FROM usage").fetchone()[0]
         projects_of = dict(db.execute("SELECT json_extract(data, '$.serial'), json_extract(data, '$.project') FROM object "
-                                      "WHERE kind = 'gespraech' AND json_extract(data, '$.project') IS NOT NULL").fetchall())
+                                      "WHERE kind = 'conversation' AND json_extract(data, '$.project') IS NOT NULL").fetchall())
     # 0.35.1: calls recorded before 0.22.0 (f344419) carry the German tool name (vi_erinnere, vi_lerne …). One tool, one name: count
     # them under the English one — otherwise A listed vi_recall and vi_erinnere as two tools and B/E missed the older searches.
     calls = [(z, i, c, api_en.canonical_name(w), *rest) for z, i, c, w, *rest in calls]
@@ -141,8 +143,8 @@ def data(days: float = 7) -> dict:
     for _z, _i, _c, w, outputs, ms, _t, _a in calls:
         e = by_tool.setdefault(w, {"n": 0, "abgelehnt": 0, "fehler": 0, "ms": []})
         e["n"] += 1
-        e["abgelehnt"] += outputs == "abgelehnt"
-        e["fehler"] += outputs == "fehler"
+        e["abgelehnt"] += outputs == "rejected"
+        e["fehler"] += outputs == "error"
         e["ms"].append(ms)
     per_instance: dict[str, int] = {}
     for _z, i, *_r in calls:
@@ -259,9 +261,9 @@ def network_lines(days: float = 7) -> list[str]:
     wst = ws["je_status"]
     out.append(f"    wiki: {ws['seiten']} page(s) ({ws['geloescht']} deleted), {ws['revisionen']} revisions (own {ws['eigene']}, foreign {ws['fremde']}) from "
                f"{ws['herausgeber']} author(s) · in {days:g} d: {ws['neue_seiten']} new, {ws['geaenderte_seiten']} changed page(s), {reads} reads, {writes} writes · "
-               f"revisions waiting for review {wst['ausstehend']}, counting {wst['frei']} (foreign ones released {ws['fremd_freigegeben']}, of them automatically "
-               f"{ws['automatisch_freigegeben']}), discarded {wst['verworfen']}, "
-               f"forgotten {wst['vergessen']} · arrival → release median {ws['freigabe_h_median'] if ws['freigabe_h_median'] is not None else 'not recorded'} h, "
+               f"revisions waiting for review {wst['pending']}, counting {wst['released']} (foreign ones released {ws['fremd_freigegeben']}, of them automatically "
+               f"{ws['automatisch_freigegeben']}), discarded {wst['discarded']}, "
+               f"forgotten {wst['forgotten']} · arrival → release median {ws['freigabe_h_median'] if ws['freigabe_h_median'] is not None else 'not recorded'} h, "
                f"90th percentile {ws['freigabe_h_p90'] if ws['freigabe_h_p90'] is not None else 'not recorded'} h · several heads {ws['mehrere_koepfe']} "
                f"(merged silently {ws['still_zusammengefuehrt']}, open conflicts {ws['offene_konflikte']}"
                + (": oldest " + ", ".join(f"{pg} since {ts[:16]}" for ts, pg in ws["aelteste_konflikte"]) if ws["aelteste_konflikte"] else "")
@@ -363,7 +365,7 @@ def report(days: float = 7) -> str:
     known = s["n"] - s["treffer_unbekannt"]
     z.append(f"E Search: {s['n']} searches, without hits {s['ohne_treffer']} ({_pct(s['ohne_treffer'], known)} of {known} with a recorded hit count"
              + (f"; {s['treffer_unbekannt']} older ones without a hit count" if s["treffer_unbekannt"] else "") + ")"
-             + (" — why: " + ", ".join(f"{ {'unbekannt': 'word unknown in memory (nothing known: the right answer)', 'verfehlt': 'words known, not together (a search problem)', 'ausgeschlossen': 'found only what the query itself excludes (the right answer)', 'nicht_erfasst': 'not recorded (before 0.62.0)'}.get(k, k)} {v}"
+             + (" — why: " + ", ".join(f"{ {'unknown': 'word unknown in memory (nothing known: the right answer)', 'missed': 'words known, not together (a search problem)', 'ausgeschlossen': 'found only what the query itself excludes (the right answer)', 'nicht_erfasst': 'not recorded (before 0.62.0)'}.get(k, k)} {v}"
                                      for k, v in sorted(s["leer_grund"].items())) if s.get("leer_grund") else "") + " · search kind "
              + (", ".join(f"{k} {v}" for k, v in s["je_art"].items()) or "—") + " · median "
              + (", ".join(f"{k} {v} ms" for k, v in s["ms_median"].items()) or "—"))

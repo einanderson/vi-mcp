@@ -137,7 +137,7 @@ def reflect(cluster: list[dict]) -> dict:
             discarded.append(f"{host} {skill}: {reason}")
             continue
         evidence_list = [exps[i - 1] for i in ins["belege"]]
-        o = g.new_object("erkenntnis", ins["satz"], sorted(set(ins["hashtags"]) | {host, skill, "modus:test", "herkunft:schlaf-llm"}),
+        o = g.new_object("insight", ins["satz"], sorted(set(ins["hashtags"]) | {host, skill, "modus:test", "herkunft:schlaf-llm"}),
                            {"quelle": f"sleep reflection (language model) from {len(evidence_list)} experiences — evidence edges", "belege_n": len(evidence_list),
                             "ausgang": c.get("ausgang"), "modell": (config or {}).get("model") or "llm"},
                            importance=1, who="vi", oid=rid, mode="test", reason="sleep: reflection by the language model, checked",

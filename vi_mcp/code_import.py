@@ -296,7 +296,7 @@ def tag_value(s: str) -> str:
 
 def _held(index: str, repo: str, path: str | None = None) -> list:
     from . import memory as g
-    sql = ("SELECT id FROM object WHERE idx = ? AND mode = 'aktiv' AND id IN (SELECT object_id FROM tag WHERE tag = ?) "
+    sql = ("SELECT id FROM object WHERE idx = ? AND mode = 'active' AND id IN (SELECT object_id FROM tag WHERE tag = ?) "
            "AND id IN (SELECT object_id FROM tag WHERE tag = ?)")
     par = [index, CODE_TAG, f"repo:{tag_value(repo)}"]
     if path is not None:
@@ -336,11 +336,11 @@ def server_sync(index: str, repo: str, commit: str, files: list[dict], removed: 
     def upsert(oid: str, text: str, tags: list[str], data: dict, counter: str) -> None:
         o = g.load(oid)
         if o is None:
-            g.new_object("erkenntnis", text, tags, data, who=f"code@{instance}", reason="code import", oid=oid, instance=instance,
-                         visibility="intern", index=index, link=False)
+            g.new_object("insight", text, tags, data, who=f"code@{instance}", reason="code import", oid=oid, instance=instance,
+                         visibility="internal", index=index, link=False)
             out[counter.replace("aktualisiert", "neu")] += 1
         else:
-            o.text, o.data, o.hashtags, o.mode, o.idx = anonymize.without_secrets(text), data, tags, "aktiv", index
+            o.text, o.data, o.hashtags, o.mode, o.idx = anonymize.without_secrets(text), data, tags, "active", index
             o.change(f"code@{instance}", f"updated to commit {commit[:12]}", "code import")
             g.save(o)
             out[counter] += 1
@@ -384,14 +384,14 @@ def file_line(index: str, file_path: str) -> tuple[str | None, str | None]:
     from . import memory as g
     fp = str(file_path).replace("\\", "/")
     with g.lock:
-        rows = g.db().execute("SELECT DISTINCT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE o.idx = ? AND o.mode = 'aktiv' "
+        rows = g.db().execute("SELECT DISTINCT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE o.idx = ? AND o.mode = 'active' "
                               "AND t.tag LIKE 'datei:%' AND o.id IN (SELECT object_id FROM tag WHERE tag = ?)", (index, CODE_TAG)).fetchall()
     paths = [r[0][6:] for r in rows]
     best = max((p for p in paths if fp.endswith("/" + p) or fp == p), key=len, default=None)
     if best is None:
         return None, None
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id WHERE o.idx = ? AND o.mode = 'aktiv' "
+        ids = [r[0] for r in g.db().execute("SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id WHERE o.idx = ? AND o.mode = 'active' "
                                             "AND t.tag = ?", (index, f"datei:{best}"))]
     pieces = sorted((o for o in g.load_many(ids).values() if not _is_fact(o)), key=lambda o: o.data.get("von") or 0)
     names = [str(o.data.get("symbol")) for o in pieces if not str(o.data.get("symbol", "")).startswith("(")]

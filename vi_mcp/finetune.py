@@ -1268,9 +1268,9 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
     text = f"Fine-tuned model on {run['base_model']} ({', '.join(adapters)}): {verdict}"
     o = g.load(oid)
     if o is None:
-        return g.new_object("modell", text, ["modell:finetune"], data, importance=2, who=who, oid=oid, mode="aktiv" if better else "test",
+        return g.new_object("model", text, ["modell:finetune"], data, importance=2, who=who, oid=oid, mode="active" if better else "test",
                             reason="fine-tuning run recorded", instance=g.SERVER_INSTANCE, index=run.get("index"))
-    o.text, o.data, o.mode = text, data, "aktiv" if better else "test"
+    o.text, o.data, o.mode = text, data, "active" if better else "test"
     o.change(who, "fine-tuning run updated", verdict)
     return g.save(o)
 

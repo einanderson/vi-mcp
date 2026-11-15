@@ -18,7 +18,7 @@ from . import memory as g
 
 MAX_CHARS = 2000
 LINE_CHARS = 110
-KINDS = ("erkenntnis", "regel", "skill", "bild")
+KINDS = ("insight", "rule", "skill", "image")
 PER_SECTION = {"vorgaben": 8, "bewaehrt": 6, "hier": 6}
 #: bulk imports (manuals, Confluence, Stibo, findings of the log monitor, the network) fill the store but are no index entries
 IMPORT_PREFIXES = ("quelle_art:", "art_wissen:", "doku:")
@@ -46,7 +46,7 @@ def _pick(ids: list[str], instance: str, n: int, taken: set[str], imports_ok: bo
     objs = g.load_many(ids)
     for oid in ids:
         o = objs.get(oid)
-        if (not o or oid in taken or o.mode != "aktiv" or not g.visible_to(o, instance) or (not imports_ok and _imported(o))
+        if (not o or oid in taken or o.mode != "active" or not g.visible_to(o, instance) or (not imports_ok and _imported(o))
                 or (keep and not keep(o))):
             continue
         out.append(o)
@@ -60,11 +60,11 @@ def sections(instance: str) -> dict[str, list]:
     kinds = ",".join("?" * len(KINDS))
     taken: set[str] = set()
     req = _pick(_ids(f"SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'thema:vorgabe' "
-                     f"WHERE o.kind IN ({kinds}) AND o.mode = 'aktiv' ORDER BY o.ts DESC LIMIT 60", KINDS), instance, PER_SECTION["vorgaben"], taken,
+                     f"WHERE o.kind IN ({kinds}) AND o.mode = 'active' ORDER BY o.ts DESC LIMIT 60", KINDS), instance, PER_SECTION["vorgaben"], taken,
                 imports_ok=True)
-    proven = _pick(_ids(f"SELECT o.id FROM object o WHERE o.kind IN ({kinds}) AND o.mode = 'aktiv' AND (o.confirmed > 0 OR o.accesses > 0) "
+    proven = _pick(_ids(f"SELECT o.id FROM object o WHERE o.kind IN ({kinds}) AND o.mode = 'active' AND (o.confirmed > 0 OR o.accesses > 0) "
                         f"AND {_NOT_IMPORTED} ORDER BY o.confirmed DESC, o.accesses DESC LIMIT 200", KINDS), instance, PER_SECTION["bewaehrt"], taken)
-    here = _pick(_ids(f"SELECT o.id FROM object o WHERE o.kind IN ({kinds}) AND o.mode = 'aktiv' AND o.instance = ? AND {_NOT_IMPORTED} "
+    here = _pick(_ids(f"SELECT o.id FROM object o WHERE o.kind IN ({kinds}) AND o.mode = 'active' AND o.instance = ? AND {_NOT_IMPORTED} "
                       "ORDER BY o.ts DESC LIMIT 200", (*KINDS, instance)), instance, PER_SECTION["hier"], taken)
     return {"vorgaben": req, "bewaehrt": proven, "hier": here}
 
@@ -72,7 +72,7 @@ def sections(instance: str) -> dict[str, list]:
 def _line(o) -> str:
     text = " ".join(o.text.split())
     text = text if len(text) <= LINE_CHARS else text[:LINE_CHARS - 1] + "…"
-    return f"- [{o.id}] {'image: ' if o.kind == 'bild' else ''}{text}"
+    return f"- [{o.id}] {'image: ' if o.kind == 'image' else ''}{text}"
 
 
 def text(instance: str) -> str:

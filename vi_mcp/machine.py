@@ -12,7 +12,7 @@ import re
 
 from clingo_object import agent, notation as n
 from clingo_object.filters import object_data
-from . import memory as g, vil, machine_runtime as mr
+from . import memory as g, names, vil, machine_runtime as mr
 
 CONTRACT = "vil-machine-v1"
 MAX_OBJECTS = 500
@@ -43,7 +43,7 @@ def state_hash(state):
 
 def _load(owner, name, snapshot=None):
     o = g.load(_id(owner, name, snapshot))
-    if o is None or o.instance != owner or o.kind != "maschine" or o.mode != "aktiv":
+    if o is None or o.instance != owner or o.kind != "machine" or o.mode != "active":
         raise ValueError("unknown machine or snapshot")
     if o.data.get("vertrag") != CONTRACT:
         raise ValueError("unsupported machine contract")
@@ -102,8 +102,8 @@ def _new(owner, name, state=None, parent=None, snapshot=False, *, commit=True, e
     from . import anonymize
     if anonymize.without_secrets(data) != data or len(json.dumps(data)) > g.DATA_MAX - 2000:
         raise ValueError("machine state exceeds limits or contains a credential pattern")
-    return g.new_object("maschine", "Snapshot " + name if snapshot else "Virtual intelligence machine " + name,
-                        ["thema:vi-machine"], data, oid=oid, visibility="privat", instance=owner, link=False,
+    return g.new_object("machine", "Snapshot " + name if snapshot else "Virtual intelligence machine " + name,
+                        ["thema:vi-machine"], data, oid=oid, visibility="private", instance=owner, link=False,
                         reason="explicit snapshot" if snapshot else "explicit machine creation", commit=commit)
 
 
@@ -275,7 +275,7 @@ def call(owner: str, args: dict) -> dict:
             inputs = ex.get("input_objects") or list((ex.get("world") or {}).get("objects") or [])
             from .dataset import KINDS
             blocked = sorted({x.get("id", "?") for x in inputs if isinstance(x, dict) and "instance" in x
-                              and (x.get("visibility") == "privat" or x.get("kind") not in KINDS)})
+                              and (x.get("visibility") == "private" or x.get("kind") not in KINDS)})
             if blocked:
                 raise ValueError(f"teach refused: the checked execution read {len(blocked)} imported private or non-knowledge "
                                  "object(s); delete them from the machine world or import narrower filters, rerun and rate again")
@@ -293,9 +293,9 @@ def call(owner: str, args: dict) -> dict:
                 existing.change(owner, "training reference corrected", "explicit teach after independent recheck")
                 g.save(existing)
                 return {"state": "teaching corrected", "id": oid, "correct": checked["correct"], "visibility": "internal"}
-            published = g.new_object("regel", checked["question"], ["thema:machine-training"],
+            published = g.new_object("rule", checked["question"], ["thema:machine-training"],
                                      {"machine_example": example, "quelle": checked["reference"]}, oid=oid, instance=owner,
-                                     visibility="intern", link=False, reason="machine owner explicitly published checked training example")
+                                     visibility="internal", link=False, reason="machine owner explicitly published checked training example")
             return {"state": "taught", "id": published.id, "correct": checked["correct"], "visibility": "internal"}
         if action not in ("execute", "answer"):
             raise ValueError("action must be create, status, execute, answer, snapshot, restore, fork or teach")
@@ -342,13 +342,13 @@ def call(owner: str, args: dict) -> dict:
                             raise ValueError("invalid machine hashtag")
                         k, v = t.split(":", 1)
                         tags.setdefault(k, []).append(v)
-                    kind = str(payload.get("kind") or "erkenntnis")
-                    if kind not in ("erkenntnis", "regel", "skill"):
+                    kind = names.english(names.KINDS, str(payload.get("kind") or "insight"))  # 0.67.0: a German kind of an older caller is read as English
+                    if kind not in ("insight", "rule", "skill"):
                         raise ValueError("object kind must be erkenntnis, regel or skill")
                     tags["art"] = [kind]
                     if not str(payload.get("source") or "").strip():
                         raise ValueError("a fact needs its source")
-                    state["objects"][key] = {"id": key, "kind": kind, "mode": "aktiv", "visibility": "privat", "index": name,
+                    state["objects"][key] = {"id": key, "kind": kind, "mode": "active", "visibility": "private", "index": name,
                         "text": str(payload.get("text") or ""), "source": str(payload["source"]), "tags": tags,
                         "age": 0, "importance": 1, "confirmed": 0, "refuted": 0, "accesses": 0}
                 result = {"state": "stored", "object": key}

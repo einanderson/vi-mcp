@@ -91,7 +91,7 @@ def test_compare_reports_same_and_different_vectors(gd, monkeypatch):
     import numpy as np
     from vi_mcp import memory as g
     from vi_mcp import vector
-    o = g.new_object("erkenntnis", "nginx reload only after nginx -t", ["thema:nginx"], {"quelle": "x"})
+    o = g.new_object("insight", "nginx reload only after nginx -t", ["thema:nginx"], {"quelle": "x"})
     v = np.random.default_rng(1).normal(size=es.MODEL_DIM).astype(np.float32)
     vector._table()
     with g.lock:

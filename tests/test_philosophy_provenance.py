@@ -13,7 +13,7 @@ from vi_mcp import philosophy_provenance as pv  # noqa: E402
 
 
 def _obj(text="Port 8080 serves the admin UI", quelle="https://docs.example.org/admin", instance="a", tags=("thema:t",)):
-    return g.new_object("erkenntnis", text, list(tags), {"quelle": quelle}, reason="T", instance=instance)
+    return g.new_object("insight", text, list(tags), {"quelle": quelle}, reason="T", instance=instance)
 
 
 def _acceptance(o):

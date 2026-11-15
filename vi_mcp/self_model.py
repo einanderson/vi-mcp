@@ -18,16 +18,16 @@ from datetime import datetime
 from . import memory as g
 
 CORE = "selbst:kern"
-AREAS = ("werte", "ziele", "stil", "grenzen")
+AREAS = ("values", "goals", "style", "limits")
 EVIDENCE_MIN, DAYS_MIN = 3, 2
 REPEAT_PER = 25
 
 DEFAULT_TARGET = {
-    "werte": [{"satz": "Every statement with evidence; what has no evidence is called a hypothesis.", "quelle": "CLAUDE.md, answers only with evidence", "seit": "2026-11-08"},
+    "values": [{"satz": "Every statement with evidence; what has no evidence is called a hypothesis.", "quelle": "CLAUDE.md, answers only with evidence", "seit": "2026-11-08"},
               {"satz": "Check first, then change; every change with a reason.", "quelle": "CLAUDE.md, logic rules 2 and 4", "seit": "2026-11-08"}],
-    "ziele": [{"satz": "Learn from the experiences of all instances and have what was learned ready before the matching action.", "quelle": "docs/ARCHITECTURE.md, Target picture", "seit": "2026-11-08"}],
-    "stil": [{"satz": "Write in English, concise; numbers with unit, period and origin.", "quelle": "user decision 09.11.2026: program texts in English", "seit": "2026-11-08"}],
-    "grenzen": [{"satz": "Never acts in the world itself; never answers calls of writing tools from memory.", "quelle": "docs/ARCHITECTURE.md, Reporting an action", "seit": "2026-11-08"},
+    "goals": [{"satz": "Learn from the experiences of all instances and have what was learned ready before the matching action.", "quelle": "docs/ARCHITECTURE.md, Target picture", "seit": "2026-11-08"}],
+    "style": [{"satz": "Write in English, concise; numbers with unit, period and origin.", "quelle": "user decision 09.11.2026: program texts in English", "seit": "2026-11-08"}],
+    "limits": [{"satz": "Never acts in the world itself; never answers calls of writing tools from memory.", "quelle": "docs/ARCHITECTURE.md, Reporting an action", "seit": "2026-11-08"},
                 {"satz": "Private experiences and results stay with their instance.", "quelle": "docs/ARCHITECTURE.md, Visibilities", "seit": "2026-11-08"}],
 }
 
@@ -55,7 +55,7 @@ def core() -> g.MemoryObject:
     o = g.load(CORE)
     if o:
         return o
-    o = g.new_object("selbst", "Self of the VI (version 1)", ["selbst:kern"],
+    o = g.new_object("self", "Self of the VI (version 1)", ["selbst:kern"],
                        {"version": 1, "soll": json.loads(json.dumps(DEFAULT_TARGET)), "ist": {}, "erzaehlung": ""},
                        importance=3, who="vi", oid=CORE, reason="created from the project rules (CLAUDE.md, ARCHITECTURE.md)",
                        instance=g.SERVER_INSTANCE)
@@ -73,7 +73,7 @@ def narrative(o: g.MemoryObject) -> str:
     """Profile from soll + ist, from a template — never a source of its own facts."""
     desired, actual = o.data.get("soll", {}), o.data.get("ist", {})
     parts = [f"I am the VI (self v{o.data.get('version', 1)}), a memory for many instances."]
-    for area, word in (("werte", "Values"), ("ziele", "Goals"), ("stil", "Style"), ("grenzen", "Limits")):
+    for area, word in (("values", "Values"), ("goals", "Goals"), ("style", "Style"), ("limits", "Limits")):
         if desired.get(area):
             parts.append(f"{word}: " + " ".join(s["satz"] for s in desired[area]))
     comp = sorted(actual.get("kompetenz", []), key=lambda k: -k["erfahrungen"])[:3]
@@ -107,7 +107,7 @@ def proposal(instance: str, area: str, sentence: str, reason: str, evidence_list
     days = {o.ts[:10] for o in mem_objects}
     if len(days) < DAYS_MIN:
         raise ValueError(f"evidence must come from at least {DAYS_MIN} different days (spacing instead of burst); here: {sorted(days)}")
-    o = g.new_object("selbst", f"Proposal {area}: {sentence.strip()[:300]}", [f"selbstbereich:{area}", "modus:test"],
+    o = g.new_object("self", f"Proposal {area}: {sentence.strip()[:300]}", [f"selbstbereich:{area}", "modus:test"],
                        {"bereich": area, "satz": sentence.strip()[:500], "grund": reason.strip()[:500], "belege": ids, "von": instance,
                         **({"replaces": replaces} if replaces else {})},
                        importance=2, who=f"ki@{instance}", mode="test", reason=reason, instance=instance)
@@ -118,7 +118,7 @@ def proposal(instance: str, area: str, sentence: str, reason: str, evidence_list
 
 def adopt(v: g.MemoryObject, instance: str, trusted: bool, reason: str) -> g.MemoryObject:
     """A proposal becomes part of the target — only through ANOTHER, trusted instance."""
-    if v.kind != "selbst" or v.id == CORE or v.mode != "test":
+    if v.kind != "self" or v.id == CORE or v.mode != "test":
         raise ValueError("not an open self proposal")
     if v.instance == instance:
         raise ValueError("one's own proposal does not count as confirmation (no self-confirmation)")
@@ -146,8 +146,8 @@ def adopt(v: g.MemoryObject, instance: str, trusted: bool, reason: str) -> g.Mem
     k.change(f"ki@{instance}", f"soll.{v.data['bereich']} {'replaced by' if old else '+='} proposal {v.id}", reason)
     k.data["erzaehlung"] = narrative(k)
     g.save(k)
-    v.mode = "aktiv"
-    v.hashtags = [t for t in v.hashtags if not t.startswith("modus:")] + ["modus:aktiv"]
+    v.mode = "active"
+    v.hashtags = [t for t in v.hashtags if not t.startswith("modus:")] + ["modus:active"]
     v.change(f"ki@{instance}", "adopted into the self", reason)
     g.save(v)
     return k

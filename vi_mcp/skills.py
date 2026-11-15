@@ -144,9 +144,9 @@ def fusion(a_id: str, b_id: str, name: str, reason: str, instance: str) -> g.Mem
     for x, xid in ((a, a_id), (b, b_id)):
         if not x or x.kind != "skill":
             raise ValueError(f"{xid} is not a skill")
-        if x.mode == "aufgegangen":
+        if x.mode == "merged":
             raise ValueError(f"{xid} is already merged into {x.data.get('aufgegangen_in')}")
-        if x.mode == "quarantaene":
+        if x.mode == "quarantine":
             raise ValueError(f"{xid} is in quarantine")
     if a.id == b.id:
         raise ValueError("a skill cannot be merged with itself")
@@ -161,9 +161,9 @@ def fusion(a_id: str, b_id: str, name: str, reason: str, instance: str) -> g.Mem
         new_o.hashtags = sorted(set(new_o.hashtags) | {"herkunft:p2p"})
     g.save(new_o)
     for x in (a, b):
-        x.mode = "aufgegangen"
+        x.mode = "merged"
         x.data["aufgegangen_in"] = new_o.id
-        x.hashtags = [t for t in x.hashtags if not t.startswith(("modus:", "fusion:"))] + ["modus:aufgegangen"]
+        x.hashtags = [t for t in x.hashtags if not t.startswith(("modus:", "fusion:"))] + ["modus:merged"]
         x.change(f"ki@{instance}", f"merged into {new_o.id}", reason)
         g.save(x)
         new_o.link(x.id, "merged from")
@@ -186,14 +186,14 @@ def from_recovery(since: str) -> dict:
     with g.lock:
         recovered = g.db().execute(
             "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'ueberraschung:erholt' "
-            "WHERE o.kind = 'erfahrung' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
+            "WHERE o.kind = 'experience' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     for (eid,) in recovered:
         e = g.load(eid)
         tool = next((t[5:] for t in e.hashtags if t.startswith("tool:")), None)
         if not tool or not e.conversation:
             continue
         with g.lock:
-            rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND conversation = ? AND ts < ? ORDER BY ts", (e.conversation, e.ts)).fetchall()
+            rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND conversation = ? AND ts < ? ORDER BY ts", (e.conversation, e.ts)).fetchall()
         episode = [g.load(r[0]) for r in rows]
         error_idx = [i for i, x in enumerate(episode) if x and f"tool:{tool}" in x.hashtags and "ok:nein" in x.hashtags]
         if not error_idx:
@@ -245,18 +245,18 @@ def rate() -> dict:
     (0.67.0: the server withdraws its own skill; widerlegt is reserved for two independent foreign families)."""
     from . import bandit
     disputed = 0
-    for _, o, _g in g.recall("art:skill (modus:test OR modus:aktiv OR modus:strittig)", limit=500, viewer=None):
+    for _, o, _g in g.recall("art:skill (modus:test OR modus:active OR modus:disputed)", limit=500, viewer=None):
         if content_empty(o):
-            o.mode = "zurueckgezogen"
-            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:zurueckgezogen"]
-            o.change("vi", "zurueckgezogen", "sleep: solution path consists only of general tools; \"helped\" only counted that the tool usually succeeds anyway")
+            o.mode = "withdrawn"
+            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:withdrawn"]
+            o.change("vi", "withdrawn", "sleep: solution path consists only of general tools; \"helped\" only counted that the tool usually succeeds anyway")
             g.save(o)
-    for _, o, _g in g.recall("art:skill (modus:test OR modus:aktiv)", limit=500, viewer=None):
+    for _, o, _g in g.recall("art:skill (modus:test OR modus:active)", limit=500, viewer=None):
         yes, no = bandit.counter(o)
-        if bandit.shown(o) >= BAD_FROM and bandit.expectation(o) < BAD_RATIO and o.mode != "strittig":
-            o.mode = "strittig"
-            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:strittig"]
-            o.change("vi", "strittig", f"sleep: helped {yes}, did not help {no} — check or refute the solution path")
+        if bandit.shown(o) >= BAD_FROM and bandit.expectation(o) < BAD_RATIO and o.mode != "disputed":
+            o.mode = "disputed"
+            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:disputed"]
+            o.change("vi", "disputed", f"sleep: helped {yes}, did not help {no} — check or refute the solution path")
             g.save(o)
             disputed += 1
     return {"strittig": disputed}
@@ -264,7 +264,7 @@ def rate() -> dict:
 
 def fusion_proposals() -> dict:
     """Same problem key (tool + error signature) for two skills → fusion:vorschlag + edge. An instance decides."""
-    skills = [o for _, o, _g in g.recall("art:skill !modus:aufgegangen", limit=500, viewer=None)]
+    skills = [o for _, o, _g in g.recall("art:skill !modus:merged", limit=500, viewer=None)]
     by_key: dict[tuple, list[g.MemoryObject]] = {}
     for o in skills:
         if not usable(o):

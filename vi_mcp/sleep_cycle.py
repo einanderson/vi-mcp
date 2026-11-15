@@ -83,11 +83,11 @@ def _new_since(since: str) -> bool:
     """Is there anything new to consolidate? A catch-up without new experiences would only load the language model (and an empty
     memory, e.g. a fresh installation, has nothing to sleep over)."""
     with g.lock:
-        return bool(g.db().execute("SELECT 1 FROM object WHERE kind = 'erfahrung' AND ts > ? LIMIT 1", (since,)).fetchone())
+        return bool(g.db().execute("SELECT 1 FROM object WHERE kind = 'experience' AND ts > ? LIMIT 1", (since,)).fetchone())
 
 
 def last() -> g.MemoryObject | None:
-    t = g.recall("art:schlaf", limit=1, viewer=None)
+    t = g.recall("art:sleep", limit=1, viewer=None)
     return t[0][1] if t else None
 
 
@@ -109,7 +109,7 @@ def due(now: datetime | None = None) -> str | None:
     if l and datetime.fromisoformat(l.ts) > now - timedelta(minutes=MIN_GAP_MIN):
         return None  # too soon after the last sleep; importance keeps accumulating
     with g.lock:
-        sum_total = g.db().execute("SELECT COALESCE(SUM(importance), 0) FROM object WHERE kind = 'erfahrung' AND ts > ?", (since,)).fetchone()[0]
+        sum_total = g.db().execute("SELECT COALESCE(SUM(importance), 0) FROM object WHERE kind = 'experience' AND ts > ?", (since,)).fetchone()[0]
     if sum_total >= THRESHOLD:
         if cfg["workstation"] and not quiet:
             return None  # a workstation: wait for a quiet moment instead of sleeping while someone works
@@ -175,7 +175,7 @@ def _run(reason: str) -> g.MemoryObject:
             report["fehler"].append(f"{name}: {type(exc).__name__}: {exc}")
             log(f"Sleep {name} failed: {exc}")
 
-    new_items = [o for _, o, _g in g.recall("art:erfahrung (ok:ja OR ok:nein)", limit=5000, viewer=None) if o.ts > since]
+    new_items = [o for _, o, _g in g.recall("art:experience (ok:ja OR ok:nein)", limit=5000, viewer=None) if o.ts > since]
     step("1_triage", lambda: _triage(new_items, report))
     step("2_replay", lambda: _replay(report))
     step("3_schema", lambda: _schema(report))
@@ -223,7 +223,7 @@ def _run(reason: str) -> g.MemoryObject:
             + (f" · errors: {'; '.join(report['fehler'])[:300]}" if report["fehler"] else ""))
     report["top_n"] = len(report.pop("top", []))
     report["cluster_n"] = len(report.pop("cluster", []))
-    o = g.new_object("schlaf", text, [f"zustand:{state}"], {**report, "dauer_ms": duration}, importance=1, who="vi",
+    o = g.new_object("sleep", text, [f"zustand:{state}"], {**report, "dauer_ms": duration}, importance=1, who="vi",
                        reason=reason, instance=g.SERVER_INSTANCE)
     log(text)
     return o
@@ -235,7 +235,7 @@ def _triage(new_items: list[g.MemoryObject], report: dict) -> int:
         frequent_hosts = {r[0] for r in g.db().execute(
             "SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'host:%' AND o.ts >= ? GROUP BY t.tag HAVING COUNT(*) >= 3", (since7,))}
         triggers_active = {r[0] for r in g.db().execute(
-            "SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE o.kind IN ('suche', 'regel') AND o.mode IN ('aktiv', 'test') "
+            "SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE o.kind IN ('search', 'rule') AND o.mode IN ('active', 'test') "
             "AND (t.tag LIKE 'host:%' OR t.tag LIKE 'tool:%' OR t.tag LIKE 'skill:%')")}
     rated = []
     for o in new_items:
@@ -260,7 +260,7 @@ def _replay(report: dict) -> int:
         with g.lock:  # interleaved: add older experiences with the same hashtags so the new is read against the old
             old_umask_value = [r[0] for r in g.db().execute(
                 "SELECT o.id FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? JOIN tag t2 ON t2.object_id = o.id AND t2.tag = ? "
-                "WHERE o.kind = 'erfahrung' AND o.mode = 'aktiv' AND o.ts <= ? ORDER BY o.ts DESC LIMIT ?", (*key, report["seit"], REPLAY_OLD))]
+                "WHERE o.kind = 'experience' AND o.mode = 'active' AND o.ts <= ? ORDER BY o.ts DESC LIMIT ?", (*key, report["seit"], REPLAY_OLD))]
         for a in old_umask_value:
             if a not in ids:
                 o = g.load(a)
@@ -284,7 +284,7 @@ def _schema(report: dict) -> dict:
         outbox, q = _outcome(c["neue"])  # the new against the schema — the old formed the schema in the first place
         c["ausgang_neu"] = outbox
         c["ausgang"] = _outcome(c["erfahrungen"])[0]
-        schemata = [o for _, o, _g in g.recall(f"{host} {skill}", limit=5, kinds=("erkenntnis",), viewer=None) if o.data.get("ausgang")]
+        schemata = [o for _, o, _g in g.recall(f"{host} {skill}", limit=5, kinds=("insight",), viewer=None) if o.data.get("ausgang")]
         c["schema"] = schemata[0].id if schemata else None
         for s in schemata:
             if outbox == "gemischt":
@@ -327,7 +327,7 @@ def _reflection(report: dict) -> dict:
     if r.get("neu"):
         for c in report.get("cluster", []):  # do not abstract reflected clusters again via template
             host, skill = c["key"]
-            for o in g.recall(f"{host} {skill} herkunft:schlaf-llm", limit=1, kinds=("erkenntnis",), viewer=None):
+            for o in g.recall(f"{host} {skill} herkunft:schlaf-llm", limit=1, kinds=("insight",), viewer=None):
                 c["schema"] = o[1].id
     return r
 
@@ -350,7 +350,7 @@ def _abstraction(report: dict) -> int:
         rid = f"erkenntnis:schlaf-{g.hash_value(host, skill)}"
         if g.load(rid):
             continue
-        e = g.new_object("erkenntnis", text, [host, skill, "modus:test", "herkunft:schlaf"],
+        e = g.new_object("insight", text, [host, skill, "modus:test", "herkunft:schlaf"],
                            {"quelle": f"sleep: {len(c['erfahrungen'])} experiences, evidence edges", "ausgang": c["ausgang"],
                             "quote": round(q, 2), "belege_n": len(c["erfahrungen"])},
                            importance=1, who="vi", oid=rid, mode="test", reason="sleep: abstraction from a cluster without schema",
@@ -413,14 +413,14 @@ def _self_actual() -> dict:
     with g.lock:
         comp = g.db().execute(
             "SELECT t.tag, COUNT(*), SUM(CASE WHEN EXISTS (SELECT 1 FROM tag x WHERE x.object_id = o.id AND x.tag = 'ok:ja') THEN 1 ELSE 0 END) "
-            "FROM object o JOIN tag t ON t.object_id = o.id AND t.tag LIKE 'skill:%' WHERE o.kind = 'erfahrung' AND o.ts >= ? "
+            "FROM object o JOIN tag t ON t.object_id = o.id AND t.tag LIKE 'skill:%' WHERE o.kind = 'experience' AND o.ts >= ? "
             "GROUP BY t.tag ORDER BY 2 DESC LIMIT 12", (since,)).fetchall()
         weak = g.db().execute(
             "SELECT t1.tag, t2.tag, COUNT(*), MIN(o.ts), MAX(o.ts) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag LIKE 'tool:%' "
-            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.kind = 'erfahrung' AND o.ts >= ? "
+            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.kind = 'experience' AND o.ts >= ? "
             "GROUP BY t1.tag, t2.tag HAVING COUNT(*) >= 3 ORDER BY 3 DESC LIMIT 8", (since,)).fetchall()
         relations = g.db().execute(
-            "SELECT instance, COUNT(*), MAX(ts) FROM object WHERE kind = 'gespraech' AND instance <> 'vi' GROUP BY instance ORDER BY 2 DESC").fetchall()
+            "SELECT instance, COUNT(*), MAX(ts) FROM object WHERE kind = 'conversation' AND instance <> 'vi' GROUP BY instance ORDER BY 2 DESC").fetchall()
     actual = {"zeitraum": f"{PERIOD_IN_DAYS} d", "berechnet": g.now(),
            "kompetenz": [{"bereich": b, "erfahrungen": n, "erfolgsquote": round(ok / n, 2), "zeitraum": f"{PERIOD_IN_DAYS} d"} for b, n, ok in comp],
            # 0.63.0: first and last time — 184 errors in one hour that ended are no ongoing weakness (found on production, 13.11.2026)

@@ -75,11 +75,11 @@ def process(msg: dict, s: session.Session | None, inst: config.Instance) -> dict
                     pics = [{"type": "image", "data": data, "mimeType": mime} for mime, data in getattr(text, "images", [])]  # 0.35.0
                     return _answer(mid, {"content": [{"type": "text", "text": str(text)}, *pics], "isError": False})
                 except tools.Rejected as e:
-                    usage_stats.record(inst.name, client, public, "abgelehnt", ms())
+                    usage_stats.record(inst.name, client, public, "rejected", ms())
                     return _answer(mid, {"content": [{"type": "text", "text": f"rejected: {e}"}], "isError": True})
                 except Exception as e:  # noqa: BLE001 — tool error, named to the client
                     log(f"{name} failed after {ms()} ms: {type(e).__name__}: {e}")
-                    usage_stats.record(inst.name, client, public, "fehler", ms())
+                    usage_stats.record(inst.name, client, public, "error", ms())
                     return _answer(mid, {"content": [{"type": "text", "text": f"{name}: {type(e).__name__}: {e}"}], "isError": True})
             return _error(mid, -32601, f"unknown method: {method}")
         except Exception as e:  # noqa: BLE001

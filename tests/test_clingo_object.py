@@ -28,7 +28,7 @@ class Knowledge(VIObject):
 
 
 class Insight(Knowledge):
-    kind = "erkenntnis"
+    kind = "insight"
 
 
 class Skill(Knowledge):
@@ -39,7 +39,7 @@ class Skill(Knowledge):
 
     def risky(self):
         E = Obj("E")
-        return self.stale() & linked(self, E) & (E.kind == "erkenntnis")
+        return self.stale() & linked(self, E) & (E.kind == "insight")
 
 
 def _aged(oid, kind, days, mode="test"):
@@ -69,7 +69,7 @@ def test_expressions_build_the_notation():
 
 def test_classes_compile_to_flat_rules_by_python_mro():
     text = _program().notation()
-    assert 'stale(Self) <= (Self in objects("art:erkenntnis")) & (Self.mode == "test") & (Self.age > 90)' in text
+    assert 'stale(Self) <= (Self in objects("art:insight")) & (Self.mode == "test") & (Self.age > 90)' in text
     assert 'stale(Self) <= (Self in objects("art:skill")) & (Self.mode == "test") & (Self.age > 30)' in text
     assert "class" not in text and "def " not in text  # the server never sees Python
     logic.translate(text)  # and the server accepts it
@@ -142,7 +142,7 @@ def test_memory_client_against_a_real_server(srv, tmp_path, monkeypatch):
     tf.write_text(tok_a)
     mem = Memory(f"http://127.0.0.1:{port}/mcp", tf)
     assert tok_a not in repr(mem)
-    g.new_object("erkenntnis", "gate1 in the DMZ", ["host:gate1", "zone:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:gate1", link=False)
+    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "zone:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:gate1", link=False)
     g.new_object("skill", "old skill", ["thema:oo"], {"quelle": "t"}, reason="T", oid="skill:x", mode="test", link=False)
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = 'skill:x'", ((datetime.now(timezone.utc) - timedelta(days=60)).isoformat(),))
@@ -208,8 +208,8 @@ class ServerCheck(ServerData):
 
 def test_the_agent_corrects_its_program_from_the_solver(gd):
     from clingo_object import agent
-    g.new_object("erkenntnis", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
-    g.new_object("erkenntnis", "web1 internal", ["host:web1", "netz:intern"], {"quelle": "t"}, reason="T", oid="erkenntnis:w1", link=False)
+    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
+    g.new_object("insight", "web1 internal", ["host:web1", "netz:intern"], {"quelle": "t"}, reason="T", oid="erkenntnis:w1", link=False)
     replies = iter([
         "```logic\nans(H) <= O in objects(\"netz:dmz\") & (O.host == H)\n```",              # & binds tighter: refused
         "```logic\nans(H) <= (O in objects(\"netz:dmz\")) & (O.hosts == H)\n```",            # wrong kind: solves, no ans
@@ -260,7 +260,7 @@ def test_the_agent_reads_the_vocabulary_from_the_server(gd):
     class Mem:
         def call(self, tool, args):
             return tools.call_tool(tool, args, "a", False)
-    g.new_object("erkenntnis", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
+    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
     v = agent.vocabulary(Mem())
     assert "- netz: dmz" in v and "- host: gate1" in v and "instanz" not in v
 
@@ -272,7 +272,7 @@ def test_the_agent_end_to_end_over_a_real_server(srv, tmp_path):
     tf = tmp_path / "token"
     tf.write_text(tok_a)
     mem = Memory(f"http://127.0.0.1:{port}/mcp", tf)
-    g.new_object("erkenntnis", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
+    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
     voc = agent.vocabulary(mem)
     assert "- netz: dmz" in voc
     seen = []

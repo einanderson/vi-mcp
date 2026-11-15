@@ -69,14 +69,14 @@ def _entry(o: g.MemoryObject) -> tuple[dict | None, str | None]:
     from . import net_score, p2p
     if o.kind not in p2p.EXPORT_KINDS:
         return None, f"kind {o.kind} is not exported"
-    if o.visibility == "privat":
+    if o.visibility == "private":
         return None, "private"
-    if o.mode != "aktiv":
+    if o.mode != "active":
         return None, f"mode {o.mode}"
     if "art_wissen:code" in o.hashtags:
         return None, "code piece (index import-code brings code)"
     imported = str(o.instance or "").startswith("p2p-")
-    if imported and (o.kind not in ("erkenntnis", "regel") or "fremd_text" not in o.data):
+    if imported and (o.kind not in ("insight", "rule") or "fremd_text" not in o.data):
         return None, "imported search or skill (renamed on import, its content hash cannot be rebuilt)"
     form, why = p2p.internal_form(o, {"netz_id": "0" * 32, "loesch_hash": "0" * 64})  # the fixed rules want the ids; the importer makes its own
     if form is None:
@@ -213,7 +213,7 @@ def import_file(fpath: str | Path, as_index: str, in_background: bool = True) ->
     except ValueError as ex:
         report["gruende"][f"index description not taken: {ex}"[:120]] += 1
     with g.lock:
-        g.db().execute("UPDATE vi_index SET source = ? WHERE name = ? AND (source IS NULL OR source IN ('beschrieben', 'automatisch'))",
+        g.db().execute("UPDATE vi_index SET source = ? WHERE name = ? AND (source IS NULL OR source IN ('described', 'automatic'))",
                        (f"import {lb.pseudonym(pub)} {str(doc.get('zeit'))[:10]}", idx))
         g.db().commit()
     report["gruende"] = dict(report["gruende"].most_common(20))

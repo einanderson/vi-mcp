@@ -168,7 +168,7 @@ def test_facts_are_backfilled_once_and_follow_changes(gd, repo, monkeypatch):
     ci.run(repo, "shop", _call)
     from vi_mcp import memory as g
     gone = g.load(ci.piece_id("shop", "shop", "pkg/other.py", "#funktion:helper2"))
-    assert gone.mode == "archiviert"  # nothing disappears silently
+    assert gone.mode == "archived"  # nothing disappears silently
 
 
 def test_an_old_server_gets_no_facts_and_no_resend(gd, repo, monkeypatch):
@@ -193,7 +193,7 @@ def test_fact_objects_are_code_never_hints_vectors_or_training(gd, repo):
     from vi_mcp import memory as g
     ci.run(repo, "shop", _call)
     facts = [o for o in ci._held("shop", "shop") if ci._is_fact(o)]
-    assert facts and all("art_wissen:code" in o.hashtags and o.visibility == "intern" for o in facts)
+    assert facts and all("art_wissen:code" in o.hashtags and o.visibility == "internal" for o in facts)
     assert vector.FACT_TAGS == cf.FACT_TAGS
     line, _p = ci.file_line("shop", str(repo / "pkg" / "store.py"))
     assert "None" not in line and "save" in line  # the file line names pieces, not fact objects

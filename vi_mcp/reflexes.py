@@ -64,8 +64,8 @@ def load_all() -> dict[str, dict]:
     """Register all reflexes in mode aktiv/test. The TOOL schema of a tool reflex is determined in the sandbox
     — no code runs in the server."""
     new: dict[str, dict] = {}
-    for _, o, _g in g.recall("(modus:aktiv OR modus:test)", limit=500, kinds=("reflex",)):
-        if o.mode not in ("aktiv", "test"):
+    for _, o, _g in g.recall("(modus:active OR modus:test)", limit=500, kinds=("reflex",)):
+        if o.mode not in ("active", "test"):
             continue
         schema = None
         if o.data["art"] == "werkzeug":
@@ -101,8 +101,8 @@ def run(r: dict, *args) -> dict:
         o.data["fehler"] = o.data.get("fehler", 0) + 1
         o.data["letzter_fehler"] = res["fehler"][:300]
         if o.data["fehler"] >= REFLEX_ERRORS_MIN:
-            o.mode = r["modus"] = "defekt"
-            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:defekt"]
+            o.mode = r["modus"] = "broken"
+            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:broken"]
             o.change("vi", "defective", f"{o.data['fehler']} errors: {res['fehler'][:120]}")
             log(f"reflex {r['name']} defective: {res['fehler']}")
             with _lock:
@@ -119,7 +119,7 @@ def as_tool(name: str, args: dict) -> str:
     res = run(r, args)
     if "fehler" in res:
         raise RuntimeError(f"Reflex {r['name']}: {res['fehler']}")
-    header = "" if r["modus"] == "aktiv" else f"[Reflex {r['name']} in test mode — vi_reflex_switch(name, 'aktiv') makes it live]\n"
+    header = "" if r["modus"] == "active" else f"[Reflex {r['name']} in test mode — vi_reflex_switch(name, 'active') makes it live]\n"
     return header + (res["wert"] if isinstance(res["wert"], str) else json.dumps(res["wert"], ensure_ascii=False, indent=2))
 
 
@@ -144,7 +144,7 @@ def before(tool: str, args: dict) -> tuple[dict, list[str]]:
         if isinstance(w.get("args"), dict) and foreign:
             hints.append(f"Reflex {r['name']}: an imported reflex may not change arguments, discarded")
         elif isinstance(w.get("args"), dict):
-            if r["modus"] == "aktiv":
+            if r["modus"] == "active":
                 args = w["args"]
             else:
                 hints.append(f"Reflex {r['name']} (test) would have changed arguments: {json.dumps(w['args'], ensure_ascii=False)[:200]}")

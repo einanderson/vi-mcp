@@ -83,7 +83,7 @@ def test_model_frontend_uses_own_world_and_checks_generated_program(gd, monkeypa
     call("create")
     fact(8080)
     # A global object must never enter this machine's world.
-    g.new_object("erkenntnis", "foreign API", ["service:api", "port:9999"], {"quelle": "fixture"})
+    g.new_object("insight", "foreign API", ["service:api", "port:9999"], {"quelle": "fixture"})
     replies = iter(['import os', '```logic\n' + PROGRAM + '\n```'])
     monkeypatch.setattr(logic, "agent_llm", lambda messages: next(replies))
     result = call("answer", question="Which port does the API use?")
@@ -108,15 +108,15 @@ def test_machine_and_snapshot_are_never_network_exports(gd):
     call("create")
     fact()
     call("snapshot", snapshot="initial")
-    assert all(o.visibility == "privat" for o in g.load_many([machine._id("a", "test"), machine._id("a", "initial", "test")]).values())
+    assert all(o.visibility == "private" for o in g.load_many([machine._id("a", "test"), machine._id("a", "initial", "test")]).values())
     assert not dataset.build(agentic=False)["qa"]
 
 
 def test_import_refresh_and_reference_training_publication(gd, tmp_path, monkeypatch):
     from vi_mcp import dataset, evaluation
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    src = g.new_object("erkenntnis", "API endpoint", ["service:api", "port:80"], {"quelle": "inventory"})
-    g.new_object("erkenntnis", "private foreign API", ["service:api", "port:9999"], {"quelle": "fixture"}, visibility="privat", instance="b")
+    src = g.new_object("insight", "API endpoint", ["service:api", "port:80"], {"quelle": "inventory"})
+    g.new_object("insight", "private foreign API", ["service:api", "port:9999"], {"quelle": "fixture"}, visibility="private", instance="b")
     call("create")
     call("import", filters=["service:api"])
     assert run()["answers"] == ['ans("80")']
@@ -152,7 +152,7 @@ def test_teach_never_publishes_imported_private_objects_or_private_context(gd, t
     training data. Teach refuses with the reason; the owner can drop the object from the world (or not import it) and teach again."""
     from vi_mcp import dataset, evaluation
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    g.new_object("erkenntnis", "own private API", ["service:api", "port:7777"], {"quelle": "fixture"}, visibility="privat", instance="a")
+    g.new_object("insight", "own private API", ["service:api", "port:7777"], {"quelle": "fixture"}, visibility="private", instance="a")
     call("create")
     call("import", filters=["service:api"])
     ex = run()
@@ -180,8 +180,8 @@ def test_machine_example_over_an_evaluation_target_stays_held_out(gd, tmp_path, 
     the training prompt ("Frozen machine objects")."""
     from vi_mcp import dataset, evaluation
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    target = g.new_object("erkenntnis", "evaluation target API", ["service:api", "port:80"], {"quelle": "https://docs.example/api"})
-    sibling = g.new_object("erkenntnis", "sibling chunk of the same page", ["service:api", "port:81"],
+    target = g.new_object("insight", "evaluation target API", ["service:api", "port:80"], {"quelle": "https://docs.example/api"})
+    sibling = g.new_object("insight", "sibling chunk of the same page", ["service:api", "port:81"],
                            {"quelle": "https://docs.example/api · Version 2"})
     (tmp_path / "eval").mkdir()
     (tmp_path / "eval/recall.json").write_text(json.dumps([{"target": target.id, "group": evaluation.group_of(target),
@@ -272,8 +272,8 @@ def test_holdout_uses_the_provenance_frozen_at_import(gd, tmp_path, monkeypatch)
     frozen at import (as a hash); an imported object without it and no longer loadable is held out as unknown provenance."""
     from vi_mcp import dataset, evaluation
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    target = g.new_object("erkenntnis", "evaluation target page", ["service:other", "port:1"], {"quelle": "https://docs.example/api"})
-    sibling = g.new_object("erkenntnis", "sibling chunk", ["service:api", "port:81"], {"quelle": "https://docs.example/api · Version 2"})
+    target = g.new_object("insight", "evaluation target page", ["service:other", "port:1"], {"quelle": "https://docs.example/api"})
+    sibling = g.new_object("insight", "sibling chunk", ["service:api", "port:81"], {"quelle": "https://docs.example/api · Version 2"})
     (tmp_path / "eval").mkdir()
     (tmp_path / "eval/recall.json").write_text(json.dumps([{"target": target.id, "group": evaluation.group_of(target), "frage": "which port"}]))
     call("create")
@@ -291,7 +291,7 @@ def test_an_example_imported_without_frozen_provenance_is_held_out(gd, tmp_path,
     """Legacy case (Codex's review): an imported object without source_group_sha256 is never judged by its live source."""
     from vi_mcp import dataset, evaluation
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    g.new_object("erkenntnis", "api", ["service:api", "port:80"], {"quelle": "https://docs.example/api"})
+    g.new_object("insight", "api", ["service:api", "port:80"], {"quelle": "https://docs.example/api"})
     call("create")
     call("import", filters=["service:api"])
     o = g.load(machine._id("a", "test"))

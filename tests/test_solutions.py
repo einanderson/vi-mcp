@@ -40,7 +40,7 @@ def test_web_episode_becomes_a_solution_with_command_and_source(gd, monkeypatch)
     sk = [o for _, o, _g in g.recall("art:skill herkunft:web", viewer=None)][0]
     content = str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
     assert "borg break-lock /repo" in content and "https://borgbackup.readthedocs.io" in content and "stale lock" in content
-    assert sk.visibility == "intern" and sk.mode == "test" and "herkunft:episode" in sk.hashtags
+    assert sk.visibility == "internal" and sk.mode == "test" and "herkunft:episode" in sk.hashtags
     assert any(t.startswith("fehler:") for t in sk.hashtags) and sk.data["geschrieben_von"] == "sprachmodell"
     assert "break the repository and cache locks" in seen["prompt"]  # the web excerpt reached the write-up
     # the same error later: the solution is the first hint after it

@@ -11,8 +11,8 @@ What "no longer used" means (initial values in DAYS, changeable via the configur
 Never automatically: selbst, modell, frage (own life cycle), reflex (would silently switch off a behaviour), gespraech
 (the summary stays). What serves as evidence also stays: only edges with reason "Beleg…" count.
 
-A stub stays in memory: shortened text, hashtags, time, reason, `modus:archiviert`. It appears only if the
-filter contains `modus:archiviert`. If an archived knowledge entry fits an action, `vi_before` says so in one
+A stub stays in memory: shortened text, hashtags, time, reason, `modus:archived`. It appears only if the
+filter contains `modus:archived`. If an archived knowledge entry fits an action, `vi_before` says so in one
 line. An entry comes back with `vi_archive_restore` (with a reason, in its old mode). Deletion in the archive happens only
 via the deletion paths for conversations and instances.
 Order across the two files: write the target first, then change the source. A crash in between leaves
@@ -30,9 +30,9 @@ from pathlib import Path
 from . import memory as g
 from .log_output import log
 
-DAYS = {"erfahrung": 30, "schlaf": 90, "erkenntnis": 180, "regel": 180, "suche": 180, "skill": 180, "bild": 180}
+DAYS = {"experience": 30, "sleep": 90, "insight": 180, "rule": 180, "search": 180, "skill": 180, "image": 180}
 DAYS_RAW = 30
-KNOWLEDGE = ("erkenntnis", "regel", "suche", "skill", "bild")
+KNOWLEDGE = ("insight", "rule", "search", "skill", "image")
 STUB_CHARS = 200
 #: Free share of the main file from which it is rewritten
 VACUUM_FROM = 0.25
@@ -83,7 +83,7 @@ def close_db() -> None:
 
 def store_in_archive(o: g.MemoryObject, reason: str) -> None:
     """Content to the archive, stub in memory."""
-    if o.mode == "archiviert":
+    if o.mode == "archived":
         return
     from . import vector
     raw = zlib.compress(json.dumps({"text": o.text, "daten": o.data, "hashtags": o.hashtags}, ensure_ascii=False).encode())
@@ -93,8 +93,8 @@ def store_in_archive(o: g.MemoryObject, reason: str) -> None:
         db().commit()
     o.data = {"lager": True, "eingelagert": g.now(), "grund": reason[:300], "bytes": len(raw)}
     o.text = o.text[:STUB_CHARS]
-    o.mode = "archiviert"
-    o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:archiviert"]
+    o.mode = "archived"
+    o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:archived"]
     o.change("vi", "moved to the long-term archive", reason)
     g.save(o)
     vector.remove_entry(o.id)
@@ -115,7 +115,7 @@ def retrieve(oid: str, who: str, reason: str) -> g.MemoryObject:
         raise ValueError("a reason is required")
     d = content(oid)
     o = g.load(oid)
-    if not d or not o or o.mode != "archiviert":
+    if not d or not o or o.mode != "archived":
         raise ValueError(f"{oid} is not in the long-term archive")
     o.text, o.data, o.hashtags, o.mode = d["text"], d["daten"], d["hashtags"], d["modus_vorher"]
     o.change(who, "restored from the long-term archive", reason)
@@ -155,16 +155,16 @@ def _unused() -> list[tuple[str, str]]:
     outputs: list[tuple[str, str]] = []
     evidence = " OR ".join(f"k.b LIKE '{p}%'" for p in EVIDENCE_TARGETS)
     with g.lock:
-        for kind in ("erfahrung", "schlaf"):
+        for kind in ("experience", "sleep"):
             bound = _bound(DAYS[kind])
-            sql = "SELECT id FROM object o WHERE kind = ? AND mode <> 'archiviert' AND ts < ?"
-            if kind == "erfahrung":
+            sql = "SELECT id FROM object o WHERE kind = ? AND mode <> 'archived' AND ts < ?"
+            if kind == "experience":
                 sql += f" AND accesses = 0 AND NOT EXISTS (SELECT 1 FROM edge k WHERE k.a = o.id AND k.reason LIKE 'Beleg%' AND ({evidence}))"
             outputs += [(r[0], f"housekeeping: {kind}, older than {DAYS[kind]} days, not used") for r in g.db().execute(sql, (kind, bound))]
         for kind in KNOWLEDGE:
             bound = _bound(DAYS[kind])
             outputs += [(r[0], f"housekeeping: {kind}, {DAYS[kind]} days neither recalled, changed nor shown") for r in g.db().execute(
-                "SELECT id FROM object o WHERE kind = ? AND mode NOT IN ('archiviert', 'quarantaene') AND last_at < ? "
+                "SELECT id FROM object o WHERE kind = ? AND mode NOT IN ('archived', 'quarantine') AND last_at < ? "
                 "AND COALESCE(json_extract(data, '$.zuletzt_gezeigt'), '') < ? "
                 "AND NOT EXISTS (SELECT 1 FROM edge k WHERE k.a = o.id AND k.b LIKE 'selbst:%')", (kind, bound, bound))]
     return outputs
@@ -223,7 +223,7 @@ def hint(triggers: list[str]) -> list[str]:
     """One line for `vi_before` if archived knowledge fits the action."""
     if not triggers:
         return []
-    hits = [o for _, o, _g in g.recall("(" + " OR ".join(triggers) + ") modus:archiviert", limit=3, kinds=KNOWLEDGE)]
+    hits = [o for _, o, _g in g.recall("(" + " OR ".join(triggers) + ") modus:archived", limit=3, kinds=KNOWLEDGE)]
     if not hits:
         return []
     return ["Matching in the long-term archive: " + "; ".join(f"[{o.id}] {o.text[:80]}" for o in hits) + " — vi_archive_restore(id, reason) brings an entry back"]

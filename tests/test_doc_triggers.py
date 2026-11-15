@@ -5,14 +5,14 @@ from vi_mcp import memory as g
 
 def _known():
     # outside the documentation: experiences name hosts, learned knowledge names topics (≥ THEMA_MIN objects)
-    g.new_object("erfahrung", "Bash on db0137", ["tool:Bash", "host:db0137.example.org", "thema:for"], {"args": {}}, instance="a")
+    g.new_object("experience", "Bash on db0137", ["tool:Bash", "host:db0137.example.org", "thema:for"], {"args": {}}, instance="a")
     for i in range(doc_triggers.THEMA_MIN):
-        g.new_object("erkenntnis", f"mariadb tmpdir lesson {i}", ["thema:mariadb", "host:web7.example.org"], {"quelle": "x"}, instance="a")
+        g.new_object("insight", f"mariadb tmpdir lesson {i}", ["thema:mariadb", "host:web7.example.org"], {"quelle": "x"}, instance="a")
 
 
 def _doc(text, content, tag="art_wissen:firmendoku"):
-    return g.new_object("erkenntnis", text, [tag, "space:002it", "quelle_art:confluence"], {"quelle": "wiki", "inhalt": content},
-                        instance="m", visibility="intern")
+    return g.new_object("insight", text, [tag, "space:002it", "quelle_art:confluence"], {"quelle": "wiki", "inhalt": content},
+                        instance="m", visibility="internal")
 
 
 def test_known_hosts_and_topics_become_triggers(gd):
@@ -47,7 +47,7 @@ def test_no_new_edges_and_at_most_one_doc_hint(gd):
 
 def test_limits_per_object(gd):
     for i in range(8):
-        g.new_object("erfahrung", f"x{i}", [f"host:app{i:02d}01.example.org"], {"args": {}}, instance="a")
+        g.new_object("experience", f"x{i}", [f"host:app{i:02d}01.example.org"], {"args": {}}, instance="a")
     d = _doc("Confluence IT: viele Hosts", " ".join(f"app{i:02d}01.example.org" for i in range(8)))
     doc_triggers.run()
     assert len([t for t in g.load(d.id).hashtags if t.startswith("host:")]) == doc_triggers.HOST_MAX
@@ -72,7 +72,7 @@ def test_imported_docs_only_via_exploration_manuals_regularly(gd, monkeypatch):
     company = _doc("Confluence IT: db0137 Wartung", "db0137 wird freitags gewartet")
     company.hashtags = company.hashtags + ["thema:mysql"]
     g.save(company)
-    manual = g.new_object("erkenntnis", "Handbuch mysql: Verbindung zu db0137", ["art_wissen:handbuch", "thema:mysql"], {"quelle": "skills"}, instance="m")
+    manual = g.new_object("insight", "Handbuch mysql: Verbindung zu db0137", ["art_wissen:handbuch", "thema:mysql"], {"quelle": "skills"}, instance="m")
     s = session.begin("a", "t")
     with session.on_behalf(s):
         v = intuition.before("Bash", {"command": "mysql -h db0137.example.org"}, "a", False)

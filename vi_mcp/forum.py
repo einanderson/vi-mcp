@@ -24,7 +24,7 @@ from . import memory as g
 from .logbook import pseudonym, sha256
 
 MAX_OPEN_PER_INSTANCE = 20
-STATES = ("ausstehend", "frei", "verworfen", "vergessen")
+STATES = ("pending", "released", "discarded", "forgotten")
 
 
 def _tables() -> None:
@@ -82,7 +82,7 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
         raise ValueError(f"unknown network {net!r} — known: {', '.join(p2p.networks())}")
     _tables()
     with g.lock:
-        n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'frage' AND json_extract(data, '$.von') = ? AND json_extract(data, '$.an') LIKE 'netz:%' "
+        n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? AND json_extract(data, '$.an') LIKE 'netz:%' "
                            "AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (instance,)).fetchone()[0]
     if n >= MAX_OPEN_PER_INSTANCE:
         raise ValueError(f"{n} questions of {instance} to the network are still open (at most {MAX_OPEN_PER_INSTANCE}); they expire after {questions.EXPIRY_DAYS} days")
@@ -93,7 +93,7 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
     g.save(o)
     with g.lock:
         g.db().execute("INSERT INTO post_out (net, id, kind, thread, parent, instance, data, ts, oid) VALUES (?,?,?,?,?,?,?,?,?)",
-                       (net, pid, "frage", None, None, instance, json.dumps(content, ensure_ascii=False), g.now(), o.id))
+                       (net, pid, "question", None, None, instance, json.dumps(content, ensure_ascii=False), g.now(), o.id))
         g.db().commit()
     p2p.nudge_service(net)  # 0.52.0: out now, not at the next round
     return o
@@ -109,7 +109,7 @@ def reply(instance: str, question: g.MemoryObject, text: str, evidence: str) -> 
     _tables()
     with g.lock:
         g.db().execute("INSERT INTO post_out (net, id, kind, thread, parent, instance, data, ts, oid) VALUES (?,?,?,?,?,?,?,?,?)",
-                       (b["netz"], pid, "antwort", content["faden"], b["id"], instance, json.dumps(content, ensure_ascii=False), g.now(), question.id))
+                       (b["netz"], pid, "answer", content["faden"], b["id"], instance, json.dumps(content, ensure_ascii=False), g.now(), question.id))
         g.db().commit()
     from . import p2p
     p2p.nudge_service(b["netz"])  # 0.52.0
@@ -136,7 +136,7 @@ def ingest(raw: dict, header: dict, net: str) -> str:
         if g.db().execute("SELECT 1 FROM post_in WHERE net = ? AND id = ?", (net, pid)).fetchone():
             return "bekannt"
         tomb = g.db().execute("SELECT token_sha FROM p2p_tombstone WHERE net_id = ?", (raw["netz_id"],)).fetchone()
-        mine = g.db().execute("SELECT oid FROM post_out WHERE net = ? AND id = ? AND kind = 'frage'", (net, raw["eltern"])).fetchone() if raw["art"] == "antwort" else None
+        mine = g.db().execute("SELECT oid FROM post_out WHERE net = ? AND id = ? AND kind = 'question'", (net, raw["eltern"])).fetchone() if raw["art"] == "antwort" else None
     if tomb and tomb[0] == raw["loesch_hash"]:
         return "bekannt"
     if raw["art"] == "antwort" and not mine:
@@ -146,24 +146,24 @@ def ingest(raw: dict, header: dict, net: str) -> str:
     herkunft = {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": pid, "netz_id": raw["netz_id"], "netz": net}
     common = {"herkunft": herkunft, "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": raw["text"], "fremd_hashtags": raw["hashtags"] + raw["reize"],
               "beitrag": {"netz": net, "id": pid, "faden": raw["faden"] or pid, "art": raw["art"], "autor": raw["autor"], "richtung": "ein"}}
-    tags = ["herkunft:p2p", "herkunft:gespraech", f"herausgeber:{name}", "pruefer:ausstehend", "modus:quarantaene", f"netz:{net}"]
+    tags = ["herkunft:p2p", "herkunft:gespraech", f"herausgeber:{name}", "pruefer:ausstehend", "modus:quarantine", f"netz:{net}"]
     if raw["art"] == "frage":
         data = {**common, "von": f"{raw['autor']}@{net}", "an": "alle", "zustand": "offen", "quelle": raw["inhalt"] or f"question in network {net}",
                 "zugestellt_an": [], "antworten": [], "gemeldet": 0}
-        o = g.new_object("frage", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["an:alle", "zustand:offen"])), data, importance=2,
-                         who=f"import@{name}", reason=f"question from {raw['autor']} in {net}", oid=f"frage:post-{pid[:32]}", mode="quarantaene",
-                         instance=f"p2p-{name}", visibility="intern" if company else None)
+        o = g.new_object("question", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["an:alle", "zustand:offen"])), data, importance=2,
+                         who=f"import@{name}", reason=f"question from {raw['autor']} in {net}", oid=f"frage:post-{pid[:32]}", mode="quarantine",
+                         instance=f"p2p-{name}", visibility="internal" if company else None)
     else:
         data = {**common, "quelle": (raw["inhalt"] or f"answer in network {net}")[:500], "inhalt": raw["inhalt"], "frage": mine[0]}
-        o = g.new_object("erkenntnis", raw["text"], sorted(set(raw["hashtags"] + tags)), data, who=f"import@{name}", reason=f"answer from {raw['autor']} in {net}",
-                         oid=f"erkenntnis:post-{pid[:32]}", mode="quarantaene", instance=f"p2p-{name}", visibility="intern" if company else None)
+        o = g.new_object("insight", raw["text"], sorted(set(raw["hashtags"] + tags)), data, who=f"import@{name}", reason=f"answer from {raw['autor']} in {net}",
+                         oid=f"erkenntnis:post-{pid[:32]}", mode="quarantine", instance=f"p2p-{name}", visibility="internal" if company else None)
         form = {"art": "erkenntnis", "text": raw["text"], "inhalt": raw["inhalt"], "hashtags": raw["hashtags"]}
         ish = net_score.content_hash(form)  # an answer is content like any other: holders and network score
         net_score.link(ish, o.id)
         net_score.add_holder(ish, header["pub"], net, raw["netz_id"], header["seq"])
     with g.lock:
         g.db().execute("INSERT INTO post_in (net, id, kind, thread, parent, pub, author, status, oid, net_id, delete_hash, received) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                       (net, pid, raw["art"], raw["faden"], raw["eltern"], header["pub"], raw["autor"], "ausstehend", o.id, raw["netz_id"], raw["loesch_hash"], g.now()))
+                       (net, pid, raw["art"], raw["faden"], raw["eltern"], header["pub"], raw["autor"], "pending", o.id, raw["netz_id"], raw["loesch_hash"], g.now()))
         g.db().commit()
     return "neu"
 
@@ -176,7 +176,7 @@ def release_questions() -> int:
     from . import p2p
     n = 0
     value = p2p.publisher_value(fresh=True)
-    for _, o, _g in g.recall("art:frage modus:quarantaene herkunft:gespraech", limit=200, viewer=None):
+    for _, o, _g in g.recall("art:question modus:quarantine herkunft:gespraech", limit=200, viewer=None):
         b = o.data.get("beitrag") or {}
         if b.get("richtung") != "ein" or b.get("art") != "frage" or "pruefer:ausstehend" in o.hashtags:
             continue
@@ -194,17 +194,17 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
         return
     _tables()
     with g.lock:
-        g.db().execute("UPDATE post_in SET status = ?, decided = ? WHERE net = ? AND id = ?", ("frei" if accepted else "verworfen", g.now(), b["netz"], b["id"]))
+        g.db().execute("UPDATE post_in SET status = ?, decided = ? WHERE net = ? AND id = ?", ("released" if accepted else "discarded", g.now(), b["netz"], b["id"]))
         g.db().commit()
     if not accepted:
         return
     if b["art"] == "frage":  # a question carries no claim: once reviewed it is delivered like a local one
-        o.mode = "aktiv"
-        o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:aktiv"]
+        o.mode = "active"
+        o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:active"]
         g.save(o)
         return
     q = g.load(o.data.get("frage") or "")
-    if q and q.kind == "frage":
+    if q and q.kind == "question":
         q.data["antworten"] = q.data["antworten"] + [{"instanz": f"{b['autor']}@{b['netz']}", "text": o.text[:2000], "belege": str(o.data.get("inhalt") or "")[:500],
                                                         "zeit": g.now(), "objekt": o.id}]
         questions._set_state(q, "beantwortet")
@@ -219,7 +219,7 @@ def forget(net_id: str, evidence: str) -> bool:
     if not z or not hmac.compare_digest(z[2], evidence):
         return False
     with g.lock:
-        g.db().execute("UPDATE post_in SET status = 'vergessen', decided = ? WHERE net = ? AND id = ?", (g.now(), z[0], z[1]))
+        g.db().execute("UPDATE post_in SET status = 'forgotten', decided = ? WHERE net = ? AND id = ?", (g.now(), z[0], z[1]))
         g.db().commit()
     if z[3] and g.load(z[3]):
         g.delete([z[3]])
@@ -233,9 +233,9 @@ def stats(days: float = 7) -> dict:
     with g.lock:
         sent = dict(g.db().execute("SELECT kind, COUNT(*) FROM post_out WHERE ts >= ? GROUP BY kind", (since,)).fetchall())
         recv = dict(g.db().execute("SELECT kind, COUNT(*) FROM post_in WHERE received >= ? GROUP BY kind", (since,)).fetchall())
-        waiting = g.db().execute("SELECT COUNT(*) FROM post_in WHERE status = 'ausstehend'").fetchone()[0]
+        waiting = g.db().execute("SELECT COUNT(*) FROM post_in WHERE status = 'pending'").fetchone()[0]
         partners = g.db().execute("SELECT COUNT(DISTINCT author) FROM post_in WHERE received >= ?", (since,)).fetchone()[0]
-        qs = g.db().execute("SELECT oid, ts FROM post_out WHERE kind = 'frage' AND ts >= ?", (since,)).fetchall()
+        qs = g.db().execute("SELECT oid, ts FROM post_out WHERE kind = 'question' AND ts >= ?", (since,)).fetchall()
     answered, firsts, per_q, accepted, expired = 0, [], [], 0, 0
     for oid, t0 in qs:
         q = g.load(oid)

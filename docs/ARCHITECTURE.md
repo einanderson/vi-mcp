@@ -60,11 +60,13 @@ access goes through one process, a later switch is a change in `memory.py`, not 
 ## Data model
 
 > **Stored names become English in 0.67.0, migrated in place.** `vi_mcp/names.py` is the one table of every renamed stored name.
-> Done: table, column and index names (`object`, `kind`, `ts`, `data`, `visibility`, …; the archive and every network logbook too). A
+> Done: table, column and index names (`object`, `kind`, `ts`, `data`, `visibility`, …; the archive and every network logbook too) and
+> the stored values (kinds `insight`, `experience`, …; modes `active`, `refuted`, …; visibilities `shared`, `internal`, `private`; the
+> values of `art:`/`modus:`; usage, review and index values). German values of older clients are read as English. A
 > database of 0.66 or older is renamed when it is opened, after a backup copy (SQLite `<file>.pre-0.67.0.db`, PostgreSQL schema
 > `<schema>_pre_0_67_0`); the counts per class go into the table `name_migration`, the log and `vi-mcp db status`. Still German until
-> the next steps of the same migration: JSON keys in object data (`quelle`, `inhalt`, …), hashtag kinds and values (`thema:`,
-> `modus:aktiv`, `ok:ja`, …), stored enum values (`geteilt`, `intern`, `privat`, …) and object kinds (`erkenntnis`, `erfahrung`, …).
+> the next steps of the same migration: JSON keys in object data (`quelle`, `inhalt`, …) and hashtag kinds and their system values
+> (`thema:`, `ok:ja`, …). Object ids keep the scheme of 0.66 (`erkenntnis:…`): they are identifiers, referenced everywhere.
 > The P2P wire format (signed logbook entries, content hashes) stays German for good: every signature and hash of the network depends
 > on it, so it is translated at the network boundary. The configuration files are English since 0.51.0 (keys and network kinds `free`/`open`/`company`); the
 > German keys of older files are still read (`config.normalize`, `net_service.english_file`) and rewritten in English at package install. The MCP interface (tool names, parameters, enum values) is English since

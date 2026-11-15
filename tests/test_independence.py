@@ -9,7 +9,7 @@ from vi_mcp import memory as g
 
 
 def _fact(src="free -m on web1, 10.11. 14:00"):
-    return g.new_object("erkenntnis", "Dienst y braucht 2 GB RAM", ["thema:y"], {"quelle": src}, reason="T", instance="a")
+    return g.new_object("insight", "Dienst y braucht 2 GB RAM", ["thema:y"], {"quelle": src}, reason="T", instance="a")
 
 
 def test_one_family_counts_once(gd):
@@ -43,9 +43,9 @@ def test_refutation_needs_two_families(gd):
     o = _fact()
     g.load(o.id).refute("ki@b", "bei mir 4 GB", "b", family="claude")
     g.load(o.id).refute("ki@c", "bei mir auch 4 GB", "c", family="claude")
-    assert g.load(o.id).mode == "strittig"  # two instances of one model: still only disputed
+    assert g.load(o.id).mode == "disputed"  # two instances of one model: still only disputed
     g.load(o.id).refute("ki@d", "gemessen: 4 GB", "d", family="qwen")
-    assert g.load(o.id).mode == "widerlegt"
+    assert g.load(o.id).mode == "refuted"
 
 
 def test_tool_passes_family_and_source(gd):

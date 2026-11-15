@@ -11,9 +11,9 @@ from vi_mcp import memory as g
 
 def test_source_page_and_duplicate_content_cannot_leak(gd, tmp_path, monkeypatch):
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    target = g.new_object("erkenntnis", "evaluation chunk", [], {"quelle": "https://docs.example/page", "inhalt": "unique reference body"})
-    g.new_object("erkenntnis", "another chunk of same page", [], {"quelle": "https://docs.example/page · Version 2", "inhalt": "other text"})
-    g.new_object("erkenntnis", "duplicate on a different page", [], {"quelle": "https://docs.example/duplicate", "inhalt": "unique reference body"})
+    target = g.new_object("insight", "evaluation chunk", [], {"quelle": "https://docs.example/page", "inhalt": "unique reference body"})
+    g.new_object("insight", "another chunk of same page", [], {"quelle": "https://docs.example/page · Version 2", "inhalt": "other text"})
+    g.new_object("insight", "duplicate on a different page", [], {"quelle": "https://docs.example/duplicate", "inhalt": "unique reference body"})
     (tmp_path / "eval").mkdir()
     (tmp_path / "eval/recall.json").write_text(json.dumps([{"target": target.id, "group": evaluation.group_of(target), "frage": "question"}]))
     built = dataset.build(agentic=False)
@@ -87,8 +87,8 @@ def test_solver_success_and_one_positive_atom_do_not_verify_program(gd, tmp_path
     pytest.importorskip("clingo")
     from vi_mcp import logic
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    g.new_object("erkenntnis", "DMZ", ["host:gate1", "zone:dmz"], {"quelle": "fixture"})
-    g.new_object("erkenntnis", "internal", ["host:office1", "zone:internal"], {"quelle": "fixture"})
+    g.new_object("insight", "DMZ", ["host:gate1", "zone:dmz"], {"quelle": "fixture"})
+    g.new_object("insight", "internal", ["host:office1", "zone:internal"], {"quelle": "fixture"})
     wrong = 'ans(H) <= (O in objects("host:*")) & (O.host == H)'
     monkeypatch.setattr(logic, "agent_llm", lambda _: wrong)
     tools.call_tool("vi_logic", {"action": "answer", "question": "Which hosts are in the DMZ?"}, "a", False)
@@ -104,7 +104,7 @@ def test_a_broken_reference_is_refused_not_booked_as_a_wrong_program(gd, bad):
     """Review 14.11.2026 (Claude): a variable or another predicate in the reference used to be accepted and rated the program wrong —
     in the machine that became a KTO negative. One shared rule (notation.reference_answers) now refuses it in verify and in rate."""
     pytest.importorskip("clingo")
-    g.new_object("erkenntnis", "DMZ", ["host:gate1", "zone:dmz"], {"quelle": "fixture"})
+    g.new_object("insight", "DMZ", ["host:gate1", "zone:dmz"], {"quelle": "fixture"})
     src = 'ans(H) <= (O in objects("zone:dmz")) & (O.host == H)'
     with pytest.raises(tools.Rejected, match="ground|predicate"):
         tools.call_tool("vi_logic", {"action": "verify", "source": src, "question": "Which hosts are in the DMZ?",
@@ -164,7 +164,7 @@ def test_gate_has_power_where_hoeffding_has_none_and_respects_clusters():
 
 def test_champion_does_not_count_repeated_hints_as_independent_actions(gd):
     champ = {"gewichte": {"tool:demo": 2.0}, "trainiert": "2000-01-01"}
-    action = g.new_object("erfahrung", "one action", [], {})
+    action = g.new_object("experience", "one action", [], {})
     repeated = [({"tool:demo": 1.0}, 1, action.id)] * learning.CHAMPION_MIN_N
     result = learning.compare_champion(champ, {"tool:demo": -2.0}, 0, repeated)
     assert result["zustand"] == "nicht_bestimmbar" and result["n"] == 1

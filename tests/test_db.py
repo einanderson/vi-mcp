@@ -87,8 +87,8 @@ def _sqlite_memory(path):
     open_sqlite = getattr(g.open_db, "original", g.open_db)
     open_sqlite(path)
     from vi_mcp import archive
-    k = g.new_object("erkenntnis", "borg needs BORG_PASSCOMMAND for unattended runs", ["tool:borg", "thema:backup"], {"quelle": "test", "inhalt": "borg create --stats repo::{now} /etc"}, instance="a")
-    old = g.new_object("erkenntnis", "an old note about rsync", ["tool:rsync"], {"quelle": "test"}, instance="a")
+    k = g.new_object("insight", "borg needs BORG_PASSCOMMAND for unattended runs", ["tool:borg", "thema:backup"], {"quelle": "test", "inhalt": "borg create --stats repo::{now} /etc"}, instance="a")
+    old = g.new_object("insight", "an old note about rsync", ["tool:rsync"], {"quelle": "test"}, instance="a")
     archive.store_in_archive(old, "test")
     g.close_db()
     return k
@@ -108,7 +108,7 @@ def test_migrate_memory_and_archive(tmp_path, monkeypatch):
         hits = [o.id for _s, o, _g in g.recall("BORG_PASSCOMMAND", viewer=None)]
         assert hits == [k.id] and "borg create --stats" in g.load(k.id).data["inhalt"]  # full text and content came along
         assert [o.id for _s, o, _g in g.recall("tool:borg", viewer=None)] == [k.id]
-        new = g.new_object("erkenntnis", "written after the move", ["thema:x"], {"quelle": "t"}, instance="a")
+        new = g.new_object("insight", "written after the move", ["thema:x"], {"quelle": "t"}, instance="a")
         assert g.load(new.id).text == "written after the move"
     finally:
         g.close_db()

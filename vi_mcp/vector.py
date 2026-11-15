@@ -36,7 +36,7 @@ PROXIMITY_DUPLICATE = 0.95
 #: 0.20.6: at most this many semantic neighbours per new vector. Without a limit the Confluence import linked nearly identical template pages
 #: all with each other: 2.24 million edges, up to 1,316 per object, 96 s per proximity step (measured 09.11. 07:41 UTC).
 PROXIMITY_MAX = 10
-VECTOR_KINDS = ("erkenntnis", "regel", "suche", "skill", "bild", "seite")  # bild: its key statement
+VECTOR_KINDS = ("insight", "rule", "search", "skill", "image", "page")  # bild: its key statement
 TIMEOUT_S = 120
 
 #: Configuration: {"url": "https://host/embed/v1/embeddings", "token": "...", "model": "..."} or None
@@ -132,7 +132,7 @@ def load(oid: str) -> np.ndarray | None:
 def all_() -> dict[str, np.ndarray]:
     _table()
     with g.lock:
-        rows = g.db().execute("SELECT v.id, v.dim, v.raw FROM vector v JOIN object o ON o.id = v.id WHERE o.mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene')").fetchall()
+        rows = g.db().execute("SELECT v.id, v.dim, v.raw FROM vector v JOIN object o ON o.id = v.id WHERE o.mode NOT IN ('refuted', 'withdrawn', 'archived', 'quarantine')").fetchall()
     return {oid: _unpack(raw, dim) for oid, dim, raw in rows}
 
 
@@ -155,7 +155,7 @@ def catch_up(max_s: float | None = None) -> dict:
     with g.lock:
         missing = g.db().execute(
             f"SELECT o.id, o.text FROM object o LEFT JOIN vector v ON v.id = o.id WHERE v.id IS NULL AND o.kind IN ({','.join('?' * len(VECTOR_KINDS))}) "
-            "AND o.mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene') AND length(o.text) > 0 "
+            "AND o.mode NOT IN ('refuted', 'withdrawn', 'archived', 'quarantine') AND length(o.text) > 0 "
             # code structure facts: generated one-line summaries, found by hashtag and clingo — embedding them would only add near
             # duplicates (and proximity edges between them)
             f"AND o.id NOT IN (SELECT object_id FROM tag WHERE tag IN ({','.join('?' * len(FACT_TAGS))})) ORDER BY o.ts DESC",

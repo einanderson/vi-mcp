@@ -46,7 +46,7 @@ def test_same_content_from_two_servers_is_one_object_with_two_holders(two):
     r1 = p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
     r2 = p2p.inbox(_bundle(k2, [_copy(2)]), in_background=False)
     assert r1["quarantaene"] == 1 and r2["quarantaene"] == 0 and r2["dedupliziert"] == 1
-    objs = g.recall("modus:quarantaene", viewer=None)
+    objs = g.recall("modus:quarantine", viewer=None)
     assert len(objs) == 1
     ish = net_score.content_hash(GOOD)
     assert set(net_score.holders(ish)) == {_pub(k1), _pub(k2)} and net_score.find(ish) == objs[0][1].id
@@ -56,7 +56,7 @@ def test_revocation_removes_one_holder_the_last_removes_the_object(two):
     k1, k2 = two
     p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
     p2p.inbox(_bundle(k2, [_copy(2)]), in_background=False)
-    oid = g.recall("modus:quarantaene", viewer=None)[0][1].id
+    oid = g.recall("modus:quarantine", viewer=None)[0][1].id
     revoke = lambda k, i: p2p.inbox(_bundle(k, [{"ziel": _copy(i)["netz_id"], "token": _token(i)}], start=2, type_="widerruf"), in_background=False)
     assert revoke(k1, 1)["vergessen"] == 1 and g.load(oid)  # k2 still holds it
     assert net_score.holders(net_score.content_hash(GOOD)) == [_pub(k2)]
@@ -65,7 +65,7 @@ def test_revocation_removes_one_holder_the_last_removes_the_object(two):
 
 def test_foreign_copy_of_a_local_object_links_to_it_and_never_deletes_it(two):
     k1, _ = two
-    local = g.new_object("erkenntnis", GOOD["text"], GOOD["hashtags"], {"quelle": "eigene Messung"}, instance="a")
+    local = g.new_object("insight", GOOD["text"], GOOD["hashtags"], {"quelle": "eigene Messung"}, instance="a")
     r = p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
     assert r["dedupliziert"] == 1 and r["quarantaene"] == 0
     assert net_score.find(net_score.content_hash(GOOD)) == local.id
@@ -117,7 +117,7 @@ def test_wrong_rating_form_is_rejected(two):
 def test_low_score_hides_the_hint(two):
     k1, _ = two
     p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     ish = net_score.content_hash(GOOD)
     assert p2p.without_blocked([o]) == [o]
     for i in range(2):
@@ -130,7 +130,7 @@ def test_low_score_hides_the_hint(two):
 def test_outgoing_ratings_are_own_measurements_of_imports_only(two):
     k1, _ = two
     p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     assert net_score.outgoing("standard") == []  # in quarantine: nothing to rate
     o.mode = "test"
     o.data["nuetzlich"] = {"ja": 2.5, "nein": 0.5, "n": 4}
@@ -169,7 +169,7 @@ def test_ratings_travel_and_reach_the_memory(net):
 def test_imports_from_before_040_get_their_hash(two):
     k1, _ = two
     p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
-    oid = g.recall("modus:quarantaene", viewer=None)[0][1].id
+    oid = g.recall("modus:quarantine", viewer=None)[0][1].id
     with g.lock:
         g.db().executescript("DROP TABLE p2p_content; DROP TABLE p2p_holder; DROP TABLE p2p_rating;")
     assert net_score.find(net_score.content_hash(GOOD)) == oid  # rebuilt from what the import kept

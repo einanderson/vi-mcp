@@ -7,29 +7,29 @@ from vi_mcp import tools
 from vi_mcp import memory as g
 
 
-def _manual(text, instance="a", visibility="geteilt"):
-    return g.new_object("erkenntnis", text, ["art_wissen:handbuch", "skill:x"], {"quelle": "SKILL.md"}, reason="T", instance=instance,
+def _manual(text, instance="a", visibility="shared"):
+    return g.new_object("insight", text, ["art_wissen:handbuch", "skill:x"], {"quelle": "SKILL.md"}, reason="T", instance=instance,
                         visibility=visibility)
 
 
 def test_dry_run_then_apply_with_history(gd):
     own, other = _manual("Handbuch x: Abschnitt 1"), _manual("Handbuch x: Abschnitt 2", instance="b")
-    done = _manual("Handbuch x: Abschnitt 3", visibility="intern")
-    mine_private = _manual("Handbuch x: privat", visibility="privat")
+    done = _manual("Handbuch x: Abschnitt 3", visibility="internal")
+    mine_private = _manual("Handbuch x: privat", visibility="private")
     out = tools.call_tool("vi_set_visibility", {"filter": "art_wissen:handbuch", "visibility": "internal", "reason": "company host names"}, "a", False)
     assert "4 object(s)" in out and "1 would be switched to internal" in out and "1 already internal" in out
     assert "1 private (never switched)" in out and "1 of other instances (need the release right)" in out and "dry run" in out
-    assert g.load(own.id).visibility == "geteilt"  # nothing changed
+    assert g.load(own.id).visibility == "shared"  # nothing changed
     out = tools.call_tool("vi_set_visibility", {"filter": "art_wissen:handbuch", "visibility": "internal", "reason": "company host names",
                                                 "apply": True}, "a", False)
     assert "1 switched to internal" in out and "vi_net_forget" in out
     o = g.load(own.id)
-    assert o.visibility == "intern" and o.changes[-1]["was"] == "visibility geteilt → intern" and o.changes[-1]["grund"] == "company host names"
-    assert g.load(other.id).visibility == "geteilt" and g.load(mine_private.id).visibility == "privat" and g.load(done.id).visibility == "intern"
+    assert o.visibility == "internal" and o.changes[-1]["was"] == "visibility shared → internal" and o.changes[-1]["grund"] == "company host names"
+    assert g.load(other.id).visibility == "shared" and g.load(mine_private.id).visibility == "private" and g.load(done.id).visibility == "internal"
     # with the release right also objects of other instances
     out = tools.call_tool("vi_set_visibility", {"filter": "art_wissen:handbuch", "visibility": "internal", "reason": "operator", "apply": True},
                           "a", False, True)
-    assert "1 switched to internal" in out and g.load(other.id).visibility == "intern"
+    assert "1 switched to internal" in out and g.load(other.id).visibility == "internal"
 
 
 def test_refusals_name_their_reason(gd):
@@ -39,7 +39,7 @@ def test_refusals_name_their_reason(gd):
         tools.call_tool("vi_set_visibility", {"filter": "skill:x", "visibility": "private", "reason": "x"}, "a", False)
     with pytest.raises(tools.Rejected, match="reason"):
         tools.call_tool("vi_set_visibility", {"filter": "skill:x", "visibility": "internal", "reason": " "}, "a", False)
-    p = _manual("privat", visibility="privat")
+    p = _manual("privat", visibility="private")
     with pytest.raises(ValueError, match="stays with its instance"):
         g.set_visibility(p, "intern", "admin", "x")
 

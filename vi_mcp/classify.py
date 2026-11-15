@@ -26,7 +26,7 @@ from . import memory as g
 SCHEMA_VERSION = "answers-v1"
 ANSWERS = ("how", "why", "what", "who", "where", "rule")
 MEMORY = ("fact", "procedure", "episode", "rule")
-KINDS = ("erkenntnis", "regel", "skill")
+KINDS = ("insight", "rule", "skill")
 CONTENT_CHARS = 1500
 
 DEF = {
@@ -72,7 +72,7 @@ def prompt(variant: str, o: g.MemoryObject) -> tuple[list[str], str, str]:
 def prompt_hash() -> str:
     """Identity of the prompts and schema — part of every label's version."""
     probe = g.MemoryObject.__new__(g.MemoryObject)
-    probe.kind, probe.text, probe.hashtags, probe.data = "erkenntnis", "", [], {}
+    probe.kind, probe.text, probe.hashtags, probe.data = "insight", "", [], {}
     parts = [prompt(v, probe)[1] for v in ("A", "B")] + [SCHEMA_VERSION]
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:12]
 
@@ -207,7 +207,7 @@ def on_search(objs) -> dict:
     out = {"schueler": 0, "eingereiht": 0}
     try:
         ph = prompt_hash()
-        todo = [o for o in objs if o is not None and o.kind in KINDS and o.visibility != "privat" and o.mode not in ("quarantaene", "widerlegt", "zurueckgezogen")
+        todo = [o for o in objs if o is not None and o.kind in KINDS and o.visibility != "private" and o.mode not in ("quarantine", "refuted", "withdrawn")
                 and (o.data.get("klasse") or {}).get("version", {}).get("prompt") != ph]
         if not todo:
             return out
@@ -244,7 +244,7 @@ def pending(limit: int = 20) -> list[str]:
     first = []
     for oid in q:
         o = g.load(oid)
-        if o is None or (o.data.get("klasse") or {}).get("version", {}).get("prompt") == ph or o.kind not in KINDS or o.visibility == "privat":
+        if o is None or (o.data.get("klasse") or {}).get("version", {}).get("prompt") == ph or o.kind not in KINDS or o.visibility == "private":
             with g.lock:  # labelled meanwhile, gone or not knowledge: off the queue
                 g.db().execute("DELETE FROM class_queue WHERE id = ?", (oid,))
                 g.db().commit()
@@ -257,8 +257,8 @@ def pending(limit: int = 20) -> list[str]:
 def _pending_rest(n: int, ph: str) -> list[str]:
     with g.lock:
         rows = g.db().execute(
-            "SELECT id, json_extract(data, '$.klasse.version.prompt') FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') "
-            "AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') AND visibility <> 'privat' ORDER BY ts DESC LIMIT ?",
+            "SELECT id, json_extract(data, '$.klasse.version.prompt') FROM object WHERE kind IN ('insight', 'rule', 'skill') "
+            "AND mode NOT IN ('quarantine', 'refuted', 'withdrawn', 'merged', 'archived') AND visibility <> 'private' ORDER BY ts DESC LIMIT ?",
             (int(n),)).fetchall()
     return [oid for oid, p in rows if p != ph]
 
@@ -335,7 +335,7 @@ def _labelled() -> tuple[list[str], list[str], list[str]]:
     with g.lock:
         rows = g.db().execute(
             "SELECT id, json_extract(data, '$.klasse.answers'), json_extract(data, '$.klasse.memory') FROM object "
-            "WHERE json_extract(data, '$.klasse.zustand') = 'einig' AND mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchall()
+            "WHERE json_extract(data, '$.klasse.zustand') = 'einig' AND mode NOT IN ('refuted', 'withdrawn', 'archived')").fetchall()
     rows = [r for r in rows if r[1] in ANSWERS and r[2] in MEMORY]
     return [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
 
@@ -381,18 +381,18 @@ def train_student(who: str = "sleep") -> dict:
                    and r["abdeckung"] >= GATE_COVERAGE]
         C = max(passing, key=lambda c: grid[c]["abdeckung"]) if passing else max(grid, key=lambda c: grid[c]["genauigkeit"])
         clf = LogisticRegression(C=C, max_iter=3000, class_weight="balanced").fit(Xh, yh)  # the gate passed or not — the final fit uses all
-        heads[head] = {"zustand": "aktiv" if passing else "test", "C": C, "kreuzvalidierung": {str(k): v for k, v in grid.items()},
+        heads[head] = {"zustand": "active" if passing else "test", "C": C, "kreuzvalidierung": {str(k): v for k, v in grid.items()},
                        "genauigkeit_sicher": grid[C]["genauigkeit_sicher"], "abdeckung": grid[C]["abdeckung"], "genauigkeit": grid[C]["genauigkeit"],
                        "klassen": list(clf.classes_), "nicht_gelernt": {c: n for c, n in counts.items() if c not in classes},
                        "gewichte": [[round(float(x), 5) for x in row] for row in clf.coef_], "achsenabschnitt": [round(float(x), 5) for x in clf.intercept_]}
-    state = "aktiv" if all(h.get("zustand") == "aktiv" for h in heads.values()) else "test"
+    state = "active" if all(h.get("zustand") == "active" for h in heads.values()) else "test"
     report.update(zustand=state, koepfe=heads, dim=int(X.shape[1]))
     text = (f"Student for the AI-language labels ({state}): {len(keep)} agreed LLM labels; where sure (≥ {SURE}): "
             + ", ".join(f"{h} {d.get('genauigkeit_sicher', '—')} right on {d.get('abdeckung', '—')} of objects (C {d.get('C', '—')})"
                         for h, d in heads.items()))
     m = g.load(STUDENT)
     if m is None:
-        g.new_object("modell", text, ["modell:klassen"], report, importance=2, who=who, oid=STUDENT, mode=state, reason="student trained",
+        g.new_object("model", text, ["modell:klassen"], report, importance=2, who=who, oid=STUDENT, mode=state, reason="student trained",
                      instance=g.SERVER_INSTANCE)
     else:
         m.text, m.data, m.mode = text, {**report, "pruefung": m.data.get("pruefung", {"geprueft": 0, "gleich": 0})}, state
@@ -418,7 +418,7 @@ def student_label(o: g.MemoryObject) -> dict | None:
     """The student's label for one object, or None if it is not active, has no vector or is not sure (≥ SURE on both heads)."""
     from . import vector
     m = g.load(STUDENT)
-    if m is None or m.mode != "aktiv":
+    if m is None or m.mode != "active":
         return None
     v = vector.load(o.id)
     if v is None or len(v) != m.data.get("dim"):
@@ -527,7 +527,7 @@ def truth_check(humans: set[str] | None = None) -> dict:
     if not humans:
         return {"zustand": "keine_menschen", "grund": "no instance with human: true in the config"}
     with g.lock:
-        rows = g.db().execute("SELECT id FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND (json_extract(data, '$.bestaetigt_von') IS NOT NULL "
+        rows = g.db().execute("SELECT id FROM object WHERE kind IN ('insight', 'rule', 'skill') AND (json_extract(data, '$.bestaetigt_von') IS NOT NULL "
                               "OR json_extract(data, '$.widerlegt_von') IS NOT NULL)").fetchall()
     conf, ref = [], []
     for (oid,) in rows:
@@ -615,7 +615,7 @@ def store_pairs(o: g.MemoryObject, res: dict, who: str = "vi") -> bool:
     from its old text. False if nothing was stored."""
     from . import qa_pairs
     cur = g.load(o.id)
-    if (cur is None or cur.visibility == "privat" or cur.mode in ("quarantaene", "widerlegt", "aufgegangen", "archiviert")
+    if (cur is None or cur.visibility == "private" or cur.mode in ("quarantine", "refuted", "merged", "archived")
             or qa_pairs.content_sha256(document_of(cur)) != res["content_sha256"]):
         return False
     cur.data = {**cur.data, "qa": {**res, "time": g.now()}}
@@ -634,8 +634,8 @@ def pairs_pending(limit: int = 20, stale: bool = False, sample: int = 0) -> list
     random N per call (sleep) — the content hash is not in SQL. The export checks every object anyway: stale pairs are never trained."""
     from . import qa_pairs
     ph = qa_pairs.prompt_sha256()
-    live = ("SELECT id FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', "
-            "'aufgegangen', 'archiviert') AND visibility <> 'privat' AND NOT EXISTS (SELECT 1 FROM tag t WHERE t.object_id = object.id "
+    live = ("SELECT id FROM object WHERE kind IN ('insight', 'rule', 'skill') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn', "
+            "'merged', 'archived') AND visibility <> 'private' AND NOT EXISTS (SELECT 1 FROM tag t WHERE t.object_id = object.id "
             "AND t.tag = 'art_wissen:code') ")
     from datetime import datetime, timedelta, timezone
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=PAIRS_RETRY_AFTER_S)).isoformat(timespec="milliseconds")
@@ -688,8 +688,8 @@ def pairs_report() -> dict:
         rows = g.db().execute(
             "SELECT json_extract(data, '$.qa.state'), json_extract(data, '$.qa.version.prompt') = ?, COUNT(*), "
             "COALESCE(SUM(json_array_length(json_extract(data, '$.qa.pairs'))), 0), SUM(json_extract(data, '$.qa.probe') IS NOT NULL) "
-            "FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') "
-            "AND visibility <> 'privat' GROUP BY 1, 2", (qa_pairs.prompt_sha256(),)).fetchall()
+            "FROM object WHERE kind IN ('insight', 'rule', 'skill') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn', 'merged', 'archived') "
+            "AND visibility <> 'private' GROUP BY 1, 2", (qa_pairs.prompt_sha256(),)).fetchall()
     out = {"objects": 0, "ok": 0, "empty": 0, "error": 0, "none": 0, "other_prompt": 0, "pairs": 0, "probes": 0}
     for state, current, n, pairs, probes in rows:
         out["objects"] += n

@@ -5,8 +5,8 @@ other people's setups) still call the German names — this module translates th
 - `canonical_name`: German tool name → English name; English and unknown names pass through.
 - `canonical_args`: German parameter names → English names; English enum values → the stored value.
 
-Enum values are stored data (database, hashtags, network format) and stay German there, e.g. visibility "shared" is stored as
-"geteilt". German values are accepted as they are.
+Enum values: since 0.67.0 the stored values are English too (vi_mcp/names.py); a German value of an older client is read as its
+English form here (visibility "geteilt" → "shared"). Values that are still stored German (reflex kinds) are mapped the other way.
 """
 from __future__ import annotations
 
@@ -34,9 +34,11 @@ PARAM_ALIASES: dict[str, str] = {
     "vorher_id": "before_id", "weg": "remove", "wichtigkeit": "importance",
 }
 
-#: English parameter → {English enum value: stored value}. The tool schemas show the English values.
+#: English parameter → {accepted value: stored value}. The tool schemas show the English values; German values of older clients map to the
+#: same stored value (0.67.0: stored values are English, except the reflex kinds werkzeug/vorher/nachher until their data step).
 STORED_VALUES: dict[str, dict[str, str]] = {
-    "area": {"values": "werte", "goals": "ziele", "style": "stil", "limits": "grenzen"},
+    "area": {"values": "values", "goals": "goals", "style": "style", "limits": "limits",
+             "werte": "values", "ziele": "goals", "stil": "style", "grenzen": "limits"},
     "action": {"approve": "freigeben", "discard": "verwerfen", "state": "state", "sync": "sync",
                "create": "create", "status": "status", "execute": "execute", "snapshot": "snapshot", "restore": "restore",
                "fork": "fork", "teach": "teach", "import": "import", "verify": "verify",
@@ -44,11 +46,12 @@ STORED_VALUES: dict[str, dict[str, str]] = {
                "plan": "plan", "guide": "guide", "record": "record",  # 0.62.0: vi_finetune — not stored, the same in both languages
                "check": "check", "ask": "ask", "rate": "rate", "save": "save", "objects": "objects", "propose": "propose", "learn": "learn", "answer": "answer",
                "list": "list", "show": "show", "evaluate": "evaluate", "install": "install", "use": "use", "bound": "bound", "explain": "explain"},  # 0.66.0: vi_philosophy, likewise  # 0.62.0: vi_logic, likewise (objects 0.63.0)
-    "visibility": {"shared": "geteilt", "internal": "intern", "private": "privat"},
+    "visibility": {"shared": "shared", "internal": "internal", "private": "private", "geteilt": "shared", "intern": "internal", "privat": "private"},
     "outcome": {"good": "gut", "bad": "schlecht"},
     "format": {"text": "text", "vil": "vil"},  # 0.62.0: vi_recall answer format — not stored, the same in both languages
-    "kind": {"tool": "werkzeug", "before": "vorher", "after": "nachher", "projekt": "projekt", "spezial": "spezial"},
-    "mode": {"test": "test", "active": "aktiv", "off": "aus"},
+    "kind": {"tool": "werkzeug", "before": "vorher", "after": "nachher", "project": "project", "special": "special",
+             "projekt": "project", "spezial": "special"},
+    "mode": {"test": "test", "active": "active", "off": "off", "aktiv": "active", "aus": "off"},
 }
 
 
@@ -58,7 +61,7 @@ def canonical_name(name: str) -> str:
 
 
 def canonical_args(args: dict) -> dict:
-    """German parameter names → English; English enum values → stored values. German values pass through unchanged."""
+    """German parameter names → English; enum values → their stored form (STORED_VALUES)."""
     out = {}
     for k, v in (args or {}).items():
         k = PARAM_ALIASES.get(k, k)

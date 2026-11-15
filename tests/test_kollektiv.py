@@ -26,25 +26,25 @@ def test_private_and_shared(from_seq):
     with session.on_behalf(a):
         v = intuition.before("netbox_get_vms", {"host": "x"}, "a")
         e = intuition.after("netbox_get_vms", {"host": "x"}, True, 3, None, "geheim: token=abc", v["vorher_id"], "a")
-        k = g.new_object("erkenntnis", "x steht im Rack 4", ["host:x"], {"quelle": "Begehung"}, reason="T")
-    assert g.load(e["erfahrung"]).instance == "a" and g.load(e["erfahrung"]).visibility == "privat"
-    assert k.instance == "a" and k.visibility == "geteilt" and "instanz:a" in k.hashtags
+        k = g.new_object("insight", "x steht im Rack 4", ["host:x"], {"quelle": "Begehung"}, reason="T")
+    assert g.load(e["erfahrung"]).instance == "a" and g.load(e["erfahrung"]).visibility == "private"
+    assert k.instance == "a" and k.visibility == "shared" and "instanz:a" in k.hashtags
     with session.on_behalf(b):
         assert [o.id for _, o, _g in g.recall("host:x")] == [k.id]  # insight yes, experience/answer no
         with pytest.raises(tools.Rejected, match="unknown"):
             tools.call_tool("vi_objekt", {"id": e["erfahrung"]}, "b", True)
     with session.on_behalf(a):
         assert len(g.recall("host:x")) == 2  # own experience + insight
-        assert len(g.recall("art:antwort tool:netbox_get_vms")) == 1  # own remembered answer
+        assert len(g.recall("art:answer tool:netbox_get_vms")) == 1  # own remembered answer
     with session.on_behalf(b):
-        assert not g.recall("art:antwort tool:netbox_get_vms")  # foreign remembered answer: invisible
+        assert not g.recall("art:answer tool:netbox_get_vms")  # foreign remembered answer: invisible
     assert len(g.recall("tool:netbox_get_vms", viewer=None)) == 2  # the server sees experience + answer
 
 
 def test_instance_hashtag_is_author_not_free(from_seq):
     a, _ = from_seq
     with session.on_behalf(a):
-        o = g.new_object("erkenntnis", "versuchte fremde Urheberschaft", ["instanz:b", "thema:t"], {"quelle": "x"}, reason="T")
+        o = g.new_object("insight", "versuchte fremde Urheberschaft", ["instanz:b", "thema:t"], {"quelle": "x"}, reason="T")
         assert o.instance == "a" and "instanz:b" not in o.hashtags
         with pytest.raises(tools.Rejected, match="is the author"):
             tools.call_tool("vi_markiere", {"id": o.id, "hinzu": ["instanz:b"], "grund": "x"}, "a", True)
@@ -53,7 +53,7 @@ def test_instance_hashtag_is_author_not_free(from_seq):
 def test_confirmation_across_instances(from_seq):
     a, b = from_seq
     with session.on_behalf(a):
-        o = g.new_object("erkenntnis", "Dienst y braucht 2 GB RAM", ["thema:y"], {"quelle": "free -m"}, reason="T")
+        o = g.new_object("insight", "Dienst y braucht 2 GB RAM", ["thema:y"], {"quelle": "free -m"}, reason="T")
     w0 = g.recall("thema:y", viewer=None)[0][2]["wichtigkeit"]
     o.confirm("ki@a", "nochmal gemessen", "a")  # self-confirmation: counts, but no bonus
     assert g.load(o.id).foreign_confirmations() == 0
@@ -66,22 +66,22 @@ def test_confirmation_across_instances(from_seq):
 
 def test_contradiction_disputed_then_refuted(from_seq):
     with session.on_behalf(from_seq[0]):
-        o = g.new_object("erkenntnis", "z läuft auf Port 80", ["thema:z"], {"quelle": "ss -ltn"}, reason="T")
+        o = g.new_object("insight", "z läuft auf Port 80", ["thema:z"], {"quelle": "ss -ltn"}, reason="T")
     g.load(o.id).refute("ki@b", "bei mir Port 8080", "b")
-    assert g.load(o.id).mode == "strittig"
+    assert g.load(o.id).mode == "disputed"
     # 0.21.1: disputed items no longer appear unasked before actions — counted by name, still findable on request
     h = intuition.before("t", {}, "c", context=["thema:z"])["hinweise"]
     assert not any("Port 80" in x for x in h) and any("disputed or unconfirmed hypothesis, only on request" in x for x in h)
     assert any(x.id == o.id for _, x, _g in g.recall("thema:z", viewer=None))
     g.load(o.id).confirm("ki@c", "Port 80 gemessen", "c")
-    assert g.load(o.id).mode == "aktiv"  # a foreign confirmation ends the dispute
+    assert g.load(o.id).mode == "active"  # a foreign confirmation ends the dispute
     g.load(o.id).refute("ki@d", "Port 8080", "d")
-    assert g.load(o.id).mode == "widerlegt"  # two different contradicting instances (b, d)
+    assert g.load(o.id).mode == "refuted"  # two different contradicting instances (b, d)
     assert not g.recall("thema:z", viewer=None)
     with session.on_behalf(from_seq[0]):
-        o2 = g.new_object("erkenntnis", "eigener Irrtum über Port", ["thema:q"], {"quelle": "x"}, reason="T")
+        o2 = g.new_object("insight", "eigener Irrtum über Port", ["thema:q"], {"quelle": "x"}, reason="T")
     o2.refute("ki@a", "selbst falsch", "a")
-    assert g.load(o2.id).mode == "zurueckgezogen"  # 0.67.0: the author withdraws right away — taken back, not proven false
+    assert g.load(o2.id).mode == "withdrawn"  # 0.67.0: the author withdraws right away — taken back, not proven false
     assert not g.recall("thema:q", viewer=None)  # gone from searches like a refuted object
 
 
@@ -91,36 +91,36 @@ def test_withdrawn_and_refuted_are_two_modes(from_seq, tmp_path):
     refuted after two. The migration moves old author-only widerlegt objects, keeps the rest and names itself in the history."""
     import json
     with session.on_behalf(from_seq[0]):
-        o = g.new_object("erkenntnis", "w läuft auf Port 81", ["thema:w"], {"quelle": "x"}, reason="T")
+        o = g.new_object("insight", "w läuft auf Port 81", ["thema:w"], {"quelle": "x"}, reason="T")
     o = g.load(o.id).refute("ki@a", "selbst falsch", "a")
-    assert o.mode == "zurueckgezogen"
+    assert o.mode == "withdrawn"
     o = g.load(o.id).refute("ki@b", "auch falsch", "b", family="fam_b")
-    assert o.mode == "zurueckgezogen"  # one foreign family does not turn a withdrawal into a refutation
+    assert o.mode == "withdrawn"  # one foreign family does not turn a withdrawal into a refutation
     o = g.load(o.id).refute("ki@c", "falsch gemessen", "c", family="fam_c")
-    assert o.mode == "widerlegt"  # two independent foreign families: refuted
-    assert g.refuted_mode("a", "aktiv", {"widerlegungen": [{"instanz": "b", "familie": "f"}, {"instanz": "c", "familie": "f"}]}) == "strittig"
+    assert o.mode == "refuted"  # two independent foreign families: refuted
+    assert g.refuted_mode("a", "active", {"widerlegungen": [{"instanz": "b", "familie": "f"}, {"instanz": "c", "familie": "f"}]}) == "disputed"
     # migration: an old author-only widerlegt becomes zurueckgezogen; a refutation by two families stays widerlegt
     with session.on_behalf(from_seq[0]):
-        old = g.new_object("erkenntnis", "alt vom Autor widerlegt", ["thema:m"], {"quelle": "x"}, reason="T")
-        kept = g.new_object("erkenntnis", "alt von zwei Familien widerlegt", ["thema:m"], {"quelle": "x"}, reason="T")
+        old = g.new_object("insight", "alt vom Autor widerlegt", ["thema:m"], {"quelle": "x"}, reason="T")
+        kept = g.new_object("insight", "alt von zwei Familien widerlegt", ["thema:m"], {"quelle": "x"}, reason="T")
     with g.lock:
         con = g.db()
-        con.execute("UPDATE object SET mode = 'widerlegt', data = ? WHERE id = ?",
+        con.execute("UPDATE object SET mode = 'refuted', data = ? WHERE id = ?",
                     (json.dumps({"quelle": "x", "widerlegt_von": {"a": 1}, "widerlegungen": [{"instanz": "a", "familie": "a"}]}), old.id))
-        con.execute("UPDATE object SET mode = 'widerlegt', data = ? WHERE id = ?",
+        con.execute("UPDATE object SET mode = 'refuted', data = ? WHERE id = ?",
                     (json.dumps({"quelle": "x", "widerlegt_von": {"b": 1, "c": 1},
                                  "widerlegungen": [{"instanz": "b", "familie": "fb"}, {"instanz": "c", "familie": "fc"}]}), kept.id))
         g._migrate(con)
         con.commit()
-    assert g.load(old.id).mode == "zurueckgezogen" and g.load(old.id).changes[-1]["was"] == "zurueckgezogen"
-    assert g.load(kept.id).mode == "widerlegt"
+    assert g.load(old.id).mode == "withdrawn" and g.load(old.id).changes[-1]["was"] == "withdrawn"
+    assert g.load(kept.id).mode == "refuted"
     with g.lock:
         g._migrate(g.db())  # idempotent: nothing left to move
-    assert g.load(old.id).changes[-1]["was"] == "zurueckgezogen" and len([c for c in g.load(old.id).changes if c["was"] == "zurueckgezogen"]) == 1
+    assert g.load(old.id).changes[-1]["was"] == "withdrawn" and len([c for c in g.load(old.id).changes if c["was"] == "withdrawn"]) == 1
 
 
 def test_context_hashtags_as_triggers(gd):
-    g.new_object("erkenntnis", "OOM auf web1 kommt vom Java-Heap", ["thema:oom"], {"quelle": "dmesg"}, reason="T")
+    g.new_object("insight", "OOM auf web1 kommt vom Java-Heap", ["thema:oom"], {"quelle": "dmesg"}, reason="T")
     assert not intuition.before("Bash", {"command": "free"}, "a", False)["hinweise"]
     v = intuition.before("Bash", {"command": "free"}, "a", False, context=["thema:oom", "keinhashtag", "art:x"])
     assert any("Java-Heap" in h for h in v["hinweise"]) and "thema:oom" in v["zugriff"]["reize"]
@@ -156,10 +156,10 @@ def test_question_expires(from_seq):
     as_user(from_seq[0], "vi_frage", {"an": "alle", "text": "Kennt jemand Host zz9 im Netz?"})
     old = (datetime.now(timezone.utc) - timedelta(days=questions.EXPIRY_DAYS + 1)).isoformat(timespec="seconds")
     with g.lock:
-        g.db().execute("UPDATE object SET ts = ? WHERE kind = 'frage'", (old,))
+        g.db().execute("UPDATE object SET ts = ? WHERE kind = 'question'", (old,))
         g.db().commit()
     assert questions.let_expire() == 1
-    assert "zustand:abgelaufen" in g.recall("art:frage", viewer=None)[0][1].hashtags
+    assert "zustand:abgelaufen" in g.recall("art:question", viewer=None)[0][1].hashtags
 
 
 def test_collective_rule(gd):
@@ -167,7 +167,7 @@ def test_collective_rule(gd):
         v = intuition.before("graylog_search", {"q": inst}, inst)
         intuition.after("graylog_search", {"q": inst}, False, 1, "ConnectionError: refused 10.0.0.1", None, v["vorher_id"], inst)
     assert main_loop.step() == 1
-    r = g.recall("art:regel kollektiv:ja", viewer=None)[0][1]
+    r = g.recall("art:rule kollektiv:ja", viewer=None)[0][1]
     assert r.instance == g.SERVER_INSTANCE and r.data["instanzen"] == ["a", "b"] and "at 2 instances" in r.text
 
 
@@ -190,25 +190,25 @@ def test_migration_from_0_1(tmp_path):
         CREATE TABLE objekt (id TEXT PRIMARY KEY, art TEXT NOT NULL, zeit TEXT NOT NULL, zuletzt TEXT NOT NULL,
             text TEXT NOT NULL DEFAULT '', daten TEXT NOT NULL DEFAULT '{}', wichtigkeit INTEGER NOT NULL DEFAULT 1,
             bestaetigt INTEGER NOT NULL DEFAULT 0, widerlegt INTEGER NOT NULL DEFAULT 0, zugriffe INTEGER NOT NULL DEFAULT 0,
-            modus TEXT NOT NULL DEFAULT 'aktiv', aenderungen TEXT NOT NULL DEFAULT '[]', gespraech TEXT);
+            modus TEXT NOT NULL DEFAULT 'active', aenderungen TEXT NOT NULL DEFAULT '[]', gespraech TEXT);
         CREATE TABLE tag (objekt_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (objekt_id, tag));
-        INSERT INTO objekt (id, art, zeit, zuletzt, text) VALUES ('erkenntnis:1', 'erkenntnis', '2026-11-08T00:00:00+00:00', '2026-11-08T00:00:00+00:00', 'alt');
-        INSERT INTO objekt (id, art, zeit, zuletzt, text) VALUES ('antwort:1', 'antwort', '2026-11-08T00:00:00+00:00', '2026-11-08T00:00:00+00:00', 'a');
-        INSERT INTO tag VALUES ('erkenntnis:1', 'instanz:anna'), ('erkenntnis:1', 'art:erkenntnis'), ('antwort:1', 'frage:abc');
+        INSERT INTO objekt (id, art, zeit, zuletzt, text) VALUES ('erkenntnis:1', 'insight', '2026-11-08T00:00:00+00:00', '2026-11-08T00:00:00+00:00', 'alt');
+        INSERT INTO objekt (id, art, zeit, zuletzt, text) VALUES ('antwort:1', 'answer', '2026-11-08T00:00:00+00:00', '2026-11-08T00:00:00+00:00', 'a');
+        INSERT INTO tag VALUES ('erkenntnis:1', 'instanz:anna'), ('erkenntnis:1', 'art:insight'), ('antwort:1', 'frage:abc');
     """)
     con.commit()
     con.close()
     g.open_db(p)
     try:
         e, a = g.load("erkenntnis:1"), g.load("antwort:1")
-        assert (e.instance, e.visibility) == ("anna", "geteilt") and (a.instance, a.visibility) == ("vi", "privat")
+        assert (e.instance, e.visibility) == ("anna", "shared") and (a.instance, a.visibility) == ("vi", "private")
         assert "cache:abc" in a.hashtags and not [t for t in a.hashtags if t.startswith("frage:")]
     finally:
         g.close_db()
 
 
 def test_reinforcement_only_on_success(gd):
-    e = g.new_object("erkenntnis", "web2 braucht Proxy", ["host:web2"], {"quelle": "x"}, reason="T")
+    e = g.new_object("insight", "web2 braucht Proxy", ["host:web2"], {"quelle": "x"}, reason="T")
     v = intuition.before("checkmk_get_host", {"host": "web2"}, "a")
     assert e.id in v["zugriff"]["gefunden"] and g.load(e.id).accesses == 0  # showing alone does not reinforce
     n = intuition.after("checkmk_get_host", {"host": "web2"}, False, 1, "Timeout", None, v["vorher_id"], "a")
@@ -220,14 +220,14 @@ def test_reinforcement_only_on_success(gd):
 
 def test_hint_budget(gd):
     for i in range(7):
-        g.new_object("erkenntnis", f"Hinweis {i} zu web3", ["host:web3"], {"quelle": "x"}, reason="T")
+        g.new_object("insight", f"Hinweis {i} zu web3", ["host:web3"], {"quelle": "x"}, reason="T")
     h = intuition.before("Bash", {"host": "web3"}, "a", False)["hinweise"]
     assert len(h) == intuition.HINT_BUDGET + 2 and h[-1].startswith("… 3 more hits") and "vi_drilldown" in h[-1]
     assert h[-2].startswith("Did one of these help or mislead you?")  # 0.49.0: the feedback nudge
 
 
 def test_history_truncation_is_named(gd):
-    o = g.new_object("erkenntnis", "lange Geschichte", ["thema:g"], {"quelle": "x"}, reason="T")
+    o = g.new_object("insight", "lange Geschichte", ["thema:g"], {"quelle": "x"}, reason="T")
     for i in range(g.HISTORY_MAX + 4):
         o = g.load(o.id); o.confirm("ki@a", f"Grund {i}", "a")
     o = g.load(o.id)
@@ -253,7 +253,7 @@ def test_surprise_determines_importance(gd):
 
 def test_hint_lift_measurement_point(gd):
     from vi_mcp import metrics
-    g.new_object("erkenntnis", "web9 nur über Proxy", ["host:web9"], {"quelle": "x"}, reason="T")
+    g.new_object("insight", "web9 nur über Proxy", ["host:web9"], {"quelle": "x"}, reason="T")
     for i in range(12):  # with hint (host:web9) → 10/12 ok
         v = intuition.before("checkmk_get_host", {"host": "web9", "i": i}, "a")
         intuition.after("checkmk_get_host", {"host": "web9", "i": i}, i < 10, 1, None if i < 10 else "Timeout", "ok" if i < 10 else None, v["vorher_id"], "a")
@@ -272,7 +272,7 @@ def test_delete_conversation_tombstone(from_seq):
     with session.on_behalf(a):
         v = intuition.before("t_x", {"passwort": "geheim123"}, "a")
         e = intuition.after("t_x", {"passwort": "geheim123"}, True, 1, None, "geheimes Ergebnis", v["vorher_id"], "a")["erfahrung"]
-        k = g.new_object("erkenntnis", "aus dem Gespräch gelernt", ["thema:l"], {"quelle": "x"}, reason="T")
+        k = g.new_object("insight", "aus dem Gespräch gelernt", ["thema:l"], {"quelle": "x"}, reason="T")
     with pytest.raises(tools.Rejected, match="still open"):
         as_user(a, "vi_loesche_gespraech", {"serial": a.serial, "grund": "Test"})
     session.finish(a.id)
@@ -297,7 +297,7 @@ def test_delete_conversation_tombstone(from_seq):
 
 def test_llm_hypothesis_hint_only_after_foreign_confirmation(gd):
     """0.21.1: an unconfirmed sleep hypothesis was the most-shown hint (719×). Only a foreign confirmation makes it a hint."""
-    o = g.new_object("erkenntnis", "Auf Host web4 deuten Latenzen auf Instabilität hin", ["host:web4", "herkunft:schlaf-llm"],
+    o = g.new_object("insight", "Auf Host web4 deuten Latenzen auf Instabilität hin", ["host:web4", "herkunft:schlaf-llm"],
                        {"quelle": "Schlaf-Reflexion"}, reason="T", instance="vi")
     assert not any("web4 deuten" in x for x in intuition.before("Bash", {"command": "ssh web4 uptime"}, "a")["hinweise"])
     g.load(o.id).confirm("ki@b", "Latenz selbst gemessen", "b")
@@ -333,7 +333,7 @@ def test_vi_questions_by_id_respects_quarantine_and_answers_never_vanish(from_se
     a, b = from_seq
     fid = as_user(a, "vi_ask", {"to": "b", "text": "Please check the deployment notes for web1 carefully.", "source": "x"}).split()[1]
     o = g.load(fid)
-    o.mode, o.data["pruefung"] = "quarantaene", {"verdacht": ["instruction"]}
+    o.mode, o.data["pruefung"] = "quarantine", {"verdacht": ["instruction"]}
     g.save(o)
     with pytest.raises(tools.Rejected, match="held in quarantine"):
         as_user(b, "vi_questions", {"id": fid})
@@ -356,9 +356,9 @@ def test_a_pending_network_question_is_not_readable_before_release(from_seq):
     """Codex's review: network questions arrive with an='alle' in quarantine without a fixed-rule suspicion (forum.py); they are not
     delivered before review, so vi_questions(id) refuses them for ordinary instances, and vi_object marks them as unreviewed data."""
     a, b = from_seq
-    o = g.new_object("frage", "How do I rotate the backup keys on db1?", ["an:alle", "zustand:offen"],
+    o = g.new_object("question", "How do I rotate the backup keys on db1?", ["an:alle", "zustand:offen"],
                      {"von": "x@net", "an": "alle", "zustand": "offen", "quelle": "net", "zugestellt_an": [], "antworten": [], "gemeldet": 0,
-                      "pruefung": {"regeln": [], "pruefer": None}}, mode="quarantaene", instance="p2p-peer", reason="import")
+                      "pruefung": {"regeln": [], "pruefer": None}}, mode="quarantine", instance="p2p-peer", reason="import")
     with pytest.raises(tools.Rejected, match="not delivered yet"):
         as_user(b, "vi_questions", {"id": o.id})
     assert as_user(b, "vi_object", {"id": o.id}).startswith("UNREVIEWED — waits in quarantine")

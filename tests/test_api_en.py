@@ -28,7 +28,7 @@ def test_english_and_german_call_the_same(gd):
                                       "source": "Betriebsregel 09.11.", "visibility": "internal", "outcome": "good"}, "a", True)
     oid = outputs.split()[1]
     o = g.load(oid)
-    assert o.visibility == "intern" and o.data["quelle"] == "Betriebsregel 09.11." and o.data.get("ausgang") == "gut"
+    assert o.visibility == "internal" and o.data["quelle"] == "Betriebsregel 09.11." and o.data.get("ausgang") == "gut"
     old = tools.call_tool("vi_erinnere", {"filter": "nginx"}, "a", True)
     new = tools.call_tool("vi_recall", {"filter": "nginx"}, "a", True)
     assert oid in old and oid in new

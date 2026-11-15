@@ -64,8 +64,8 @@ def call(i, name, args):
 
 def test_local_user_reads_internal_knowledge_without_a_token(local):
     sock = local({ME: "anna"})
-    o = g.new_object("erkenntnis", "Internal runbook: restart the VPN concentrator with vpnctl restart", ["thema:vpn"],
-                     {"quelle": "runbook 10.11.2026"}, instance="anna", visibility="intern")
+    o = g.new_object("insight", "Internal runbook: restart the VPN concentrator with vpnctl restart", ["thema:vpn"],
+                     {"quelle": "runbook 10.11.2026"}, instance="anna", visibility="internal")
     out, _err = bridge(sock, [INIT, INITIALIZED, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
                               call(3, "vi_recall", {"filter": "thema:vpn"}),
                               call(4, "vi_learn", {"text": "learned over stdio, without any token", "hashtags": ["thema:stdio"], "source": "test 10.11.2026"})])
@@ -75,7 +75,7 @@ def test_local_user_reads_internal_knowledge_without_a_token(local):
     assert o.id in out[2]["result"]["content"][0]["text"]  # internal knowledge visible
     learned = g.load(out[3]["result"]["content"][0]["text"].split()[1])
     assert learned.instance == "anna"
-    conv = g.recall("art:gespraech instanz:anna", viewer=None)
+    conv = g.recall("art:conversation instanz:anna", viewer=None)
     assert conv and conv[0][1].data.get("familie") == "claude"  # family from the client name, as over HTTP
 
 

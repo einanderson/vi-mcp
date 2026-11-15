@@ -41,7 +41,7 @@ _SHORT = re.compile(r"(?<![\w:])([!(]*)([@#])([A-Za-z0-9][\w.\-:/]*)")
 PRIOR = {
     "how": ("art:skill", "art_wissen:loesung", "art_wissen:runbook", "art_wissen:handbuch", "art_wissen:doku-extern"),
     "why": ("fehler:", "ausgang:schlecht", "art_wissen:loesung"),
-    "rule": ("art:regel", "thema:vorgabe"),
+    "rule": ("art:rule", "thema:vorgabe"),
     "who": ("person:", "team:", "zustaendig:"),
     "where": ("host:", "pfad:", "port:", "url:"),
     "what": (),
@@ -138,7 +138,7 @@ def prior_rank(o, qtype: str | None) -> int:
     return 1 if any(t == p or (p.endswith(":") and t.startswith(p)) for t in tags for p in prefixes) else 2
 
 
-MEMORY = {"skill": "procedure", "regel": "rule", "erfahrung": "episode", "gespraech": "episode"}
+MEMORY = {"skill": "procedure", "rule": "rule", "experience": "episode", "conversation": "episode"}
 
 
 def memory_of(o) -> str:

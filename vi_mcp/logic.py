@@ -59,12 +59,17 @@ from clingo_object.notation import (  # noqa: F401 — the language core, shared
     _solve, _contradictions, _as_term, _head, _split, _visible, _cost, check_result,
     ask_result, probabilities_result, run_program, weighted,
 )
+from clingo_object import notation as _notation
+from . import names as _names
+
+# 0.67.0: programs written against the German stored values (O.kind == "erkenntnis") still mean the same objects
+_notation.FIELD_VALUE_ALIASES.update(kind=_names.KINDS, mode=_names.MODES, visibility=_names.VISIBILITIES)
 
 
 #: 0.63.0 clingo-objekt: memory objects as facts — at most this many objects per program (the rest is named "abgeschnitten")
 MAX_OBJECTS = 20_000  # measured on a production copy (13.11.2026): 13,088 objects in 2.3 s; at 2,000, cutting caused 3 of 13 wrong answers
 #: never imported, even when a filter asks for them (quarantine only via vi_quarantine, archive only via vi_archive)
-NEVER_IMPORTED = ("quarantaene", "archiviert")
+NEVER_IMPORTED = ("quarantine", "archived")
 
 
 def extra_dirs() -> list[Path]:
@@ -230,7 +235,7 @@ def object_data(filters: list[str], viewer: str | None, edges: bool = True) -> d
         raise LogicError("objects(…) reads the memory — run it through vi_logic on the server, not on a file") from None
 
     def visible(sicht, inst) -> bool:
-        return viewer is None or sicht == "geteilt" or inst == viewer or (sicht == "intern" and viewer != g.OPEN_INSTANCE)
+        return viewer is None or sicht == "shared" or inst == viewer or (sicht == "internal" and viewer != g.OPEN_INSTANCE)
 
     def load(ids: list[str]) -> list[tuple]:
         out = []
@@ -360,8 +365,8 @@ def verify(source: str, expected: list[str], reference: str, question: str, inst
                  "frage": question, "praedikat": predicate, "instanz": instance, "zeit": g.now(), "ausfuehrung_hash": r["ausfuehrung_hash"],
                  "case": {"objects": world, "expected": sorted(want), "predicate": predicate, "expected_state": r["zustand"]}}
         name = "verified-" + program_hash(source)[:24]
-        private = any(o.get("visibility") == "privat" for o in world["objects"])
-        o = save_rule_set(name, source, question, "privat" if private else "intern", instance)
+        private = any(o.get("visibility") == "private" for o in world["objects"])
+        o = save_rule_set(name, source, question, "private" if private else "internal", instance)
         g.update_data(o.id, lambda d: d["logik"].update({"pruefung": proof}))
         g.db().commit()
         return {"state": "verified" if proof["richtig"] else "refuted", "missing": len(want - got), "unexpected": len(got - want),
@@ -389,7 +394,7 @@ def _proposal_target_ok(p: dict, instance: str | None) -> str | None:
         return "a link needs a reason"
     elif p["aktion"] == "rule":
         o = g.load(p["ziel"])
-        if o.kind != "regel" or "logik" not in o.data:
+        if o.kind != "rule" or "logik" not in o.data:
             return f"{p['ziel']} is no rule set"
         try:
             translate(o.data["logik"]["quelle"] + "\n" + p["regel"])
@@ -432,23 +437,23 @@ def _hold(p: dict, what: str, rules: list[str], prog_hash: str, rule_set: str | 
     oid = "vorschlag:" + hashlib.sha256(key.encode()).hexdigest()[:20]
     old = g.load(oid)
     if old is not None:
-        if old.mode == "quarantaene":
+        if old.mode == "quarantine":
             g.update_data(oid, lambda d: d.update(wiederholt=int(d.get("wiederholt", 0)) + 1))
             with g.lock:
                 g.db().commit()
             out["wiederholt"].append(oid)
         else:
-            out["erledigt"].append({"id": oid, "zustand": "released" if old.mode != "widerlegt" else "discarded"})
+            out["erledigt"].append({"id": oid, "zustand": "released" if old.mode != "refuted" else "discarded"})
         return
     target = g.load(p["ziel"])
-    g.new_object("vorschlag", f"Proposal from a logic program: {what}",
-                 ["thema:logik", f"vorschlag:{p['aktion']}", "modus:quarantaene"],
+    g.new_object("proposal", f"Proposal from a logic program: {what}",
+                 ["thema:logik", f"vorschlag:{p['aktion']}", "modus:quarantine"],
                  {"vorschlag": {k: p[k] for k in _PROPOSAL_KEYS if k in p}, "regeln": rules,
                   # a proposal changes another object: always sensitive, so only the release right (a person: vi-mcp release) decides
                   "pruefung": {"regeln": [f"logic proposal: {what}"[:160]], "pruefer": None},
                   "programm_hash": prog_hash, "regelsatz": rule_set, "quelle": f"vi_logic by {instance}",
                   "inhalt": "Rules that derive it:\n" + "\n".join(rules)},
-                 who=f"ki@{instance}", reason="vi_logic proposal", oid=oid, mode="quarantaene", instance=instance,
+                 who=f"ki@{instance}", reason="vi_logic proposal", oid=oid, mode="quarantine", instance=instance,
                  visibility=target.visibility if target is not None else None, link=False)
     out["gespeichert"].append(oid)
 
@@ -457,7 +462,7 @@ def save_rule_set(name: str, source: str, description: str, visibility: str | No
     """A named rule set as an object of kind regel (the newest of a name wins). Only valid notation is kept."""
     from . import memory as g
     _program, stmts = translate(source)
-    return g.new_object("regel", f"Logic rule set {name}: " + (description or f"{len(stmts)} statements"),
+    return g.new_object("rule", f"Logic rule set {name}: " + (description or f"{len(stmts)} statements"),
                         ["thema:logik", f"logik:{name}"], {"logik": {"name": name, "quelle": source, "aussagen": len(stmts),
                                                                      "clingo": CLINGO_VERSION, "beschreibung": description},
                                                            "inhalt": source, "quelle": f"vi_logic save by {who or instance}"},

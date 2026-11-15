@@ -46,7 +46,7 @@ def _c(name: str, state: str, value, threshold, note: str = "") -> dict:
 
 def _knowledge(index: str | None) -> list[tuple]:
     sql = ("SELECT id, CAST(json_extract(data, '$.nuetzlich.n') AS REAL), json_extract(data, '$.bestaetigt_von'), json_extract(data, '$.klasse.zustand') "
-           "FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND mode IN ('aktiv', 'test') AND visibility IN ('geteilt', 'intern')"
+           "FROM object WHERE kind IN ('insight', 'rule', 'skill') AND mode IN ('active', 'test') AND visibility IN ('shared', 'internal')"
            + (" AND idx = ?" if index else ""))
     with g.lock:
         return g.db().execute(sql, ([index] if index else [])).fetchall()
@@ -64,9 +64,9 @@ def status(index: str | None = None) -> dict:
     out.append(_c("checked", "erfuellt" if n and share >= cfg["min_checked"] else "offen", share, cfg["min_checked"],
                   f"{checked} of {n} rated after being shown or confirmed by an instance"))
     with g.lock:
-        refuted = g.db().execute("SELECT COUNT(*) FROM object WHERE mode = 'widerlegt'" + (" AND idx = ?" if index else ""),
+        refuted = g.db().execute("SELECT COUNT(*) FROM object WHERE mode = 'refuted'" + (" AND idx = ?" if index else ""),
                                  ([index] if index else [])).fetchone()[0]
-        withdrawn = g.db().execute("SELECT COUNT(*) FROM object WHERE mode = 'zurueckgezogen'" + (" AND idx = ?" if index else ""),
+        withdrawn = g.db().execute("SELECT COUNT(*) FROM object WHERE mode = 'withdrawn'" + (" AND idx = ?" if index else ""),
                                    ([index] if index else [])).fetchone()[0]
     out.append(_c("refuted_handled", "erfuellt", refuted, None, f"{refuted} refuted and {withdrawn} withdrawn object(s) marked, not deleted "
                                                              "(informative; withdrawn = taken back by the author, 0.67.0)"))
@@ -76,7 +76,7 @@ def status(index: str | None = None) -> dict:
                   "hybrid MRR of the daily fixed question set" + (f" ({hist[-1].get('datum') or hist[-1].get('zeit', '')[:10]})" if hist else " — no measurement yet")))
     m = (learning.active(index) if index else None) or learning.model()
     auc = (m.data.get("auc_holdout") if m else None)
-    active = bool(m) and m.mode == "aktiv"
+    active = bool(m) and m.mode == "active"
     out.append(_c("router", "nicht_gemessen" if auc is None else "erfuellt" if active and auc >= cfg["min_auc"] else "offen", auc, cfg["min_auc"],
                   (f"model {m.id} ({m.mode})" if m else "no model yet")))
     hb = metrics.holdback_effect(24 * 30)
@@ -94,9 +94,9 @@ def status(index: str | None = None) -> dict:
     labelled = sum(1 for *_x, k in rows if k in ("einig", "uneinig", "schueler"))
     lshare = round(labelled / n, 3) if n else 0.0
     st = g.load(classify.STUDENT)
-    lab_ok = n and lshare >= cfg["min_labelled"] and st is not None and st.mode == "aktiv"
+    lab_ok = n and lshare >= cfg["min_labelled"] and st is not None and st.mode == "active"
     out.append(_c("labels", "erfuellt" if lab_ok else "offen", lshare, cfg["min_labelled"],
-                  f"{labelled} of {n} classified; student {'active' if st is not None and st.mode == 'aktiv' else st.mode if st else 'not trained'}"))
+                  f"{labelled} of {n} classified; student {'active' if st is not None and st.mode == 'active' else st.mode if st else 'not trained'}"))
     from . import dataset
     data = dataset.build(index, agentic=False)  # the criterion counts question → answer examples; trajectories only on export
     ex = len(data["qa"])

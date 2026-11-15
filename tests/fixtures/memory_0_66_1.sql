@@ -7,7 +7,7 @@ INSERT INTO "beitrag_aus" (netz, id, art, faden, eltern, instanz, daten, zeit, o
 CREATE TABLE beitrag_ein (netz TEXT NOT NULL, id TEXT NOT NULL, art TEXT NOT NULL, faden TEXT, eltern TEXT, pub TEXT NOT NULL,
                                                    autor TEXT NOT NULL, status TEXT NOT NULL, oid TEXT, netz_id TEXT NOT NULL, loesch_hash TEXT NOT NULL,
                                                    empfangen TEXT NOT NULL, entschieden TEXT, PRIMARY KEY (netz, id));
-INSERT INTO "beitrag_ein" (netz, id, art, faden, eltern, pub, autor, status, oid, netz_id, loesch_hash, empfangen, entschieden) VALUES ('standard', 'b2', 'antwort', 'b1', 'b1', 'pub2', 'vi-def', 'quarantaene', NULL, 'f2', 'fl2', '2026-11-15T19:01:36.498+00:00', NULL);
+INSERT INTO "beitrag_ein" (netz, id, art, faden, eltern, pub, autor, status, oid, netz_id, loesch_hash, empfangen, entschieden) VALUES ('standard', 'b2', 'antwort', 'b1', 'b1', 'pub2', 'vi-def', 'ausstehend', NULL, 'f2', 'fl2', '2026-11-15T19:01:36.498+00:00', NULL);
 CREATE TABLE bild (sha TEXT PRIMARY KEY, mime TEXT NOT NULL, breite INTEGER NOT NULL, hoehe INTEGER NOT NULL, bytes INTEGER NOT NULL, zeit TEXT NOT NULL, roh BLOB NOT NULL);
 INSERT INTO "bild" (sha, mime, breite, hoehe, bytes, zeit, roh) VALUES ('abc', 'image/png', 1, 1, 1, '2026-11-15T19:01:36.498+00:00', X'89');
 CREATE TABLE gespraech_roh (serial TEXT PRIMARY KEY, roh BLOB NOT NULL, laenge INTEGER NOT NULL);
@@ -146,7 +146,7 @@ CREATE TABLE seite_rev (netz TEXT NOT NULL, rev TEXT NOT NULL, seite TEXT NOT NU
                                                  seq INTEGER, status TEXT NOT NULL, daten TEXT, netz_id TEXT NOT NULL, loesch_hash TEXT NOT NULL,
                                                  empfangen TEXT NOT NULL, geprueft TEXT, entschieden TEXT, eigen INTEGER NOT NULL DEFAULT 0, oid TEXT,
                                                  PRIMARY KEY (netz, rev));
-INSERT INTO "seite_rev" (netz, rev, seite, eltern, pub, instanz, seq, status, daten, netz_id, loesch_hash, empfangen, geprueft, entschieden, eigen, oid) VALUES ('wiki', 'r1', 'backup', '[]', NULL, 'anna', NULL, 'freigegeben', '{"seite": "backup", "titel": "Backup", "text": "nightly", "eltern": [], "hashtags": []}', 'w1', 'wl1', '2026-11-15T19:01:36.498+00:00', NULL, '2026-11-15T19:01:36.498+00:00', 1, 'seite:5dd93e7cc1df02a8fc2fc658');
+INSERT INTO "seite_rev" (netz, rev, seite, eltern, pub, instanz, seq, status, daten, netz_id, loesch_hash, empfangen, geprueft, entschieden, eigen, oid) VALUES ('wiki', 'r1', 'backup', '[]', NULL, 'anna', NULL, 'frei', '{"seite": "backup", "titel": "Backup", "text": "nightly", "eltern": [], "hashtags": []}', 'w1', 'wl1', '2026-11-15T19:01:36.498+00:00', NULL, '2026-11-15T19:01:36.498+00:00', 1, 'seite:5dd93e7cc1df02a8fc2fc658');
 CREATE TABLE seite_widerruf (rev TEXT PRIMARY KEY, netz TEXT NOT NULL, netz_id TEXT NOT NULL, token TEXT NOT NULL, zeit TEXT NOT NULL, grund TEXT NOT NULL);
 INSERT INTO "seite_widerruf" (rev, netz, netz_id, token, zeit, grund) VALUES ('r0', 'wiki', 'w0', 't0', '2026-11-15T19:01:36.498+00:00', 'gone');
 CREATE TABLE selbst_version (version INTEGER PRIMARY KEY, zeit TEXT NOT NULL, wer TEXT NOT NULL, bereich TEXT NOT NULL, satz TEXT NOT NULL, grund TEXT NOT NULL, belege TEXT NOT NULL, vorschlag TEXT);

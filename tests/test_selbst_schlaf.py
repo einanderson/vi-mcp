@@ -27,7 +27,7 @@ def _experience(tool, host, ok, instance="a", error=None):
 
 def test_self_core_and_narrative(gd):
     k = self_model.core()
-    assert k.id == self_model.CORE and k.data["version"] == 1 and k.instance == g.SERVER_INSTANCE and k.visibility == "geteilt"
+    assert k.id == self_model.CORE and k.data["version"] == 1 and k.instance == g.SERVER_INSTANCE and k.visibility == "shared"
     assert "self v1" in k.data["erzaehlung"] and "Limits:" in k.data["erzaehlung"]
     assert len(k.data["erzaehlung"].split()) <= 151
     assert self_model.core().id == k.id  # idempotent
@@ -38,7 +38,7 @@ def test_self_proposal_needs_evidence_and_foreign_trusted_instance(gd):
     a, b, c = session.begin("a", "t"), session.begin("b", "t"), session.begin("c", "t")
     evidence_list = []
     for i in range(3):
-        o = g.new_object("erkenntnis", f"Beleg {i} für Vorsicht bei Nachtarbeit", ["thema:nacht"], {"quelle": "x"}, reason="T")
+        o = g.new_object("insight", f"Beleg {i} für Vorsicht bei Nachtarbeit", ["thema:nacht"], {"quelle": "x"}, reason="T")
         evidence_list.append(o.id)
     with session.on_behalf(a):
         with pytest.raises(tools.Rejected, match="at least 3 pieces of evidence"):
@@ -58,9 +58,9 @@ def test_self_proposal_needs_evidence_and_foreign_trusted_instance(gd):
         r = tools.call_tool("vi_bestaetige", {"id": vid, "grund": "vom Menschen freigegeben"}, "c", True)
     assert "version 2" in r
     k = self_model.core()
-    assert k.data["version"] == 2 and any("Nachts keine" in s["satz"] for s in k.data["soll"]["werte"])
-    assert "Nachts keine" in k.data["erzaehlung"] and g.load(vid).mode == "aktiv"
-    assert self_model.versions()[0][3] == "werte" and "vom Menschen freigegeben" in self_model.versions()[0][5]
+    assert k.data["version"] == 2 and any("Nachts keine" in s["satz"] for s in k.data["soll"]["values"])
+    assert "Nachts keine" in k.data["erzaehlung"] and g.load(vid).mode == "active"
+    assert self_model.versions()[0][3] == "values" and "vom Menschen freigegeben" in self_model.versions()[0][5]
     assert "Version 2" in tools.call_tool("vi_selbst", {"versionen": True}, "a", True)
 
 
@@ -74,7 +74,7 @@ def test_self_in_initialize_and_repetition(gd):
 
 
 def test_decay_power_law(gd):
-    o = g.new_object("erkenntnis", "alt aber wichtig", ["thema:v"], {"quelle": "x"}, reason="T")
+    o = g.new_object("insight", "alt aber wichtig", ["thema:v"], {"quelle": "x"}, reason="T")
     assert g.recall("thema:v", viewer=None)[0][2]["aktualitaet"] == 1.0
     _age(o.id, 30)
     a30 = g.recall("thema:v", viewer=None)[0][2]["aktualitaet"]
@@ -90,7 +90,7 @@ def test_sleep_abstraction_schema_conflict_and_report(gd):
     assert sleep_cycle.due(datetime(2026, 11, 9, 3, 5, tzinfo=timezone.utc)) == "nightly run 03:00 UTC (no sleep in 24 h)"
     assert sleep_cycle.due(datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)) is None  # importance 0, not night
     b = sleep_cycle.run("Test")
-    assert b.kind == "schlaf" and "zustand:fertig" in b.hashtags and b.data["schritte"]["4_abstraktion"] == 1
+    assert b.kind == "sleep" and "zustand:fertig" in b.hashtags and b.data["schritte"]["4_abstraktion"] == 1
     e = [o for _, o, _g in g.recall("herkunft:schlaf", viewer=None)][0]
     assert e.mode == "test" and e.data["ausgang"] == "gut" and "web5" in e.text and len(e.edges()) == 4
     assert b.text.startswith("Sleep finished") and sleep_cycle.last().id == b.id
@@ -132,20 +132,20 @@ def test_sleep_at_most_every_two_hours(gd):
     """0.21.1: 45 sleeps in 24 h with 3 new insights in total — threshold 80 and minimum spacing 120 min."""
     from datetime import datetime, timedelta, timezone
     for i in range(30):
-        g.new_object("erfahrung", f"Handlung {i}", ["tool:x"], {}, importance=3, reason="T")
+        g.new_object("experience", f"Handlung {i}", ["tool:x"], {}, importance=3, reason="T")
     now = datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)
     assert sleep_cycle.due(now) is not None  # 90 ≥ 80, never slept yet
-    g.new_object("schlaf", "Schlaf fertig", ["zustand:fertig"], {}, reason="T")
+    g.new_object("sleep", "Schlaf fertig", ["zustand:fertig"], {}, reason="T")
     assert sleep_cycle.due(now) is None  # just slept
 
 
 def test_self_proposal_can_replace_a_sentence(gd):
     """0.25.0: a confirmed proposal with replaces swaps the sentence instead of adding a contradicting second one."""
     a, c = session.begin("a", "t"), session.begin("c", "t")
-    evidence_list = [g.new_object("erkenntnis", f"user decision {i}: all output in English", ["thema:sprache"], {"quelle": "x"}, reason="T").id
+    evidence_list = [g.new_object("insight", f"user decision {i}: all output in English", ["thema:sprache"], {"quelle": "x"}, reason="T").id
                      for i in range(3)]
     _age(evidence_list[0], 2)
-    old = self_model.core().data["soll"]["stil"][0]["satz"]
+    old = self_model.core().data["soll"]["style"][0]["satz"]
     new = "Write in English and keep answers short; numbers with unit, period and origin."
     with session.on_behalf(a), pytest.raises(tools.Rejected, match="replaces: no sentence"):
         tools.call_tool("vi_self_propose", {"area": "style", "sentence": new, "reason": "user decision", "evidence": evidence_list,
@@ -155,8 +155,8 @@ def test_self_proposal_can_replace_a_sentence(gd):
                                                   "replaces": old}, "a", True).split()[1]
     with session.on_behalf(c):
         tools.call_tool("vi_confirm", {"id": vid, "reason": "the user asked for it"}, "c", True)
-    style = [e["satz"] for e in self_model.core().data["soll"]["stil"]]
-    assert style == [new] and self_model.core().data["soll"]["stil"][0]["replaced"] == old  # replaced, not added
+    style = [e["satz"] for e in self_model.core().data["soll"]["style"]]
+    assert style == [new] and self_model.core().data["soll"]["style"][0]["replaced"] == old  # replaced, not added
     assert f"replaces: {old}" in self_model.versions()[0][5]  # the old sentence stays in the history
     assert new in self_model.core().data["erzaehlung"] and old not in self_model.core().data["erzaehlung"]
 

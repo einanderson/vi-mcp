@@ -30,7 +30,7 @@ from . import __version__
 from . import memory as g
 
 FORMAT_VERSION = 2
-KINDS = ("erkenntnis", "regel", "skill")
+KINDS = ("insight", "rule", "skill")
 ANSWER_CHARS = 8000
 MIN_RATINGS = 5
 GOOD, BAD = 0.6, 0.4
@@ -56,7 +56,7 @@ def _eval_hold_out() -> tuple[set[str], set[str], set[str]]:
 
 
 def _objects(index: str | None) -> list[g.MemoryObject]:
-    sql = (f"SELECT id FROM object WHERE kind IN ({','.join('?' * len(KINDS))}) AND mode IN ('aktiv', 'test') AND visibility IN ('geteilt', 'intern')"
+    sql = (f"SELECT id FROM object WHERE kind IN ({','.join('?' * len(KINDS))}) AND mode IN ('active', 'test') AND visibility IN ('shared', 'internal')"
            + (" AND idx = ?" if index else ""))
     with g.lock:
         ids = [r[0] for r in g.db().execute(sql, (*KINDS, *([index] if index else [])))]
@@ -219,8 +219,8 @@ def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None
     tool = _tool_schema("vi_logic")
     sft, kto = [], []
     verified = {}
-    for _s, o, _p in g.recall("art:regel thema:logik", limit=5000, viewer=None):
-        if o.visibility == "privat" or o.mode not in ("aktiv", "test") or "logik" not in o.data or (index and o.idx != index):
+    for _s, o, _p in g.recall("art:rule thema:logik", limit=5000, viewer=None):
+        if o.visibility == "private" or o.mode not in ("active", "test") or "logik" not in o.data or (index and o.idx != index):
             continue
         if o.id in targets or evaluation.group_of(o) in eval_groups:
             skipped["logic: evaluation target or source page (held out)"] += 1
@@ -315,8 +315,8 @@ def machine_examples(index, audit, targets, eval_qs, eval_groups=None, skipped=N
     skipped = skipped if skipped is not None else Counter()
     sft, kto, dpo, pairs = [], [], [], {}
     tool = _tool_schema("vi_machine")
-    for _s, o, _w in g.recall("art:regel thema:machine-training", limit=5000, viewer=None):
-        if o.visibility == "privat" or o.mode not in ("aktiv", "test") or (index and o.idx != index) or o.id in targets:
+    for _s, o, _w in g.recall("art:rule thema:machine-training", limit=5000, viewer=None):
+        if o.visibility == "private" or o.mode not in ("active", "test") or (index and o.idx != index) or o.id in targets:
             continue
         e = o.data.get("machine_example")
         if not e or _norm(e.get("question")) in eval_qs:
@@ -409,7 +409,7 @@ def _search_lines(query: str) -> tuple[list[g.MemoryObject], str]:
         hits, _f, _k = tools.search({"filter": query, "limit": 10, "semantic": False}, None, None)
     except tools.Rejected:
         return [], ""
-    objs = [o for _s, o, _w in hits if o.visibility != "privat" and o.mode not in ("quarantaene",) and o.kind in KINDS]
+    objs = [o for _s, o, _w in hits if o.visibility != "private" and o.mode not in ("quarantine",) and o.kind in KINDS]
     return objs, "\n".join(vil.tell_line(o) for o in objs) or "nothing in memory"
 
 

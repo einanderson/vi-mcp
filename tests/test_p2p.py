@@ -70,7 +70,7 @@ def _import_bundle(k, mem_objects, monkeypatch, answer=None, **kw):
 
 def test_rules(gd):
     assert checks.check(GOOD).verdict == "quarantaene" and checks.check(GOOD).reasons == []
-    a = checks.check({**GOOD, "modus": "aktiv", "bestaetigt": 99, "zugriffe": 5, "hashtags": GOOD["hashtags"] + ["instanz:x", "modus:aktiv", "kaputt"]})
+    a = checks.check({**GOOD, "modus": "aktiv", "bestaetigt": 99, "zugriffe": 5, "hashtags": GOOD["hashtags"] + ["instanz:x", "modus:active", "kaputt"]})
     assert not {"modus", "bestaetigt", "zugriffe"} & set(a.mem_object) and a.mem_object["hashtags"] == sorted(GOOD["hashtags"])
     assert checks.check({**GOOD, "art": "erfahrung"}).verdict == "ablehnen"
     assert checks.check({**GOOD, "art": "reflex", "name": "x1", "reflexart": "vorher", "code": "def run(t,a): pass"}).verdict == "ablehnen"  # no permission
@@ -85,7 +85,7 @@ def test_rules(gd):
         assert b.verdict == "quarantaene" and b.reasons, text
     s = checks.check({**GOOD, "art": "skill", "name": "fix", "reize": ["tool:x"], "schritte": ["netbox_get_vms", "Bash"]})
     assert "schreibendes_werkzeug: Bash" in s.reasons
-    assert checks.check({**GOOD, "art": "suche", "name": "s1", "reize": ["tool:x"], "filter": "modus:archiviert host:a"}).verdict == "ablehnen"
+    assert checks.check({**GOOD, "art": "suche", "name": "s1", "reize": ["tool:x"], "filter": "modus:archived host:a"}).verdict == "ablehnen"
 
 
 def test_inbox_checks_signature_and_content(net):
@@ -111,7 +111,7 @@ def test_forged_object_signature(net):
 def test_quarantine_is_invisible_and_without_effect(net, monkeypatch):
     r = _import_bundle(net, [GOOD], monkeypatch)
     assert r == {"quarantaene": 1, "abgelehnt": 0, "bekannt": 0, "gruende": [], "vergessen": 0, "dedupliziert": 0, "bewertungen": 0}
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     assert o.instance == f"p2p-{_hg(net)}" and "herkunft:p2p" in o.hashtags and o.id.startswith(f"erkenntnis:p2p-{_hg(net)}-") and o.edges() == []
     assert not g.recall("thema:eingang", viewer=None)
     assert not intuition.before("graylog_search", {"thema": "eingang"}, "a")["hinweise"]
@@ -125,7 +125,7 @@ def test_quarantine_is_invisible_and_without_effect(net, monkeypatch):
 
 def test_release_harmless_and_sensitive(net, monkeypatch):
     _import_bundle(net, [GOOD], monkeypatch)
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     with pytest.raises(tools.Rejected, match="may not"):
         tools.call_tool("vi_freigabe", {"id": o.id, "grund": "ok"}, "b", False)
     tools.call_tool("vi_freigabe", {"id": o.id, "grund": "gelesen, plausibel"}, "a", True)
@@ -134,7 +134,7 @@ def test_release_harmless_and_sensitive(net, monkeypatch):
     assert any(f"from p2p-{_hg(net)}" in x for x in h)  # provenance stays visible
     skill = {**NET, "art": "skill", "text": "Neustart des Dienstes behebt das Problem", "hashtags": ["thema:neustart"], "quelle": "Runbook Seite 12", "name": "neustart", "reize": ["tool:x"], "schritte": ["Bash"]}
     _import_bundle(net, [skill], monkeypatch)
-    s = g.recall("modus:quarantaene", viewer=None)[0][1]
+    s = g.recall("modus:quarantine", viewer=None)[0][1]
     with pytest.raises(tools.Rejected, match="release permission"):
         tools.call_tool("vi_freigabe", {"id": s.id, "grund": "ok"}, "a", True)
     assert "released" in tools.call_tool("vi_freigabe", {"id": s.id, "grund": "Mensch geprüft"}, "admin", False, True)
@@ -146,7 +146,7 @@ def test_import_does_not_overwrite_local(net, monkeypatch):
     skill = {**NET, "art": "skill", "text": "Fremder Lösungsweg mit eigenen Schritten", "hashtags": ["thema:n"], "quelle": "Runbook Seite 12", "name": "neustart", "reize": ["tool:x"], "schritte": ["netbox_get_vms"]}
     _import_bundle(net, [skill], monkeypatch)
     assert g.load(local.id).data["loesung"]["text"] == "lokaler Lösungsweg bleibt" and g.load(local.id).data["version"] == 1
-    foreign = g.recall("modus:quarantaene", viewer=None)[0][1]
+    foreign = g.recall("modus:quarantine", viewer=None)[0][1]
     with pytest.raises(ValueError, match="quarantine"):
         skills.fusion(local.id, foreign.id, "gemischt", "Testlauf", "a")
 
@@ -155,15 +155,15 @@ def test_reviewer_can_only_tighten(net, monkeypatch):
     def test_case(answer):
         o = {**GOOD, "text": f"Eintrag {time.time_ns()} zur Verbindung des Eingangs"}
         _import_bundle(net, [o], monkeypatch, answer=answer)
-        return g.recall("modus:quarantaene", viewer=None)[0][1]
+        return g.recall("modus:quarantine", viewer=None)[0][1]
     x = test_case(_answer(kanarie="GRÜN"))
     assert "pruefer:kanarie" in x.hashtags and p2p.sensitive(x)
     x = test_case("kein json")
-    assert "pruefer:ausfall" in x.hashtags and x.mode == "quarantaene"
+    assert "pruefer:ausfall" in x.hashtags and x.mode == "quarantine"
     x = test_case(json.dumps({"urteil": "zulassen"}))
     assert "pruefer:unbrauchbar" in x.hashtags
     x = test_case(_answer(urteil="ablehnen"))
-    assert x.mode == "quarantaene" and "reviewer: ablehnen" in p2p.sensitive(x)
+    assert x.mode == "quarantine" and "reviewer: ablehnen" in p2p.sensitive(x)
     x = test_case(_answer(verlangt_schreibzugriff=True))
     assert any("write access" in h for h in p2p.sensitive(x))
 
@@ -171,7 +171,7 @@ def test_reviewer_can_only_tighten(net, monkeypatch):
 def test_without_reviewer_everything_stays_sensitive(net, monkeypatch):
     monkeypatch.setattr(reviewer, "prompt_path", None)
     p2p.inbox(_bundle(net, [GOOD]), in_background=False)
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     assert reviewer.work_off()["zustand"] == "uebersprungen" and "pruefer:ausstehend" in o.hashtags
     with pytest.raises(ValueError, match="still pending"):
         p2p.approve(o, "a", True, False, "grund")
@@ -197,13 +197,13 @@ CODE = "def run(tool, args):\n    return {'hinweis': 'lies die Doku', 'args': {'
 def test_imported_reflex(net, monkeypatch):
     r = {**NET, "art": "reflex", "text": "Weist auf die Doku hin und mehr", "hashtags": ["thema:doku"], "quelle": "Handbuch Kapitel 3", "name": "doku", "reflexart": "vorher", "code": CODE}
     _import_bundle(net, [r], monkeypatch)
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     assert not reflexes.load_all()  # quarantine does not load
     with pytest.raises(ValueError, match="release permission"):
         p2p.approve(o, "a", True, False, "ok")
     p2p.approve(o, "admin", False, True, "Quelltext gelesen")
     o = g.load(o.id)
-    o.mode = "aktiv"
+    o.mode = "active"
     g.save(o)
     reflexes.load_all()
     args, h = reflexes.before("t", {"a": 1})
@@ -220,15 +220,15 @@ def test_outbox_and_no_provenance_laundering(net, monkeypatch, tmp_path):
         p2p.generate_keys(seed)
     assert oct(seed.stat().st_mode)[-3:] == "600"
     p2p.generate_token("a")
-    e = g.new_object("erkenntnis", "eigenes Wissen über web4 hier", ["host:web4", "thema:a"], {"quelle": "Messung vom 2.11."}, reason="T", instance="a")
+    e = g.new_object("insight", "eigenes Wissen über web4 hier", ["host:web4", "thema:a"], {"quelle": "Messung vom 2.11."}, reason="T", instance="a")
     e.confirm("ki@b", "stimmt", "b")
     g.save(e)
-    g.new_object("erfahrung", "private Erfahrung bleibt hier", ["host:web4"], {"args": {}}, reason="T", instance="a")
+    g.new_object("experience", "private Erfahrung bleibt hier", ["host:web4"], {"args": {}}, reason="T", instance="a")
     _import_bundle(net, [GOOD], monkeypatch)
-    foreign = g.recall("modus:quarantaene", viewer=None)[0][1]
+    foreign = g.recall("modus:quarantine", viewer=None)[0][1]
     p2p.approve(foreign, "a", True, False, "ok")
     o = g.load(foreign.id)
-    o.mode = "aktiv"
+    o.mode = "active"
     g.save(o)
     b = p2p.outbox()
     assert [x["text"] for x in b["objekte"]] == ["eigenes Wissen über <host> hier"]
@@ -247,4 +247,4 @@ def test_selftest_stops_the_run(net, monkeypatch):
     p2p.inbox(_bundle(net, [GOOD]), in_background=False)
     monkeypatch.setattr(reflection, "ask_fn", lambda s, u: _answer(kanarie="GRÜN"))  # model falls for it
     r = reviewer.work_off()
-    assert r["zustand"] == "selbsttest_gescheitert" and "pruefer:ausstehend" in g.recall("modus:quarantaene", viewer=None)[0][1].hashtags
+    assert r["zustand"] == "selbsttest_gescheitert" and "pruefer:ausstehend" in g.recall("modus:quarantine", viewer=None)[0][1].hashtags

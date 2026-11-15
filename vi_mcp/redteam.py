@@ -146,7 +146,7 @@ def run(db_path: str | Path | None = None, llm=None) -> dict:
     g.open_db(Path(db_path))
     try:
         for t in TARGETS:
-            g.new_object("erkenntnis", t["benign"][0], t["benign"][1], {"quelle": "benign seed", "nuetzlich": {"ja": 6, "nein": 1, "n": 7}},
+            g.new_object("insight", t["benign"][0], t["benign"][1], {"quelle": "benign seed", "nuetzlich": {"ja": 6, "nein": 1, "n": 7}},
                          importance=2, instance="ops")
         rows, totals = [], {}
         control = {}
@@ -172,7 +172,7 @@ def run(db_path: str | Path | None = None, llm=None) -> dict:
                                  "command": command[:200] if command else None, "what": what})
                     s = totals.setdefault(way, {"attempts": 0, "blocked": 0, "search_top3": 0, "hint": 0, "success": 0, "followed": 0})
                     s["attempts"] += 1
-                    s["blocked"] += int(o is None or o.mode == "quarantaene")
+                    s["blocked"] += int(o is None or o.mode == "quarantine")
                     s["search_top3"] += int(rank is not None and rank <= 3)
                     s["hint"] += int(shown)
                     s["success"] += int(success)

@@ -42,10 +42,10 @@ def vocabulary() -> tuple[dict[str, str], set[str]]:
     with g.lock:
         hosts = [r[0][5:].lower() for r in g.db().execute(
             f"SELECT DISTINCT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'host:%' "
-            f"AND o.kind IN ('erfahrung', 'erkenntnis', 'regel', 'skill') AND o.id NOT IN ({_doc_ids_sql()})", DOC_TAGS)]
+            f"AND o.kind IN ('experience', 'insight', 'rule', 'skill') AND o.id NOT IN ({_doc_ids_sql()})", DOC_TAGS)]
         themen = {r[0][6:].lower() for r in g.db().execute(
             f"SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'thema:%' "
-            f"AND o.kind IN ('erkenntnis', 'regel', 'skill') AND o.id NOT IN ({_doc_ids_sql()}) "
+            f"AND o.kind IN ('insight', 'rule', 'skill') AND o.id NOT IN ({_doc_ids_sql()}) "
             f"GROUP BY t.tag HAVING COUNT(DISTINCT o.id) >= ?", (*DOC_TAGS, THEMA_MIN))}
     names: dict[str, str] = {}
     short: dict[str, set[str]] = {}
@@ -75,7 +75,7 @@ def run(batch: int = BATCH) -> dict:
     names, themen = vocabulary()
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            f"SELECT id FROM object WHERE id IN ({_doc_ids_sql()}) AND mode NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
+            f"SELECT id FROM object WHERE id IN ({_doc_ids_sql()}) AND mode NOT IN ('merged', 'refuted', 'withdrawn') "
             "AND COALESCE(CAST(json_extract(data, '$.derived_triggers.version') AS REAL), 0) < ? ORDER BY ts LIMIT ?", (*DOC_TAGS, VERSION, batch))]
     too_common_h: set[str] = set()
     too_common_t: set[str] = set()
@@ -120,5 +120,5 @@ def run(batch: int = BATCH) -> dict:
 def _remaining() -> int:
     with g.lock:
         return g.db().execute(
-            f"SELECT COUNT(*) FROM object WHERE id IN ({_doc_ids_sql()}) AND mode NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
+            f"SELECT COUNT(*) FROM object WHERE id IN ({_doc_ids_sql()}) AND mode NOT IN ('merged', 'refuted', 'withdrawn') "
             "AND COALESCE(CAST(json_extract(data, '$.derived_triggers.version') AS REAL), 0) < ?", (*DOC_TAGS, VERSION)).fetchone()[0]

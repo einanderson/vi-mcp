@@ -41,7 +41,7 @@ def login(k):
 
 
 def test_without_a_session_only_the_sign_in_form(k):
-    g.new_object("erkenntnis", "deploy vi-mcp: back up the database first", ["thema:deploy"], {"quelle": "t"}, visibility="intern")
+    g.new_object("insight", "deploy vi-mcp: back up the database first", ["thema:deploy"], {"quelle": "t"}, visibility="internal")
     code, _t, body, hd = req(k, "/intern/suche?q=deploy")
     assert code == 200 and b'name="token"' in body and b"back up the database" not in body and hd["Cache-Control"] == "no-store"
 
@@ -68,11 +68,11 @@ def test_sign_in_wrong_token_cross_site_and_cookie_attributes(k):
 
 def test_search_shows_shared_and_internal_never_private_or_quarantine_and_counts_them(k):
     cookie = login(k)
-    a = g.new_object("erkenntnis", "deploy vi-mcp: back up the database first", ["thema:deploy"], {"quelle": "t", "inhalt": "cp vi.db vi.db.bak"},
-                     visibility="intern", instance="bob")
-    b = g.new_object("erkenntnis", "deploy vi-mcp: check health afterwards", ["thema:deploy"], {"quelle": "t"}, visibility="geteilt", instance="bob")
-    g.new_object("erkenntnis", "deploy vi-mcp: my private note", ["thema:deploy"], {"quelle": "t"}, visibility="privat", instance="alice")
-    g.new_object("erkenntnis", "deploy vi-mcp: imported, not reviewed", ["thema:deploy"], {"quelle": "t"}, mode="quarantaene", visibility="intern")
+    a = g.new_object("insight", "deploy vi-mcp: back up the database first", ["thema:deploy"], {"quelle": "t", "inhalt": "cp vi.db vi.db.bak"},
+                     visibility="internal", instance="bob")
+    b = g.new_object("insight", "deploy vi-mcp: check health afterwards", ["thema:deploy"], {"quelle": "t"}, visibility="shared", instance="bob")
+    g.new_object("insight", "deploy vi-mcp: my private note", ["thema:deploy"], {"quelle": "t"}, visibility="private", instance="alice")
+    g.new_object("insight", "deploy vi-mcp: imported, not reviewed", ["thema:deploy"], {"quelle": "t"}, mode="quarantine", visibility="internal")
     with g.lock:
         before = g.db().execute("SELECT accesses FROM object WHERE id = ?", (a.id,)).fetchone()[0]
     code, _t, body, _h = req(k, "/intern/suche?q=deploy+vi-mcp", cookie=cookie)
@@ -88,9 +88,9 @@ def test_search_shows_shared_and_internal_never_private_or_quarantine_and_counts
 
 def test_article_is_escaped_and_private_is_not_found(k):
     cookie = login(k)
-    a = g.new_object("erkenntnis", "XSS probe <script>alert(1)</script>", ["thema:web"], {"quelle": "https://example.org/x", "inhalt": "<img src=x onerror=alert(1)>"},
-                     visibility="intern", instance="bob", index="vi-mcp")
-    p = g.new_object("erkenntnis", "private thing", ["thema:web"], {"quelle": "t"}, visibility="privat", instance="alice")
+    a = g.new_object("insight", "XSS probe <script>alert(1)</script>", ["thema:web"], {"quelle": "https://example.org/x", "inhalt": "<img src=x onerror=alert(1)>"},
+                     visibility="internal", instance="bob", index="vi-mcp")
+    p = g.new_object("insight", "private thing", ["thema:web"], {"quelle": "t"}, visibility="private", instance="alice")
     code, _t, body, _h = req(k, f"/intern/o/{a.id}", cookie=cookie)
     html = body.decode()
     assert code == 200 and "<script>alert" not in html and "&lt;script&gt;" in html and "<img src=x" not in html
@@ -101,14 +101,14 @@ def test_article_is_escaped_and_private_is_not_found(k):
 
 
 def test_public_web_page_still_never_shows_internal_knowledge(k):
-    g.new_object("erkenntnis", "internal: the backup path of the database", ["thema:deploy"], {"quelle": "t"}, visibility="intern")
+    g.new_object("insight", "internal: the backup path of the database", ["thema:deploy"], {"quelle": "t"}, visibility="internal")
     code, _t, body, _h = web.handle("/web/suche?q=backup", "10.0.0.9")
     assert b"backup path of the database" not in body
 
 
 def test_home_lists_indexes_and_recent_knowledge(k):
     cookie = login(k)
-    g.new_object("erkenntnis", "cue print: restart the render queue", ["thema:cue"], {"quelle": "t"}, visibility="intern", index="cue-print")
+    g.new_object("insight", "cue print: restart the render queue", ["thema:cue"], {"quelle": "t"}, visibility="internal", index="cue-print")
     code, _t, body, _h = req(k, "/intern/", cookie=cookie)
     html = body.decode()
     assert code == 200 and "cue-print" in html and "restart the render queue" in html and re.search(r"Sign out \(alice\)", html)
@@ -119,14 +119,14 @@ def test_markdown_bold_and_wrapped_list_items_render_and_excerpts_are_plain(k):
     assert render_text("- **Bold start,** text\n  wrapped line\n- next") == \
         "<ul><li><strong>Bold start,</strong> text wrapped line</li><li>next</li></ul>"
     assert render_text("**stays `global`:** text") == "<p><strong>stays <code>global</code>:</strong> text</p>"
-    o = g.new_object("erkenntnis", "excerpt probe", ["thema:web"], {"quelle": "t", "inhalt": "### Head\n- **bold** and `code`"}, visibility="intern")
+    o = g.new_object("insight", "excerpt probe", ["thema:web"], {"quelle": "t", "inhalt": "### Head\n- **bold** and `code`"}, visibility="internal")
     assert wi._excerpt(o) == "Head bold and code"
 
 
 def test_words_page_datalist_and_empty_search_reason(k):
     cookie = login(k)
-    g.new_object("erkenntnis", "nginx on web1", ["host:web1.example", "tool:nginx"], {"quelle": "t"}, visibility="intern", instance="bob")
-    g.new_object("erkenntnis", "secret", ["host:hidden.example"], {"quelle": "t"}, visibility="privat", instance="bob")
+    g.new_object("insight", "nginx on web1", ["host:web1.example", "tool:nginx"], {"quelle": "t"}, visibility="internal", instance="bob")
+    g.new_object("insight", "secret", ["host:hidden.example"], {"quelle": "t"}, visibility="private", instance="bob")
     html = req(k, "/intern/w", cookie=cookie)[2].decode()
     assert 'href="/vi-mcp/intern/w/host"' in html and '<datalist id="vocab">' in html and '<option value="host:web1.example">' in html
     assert "hidden.example" not in html  # someone else's private word is no vocabulary
@@ -138,7 +138,7 @@ def test_words_page_datalist_and_empty_search_reason(k):
 
 def test_gold_label_form_for_people_only(k):
     k.instances["max"] = config.Instance("max", hashlib.sha256(b"max-token-123").hexdigest(), human=True)
-    o = g.new_object("erkenntnis", "deploy steps for web1", ["thema:deploy"], {"quelle": "t"}, visibility="intern", instance="bob")
+    o = g.new_object("insight", "deploy steps for web1", ["thema:deploy"], {"quelle": "t"}, visibility="internal", instance="bob")
     ai = login(k)
     assert "Gold label" not in req(k, f"/intern/o/{o.id}", cookie=ai)[2].decode()  # alice is an AI instance
     code, _t, body, _h = req(k, f"/intern/o/{o.id}/gold", "POST", b"answers=how&memory=procedure", cookie=ai, origin="https://vi.example")

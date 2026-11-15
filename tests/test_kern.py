@@ -17,13 +17,13 @@ def test_parse_filter():
 
 @sqlite_only
 def test_file_only_for_owner(gd):
-    g.new_object("erkenntnis", "irgendein Text", ["thema:x"], reason="Test")
+    g.new_object("insight", "irgendein Text", ["thema:x"], reason="Test")
     for f in (gd, gd.with_name("vi.db-wal")):
         assert stat.S_IMODE(os.stat(f).st_mode) == 0o600, f
 
 
 def test_object_reason_required_and_history(gd):
-    o = g.new_object("erkenntnis", "Timeout bei host a", ["host:a", "thema:timeout"], reason="Test")
+    o = g.new_object("insight", "Timeout bei host a", ["host:a", "thema:timeout"], reason="Test")
     with pytest.raises(ValueError):
         o.confirm("ki", "")
     o.confirm("ki", "zweimal gesehen")
@@ -34,9 +34,9 @@ def test_object_reason_required_and_history(gd):
 
 
 def test_recall_filter_fulltext_and_link(gd):
-    a = g.new_object("erkenntnis", "Disk voll auf web1", ["host:web1", "thema:disk"], reason="T")
-    b = g.new_object("erkenntnis", "Disk langsam auf web1", ["host:web1", "thema:disk"], reason="T")
-    g.new_object("erkenntnis", "Timeout auf db1", ["host:db1", "thema:timeout"], reason="T")
+    a = g.new_object("insight", "Disk voll auf web1", ["host:web1", "thema:disk"], reason="T")
+    b = g.new_object("insight", "Disk langsam auf web1", ["host:web1", "thema:disk"], reason="T")
+    g.new_object("insight", "Timeout auf db1", ["host:db1", "thema:timeout"], reason="T")
     ids = [o.id for _, o, _g in g.recall("host:web1")]
     assert set(ids) == {a.id, b.id}
     assert [o.id for _, o, _g in g.recall("(host:web1 OR host:db1) !thema:disk")][0].startswith("erkenntnis:")
@@ -49,15 +49,15 @@ def test_recall_filter_fulltext_and_link(gd):
 
 def test_drilldown_funnel(gd):
     for i in range(3):
-        g.new_object("erkenntnis", f"Fall {i}", ["host:web1", "thema:disk", f"nr:{i}"], reason="T")
-    g.new_object("erkenntnis", "anderes", ["host:web1", "thema:netz"], reason="T")
+        g.new_object("insight", f"Fall {i}", ["host:web1", "thema:disk", f"nr:{i}"], reason="T")
+    g.new_object("insight", "anderes", ["host:web1", "thema:netz"], reason="T")
     levels = g.drilldown("host:web1")
     assert levels[0]["naechster"] == "thema:disk"
     assert levels[1]["filter"] == "host:web1 thema:disk" and levels[1]["gesamt"] == 3
 
 
 def test_access_counts_relatively(gd):
-    o = g.new_object("erkenntnis", "x y z", ["thema:x"], reason="T")
+    o = g.new_object("insight", "x y z", ["thema:x"], reason="T")
     backup_copy = g.load(o.id)
     o.access()
     backup_copy.access()  # a stale state in memory must not reset the counter
@@ -82,7 +82,7 @@ def test_serials_unique_in_parallel(gd):
 def test_serial_above_999(gd):
     tag = session.new_serial()[:8]
     with g.lock:
-        g.db().execute("INSERT INTO object (id, kind, ts, last_at) VALUES (?, 'gespraech', '', '')", (f"gespraech:{tag}999",))
+        g.db().execute("INSERT INTO object (id, kind, ts, last_at) VALUES (?, 'conversation', '', '')", (f"gespraech:{tag}999",))
         g.db().commit()
     assert session.new_serial() == f"{tag}1000"
     assert session.new_serial() == f"{tag}1001"
@@ -93,7 +93,7 @@ def test_session_conversation_and_persist(gd):
     with session.on_behalf(s):
         v = intuition.before("netbox_get_devices", {"host": "Web1"})
         intuition.after("netbox_get_devices", v["args"], True, 12, None, "[1,2]", v["vorher_id"])
-        o = g.new_object("erkenntnis", "im Gespräch gelernt", ["thema:x"], reason="T")
+        o = g.new_object("insight", "im Gespräch gelernt", ["thema:x"], reason="T")
     assert o.conversation == s.serial
     assert session.finish(s.id)
     gs = g.load(f"gespraech:{s.serial}")
@@ -119,7 +119,7 @@ def test_remembered_answer_read_only(gd):
 
 
 def test_insight_as_hint_before(gd):
-    g.new_object("erkenntnis", "web1 antwortet nur über Proxy", ["host:web1"], {"quelle": "Messung"}, reason="T")
+    g.new_object("insight", "web1 antwortet nur über Proxy", ["host:web1"], {"quelle": "Messung"}, reason="T")
     v = intuition.before("checkmk_get_host", {"host": "web1"})
     assert any("nur über Proxy" in h for h in v["hinweise"])
 
@@ -141,7 +141,7 @@ def test_reflex_defective_after_three_errors(gd):
     for _ in range(3):
         h = reflexes.after("t", {}, "e")
         assert "failed" in h[0]
-    assert g.load("reflex:kaputt").mode == "defekt"
+    assert g.load("reflex:kaputt").mode == "broken"
     assert "kaputt" not in reflexes.loaded and reflexes.after("t", {}, "e") == []
 
 
@@ -152,7 +152,7 @@ def test_loop_error_becomes_rule_and_hint(gd):
         intuition.after("graylog_search", {"q": i}, False, 30000, f"TimeoutError: read timed out after {30 + i} s", None, v["vorher_id"])
     assert main_loop.step() == 1
     assert main_loop.step() == 0  # idempotent: the same rule not twice
-    rule = [o for _, o, _g in g.recall("art:regel regelart:wiederholter-fehler")][0]
+    rule = [o for _, o, _g in g.recall("art:rule regelart:wiederholter-fehler")][0]
     assert rule.mode == "test" and rule.data["treffer"] == 3 and rule.conversation is None
     v = intuition.before("graylog_search", {"q": "neu"})
     assert any(h.startswith("Rule [") and "failed 3×" in h for h in v["hinweise"])
@@ -178,7 +178,7 @@ def test_create_instance_keeps_permissions(tmp_path):
 
 
 def test_too_large_data_stays_readable(gd):
-    o = g.new_object("erkenntnis", "viel Inhalt hier", ["thema:gross"], {"blob": "x" * (g.DATA_MAX + 10)}, reason="T")
+    o = g.new_object("insight", "viel Inhalt hier", ["thema:gross"], {"blob": "x" * (g.DATA_MAX + 10)}, reason="T")
     d = g.load(o.id).data
     assert d["gekuerzt_zeichen"] > g.DATA_MAX and "blob" not in d
 
@@ -294,7 +294,7 @@ def test_content_empty_auto_skill_is_withdrawn(gd):
     real = skills.new("auto-test2", ["tool:Bash"], ["Bash", "netbox_get_vms"], "Bash scheiterte, netbox_get_vms half", "Schlaf", [], g.SERVER_INSTANCE, who="vi")
     assert skills.content_empty(o) and not skills.content_empty(real)
     skills.rate()
-    assert g.load(o.id).mode == "zurueckgezogen" and g.load(real.id).mode not in g.GONE  # 0.67.0: the server withdraws its own empty skill
+    assert g.load(o.id).mode == "withdrawn" and g.load(real.id).mode not in g.GONE  # 0.67.0: the server withdraws its own empty skill
 
 
 def test_missing_required_field_rejected_not_silently_answered(gd):
@@ -306,7 +306,7 @@ def test_missing_required_field_rejected_not_silently_answered(gd):
     tools.call_tool("vi_erinnere", {"filter": "Lizenz"}, "a", True)  # correctly named: works
     # 0.51.0: the names models guess for the search field count as filter (reported 11.11.2026: vi_recall(query=…) was refused)
     from vi_mcp import memory as g
-    g.new_object("erkenntnis", "Lizenz Dongle steckt am Host lic01", ["thema:lizenz"], {"quelle": "test"}, instance="a")
+    g.new_object("insight", "Lizenz Dongle steckt am Host lic01", ["thema:lizenz"], {"quelle": "test"}, instance="a")
     for guess in ("query", "q", "search", "text"):
         assert "Lizenz Dongle" in tools.call_tool("vi_recall", {guess: "Dongle"}, "a", True), guess
     assert tools._filter_alias("vi_net_search", {"query": "x"}) == {"query": "x"}  # a tool with its own query keeps it
@@ -329,7 +329,7 @@ def test_state_dependent_tools_are_never_remembered(gd):
 
 def test_colon_words_without_known_kind_are_free_text(gd):
     """0.26.0: "Hosts: 62.153.216.33" emptied the search silently — a colon word is a condition only as kind:value with a known kind."""
-    o = g.new_object("erkenntnis", "Die Hosts der Range 62.153.216.33 bis 62.153.216.46 sind Mailrelays", ["thema:netz"], {"quelle": "x"})
+    o = g.new_object("insight", "Die Hosts der Range 62.153.216.33 bis 62.153.216.46 sind Mailrelays", ["thema:netz"], {"quelle": "x"})
     assert g.parse_filter("Hosts: 62.153.216.33", frozenset({"thema", "art"})) == ([], [], ["Hosts:", "62.153.216.33"])
     assert g.parse_filter("um 10:30 thema:netz", frozenset({"thema"})) == ([["thema:netz"]], [], ["um", "10:30"])
     assert g.parse_filter("foo:bar thema:netz", frozenset({"thema"})) == ([["thema:netz"]], [], ["foo:bar"])  # unknown kind
@@ -342,7 +342,7 @@ def test_colon_words_without_known_kind_are_free_text(gd):
 def test_recall_without_reinforcement(gd):
     """0.31.0: reinforce=false for measurements — access count and last use stay as they were, and the answer says so."""
     from vi_mcp import tools
-    o = g.new_object("erkenntnis", "nginx reload only after nginx -t", ["thema:nginx"], {"quelle": "x"}, reason="T")
+    o = g.new_object("insight", "nginx reload only after nginx -t", ["thema:nginx"], {"quelle": "x"}, reason="T")
     before = g.load(o.id)
     out = tools.call_tool("vi_recall", {"filter": "thema:nginx", "reinforce": False}, "a", False)
     after = g.load(o.id)

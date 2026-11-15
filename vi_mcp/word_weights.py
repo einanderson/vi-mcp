@@ -47,8 +47,8 @@ def compute() -> dict:
     """Sleep step 8g: every word's own weight, overall (`any`) and per question type, from the hint counters of the knowledge carrying it."""
     _tables()
     cond = " OR ".join(f"t.tag LIKE '{k}%'" for k in KINDS)
-    base = ("FROM tag t JOIN object o ON o.id = t.object_id {join} WHERE o.kind IN ('erkenntnis', 'regel', 'skill') AND o.mode IN ('aktiv', 'test') "
-            f"AND o.visibility <> 'privat' AND ({cond}) GROUP BY t.tag{{group}}")
+    base = ("FROM tag t JOIN object o ON o.id = t.object_id {join} WHERE o.kind IN ('insight', 'rule', 'skill') AND o.mode IN ('active', 'test') "
+            f"AND o.visibility <> 'private' AND ({cond}) GROUP BY t.tag{{group}}")
     sums = ("SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.ja') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.nein') AS REAL), 0)), "
             "SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.n') AS REAL), 0))")
     with g.lock:

@@ -334,7 +334,7 @@ VI: store knowledge as an object. When: a non-obvious problem was solved, a last
 | `key` | string |  | optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1. |
 | `index` | string |  | optional: the index the knowledge belongs to — a project or special VI (e.g. cue-print, ansible); default: the project of your working directory, else global |
 | `project` | string |  | set by the hook: the name of your working directory (mapped to an index by the server) (German: `projekt`) |
-| `image` | string |  | optional: an image as base64 — stored as a memory of its own kind (art:bild); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F] |
+| `image` | string |  | optional: an image as base64 — stored as a memory of its own kind (art:image); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F] |
 | `regions` | array of object |  | optional, with image: what is where, in the output format of SAM 3 (Segment Anything with Concepts) — one entry per instance found |
 
 ### `vi_indexes`
@@ -346,7 +346,7 @@ VI: the indexes of the memory — projects and special VIs: objects, experiences
 | `index` | string |  | optional: the index to describe |
 | `description` | string |  | optional: what the index is for (German: `beschreibung`) |
 | `tags` | array of string |  | optional: tags of the index (replace the old ones) |
-| `kind` | string (projekt, spezial) |  | optional: projekt or spezial (a special VI) (German: `art`) |
+| `kind` | string (project, special) |  | optional: project or special (a special VI) (German: `art`) |
 
 ### `vi_vocabulary`
 

@@ -18,9 +18,9 @@ def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd
               data={"klasse": {"answers": "how", "memory": "procedure", "fragen": ["Wie lade ich nginx neu?", "nginx reload ohne Ausfall?"]}})
     bad = _k("nginx needs a full restart after config changes", ["tool:nginx", "thema:reload"], 1, 9)
     held = _k("the evaluation target", ["thema:y"], quelle="https://docs.example/held")
-    _k("private note", visibility="privat")
+    _k("private note", visibility="private")
     _k("def f(): pass", ["art_wissen:code", "datei:x.py"])
-    g.new_object("erfahrung", "Bash ok", ["tool:Bash"], {"quelle": "t"})
+    g.new_object("experience", "Bash ok", ["tool:Bash"], {"quelle": "t"})
     (tmp_path / "eval").mkdir()
     (tmp_path / "eval" / "recall.json").write_text(json.dumps([{"target": held.id, "group": "g", "stratum": "s", "frage": "nginx reload ohne Ausfall?",
                                                                   "stichworte": "nginx"}]))
@@ -83,7 +83,7 @@ def test_agentic_trajectories_search_the_vi_in_vil_relax_once_and_never_teach_a_
     relaxed = _k("the backup runs nightly at two", ["host:db1.example", "thema:backup"],
                  data={"klasse": {"answers": "what", "memory": "fact", "fragen": ["Wann läuft die Sicherung?"]}})  # no question word in the text
     _k("a lonely fact without tags matching its question", ["quelle_art:test"], data={"klasse": {"fragen": ["Quasselstrippe Zauberwort?"]}})
-    _k("secret db1 backup password location", ["host:db1.example", "thema:backup"], visibility="privat", instance="b")
+    _k("secret db1 backup password location", ["host:db1.example", "thema:backup"], visibility="private", instance="b")
     data = dataset.build()
     by = {x["meta"]["id"]: x for x in data["agentic"]}
     a = by[direct.id]

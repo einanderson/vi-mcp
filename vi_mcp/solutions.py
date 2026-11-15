@@ -66,7 +66,7 @@ def episode(e: g.MemoryObject) -> list[g.MemoryObject] | None:
     if not tool or not e.conversation:
         return None
     with g.lock:
-        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND conversation = ? AND ts < ? ORDER BY ts",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND conversation = ? AND ts < ? ORDER BY ts",
                               (e.conversation, e.ts)).fetchall()
     loaded = g.load_many([r[0] for r in rows])
     before = [loaded[r[0]] for r in rows if r[0] in loaded]
@@ -219,8 +219,8 @@ def store(ev: dict) -> tuple[g.MemoryObject | None, str]:
     o.hashtags = o.hashtags + [t for t in tags if t not in o.hashtags]
     o.data = {**o.data, "befunde": f.reasons[:10], "geschrieben_von": w["von"]}
     g.save(o)
-    if o.visibility != "intern":
-        g.set_visibility(o, "intern", "vi", "company knowledge from an episode (0.56.0)")
+    if o.visibility != "internal":
+        g.set_visibility(o, "internal", "vi", "company knowledge from an episode (0.56.0)")
     return o, "weiterentwickelt" if existed else "gespeichert"
 
 
@@ -229,7 +229,7 @@ def from_episodes(since: str) -> dict:
     with g.lock:
         rows = g.db().execute(
             "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'ueberraschung:erholt' "
-            "WHERE o.kind = 'erfahrung' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
+            "WHERE o.kind = 'experience' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     out = {"episoden": 0, "neu": 0, "weiterentwickelt": 0, "mit_web": 0, "ohne_inhalt": 0, "unverwandt": 0, "unspezifisch": 0, "nicht_allgemein": 0,
            "abgelehnt": 0, "fehler": []}
     # several successes after the same first error (a measure in between succeeded too) are one episode: the last success ends it

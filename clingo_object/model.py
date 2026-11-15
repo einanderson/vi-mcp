@@ -14,7 +14,7 @@
 
 Each method becomes one flat rule of the notation — the server runs no Python, it receives the compiled rule. The membership filter
 holds exactly the kinds whose objects resolve to that definition, so overriding needs no negation:
-    stale(Self) <= (Self in objects("art:erkenntnis")) & (Self.mode == "test") & (Self.age > 90)
+    stale(Self) <= (Self in objects("art:insight")) & (Self.mode == "test") & (Self.age > 90)
     stale(Self) <= (Self in objects("art:skill")) & (Self.mode == "test") & (Self.age > 30)
 Dispatch is Python's method resolution order: an object of kind k answers with the method of the most specific class of kind k that
 defines it. Parameters after self become variables: def blocks(self, H) → blocks(Self, H).

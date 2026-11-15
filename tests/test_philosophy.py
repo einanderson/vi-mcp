@@ -85,7 +85,7 @@ def test_the_tool_and_install_store_a_checked_philosophy_as_a_rule_set(gd):
     msg = tools.call_tool("vi_philosophy", {"action": "install", "name": "kollektiv"}, "a", False)
     oid = msg.split()[1]
     o = g.load(oid)
-    assert o.kind == "regel" and "philosophie:kollektiv" in o.hashtags and o.visibility == "intern"
+    assert o.kind == "rule" and "philosophie:kollektiv" in o.hashtags and o.visibility == "internal"
     assert o.data["philosophie"]["hash"] == ph.package_hash(ph.load("kollektiv")) and o.data["logik"]["quelle"] == ph.load("kollektiv")["seed"]
     assert f"kollektiv {ph.load('kollektiv')['version']}" in tools.call_tool("vi_philosophy", {"action": "list"}, "a", False)
 
@@ -309,7 +309,7 @@ def test_binding_names_philosophy_and_hash_and_keeps_two_verdicts_apart(gd, tmp_
         tools.call_tool("vi_philosophy", {"action": "use", "name": "messung", "instance": "b"}, "a", False)
     with pytest.raises(tools.Rejected):
         tools.call_tool("vi_philosophy", {"action": "bound"}, "offen", False)
-    assert g.load(rows[0]["binding"]).visibility == "intern"
+    assert g.load(rows[0]["binding"]).visibility == "internal"
     # an index
     assert "index proj" in tools.call_tool("vi_philosophy", {"action": "use", "name": "messung", "index": "Proj"}, "a", False)
     assert [b["name"] for b in philosophy.bindings(index="proj")] == ["messung"]
@@ -325,7 +325,7 @@ def test_binding_names_philosophy_and_hash_and_keeps_two_verdicts_apart(gd, tmp_
     assert "ended" in tools.call_tool("vi_philosophy", {"action": "use", "name": "kollektiv", "off": True}, "a", False)
     assert [b["name"] for b in philosophy.bindings("a")] == ["messung"]
     gone = g.load(rows[0]["binding"])
-    assert gone.mode == "aus" and gone.changes[-1]["was"] == "philosophy binding ended"
+    assert gone.mode == "off" and gone.changes[-1]["was"] == "philosophy binding ended"
 
 
 # ── GRPO: the seed as a verifiable reward ───────────────────────────────────────────────────────────────────────────────────────

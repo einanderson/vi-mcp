@@ -73,11 +73,16 @@ SCALE = 1000  # clingo weights are integers: log-odds × SCALE
 MAX_FILTERS = 20
 
 
-#: O.<field> → the objekt column; any other attribute name is a hashtag kind (O.host → host:…)
-OBJ_FIELDS = {"kind": "art", "mode": "modus", "visibility": "sicht", "instance": "instanz", "index": "idx", "text": "text",
+#: O.<field> → the object column; any other attribute name is a hashtag kind (O.host → host:…)
+OBJ_FIELDS = {"kind": "kind", "mode": "mode", "visibility": "visibility", "instance": "instance", "index": "idx", "text": "text",
               # numbers (0.63.0): age in days, importance 0–3, confirmations, refutations, accesses
-              "age": "zeit", "importance": "wichtigkeit", "confirmed": "bestaetigt", "refuted": "widerlegt", "accesses": "zugriffe"}
+              "age": "ts", "importance": "importance", "confirmed": "confirmed", "refuted": "refuted", "accesses": "accesses"}
 
+
+#: field → {older stored name: current name}. Filled by the server (vi_mcp.logic, from vi_mcp/names.py: the stored values became English
+#: in 0.67.0), so a program written against the German names (O.kind == "erkenntnis") still means the same objects. clingo_object never
+#: imports vi_mcp; without the server the table is empty and values are taken as written.
+FIELD_VALUE_ALIASES: dict[str, dict[str, str]] = {}
 
 _DIALECT = ("objects", "linked", "propose")
 
@@ -196,6 +201,8 @@ def _attribute(a: ast.Attribute, other, op: str = "=") -> str:
                          f"({var}.{a.attr} == V) & (P.{other.attr} == V)")
     if isinstance(other, ast.Name) and _VAR.match(other.id):
         _state().setdefault("values", {}).setdefault(other.id, (a.lineno, var, a.attr))
+    if a.attr in FIELD_VALUE_ALIASES and isinstance(other, ast.Constant) and isinstance(other.value, str):
+        other = ast.Constant(FIELD_VALUE_ALIASES[a.attr].get(other.value, other.value))
     val = _term(other)
     if a.attr in OBJ_FIELDS:
         pred = f'vi__obj({var},"{a.attr}",'

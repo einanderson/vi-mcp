@@ -15,6 +15,7 @@ Every German name maps to exactly one English name, and no two German names map 
 """
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -161,6 +162,179 @@ def rename_schema(con: Any, tables: dict[str, str]) -> list[str]:
     return done
 
 
+# ---------------------------------------------------------------- values (step 2)
+
+#: object kinds (object.kind, the archive's object.kind, the value of the hashtag art:)
+KINDS: dict[str, str] = {
+    "erfahrung": "experience", "antwort": "answer", "erkenntnis": "insight", "regel": "rule", "reflex": "reflex", "gespraech": "conversation",
+    "suche": "search", "frage": "question", "selbst": "self", "schlaf": "sleep", "modell": "model", "skill": "skill", "bewertung": "rating",
+    "bild": "image", "seite": "page", "vorschlag": "proposal", "maschine": "machine",
+}
+#: object modes (object.mode, the archive's mode_before, the value of the hashtag modus:)
+MODES: dict[str, str] = {
+    "aktiv": "active", "test": "test", "aus": "off", "defekt": "broken", "strittig": "disputed", "widerlegt": "refuted",
+    "zurueckgezogen": "withdrawn", "archiviert": "archived", "aufgegangen": "merged", "quarantaene": "quarantine",
+}
+VISIBILITIES: dict[str, str] = {"privat": "private", "geteilt": "shared", "intern": "internal"}
+INDEX_KINDS: dict[str, str] = {"projekt": "project", "spezial": "special", "global": "global"}
+INDEX_SOURCES: dict[str, str] = {"automatisch": "automatic", "beschrieben": "described", "system": "system"}
+#: usage.outcome of a tool call; usage.empty_reason of a search without hits
+OUTCOMES: dict[str, str] = {"ok": "ok", "abgelehnt": "rejected", "fehler": "error"}
+EMPTY_REASONS: dict[str, str] = {"unbekannt": "unknown", "verfehlt": "missed"}
+#: how a search found its candidates (usage, search_log, relevance_judgment)
+SEARCH_KINDS: dict[str, str] = {"volltext": "fulltext", "oder": "or", "und": "and"}
+#: net_search.kind
+NET_SEARCH_KINDS: dict[str, str] = {"suche": "search", "uebernahme": "take"}
+#: post_in.status and page_rev.status (what the review decided about a post or page revision from the network)
+REVIEW_STATES: dict[str, str] = {"frei": "released", "ausstehend": "pending", "verworfen": "discarded", "vergessen": "forgotten"}
+#: self_version.area and the vi_self/vi_self_propose parameter area
+SELF_AREAS: dict[str, str] = {"werte": "values", "ziele": "goals", "stil": "style", "grenzen": "limits"}
+
+from .api_en import TOOL_ALIASES  # noqa: E402 — usage.tool: a German alias a client called is recorded under the English tool name
+
+#: (table, column, mapping) of every stored enum value rewritten by step 2
+VALUE_COLUMNS: tuple[tuple[str, str, dict[str, str]], ...] = (
+    ("object", "kind", KINDS), ("object", "mode", MODES), ("object", "visibility", VISIBILITIES),
+    ("vi_index", "kind", INDEX_KINDS), ("vi_index", "source", INDEX_SOURCES),
+    ("usage", "outcome", OUTCOMES), ("usage", "empty_reason", EMPTY_REASONS), ("usage", "search_kind", SEARCH_KINDS), ("usage", "tool", TOOL_ALIASES),
+    ("search_log", "search_kind", SEARCH_KINDS), ("relevance_judgment", "search_kind", SEARCH_KINDS),
+    ("net_search", "kind", NET_SEARCH_KINDS), ("post_out", "kind", KINDS), ("post_in", "kind", KINDS), ("post_in", "status", REVIEW_STATES),
+    ("page_rev", "status", REVIEW_STATES), ("self_version", "area", SELF_AREAS),
+)
+#: the archive's object table (archive.py)
+ARCHIVE_VALUE_COLUMNS: tuple[tuple[str, str, dict[str, str]], ...] = (
+    ("object", "kind", KINDS), ("object", "visibility", VISIBILITIES), ("object", "mode_before", MODES),
+)
+#: hashtags whose value is a stored enum (step 2 rewrites the value; step 3 the kind)
+TAG_VALUES: dict[str, dict[str, str]] = {"art": KINDS, "modus": MODES}
+
+_REVERSE: dict[int, dict[str, str]] = {}
+
+
+def english(mapping: dict[str, str], value):
+    """A stored value in its English form: a German name is translated, an English or unknown value passes through unchanged."""
+    return mapping.get(value, value) if isinstance(value, str) else value
+
+
+def wire(mapping: dict[str, str], value):
+    """The German form of a value for the network (wire form of 0.66, signed by every server before 0.67.0); unknown values pass through."""
+    rev = _REVERSE.get(id(mapping))
+    if rev is None:
+        rev = _REVERSE[id(mapping)] = {v: k for k, v in mapping.items()}
+    return rev.get(value, value) if isinstance(value, str) else value
+
+
+def id_prefix(kind: str) -> str:
+    """The prefix of a new object id. Object ids are identifiers, not names: edges, vectors, network ids, other objects' data and hints
+    already shown refer to them, so the id scheme of 0.66 (the German kind) is kept for every object, old and new."""
+    return wire(KINDS, kind)
+
+
+def canonical_tag(tag: str) -> str:
+    """A hashtag as stored since 0.67.0 — for tool input and search filters of clients that still write the German form."""
+    if not isinstance(tag, str) or ":" not in tag:
+        return tag
+    k, v = tag.split(":", 1)
+    m = TAG_VALUES.get(k)
+    if m and not v.endswith("*"):
+        v = english(m, v)
+    return f"{k}:{v}"
+
+
+_FILTER_TAG = re.compile(r"(?<![\w:])([a-z][a-z0-9_-]{0,30}:[^\s()]+)")
+
+
+def canonical_filter(text: str) -> str:
+    """Every hashtag condition of a search filter in its English form (free text is left alone)."""
+    return _FILTER_TAG.sub(lambda m: canonical_tag(m.group(1)), text) if isinstance(text, str) else text
+
+
+def wire_tag(tag: str) -> str:
+    """A hashtag in the wire form of 0.66 (for the network and the content hash)."""
+    if not isinstance(tag, str) or ":" not in tag:
+        return tag
+    k, v = tag.split(":", 1)
+    m = TAG_VALUES.get(k)
+    return f"{k}:{wire(m, v)}" if m else tag
+
+
+def _value_pending(con: Any, columns) -> bool:
+    present = _tables(con)
+    for table, col, m in columns:
+        if table not in present or col not in _columns(con, table):
+            continue
+        old = [k for k, v in m.items() if k != v]
+        if con.execute(f"SELECT 1 FROM {table} WHERE {col} IN ({','.join('?' * len(old))}) LIMIT 1", old).fetchone():
+            return True
+    if "object" in present and con.execute("SELECT 1 FROM object WHERE kind IN ('self', 'selbst') AND (data LIKE '%\"werte\"%' "
+                                           "OR data LIKE '%\"stil\"%' OR data LIKE '%\"ziele\"%' OR data LIKE '%\"grenzen\"%') LIMIT 1").fetchone():
+        return True
+    if "tag" in present:
+        for k, m in TAG_VALUES.items():
+            old = [f"{k}:{o}" for o, n in m.items() if o != n]
+            if con.execute(f"SELECT 1 FROM tag WHERE tag IN ({','.join('?' * len(old))}) LIMIT 1", old).fetchone():
+                return True
+    return False
+
+
+def _self_areas(con: Any) -> int:
+    """The areas of the self model are also keys in its data (data.soll.<area>) and a value in a self proposal (data.bereich)."""
+    import json
+    n = 0
+    rows = con.execute("SELECT id, kind, data FROM object WHERE kind IN ('self', 'selbst', 'proposal', 'vorschlag')").fetchall()
+    for oid, kind, raw in rows:
+        try:
+            d = json.loads(raw or "{}")
+        except ValueError:
+            continue
+        changed = False
+        soll = d.get("soll")
+        if isinstance(soll, dict) and any(k in SELF_AREAS and SELF_AREAS[k] != k for k in soll):
+            new: dict = {}
+            for k, v in soll.items():
+                k2 = SELF_AREAS.get(k, k)
+                new[k2] = (new.get(k2) or []) + (v if isinstance(v, list) else [v]) if k2 in new else v
+            d["soll"], changed = new, True
+        if d.get("bereich") in SELF_AREAS and SELF_AREAS[d["bereich"]] != d["bereich"]:
+            d["bereich"], changed = SELF_AREAS[d["bereich"]], True
+        if changed:
+            con.execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d, ensure_ascii=False), oid))
+            n += 1
+    return n
+
+
+def migrate_values(con: Any, columns) -> dict[str, int]:
+    """Step 2: rewrite every stored enum value of `columns` and the enum values of the hashtags art: and modus:. Portable UPDATEs,
+    idempotent. Returns the rewritten rows per class."""
+    present = _tables(con)
+    counts: dict[str, int] = {}
+    for table, col, m in columns:
+        if table not in present or col not in _columns(con, table):
+            continue
+        n = 0
+        for old, new in m.items():
+            if old != new:
+                n += con.execute(f"UPDATE {table} SET {col} = ? WHERE {col} = ?", (new, old)).rowcount
+        if n:
+            counts[f"{table}.{col}"] = n
+    if "object" in present and "data" in _columns(con, "object"):
+        n = _self_areas(con)
+        if n:
+            counts["self areas"] = n
+    if "tag" in present:
+        n = 0
+        for k, m in TAG_VALUES.items():
+            for old, new in m.items():
+                if old == new:
+                    continue
+                o, w = f"{k}:{old}", f"{k}:{new}"
+                con.execute("INSERT OR IGNORE INTO tag (object_id, tag) SELECT object_id, ? FROM tag WHERE tag = ?", (w, o))
+                n += con.execute("DELETE FROM tag WHERE tag = ?", (o,)).rowcount
+        if n:
+            counts["tag values"] = n
+    return counts
+
+
 #: the migration of 0.67.0 as recorded in each database it changed (table name_migration: one row per class)
 STEP = "0.67.0"
 
@@ -227,12 +401,18 @@ def migrate_db(con: Any, tables: dict[str, str], target: Any, label: str) -> dic
     """The migration of one database (label: memory, archive or a network's logbook) from German to English stored names, before the
     code creates its tables. Nothing to do → {} and nothing is written. Otherwise: backup copy first, then the rename, then the counts
     per class into the table name_migration and the log. The caller commits."""
-    if not _pending_schema(con, tables):
+    values = {"memory": VALUE_COLUMNS, "archive": ARCHIVE_VALUE_COLUMNS}.get(label, ())
+    schema = _pending_schema(con, tables)
+    if not schema and not (values and _value_pending(con, values)):
         return {}
     backup = _backup(con, target, label)
     log(f"migration {STEP} ({label}): backup copy before renaming: {backup}")
-    done = rename_schema(con, tables)
-    counts = {"tables": sum(1 for d in done if "." not in d.split("→")[0]), "columns": sum(1 for d in done if "." in d.split("→")[0])}
+    counts: dict[str, int] = {}
+    if schema:
+        done = rename_schema(con, tables)
+        counts = {"tables": sum(1 for d in done if "." not in d.split("→")[0]), "columns": sum(1 for d in done if "." in d.split("→")[0])}
+    if values:
+        counts.update(migrate_values(con, values))
     _record(con, counts, backup)
     log(f"migration {STEP} ({label}): " + ", ".join(f"{n} {cls}" for cls, n in counts.items()))
     return counts

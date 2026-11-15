@@ -14,9 +14,9 @@ propose(link(P, O, "plan targets a DMZ host")) <= (P in objects("plan:*")) & (O 
 
 
 def _world():
-    g.new_object("erkenntnis", "gate1 is the mail relay in the DMZ", ["host:gate1", "zone:dmz"], {"quelle": "t"}, reason="T", instance="a",
+    g.new_object("insight", "gate1 is the mail relay in the DMZ", ["host:gate1", "zone:dmz"], {"quelle": "t"}, reason="T", instance="a",
                  oid="erkenntnis:gate1", link=False)
-    g.new_object("erkenntnis", "plan: roll out freeipa on gate1", ["host:gate1", "plan:freeipa"], {"quelle": "t"}, reason="T", instance="a",
+    g.new_object("insight", "plan: roll out freeipa on gate1", ["host:gate1", "plan:freeipa"], {"quelle": "t"}, reason="T", instance="a",
                  oid="erkenntnis:plan-gate1", link=False)
 
 
@@ -30,7 +30,7 @@ def test_a_proposal_is_held_and_its_author_cannot_release_it(gd):
     held = _held(out)
     assert len(held) == 2 and "you cannot release your own proposal" in out
     o = g.load(held[0])
-    assert o.kind == "vorschlag" and o.mode == "quarantaene" and o.data["regeln"] and o.data["programm_hash"]
+    assert o.kind == "proposal" and o.mode == "quarantine" and o.data["regeln"] and o.data["programm_hash"]
     assert "status:blocked" not in g.load("erkenntnis:plan-gate1").hashtags  # nothing changed yet
     with pytest.raises(tools.Rejected, match="cannot release its own proposal"):
         tools.call_tool("vi_release", {"id": held[0], "reason": "mine"}, "a", True, True)
@@ -58,14 +58,14 @@ def test_discard_leaves_a_tombstone_and_the_same_proposal_is_not_stored_again(gd
     assert g.load(held[0]).data["wiederholt"] == 1
     tools.call_tool("vi_release", {"id": held[0], "reason": "wrong rule", "action": "discard"}, "release-cli", False, True)
     o = g.load(held[0])
-    assert o.mode == "widerlegt" and any("discarded" in c["was"] for c in o.changes)
+    assert o.mode == "refuted" and any("discarded" in c["was"] for c in o.changes)
     third = tools.call_tool("vi_logic", {"action": "propose", "source": PROG}, "a", False)
     assert f"already decided (discarded): {held[0]}" in third
 
 
 def test_system_tags_and_invisible_targets_are_refused(gd):
     _world()
-    g.new_object("erkenntnis", "private of b", ["host:gate1", "plan:x"], {"quelle": "t"}, reason="T", instance="b", visibility="privat",
+    g.new_object("insight", "private of b", ["host:gate1", "plan:x"], {"quelle": "t"}, reason="T", instance="b", visibility="private",
                  oid="erkenntnis:priv", link=False)
     out = tools.call_tool("vi_logic", {"action": "propose", "source":
                           'propose(tag(P, "modus", "aktiv")) <= (P in objects("plan:*"))'}, "a", False)
@@ -79,7 +79,7 @@ def test_a_proposal_whose_target_vanished_is_not_applied(gd):
     g.delete(["erkenntnis:plan-gate1"])
     with pytest.raises(tools.Rejected, match="can no longer be applied"):
         tools.call_tool("vi_release", {"id": held[0], "reason": "ok"}, "release-cli", False, True)
-    assert g.load(held[0]).mode == "quarantaene"
+    assert g.load(held[0]).mode == "quarantine"
 
 
 def test_proposals_are_never_silent(gd):
@@ -120,7 +120,7 @@ def test_rules_are_learned_from_rated_conclusions_and_held_for_review(gd):
     new version of the rule set."""
     for i in range(10):
         zone = "dmz" if i % 2 == 0 else "intern"
-        g.new_object("erkenntnis", f"note {i}", ["thema:oo", f"zone:{zone}", f"host:h{i}"], {"quelle": "t"}, reason="T",
+        g.new_object("insight", f"note {i}", ["thema:oo", f"zone:{zone}", f"host:h{i}"], {"quelle": "t"}, reason="T",
                      oid=f"erkenntnis:n{i}", mode="test", link=False)
     src = 'review(O) <= (O in objects("thema:oo")) & (O.mode == "test")'
     tools.call_tool("vi_logic", {"action": "save", "name": "rev", "source": src, "visibility": "internal"}, "a", False)
@@ -144,7 +144,7 @@ def test_a_question_in_natural_language_is_answered_on_the_server(gd, monkeypatc
     (only notation runs, never Python); a refusal goes back to the model. Here a scripted model needs two rounds."""
     from vi_mcp import logic
     _world()
-    g.new_object("erkenntnis", "private of b", ["host:secret1", "zone:dmz"], {"quelle": "t"}, reason="T", instance="b", visibility="privat",
+    g.new_object("insight", "private of b", ["host:secret1", "zone:dmz"], {"quelle": "t"}, reason="T", instance="b", visibility="private",
                  oid="erkenntnis:priv-b", link=False)
     replies = iter(['```logic\nans(H) <= O in objects("zone:dmz") & (O.host == H)\n```',
                     '```logic\nans(H) <= (O in objects("zone:dmz")) & (O.host == H)\n```'])

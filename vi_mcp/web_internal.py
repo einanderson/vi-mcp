@@ -26,8 +26,8 @@ from .web import CSS, SECURITY_HEADERS, _inline, _limited, e, render_text, when
 BASE = "/intern"
 SESSION_S = 8 * 3600
 COOKIE = "vi_intern"
-KINDS = ("erkenntnis", "regel", "skill", "suche", "bild", "seite")
-HIDDEN_MODES = ("quarantaene",)
+KINDS = ("insight", "rule", "skill", "search", "image", "page")
+HIDDEN_MODES = ("quarantine",)
 PAGE_HITS = 30
 #: signed-in pages are never cached. Referrer-Policy same-origin, not the no-referrer of /web: with no-referrer Chrome sends the sign-in
 #: POST with "Origin: null" (found in the browser test, 13.11.2026), and the cross-site check must reject null.
@@ -148,7 +148,7 @@ def _visible(o: g.MemoryObject | None) -> str | None:
     """None if this page may show the object, else the reason it does not."""
     if o is None:
         return "unknown"
-    if o.visibility == "privat":
+    if o.visibility == "private":
         return "private"
     if o.mode in HIDDEN_MODES:
         return "in quarantine"
@@ -171,8 +171,8 @@ def _tag_links(base: str, tags: list[str]) -> str:
 
 
 def _hit(base: str, o: g.MemoryObject) -> str:
-    refuted = (' <span class="refuted">refuted</span>' if o.mode == "widerlegt" else
-               ' <span class="refuted">withdrawn by its author</span>' if o.mode == "zurueckgezogen" else "")
+    refuted = (' <span class="refuted">refuted</span>' if o.mode == "refuted" else
+               ' <span class="refuted">withdrawn by its author</span>' if o.mode == "withdrawn" else "")
     return (f'<li class="hit"><span class="kind">{e(o.kind)}</span><span class="kind">{e(o.idx)}</span>'
             f'<h3><a href="{e(base)}/o/{urllib.parse.quote(o.id, safe=":")}">{e(o.text[:220])}</a>{refuted}</h3>'
             f'<p class="excerpt muted">{e(_excerpt(o))}</p><p class="meta">{when(o.last_at or o.ts)}'
@@ -189,7 +189,7 @@ def home(base: str, instance: str) -> str:
                     + (f'<p>{e(x["beschreibung"])}</p>' if x.get("beschreibung") else "") + "</div>" for x in rows)
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND visibility <> 'privat' AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "
+            "SELECT id FROM object WHERE kind IN ('insight', 'rule', 'skill') AND visibility <> 'private' AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "
             "ORDER BY ts DESC LIMIT 12")]
     recent = "".join(_hit(base, o) for o in g.load_many(ids).values() if _visible(o) is None)
     body = (f'<div class="hero"><h1>What does the memory know?</h1><form class="search" action="{e(base)}/suche" method="get" role="search">'
@@ -242,11 +242,11 @@ def _empty(base: str, instance: str, q: str) -> str:
     """Why nothing was found — the same answer as vi_recall gives (vocabulary.empty_reason)."""
     from . import vocabulary
     reason, unknown = vocabulary.empty_reason(q, instance)
-    if reason == "unbekannt" and unknown:
+    if reason == "unknown" and unknown:
         items = "".join(f"<li>{e(t)} is not in memory" + (" — did you mean " + ", ".join(f'<a href="{e(base)}/suche?q={urllib.parse.quote(x)}">{e(x)}</a>' for x in sug) + "?" if sug else "")
                         + "</li>" for t, sug in unknown[:5])
         return f'<li class="muted">Nothing is known about this. <ul>{items}</ul> <a href="{e(base)}/w">Words</a> lists what exists.</li>'
-    if reason == "unbekannt":
+    if reason == "unknown":
         return f'<li class="muted">None of these words occurs in memory. <a href="{e(base)}/w">Words</a> lists what exists.</li>'
     return '<li class="muted">The words are known, but no entry carries them together — fewer words, or OR, find more.</li>'
 
@@ -269,13 +269,13 @@ def _gold_form(base: str, o: g.MemoryObject) -> str:
 def object_page(base: str, instance: str, oid: str, human: bool = False) -> str | None:
     from . import bandit, net_score
     o = g.load(oid)
-    if _visible(o) is not None or (o.visibility == "intern" and instance == "offen"):
+    if _visible(o) is not None or (o.visibility == "internal" and instance == "offen"):
         return None
     yes, no = bandit.counter(o)
     facts = [("kind", e(o.kind)), ("index", f'<a href="{e(base)}/i/{e(o.idx)}">{e(o.idx)}</a>'), ("author", e(o.instance or "—")),
-             ("visibility", e(o.visibility)), ("state", e(o.mode) + (' <span class="refuted">refuted — do not rely on it</span>' if o.mode == "widerlegt" else
+             ("visibility", e(o.visibility)), ("state", e(o.mode) + (' <span class="refuted">refuted — do not rely on it</span>' if o.mode == "refuted" else
                                      ' <span class="refuted">withdrawn by its author — not proven false, but no longer claimed</span>'
-                                     if o.mode == "zurueckgezogen" else "")),
+                                     if o.mode == "withdrawn" else "")),
              ("learned", when(o.ts)), ("last used", when(o.last_at)), ("importance", e(o.importance)),
              ("source", _inline(str(o.data.get("quelle") or "—"))),
              ("measured", f"shown {bandit.shown(o)}× · helped {yes:g} · did not help {no:g} · confirmed by "
@@ -293,7 +293,7 @@ def object_page(base: str, instance: str, oid: str, human: bool = False) -> str 
             + "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts) + "</dl>"
             + (f'<h2>Related</h2><ul class="list">{"".join(_hit(base, x) for x in rel)}</ul>' if rel else "")
             + (f'<h2>History</h2><div class="table-wrap"><table><tr><th>when</th><th>who</th><th>what</th><th>reason</th></tr>{hist}</table></div>' if hist else "")
-            + (_gold_form(base, o) if human and o.kind in ("erkenntnis", "regel", "skill") else ""))
+            + (_gold_form(base, o) if human and o.kind in ("insight", "rule", "skill") else ""))
     return _page(base, o.text[:80], body, instance)
 
 
@@ -308,8 +308,8 @@ def index_page(base: str, instance: str, name: str) -> str | None:
         return None
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE idx = ? AND kind IN ('erkenntnis', 'regel', 'skill', 'suche') AND visibility <> 'privat' "
-            "AND mode <> 'quarantaene' ORDER BY last_at DESC LIMIT 50", (n,))]
+            "SELECT id FROM object WHERE idx = ? AND kind IN ('insight', 'rule', 'skill', 'search') AND visibility <> 'private' "
+            "AND mode <> 'quarantine' ORDER BY last_at DESC LIMIT 50", (n,))]
     items = [o for o in g.load_many(ids).values() if _visible(o) is None]
     extra = " ".join(z.strip() for z in index_transfer.lines(n))
     body = (f'<p class="meta"><span class="kind">{e(x["art"])}</span>index</p><h1>{e(n)}</h1>'

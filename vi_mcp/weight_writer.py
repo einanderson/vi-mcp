@@ -160,8 +160,8 @@ def _cold_start(known: set[str]) -> list[g.MemoryObject]:
     from datetime import datetime, timedelta, timezone
     since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
     out = []
-    for _s, o, _g in g.recall("(art:skill OR art:erkenntnis OR art:regel) !herkunft:p2p", limit=400, viewer=None):
-        if o.ts < since or o.mode not in ("aktiv", "test") or f"hinweis:{o.id}" in known:
+    for _s, o, _g in g.recall("(art:skill OR art:insight OR art:rule) !herkunft:p2p", limit=400, viewer=None):
+        if o.ts < since or o.mode not in ("active", "test") or f"hinweis:{o.id}" in known:
             continue
         if any(t.startswith(("art_wissen:firmendoku", "art_wissen:doku-extern")) for t in o.hashtags):
             continue  # imported documentation is shown only via exploration (0.57.1)
@@ -259,7 +259,7 @@ def run() -> dict:
     from datetime import datetime, timedelta
     from . import learning, reflection
     m = learning.model()
-    if m is None or m.mode != "aktiv" or not m.data.get("gewichte"):
+    if m is None or m.mode != "active" or not m.data.get("gewichte"):
         return {"zustand": "uebersprungen", "grund": "no active router model"}
     lay = layer(m)
     # 1. a layer in test or active: re-check every day (it must keep winning)

@@ -70,7 +70,7 @@ def test_proposal_lands_in_quarantine(open_):
     assert not error and "quarantine" in text and "rule finding" in text
     oid = text.split()[1]
     o = g.load(oid)
-    assert o.mode == "quarantaene" and o.instance == config.OPEN and "herkunft:offen" in o.hashtags
+    assert o.mode == "quarantine" and o.instance == config.OPEN and "herkunft:offen" in o.hashtags
     _, sa, _ = _init(port, tok)
     assert "rm -rf" not in _call(port, sa, "vi_vorher", {"tool": "Bash", "args": {}}, tok)[1]  # has no effect
     assert any(h.startswith("rule finding") for h in p2p.sensitive(o))
@@ -90,7 +90,7 @@ def test_no_shared_answer_cache(open_):
     v = json.loads(_call(port, sid, "vi_vorher", {"tool": "netbox_get_vms", "args": {"a": 1}, "lesend": True})[1])
     _call(port, sid, "vi_nachher", {"vorher_id": v["vorher_id"], "tool": "netbox_get_vms", "args": {"a": 1}, "ok": True, "ergebnis": "geheime Liste", "lesend": True})
     v2 = json.loads(_call(port, sid, "vi_vorher", {"tool": "netbox_get_vms", "args": {"a": 1}, "lesend": True})[1])
-    assert v2["antwort"] is None and not g.recall("art:antwort", viewer=None)
+    assert v2["antwort"] is None and not g.recall("art:answer", viewer=None)
 
 
 def test_without_open_stays_401(tmp_path, monkeypatch):

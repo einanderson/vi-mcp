@@ -27,7 +27,7 @@ def test_machine_worlds_stay_private_and_training_publication_scrubs_again(gd, t
     machine.call("owner", {"action": "execute", "name": "test", "instruction": "rate " + run["receipt"],
         "payload": {"expected_answers": ['ans("safe")'], "reference": "fixture", "question": "Which answer is safe?"}})
     published = machine.call("owner", {"action": "teach", "name": "test", "receipt": run["receipt"]})
-    assert g.load(published["id"]).visibility == "intern"
+    assert g.load(published["id"]).visibility == "internal"
     # Program exports must not depend on generic QA/retrieval trajectories existing.
     built = dataset.build()
     assert not built["qa"] and not built["agentic"] and len(built["logic"]) == 1
@@ -100,7 +100,7 @@ def publisher(net, monkeypatch):  # noqa: F811
 
 
 def _mk_obj(text, tags=("thema:a",), instance="a", proven=True, **d):
-    o = g.new_object("erkenntnis", text, list(tags), {"quelle": "Messung vom 2.11.", **d}, reason="T", instance=instance)
+    o = g.new_object("insight", text, list(tags), {"quelle": "Messung vom 2.11.", **d}, reason="T", instance=instance)
     if proven:
         o.confirm("ki@andere", "stimmt", "andere")
         g.save(o)
@@ -196,14 +196,14 @@ def test_new_version_replaces_the_old(publisher):
     g.save(o)
     a, r = _import_bundle(publisher, start=2)
     assert r["quarantaene"] == 1
-    t = [x[1].text for x in g.recall("modus:quarantaene", viewer=None)]
+    t = [x[1].text for x in g.recall("modus:quarantine", viewer=None)]
     assert t == ["Zweite Fassung dieses Wissens im Netz"]
 
 
 def _publisher_with(k, yes, no):
     a = {**GOOD, "netz_id": "b" * 32}
     p2p.inbox(_bundle(k, [a]), in_background=False)
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     o.data["nuetzlich"] = {"ja": yes, "nein": no, "n": yes + no}
     g.save(o)
     return o
@@ -229,7 +229,7 @@ def test_auto_approve_only_when_enabled_and_harmless(publisher, monkeypatch):
     assert p2p.auto_approve() == 0
     monkeypatch.setitem(p2p.config, "auto_freigabe", True)
     assert p2p.auto_approve() == 1
-    assert len(g.recall("modus:quarantaene", viewer=None)) == 1 and len(g.recall("modus:test herkunft:p2p", viewer=None)) == 1
+    assert len(g.recall("modus:quarantine", viewer=None)) == 1 and len(g.recall("modus:test herkunft:p2p", viewer=None)) == 1
 
 
 def test_object_token_opens_no_other_object():
@@ -264,7 +264,7 @@ def test_tools(publisher):
 
 
 def test_credentials_are_never_stored(gd):
-    o = g.new_object("erkenntnis", "Login mit password=abc123 und Bearer abcdefghijkl", ["thema:a"], {"quelle": "x", "args": {"cmd": "curl https://u:p4ss@h/x", "liste": ["api_key: 77"]}}, reason="T", instance="a")
+    o = g.new_object("insight", "Login mit password=abc123 und Bearer abcdefghijkl", ["thema:a"], {"quelle": "x", "args": {"cmd": "curl https://u:p4ss@h/x", "liste": ["api_key: 77"]}}, reason="T", instance="a")
     raw = json.dumps([o.text, o.data])
     for v in ("abc123", "abcdefghijkl", "p4ss", "77"):
         assert v not in raw, v
@@ -299,7 +299,7 @@ def test_content_goes_to_net_anonymized(publisher):
     a = p2p.outbox()["objekte"][0]
     assert a["inhalt"].startswith("| GET | https://<host>/api | Liste |") and "requests.get(ziel)" in a["inhalt"]
     r = p2p.inbox(_bundle(publisher, [a]), in_background=False)
-    assert r["quarantaene"] == 1 and g.recall("modus:quarantaene", viewer=None)[0][1].data["inhalt"] == a["inhalt"]
+    assert r["quarantaene"] == 1 and g.recall("modus:quarantine", viewer=None)[0][1].data["inhalt"] == a["inhalt"]
 
 
 def test_import_rejects_internals_in_content():
@@ -314,7 +314,7 @@ def test_long_content_is_sensitive(publisher):
 
 
 def test_code_examples_stay_locally_readable(gd):
-    o = g.new_object("erkenntnis", "Beispiel für den Aufruf", ["thema:a"], {"quelle": "x", "inhalt": 'token = lese_token()\npassword: ${PW}\nheaders = {"Authorization": f"Bearer {token}"}\npassword=abc123\n'}, reason="T", instance="a")
+    o = g.new_object("insight", "Beispiel für den Aufruf", ["thema:a"], {"quelle": "x", "inhalt": 'token = lese_token()\npassword: ${PW}\nheaders = {"Authorization": f"Bearer {token}"}\npassword=abc123\n'}, reason="T", instance="a")
     i = o.data["inhalt"]
     assert "token = lese_token()" in i and "${PW}" in i and "Bearer {token}" in i and "abc123" not in i
 
@@ -360,7 +360,7 @@ def test_company_network_export_keeps_the_open_network_clean(publisher, monkeypa
     p2p.generate_token("alice-laptop")
     _mk_obj("Auf srv-alpha ist 10.9.1.5 der Gateway, gemeldet von alice-laptop", tags=("thema:netz", "host:srv-alpha"), instance="alice-laptop")
     internal = _mk_obj("srv-beta hängt am Switch sw-07 im Keller, Port 12", tags=("thema:netz", "host:srv-beta"), instance="alice-laptop")
-    internal.visibility = "intern"
+    internal.visibility = "internal"
     g.save(internal)
     _mk_obj("Das Passwort für srv-gamma steht im Tresor unter Netz", tags=("thema:netz",), instance="alice-laptop")
     company = json.dumps(p2p.outbox("firma"), ensure_ascii=False)
@@ -374,7 +374,7 @@ def test_ratings_carry_only_a_hash_and_numbers(publisher):
     """0.40.0: the rating export is a new kind of export — content hash and five numbers, never text, names or instances."""
     from vi_mcp import logbook as lb, net_score
     p2p.inbox(_bundle(publisher, [GOOD]), in_background=False)
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     o.mode = "test"
     o.data["nuetzlich"] = {"ja": 1.0, "nein": 0.0, "n": 1}
     o.confirm("ki@alice-laptop", "half bei srv-alpha", "alice-laptop")
@@ -391,8 +391,8 @@ def test_index_file_names_no_instance_conversation_or_index_internals(gd, tmp_pa
     users and history stays home: instance, conversation, object id, the exporting index's position in other indexes."""
     from vi_mcp import index_transfer
     monkeypatch.setenv("VI_MCP_EXPORT_KEY", str(tmp_path / "k.key"))
-    o = g.new_object("erkenntnis", "deploy: back up the database before the package update", ["thema:deploy"], {"quelle": "test run"},
-                     index="kunde-x", visibility="intern", instance="alice-laptop", conversation="20261113042")
+    o = g.new_object("insight", "deploy: back up the database before the package update", ["thema:deploy"], {"quelle": "test run"},
+                     index="kunde-x", visibility="internal", instance="alice-laptop", conversation="20261113042")
     index_transfer.export("kunde-x", tmp_path / "x.json")
     raw = (tmp_path / "x.json").read_text()
     assert "alice-laptop" not in raw and "20261113042" not in raw and o.id not in raw and "gespraech" not in raw
@@ -429,7 +429,7 @@ def test_instance_checkpoint_is_private_and_omits_transport_credentials(gd, tmp_
     text = (directory / "instance.json").read_text()
     assert "PRIVATE-CONTEXT-MARKER" in text
     assert "transport-only.invalid" not in text and "private-credential-file" not in text
-    assert machine._load("instance-test", "test").visibility == "privat"
+    assert machine._load("instance-test", "test").visibility == "private"
     assert not any("PRIVATE-CONTEXT-MARKER" in json.dumps(row) for row in dataset.build()["qa"])
     if os.name != "nt":
         assert (directory / "instance.json").stat().st_mode & 0o777 == 0o600
@@ -445,7 +445,7 @@ def test_training_kit_bundles_source_only_not_package_local_configuration(gd, tm
     (package / "private-settings.json").write_text("PRIVATE-PACKAGE-MARKER")
     (package / ".credential").write_text("PRIVATE-CREDENTIAL-MARKER")
     monkeypatch.setattr(clingo_object, "__file__", str(package / "__init__.py"))
-    g.new_object("erkenntnis", "Public training fixture", [], {"quelle": "fixture", "inhalt": "checked knowledge"}, visibility="intern")
+    g.new_object("insight", "Public training fixture", [], {"quelle": "fixture", "inhalt": "checked knowledge"}, visibility="internal")
     directory = tmp_path / "kit"
     finetune.kit(str(directory), base_model="fixture", force=True)
     assert [p.name for p in (directory / "clingo_object").iterdir()] == ["__init__.py"]

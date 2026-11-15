@@ -13,9 +13,9 @@ from vi_mcp import memory as g
 def vi(gd, tmp_path, monkeypatch):
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
     for i in range(12):
-        g.new_object("erkenntnis", f"knowledge {i}: how to deploy service {i}", ["thema:deploy"],
+        g.new_object("insight", f"knowledge {i}: how to deploy service {i}", ["thema:deploy"],
                      {"quelle": "t", "inhalt": f"step one, step two for {i}", "klasse": {"fragen": [f"how to deploy {i}?", f"deploy {i} steps?"]}},
-                     visibility="intern", instance="a")
+                     visibility="internal", instance="a")
     (tmp_path / "eval").mkdir()
     (tmp_path / "eval" / "recall.json").write_text(json.dumps([{"target": "erkenntnis:none", "group": "g", "stratum": "s",
                                                                   "frage": "how is the database backed up?", "stichworte": "backup database"}]))
@@ -65,9 +65,9 @@ def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo
     import sys
     import threading
     for i in range(6):
-        g.new_object("erkenntnis", f"backup of db{i} runs nightly", ["thema:backup"],
+        g.new_object("insight", f"backup of db{i} runs nightly", ["thema:backup"],
                      {"quelle": f"https://wiki.example/db{i}", "inhalt": f"The backup of db{i}.example runs at 02:00 with borg to /srv/backup/db{i}."},
-                     visibility="intern", instance="a")
+                     visibility="internal", instance="a")
     d = vi / "kit"
     finetune.kit(str(d), base_model="Qwen/Qwen3-4B", force=True)
     docs = [json.loads(x) for x in (d / "dataset/documents.jsonl").read_text().splitlines()]
@@ -205,8 +205,8 @@ def test_server_stores_training_pairs_with_a_probe_and_the_export_uses_them(vi, 
                                      {"question": f"What are the steps to deploy service {i}?", "answer": "step one, step two"},
                                      {"question": "What does the document say?", "answer": "step one"}]})
     monkeypatch.setattr(reflection, "ask_fn", fake)
-    secret = g.new_object("erkenntnis", "knowledge 99: private", ["thema:deploy"], {"inhalt": "step one"}, visibility="privat", instance="a")
-    failing = g.new_object("erkenntnis", "knowledge fail: model down", ["thema:deploy"], {"inhalt": "fail"}, visibility="intern", instance="a")
+    secret = g.new_object("insight", "knowledge 99: private", ["thema:deploy"], {"inhalt": "step one"}, visibility="private", instance="a")
+    failing = g.new_object("insight", "knowledge fail: model down", ["thema:deploy"], {"inhalt": "fail"}, visibility="internal", instance="a")
     assert secret.id not in classify.pairs_pending(100) and failing.id in classify.pairs_pending(100)
     r = classify.run_pairs(100, "test", workers=3)
     assert r["ok"] == 12 and r["error"] == 1 and r["pairs"] == 12 and r["probes"] == 12
@@ -220,7 +220,7 @@ def test_server_stores_training_pairs_with_a_probe_and_the_export_uses_them(vi, 
     rep = classify.pairs_report()
     assert rep["ok"] == 12 and rep["error"] == 1 and rep["pairs"] == 12 and rep["probes"] == 12
     # changed knowledge: its pairs are stale — not exported, renewed by --stale
-    ids = [x[0] for x in g.db().execute("SELECT id FROM object WHERE kind = 'erkenntnis' AND json_extract(data, '$.qa.state') = 'ok'")]
+    ids = [x[0] for x in g.db().execute("SELECT id FROM object WHERE kind = 'insight' AND json_extract(data, '$.qa.state') = 'ok'")]
     changed = g.load(ids[0])
     changed.data["inhalt"] = "step one, step two, step three"
     g.save(changed)
@@ -260,7 +260,7 @@ def test_record_keeps_the_lineage_and_adopts_only_what_measured_better(vi):
           "evaluation_set_sha256": hashlib.sha256((d / "split/test.jsonl").read_bytes()).hexdigest()}
     (d / "eval.json").write_text(json.dumps(ev))
     o = finetune.record(str(d))
-    assert o.mode == "aktiv" and "fine-tuned 0.52 vs base 0.31 on 25 held-out questions" in o.text
+    assert o.mode == "active" and "fine-tuned 0.52 vs base 0.31 on 25 held-out questions" in o.text
     assert o.data["dataset_manifest_sha256"] and o.data["incubator"]["zustand"] == "im_inkubator"
 
 
@@ -288,9 +288,9 @@ def test_codex_review_findings_on_stored_pairs_are_fixed(vi, monkeypatch):
     equal to the probe being trained, pairs of an older schema exported, a lost update when the object changed during the model call,
     and changed knowledge never renewed by sleep."""
     from vi_mcp import classify, dataset, qa_pairs, reflection
-    o = g.new_object("erkenntnis", "nginx reload on web1.example", ["thema:nginx"], {"quelle": "https://wiki.example/nginx",
+    o = g.new_object("insight", "nginx reload on web1.example", ["thema:nginx"], {"quelle": "https://wiki.example/nginx",
                      "inhalt": "Run systemctl reload nginx on web1.example after changing /etc/nginx/sites-enabled.",
-                     "klasse": {"fragen": ["How do I reload nginx on web1.example?"]}}, visibility="intern", instance="a")
+                     "klasse": {"fragen": ["How do I reload nginx on web1.example?"]}}, visibility="internal", instance="a")
     pairs = [{"question": "How do I reload nginx on web1.example?", "answer": "Run systemctl reload nginx on web1.example."},
              {"question": "Which directory holds the enabled sites on web1.example?", "answer": "/etc/nginx/sites-enabled"},
              {"question": "Which command reloads nginx on web1.example after a change?", "answer": "systemctl reload nginx"}]
@@ -342,7 +342,7 @@ def test_qa_v4_english_pairs_are_grounded_by_names_and_a_model_check_that_may_on
     assert qa_pairs.check({"question": q, "answer": "Postfix relays via smtp.other.example."}, doc) == "a name the document does not state"
     assert qa_pairs.check({"question": q, "answer": "It is configured well by the mail team."}, doc) == "not grounded in the document"
     assert "in English" in qa_pairs.SYSTEM and qa_pairs.SCHEMA_VERSION == "qa-v4"
-    o = g.new_object("erkenntnis", "Postfix auf mail01.example.org", ["thema:mail"], {"inhalt": doc}, visibility="intern", instance="a")
+    o = g.new_object("insight", "Postfix auf mail01.example.org", ["thema:mail"], {"inhalt": doc}, visibility="internal", instance="a")
     pairs = [{"question": q, "answer": "Postfix listens on loopback-only and relays via relay.example.org."},
              {"question": "How do I restart Postfix on mail01.example.org?", "answer": "Run systemctl restart postfix."},
              {"question": "Does Postfix on mail01.example.org accept mail from the internet?", "answer": "Yes, inet_interfaces allows it."}]

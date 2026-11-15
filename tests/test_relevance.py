@@ -29,10 +29,10 @@ def _search(q):
 
 def test_free_text_searches_are_graded_and_reported(gd, grader):
     table, sent = grader
-    a = g.new_object("erkenntnis", "deploy web1: stop the service, copy, start", ["host:web1.example", "thema:deploy"], {"quelle": "t"})
-    b = g.new_object("erkenntnis", "deploy notes: the deploy of web1 took 4 minutes", ["host:web1.example", "thema:deploy"], {"quelle": "t"})
-    secret = g.new_object("erkenntnis", "deploy web1 private trick", ["host:web1.example", "thema:deploy"], {"quelle": "t"},
-                          instance="agent", visibility="privat")
+    a = g.new_object("insight", "deploy web1: stop the service, copy, start", ["host:web1.example", "thema:deploy"], {"quelle": "t"})
+    b = g.new_object("insight", "deploy notes: the deploy of web1 took 4 minutes", ["host:web1.example", "thema:deploy"], {"quelle": "t"})
+    secret = g.new_object("insight", "deploy web1 private trick", ["host:web1.example", "thema:deploy"], {"quelle": "t"},
+                          instance="agent", visibility="private")
     table[a.text] = 3
     table[b.text] = 1
     _search("deploy web1")
@@ -54,7 +54,7 @@ def test_free_text_searches_are_graded_and_reported(gd, grader):
 def test_answers_outside_the_schema_are_named_not_stored_as_grades(gd, grader):
     table, sent = grader
     table["_bad"] = True
-    g.new_object("erkenntnis", "nginx reload on web1", ["host:web1.example", "tool:nginx"], {"quelle": "t"})
+    g.new_object("insight", "nginx reload on web1", ["host:web1.example", "tool:nginx"], {"quelle": "t"})
     _search("nginx reload")
     out = relevance.run(5, "test")
     assert out["fehler"] == 1 and len(sent) == 2  # asked once more, then given up

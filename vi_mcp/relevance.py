@@ -131,7 +131,7 @@ def run(limit: int = 3, who: str = "sleep") -> dict:
         objs, skipped = [], 0
         for oid in ids[:MAX_HITS]:
             o = g.load(oid)
-            if o is None or o.visibility == "privat":
+            if o is None or o.visibility == "private":
                 skipped += 1
                 continue
             objs.append(o)

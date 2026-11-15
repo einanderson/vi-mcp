@@ -7,7 +7,7 @@ from vi_mcp import memory as g
 
 
 def _k(text, tags, **kw):
-    return g.new_object("erkenntnis", text, tags, {"quelle": "test 11.11.2026"}, instance="b", **kw)
+    return g.new_object("insight", text, tags, {"quelle": "test 11.11.2026"}, instance="b", **kw)
 
 
 def test_tool_only_and_generic_word_hints_stay_away_from_shell_commands(gd):
@@ -51,7 +51,7 @@ def test_feedback_in_one_call_and_the_nudge(gd):
     assert "feedback recorded for 1 hint(s)" in out and "erkenntnis:nie-gezeigt" in out
     d = usage_stats.data(1)
     assert d["regeln"]["rueckmeldungen"] == 1
-    e = [o for _s, o, _g in g.recall("art:erfahrung", viewer=None)][0]
+    e = [o for _s, o, _g in g.recall("art:experience", viewer=None)][0]
     assert e.data["rueckmeldung"] == {k.id: 1}
 
 
@@ -67,7 +67,7 @@ def test_opening_a_shown_hint_counts_as_use(gd):
 
 
 def _exp(instance, tool, ok, hint):
-    return g.new_object("erfahrung", f"{tool} run", [f"tool:{tool}", f"ok:{'ja' if ok else 'nein'}"],
+    return g.new_object("experience", f"{tool} run", [f"tool:{tool}", f"ok:{'ja' if ok else 'nein'}"],
                         {"vorher": {"gefunden": ["erkenntnis:x"] if hint else [], "gezeigt": []}}, instance=instance)
 
 
@@ -142,7 +142,7 @@ def test_exploration_effect_and_ips_lift_from_logged_offers(gd):
         expl = i % 2 == 0
         shown = ["a", "e"] if expl else ["a", "d"]
         ok = not expl
-        g.new_object("erfahrung", f"Bash {i}", ["tool:Bash", f"ok:{'ja' if ok else 'nein'}"],
+        g.new_object("experience", f"Bash {i}", ["tool:Bash", f"ok:{'ja' if ok else 'nein'}"],
                      {"vorher": {"gezeigt": shown, "rest_n": 1, "exploration": expl, "router": "modell", "angebot": offer}}, instance="a")
     metrics._GRADES["db"] = None
     ex = metrics.exploration_effect(24)

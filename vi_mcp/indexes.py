@@ -88,7 +88,7 @@ def index_for(explicit: str | None, project: str | None, cfg: dict | None = None
 
 # ── administration (vi-mcp index …, vi_indexes) ────────────────────────────
 
-KINDS = ("global", "projekt", "spezial")
+KINDS = ("global", "project", "special")
 
 
 def registry() -> dict[str, dict]:
@@ -101,12 +101,13 @@ def registry() -> dict[str, dict]:
 
 
 def describe(name: str, description: str | None = None, tags: list[str] | None = None, kind: str | None = None) -> str:
-    """Give an index a description, tags and its kind (projekt / spezial). Creates the row if the index has no objects yet."""
+    """Give an index a description, tags and its kind (project / special). Creates the row if the index has no objects yet."""
     import json
-    from . import memory as g
+    from . import memory as g, names
     n = normalize(name)
     if not n:
         raise ValueError("an index name is required")
+    kind = names.english(names.INDEX_KINDS, kind)  # 0.67.0: projekt/spezial of older callers
     if kind is not None and kind not in KINDS[1:]:
         raise ValueError(f"kind must be one of {', '.join(KINDS[1:])}")
     if n == GLOBAL and kind is not None:
@@ -118,8 +119,8 @@ def describe(name: str, description: str | None = None, tags: list[str] | None =
         if bad:
             raise ValueError(f"tags: a-z, 0-9, ':', '.', '-', '_' only — {', '.join(bad[:3])}")
     with g.lock:
-        g.db().execute("INSERT OR IGNORE INTO vi_index (name, kind, created, source) VALUES (?, ?, ?, 'beschrieben')",
-                       (n, kind or "projekt", g.now()))
+        g.db().execute("INSERT OR IGNORE INTO vi_index (name, kind, created, source) VALUES (?, ?, ?, 'described')",
+                       (n, kind or "project", g.now()))
         if description is not None:
             g.db().execute("UPDATE vi_index SET description = ? WHERE name = ?", (description.strip()[:2000], n))
         if clean is not None:
@@ -136,18 +137,18 @@ def summary() -> list[dict]:
     from . import learning
     from . import memory as g
     with g.lock:
-        rows = g.db().execute("SELECT idx, kind, COUNT(*) FROM object WHERE mode NOT IN ('widerlegt', 'zurueckgezogen', 'aufgegangen') GROUP BY idx, kind").fetchall()
+        rows = g.db().execute("SELECT idx, kind, COUNT(*) FROM object WHERE mode NOT IN ('refuted', 'withdrawn', 'merged') GROUP BY idx, kind").fetchall()
     reg = registry()
     per: dict[str, dict] = {name: {"index": name, "objekte": 0, "erfahrungen": 0, "wissen": 0, "code": 0} for name in reg}
     with g.lock:
         code = dict(g.db().execute("SELECT o.idx, COUNT(*) FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag = 'art_wissen:code' "
-                                   "AND o.mode = 'aktiv' GROUP BY o.idx").fetchall())
+                                   "AND o.mode = 'active' GROUP BY o.idx").fetchall())
     for idx, art, n in rows:
         e = per.setdefault(idx, {"index": idx, "objekte": 0, "erfahrungen": 0, "wissen": 0, "code": 0})
         e["objekte"] += n
-        if art == "erfahrung":
+        if art == "experience":
             e["erfahrungen"] += n
-        elif art in ("erkenntnis", "regel", "skill", "bild", "seite"):
+        elif art in ("insight", "rule", "skill", "image", "page"):
             e["wissen"] += n
     for idx, e in per.items():
         r = reg.get(idx) or {}
@@ -222,10 +223,10 @@ def backfill(apply: bool = False) -> dict:
     cfg = _config()
     with g.lock:
         projects = {s: p for s, p in g.db().execute(
-            "SELECT json_extract(data, '$.serial'), json_extract(data, '$.project') FROM object WHERE kind = 'gespraech' "
+            "SELECT json_extract(data, '$.serial'), json_extract(data, '$.project') FROM object WHERE kind = 'conversation' "
             "AND json_extract(data, '$.project') IS NOT NULL").fetchall() if s}
         rows = g.db().execute("SELECT id, conversation, kind FROM object WHERE idx = 'global' AND conversation IS NOT NULL "
-                              "AND kind IN ('erfahrung', 'erkenntnis', 'bild')").fetchall()
+                              "AND kind IN ('experience', 'insight', 'image')").fetchall()
     per: dict[str, dict[str, int]] = {}
     moves: list[tuple[str, str]] = []
     for oid, serial, art in rows:

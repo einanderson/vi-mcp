@@ -30,13 +30,13 @@ def site(gd, monkeypatch):
     for net, vis, mode, text in (("welt", None, "test", "Borg compact frees space only after prune"), ("firma", "intern", "test", "Firma borg import internal"),
                                  ("welt", None, "quarantaene", "Borg quarantined claim not yet reviewed")):
         name = lb.pseudonym(pk)
-        g.new_object("erkenntnis", text, ["tool:borg", "herkunft:p2p", f"herausgeber:{name}", f"netz:{net}"],
+        g.new_object("insight", text, ["tool:borg", "herkunft:p2p", f"herausgeber:{name}", f"netz:{net}"],
                      {"quelle": "other server", "herkunft": {"herausgeber": name, "pubkey": pk, "netz": net, "netz_id": hashlib.md5(text.encode()).hexdigest()},
                       "pruefung": {"regeln": [], "pruefer": None}}, instance=f"p2p-{name}", mode=mode, visibility=vis,
                      oid=f"erkenntnis:p2p-{name}-{hashlib.md5(text.encode()).hexdigest()[:16]}")
-    own = g.new_object("erkenntnis", f"Borg needs BORG_PASSCOMMAND for unattended runs, noted by {LOCAL}", ["tool:borg"], {"quelle": "own test"}, instance=LOCAL)
+    own = g.new_object("insight", f"Borg needs BORG_PASSCOMMAND for unattended runs, noted by {LOCAL}", ["tool:borg"], {"quelle": "own test"}, instance=LOCAL)
     own.confirm("ki@other", "worked", "other", family="gpt")
-    internal = g.new_object("erkenntnis", "Borg internal runbook for the NAS cluster", ["tool:borg"], {"quelle": "own"}, instance=LOCAL, visibility="intern")
+    internal = g.new_object("insight", "Borg internal runbook for the NAS cluster", ["tool:borg"], {"quelle": "own"}, instance=LOCAL, visibility="internal")
     internal.confirm("ki@other", "worked", "other", family="gpt")
 
 

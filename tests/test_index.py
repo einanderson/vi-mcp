@@ -11,7 +11,7 @@ from test_http import request
 
 
 def _k(text, tags, instance="anna", **kw):
-    return g.new_object("erkenntnis", text, tags, {"quelle": "test 10.11.2026"}, instance=instance, **kw)
+    return g.new_object("insight", text, tags, {"quelle": "test 10.11.2026"}, instance=instance, **kw)
 
 
 def test_sections_requirements_proven_and_own(gd):
@@ -23,7 +23,7 @@ def test_sections_requirements_proven_and_own(gd):
     imported.confirm("ki@carl", "x", "carl", family="gpt")
     refuted = _k("A wrong statement learned by anna", ["thema:x"])
     refuted.refute("ki@anna", "wrong", "anna")
-    private = g.new_object("erkenntnis", "private note of bert only", ["thema:y"], {"quelle": "q"}, instance="bert", visibility="privat")
+    private = g.new_object("insight", "private note of bert only", ["thema:y"], {"quelle": "q"}, instance="bert", visibility="private")
     s = index.sections("anna")
     assert [o.id for o in s["vorgaben"]] == [req.id]
     assert proven.id in [o.id for o in s["bewaehrt"]] and imported.id not in [o.id for o in s["bewaehrt"]]
@@ -36,7 +36,7 @@ def test_sections_requirements_proven_and_own(gd):
 
 
 def test_internal_only_with_a_token(gd):
-    o = _k("Internal requirement: tickets go to the IMIT queue", ["thema:vorgabe"], visibility="intern")
+    o = _k("Internal requirement: tickets go to the IMIT queue", ["thema:vorgabe"], visibility="internal")
     assert o.id in index.text("anna")
     assert o.id not in index.text(config.OPEN)
 
@@ -57,7 +57,7 @@ def test_empty_memory_sends_no_index(gd):
 def test_images_are_marked(gd):
     from vi_mcp import images
     from test_images import png
-    o = g.new_object("bild", "Screenshot of the setup dialog", ["thema:vorgabe"], {"quelle": "q", "bild": images.store(png())}, instance="anna")
+    o = g.new_object("image", "Screenshot of the setup dialog", ["thema:vorgabe"], {"quelle": "q", "bild": images.store(png())}, instance="anna")
     assert f"- [{o.id}] image: Screenshot of the setup dialog" in index.text("anna")
 
 

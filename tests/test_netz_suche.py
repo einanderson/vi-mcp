@@ -88,9 +88,9 @@ def mem(gd, monkeypatch):
     p2p.generate_token("a")
 
 
-def _o(text, tags, vis, instance="a", mode="aktiv"):
-    o = g.new_object("erkenntnis", text, tags, {"quelle": "Messung 11.11.2026 am Host"}, instance=instance, visibility=vis)
-    if mode != "aktiv":
+def _o(text, tags, vis, instance="a", mode="active"):
+    o = g.new_object("insight", text, tags, {"quelle": "Messung 11.11.2026 am Host"}, instance=instance, visibility=vis)
+    if mode != "active":
         o.mode = mode
         g.save(o)
     return o
@@ -101,12 +101,12 @@ def test_answer_search_follows_the_export_rules(mem):
     _o("Borg on db01.corp.example runs at 02:00 nightly", ["thema:backup", "host:db01"], "intern")
     _o("Borg private note about my own laptop backups", ["thema:backup"], "privat")
     _o("Borg from an instance without a network token", ["thema:backup"], "geteilt", instance="z")
-    _o("Borg disputed claim about compaction speed", ["thema:backup"], "geteilt", mode="strittig")
+    _o("Borg disputed claim about compaction speed", ["thema:backup"], "geteilt", mode="disputed")
     open_ = [x["text"] for x in p2p.answer_search("standard", "borg")]
     company = [x["text"] for x in p2p.answer_search("firma", "borg")]
     assert open_ == ["Borg restore needs the repository key exported first"]  # not proven, still answered: a question is asked on purpose
     assert sorted(company) == ["Borg on db01.corp.example runs at 02:00 nightly", "Borg restore needs the repository key exported first"]
-    assert p2p.answer_search("standard", "modus:quarantaene sicht:privat") == []  # filter syntax is not passed through
+    assert p2p.answer_search("standard", "modus:quarantine sicht:privat") == []  # filter syntax is not passed through
     with pytest.raises(tools.Rejected, match="network service"):
         tools.call_tool("vi_net_answer_search", {"query": "borg"}, "a", False)
     assert json.loads(tools.call_tool("vi_net_answer_search", {"query": "borg"}, "netz-firma", False))
@@ -127,7 +127,7 @@ def test_live_search_and_take_end_to_end(mem, net, monkeypatch):
     hid = out.split("[", 1)[1].split("]", 1)[0]
     r = tools.call_tool("vi_net_search", {"query": "borg", "take": hid}, "a", False)
     assert "taken into quarantine" in r
-    o = g.recall("modus:quarantaene", viewer=None)[0][1]
+    o = g.recall("modus:quarantine", viewer=None)[0][1]
     assert "herkunft:live" in o.hashtags and "herkunft:p2p" in o.hashtags
     with pytest.raises(tools.Rejected, match="already here"):
         tools.call_tool("vi_net_search", {"query": "borg", "take": hid}, "a", False)

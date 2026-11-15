@@ -109,14 +109,14 @@ def _form(o: g.MemoryObject) -> dict:
 def code_run() -> dict:
     """Sleep: all actions not yet rated (or rated with an old version). Open conversations only after OPEN_LATER_S."""
     with g.lock:
-        lines = g.db().execute("SELECT DISTINCT conversation FROM object WHERE kind = 'erfahrung' AND mode = 'aktiv' AND "
+        lines = g.db().execute("SELECT DISTINCT conversation FROM object WHERE kind = 'experience' AND mode = 'active' AND "
                                 "COALESCE(CAST(json_extract(data, '$.score.version') AS REAL), 0) <> ? LIMIT 2000", (CODE_VERSION,)).fetchall()
     open_ = {s.serial: s for s in session.open_items()}
     bound = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - OPEN_LATER_S))
     n = bad = rebooked = 0
     for (serial,) in lines:
         with g.lock:
-            ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND mode = 'aktiv' AND conversation IS ? ORDER BY ts, rowid", (serial,))]
+            ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND mode = 'active' AND conversation IS ? ORDER BY ts, rowid", (serial,))]
         mem_objects = g.load_many(ids)
         entry_batch = [mem_objects[i] for i in ids if i in mem_objects]
         signals = list(open_[serial].signals) if serial in open_ else ((g.load(f"gespraech:{serial}").data.get("signale", []) if serial and g.load(f"gespraech:{serial}") else []))
@@ -143,7 +143,7 @@ def code_run() -> dict:
 
 def _create_rating(scorer: str, version: int, serial: str, instance: str, grade: float, justification: str, data: dict, oid: str, who: str) -> g.MemoryObject:
     level = "gut" if grade >= 0.75 else "mittel" if grade >= GOOD_FROM else "schlecht"
-    return g.new_object("bewertung", f"{scorer}: {grade:.2f} — {justification}"[:500], [f"scorer:{scorer}", f"ziel:{serial}", f"note:{level}"],
+    return g.new_object("rating", f"{scorer}: {grade:.2f} — {justification}"[:500], [f"scorer:{scorer}", f"ziel:{serial}", f"note:{level}"],
                           {"scorer": scorer, "version": version, "ziel": serial, "note": grade, "begruendung": justification[:500], **data},
                           importance=1, who=who, oid=oid, reason=f"rating by {scorer}", conversation=serial, instance=instance)
 
@@ -194,7 +194,7 @@ def model_run(limit: int = MODEL_PER_RUN) -> dict:
     if not reflection.available():
         return {"modell": "uebersprungen: no language model configured"}
     n, error = 0, []
-    for _, o, _g in g.recall("art:gespraech", limit=500, viewer=None):
+    for _, o, _g in g.recall("art:conversation", limit=500, viewer=None):
         if n >= limit:
             break
         d, serial = o.data, o.data.get("serial")
@@ -220,7 +220,7 @@ def model_run(limit: int = MODEL_PER_RUN) -> dict:
 def _grades(scorer: str) -> dict[str, float]:
     """{serial: grade}; if there are several, the most recent counts."""
     with g.lock:
-        lines = g.db().execute("SELECT json_extract(data, '$.ziel'), CAST(json_extract(data, '$.note') AS REAL) FROM object WHERE kind = 'bewertung' AND "
+        lines = g.db().execute("SELECT json_extract(data, '$.ziel'), CAST(json_extract(data, '$.note') AS REAL) FROM object WHERE kind = 'rating' AND "
                                 "json_extract(data, '$.scorer') = ? ORDER BY ts", (scorer,)).fetchall()
     return {z: n for z, n in lines}
 
@@ -247,7 +247,7 @@ def grade_details() -> dict[str, dict]:
     the model is not calibrated against humans). The most recent grade of a source counts."""
     with g.lock:
         rows = g.db().execute("SELECT json_extract(data, '$.ziel'), CAST(json_extract(data, '$.note') AS REAL), json_extract(data, '$.scorer'), "
-                              "json_extract(data, '$.sicherheit') FROM object WHERE kind = 'bewertung' ORDER BY ts").fetchall()
+                              "json_extract(data, '$.sicherheit') FROM object WHERE kind = 'rating' ORDER BY ts").fetchall()
     calibrated = calibration()["geeicht"]
     out: dict[str, dict] = {}
     for serial, note, who, certainty in rows:
@@ -291,7 +291,7 @@ def conversation_grades() -> dict[str, float]:
 
 def line() -> str:
     with g.lock:
-        n, good = g.db().execute("SELECT COUNT(*), SUM(CASE WHEN CAST(json_extract(data, '$.score.note') AS REAL) >= ? THEN 1 ELSE 0 END) FROM object WHERE kind = 'erfahrung' AND json_extract(data, '$.score.version') IS NOT NULL", (GOOD_FROM,)).fetchone()
+        n, good = g.db().execute("SELECT COUNT(*), SUM(CASE WHEN CAST(json_extract(data, '$.score.note') AS REAL) >= ? THEN 1 ELSE 0 END) FROM object WHERE kind = 'experience' AND json_extract(data, '$.score.version') IS NOT NULL", (GOOD_FROM,)).fetchone()
     k = calibration()
     q = "—" if k["quote"] is None else f"{k['quote'] * 100:.0f} %"
     return (f"code {good or 0}/{n} succeeded · model {len(_grades('modell'))} conversations ({'calibrated' if k['geeicht'] else 'not calibrated, does not count for learning'}) · "
@@ -303,12 +303,12 @@ def report() -> str:
     z = ["Scorer: " + line()]
     with g.lock:
         tally: dict[str, int] = {}
-        for (merkmale,) in g.db().execute("SELECT json_extract(data, '$.score.merkmale') FROM object WHERE kind = 'erfahrung' "
+        for (merkmale,) in g.db().execute("SELECT json_extract(data, '$.score.merkmale') FROM object WHERE kind = 'experience' "
                                           "AND json_extract(data, '$.score.merkmale') IS NOT NULL"):
             for m in json.loads(merkmale) if isinstance(merkmale, str) else []:
                 tally[str(m)] = tally.get(str(m), 0) + 1
         features = sorted(tally.items(), key=lambda kv: -kv[1])
     z.append("Features: " + (", ".join(f"{m} {n}" for m, n in features) or "—"))
-    for _, o, _g in g.recall("art:bewertung scorer:modell", limit=5, viewer=None):
+    for _, o, _g in g.recall("art:rating scorer:modell", limit=5, viewer=None):
         z.append(f"  {o.data['ziel']}: {o.data['note']:.2f} ({o.data.get('sicherheit')}) — {o.data['begruendung'][:140]}")
     return "\n".join(z)

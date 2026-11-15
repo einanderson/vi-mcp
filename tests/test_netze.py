@@ -121,7 +121,7 @@ def nets(gd, monkeypatch):
 
 
 def _proven(text, tags, visibility):
-    o = g.new_object("erkenntnis", text, tags, {"quelle": "Messung 11.11.2026 auf dem Host"}, instance="a", visibility=visibility)
+    o = g.new_object("insight", text, tags, {"quelle": "Messung 11.11.2026 auf dem Host"}, instance="a", visibility=visibility)
     o.confirm("ki@b", "checked", "b", family="gpt")
     return g.load(o.id)
 
@@ -151,8 +151,8 @@ def test_company_import_becomes_internal_and_never_reexported(nets, monkeypatch)
     assert p2p.inbox(_bundle(k, [o]), in_background=False)["abgelehnt"] == 1  # standard network: internals rejected
     r = p2p.inbox(_bundle(k, [o]), in_background=False, net="firma")
     assert r["quarantaene"] == 1
-    imp = g.recall("modus:quarantaene", viewer=None)[0][1]
-    assert imp.visibility == "intern" and "netz:firma" in imp.hashtags and imp.data["herkunft"]["netz"] == "firma"
+    imp = g.recall("modus:quarantine", viewer=None)[0][1]
+    assert imp.visibility == "internal" and "netz:firma" in imp.hashtags and imp.data["herkunft"]["netz"] == "firma"
     assert all(x["text"] != o["text"] for x in p2p.outbox("standard")["objekte"] + p2p.outbox("firma")["objekte"])
 
 

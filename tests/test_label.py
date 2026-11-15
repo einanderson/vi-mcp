@@ -15,9 +15,9 @@ def test_label_order_and_weights():
 
 
 def test_grade_details_weigh_uncalibrated_model_grades(gd):
-    g.new_object("bewertung", "model grade", ["scorer:modell"], {"scorer": "modell", "ziel": "5", "note": 0.25, "sicherheit": "hoch"})
-    g.new_object("bewertung", "model grade", ["scorer:modell"], {"scorer": "modell", "ziel": "6", "note": 0.25, "sicherheit": "niedrig"})
-    g.new_object("bewertung", "human grade", ["scorer:mensch"], {"scorer": "mensch", "ziel": "6", "note": 0.9})
+    g.new_object("rating", "model grade", ["scorer:modell"], {"scorer": "modell", "ziel": "5", "note": 0.25, "sicherheit": "hoch"})
+    g.new_object("rating", "model grade", ["scorer:modell"], {"scorer": "modell", "ziel": "6", "note": 0.25, "sicherheit": "niedrig"})
+    g.new_object("rating", "human grade", ["scorer:mensch"], {"scorer": "mensch", "ziel": "6", "note": 0.9})
     d = scorer.grade_details()
     assert d["5"] == {"note": 0.25, "quelle": "modell", "gewicht": round(scorer.WEIGHT["modell"] * 1.0 * scorer.UNCALIBRATED, 3)}
     assert d["6"]["quelle"] == "mensch" and d["6"]["gewicht"] == 3.0  # the human grade wins
@@ -25,12 +25,12 @@ def test_grade_details_weigh_uncalibrated_model_grades(gd):
 
 def test_router_bandit_and_metrics_see_the_same_label(gd):
     # an action whose tool succeeded, in a conversation a human graded bad: every consumer must count it as a failure
-    h = g.new_object("erkenntnis", "Restart the agent after the upgrade", ["tool:Bash"], {"quelle": "t"})
-    e = g.new_object("erfahrung", "Bash ok", ["tool:Bash", "ok:ja"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h.id]}})
+    h = g.new_object("insight", "Restart the agent after the upgrade", ["tool:Bash"], {"quelle": "t"})
+    e = g.new_object("experience", "Bash ok", ["tool:Bash", "ok:ja"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h.id]}})
     with g.lock:
         g.db().execute("UPDATE object SET conversation = ? WHERE id = ?", ("42", e.id))
         g.db().commit()
-    g.new_object("bewertung", "human grade", ["scorer:mensch"], {"scorer": "mensch", "ziel": "42", "note": 0.0})
+    g.new_object("rating", "human grade", ["scorer:mensch"], {"scorer": "mensch", "ziel": "42", "note": 0.0})
     router = [(y, w) for _f, y, o, w in learning.weighted_observations() if o == e.id]
     assert router and all(y == 0 and w == 3.0 for y, w in router)
     rows = [(tool, ok, per) for tool, ok, _shown, per in bandit._observations()]
@@ -42,12 +42,12 @@ def test_router_bandit_and_metrics_see_the_same_label(gd):
 def test_adopted_hint_becomes_a_positive_label(gd):
     # 0.59.0: a distinctive token of a shown hint (here the key path) taken over into a later successful action = implicit "helped"
     from vi_mcp import intuition, session
-    h = g.new_object("erkenntnis", "ssh to the LLM host only with ssh -i ~/.ssh/llm.key -o BatchMode=yes", ["tool:Bash"], {"quelle": "t"}, instance="a")
+    h = g.new_object("insight", "ssh to the LLM host only with ssh -i ~/.ssh/llm.key -o BatchMode=yes", ["tool:Bash"], {"quelle": "t"}, instance="a")
     s = session.begin("a", "t")
     with session.on_behalf(s):
-        e1 = g.new_object("erfahrung", "Bash ssh", ["tool:Bash", "ok:nein"], {"args": {"command": "ssh llm"}, "vorher": {"gezeigt": [h.id]}},
+        e1 = g.new_object("experience", "Bash ssh", ["tool:Bash", "ok:nein"], {"args": {"command": "ssh llm"}, "vorher": {"gezeigt": [h.id]}},
                           instance="a", conversation=s.serial)
-        e2 = g.new_object("erfahrung", "Bash ssh -i", ["tool:Bash", "ok:ja"], {"args": {"command": "ssh -i ~/.ssh/llm.key llm"}},
+        e2 = g.new_object("experience", "Bash ssh -i", ["tool:Bash", "ok:ja"], {"args": {"command": "ssh -i ~/.ssh/llm.key llm"}},
                           instance="a", conversation=s.serial)
     assert intuition.adopted(g.load(e2.id)) == [h.id]
     assert g.load(e1.id).data["genutzt"] == [h.id]

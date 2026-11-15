@@ -88,9 +88,9 @@ def test_image_with_description_and_sam3_regions_round_trip(srv):
     oid = text.split()[1]
     assert "image png 64×48" in text and "3 regions (red plug ×2, network cable)" in text
     o = g.load(oid)
-    assert o.kind == "bild" and oid.startswith("bild:")  # 0.37.0: its own kind
-    assert {"art:bild", "zeigt:red-plug", "zeigt:network-cable"} <= set(o.hashtags) and "medium:bild" not in o.hashtags
-    assert oid in _call(port, sid, "vi_recall", {"filter": "art:bild"}, tok)["content"][0]["text"]
+    assert o.kind == "image" and oid.startswith("bild:")  # 0.37.0: its own kind
+    assert {"art:image", "zeigt:red-plug", "zeigt:network-cable"} <= set(o.hashtags) and "medium:bild" not in o.hashtags
+    assert oid in _call(port, sid, "vi_recall", {"filter": "art:image"}, tok)["content"][0]["text"]
     assert oid in _call(port, sid, "vi_recall", {"filter": "Patch panel uplinks"}, tok)["content"][0]["text"]  # free text includes images
     assert o.data["bild"]["sha"] and o.data["regionen"][0] == {"begriff": "red plug", "box": [4.0, 6.0, 30.0, 40.0], "score": 0.93,
                                                                "maske": {"size": [48, 64], "counts": "PQ5d0"}}
@@ -160,7 +160,7 @@ def test_same_image_stored_once_and_limits(gd, monkeypatch):
 
 def test_image_never_onto_the_network(gd):
     ref = images.store(png())
-    o = g.new_object("bild", "Patch panel B3 photographed, red ports used", ["thema:patchpanel"],
+    o = g.new_object("image", "Patch panel B3 photographed, red ports used", ["thema:patchpanel"],
                      {"quelle": "photo 10.11.2026", "bild": ref}, instance="anna")
     assert p2p._export_form(o, "t" * 32, frozenset()) == (None, "has an image (images stay on this server)")
 
@@ -203,7 +203,7 @@ def test_image_is_a_hint_before_a_matching_action(gd):
     """0.37.0: an image is a memory of its own kind and comes before a matching action like an insight."""
     from vi_mcp import intuition
     ref = images.store(png())
-    o = g.new_object("bild", "Error dialog of the MSI: 'Setup failed' after an unreachable proxy", ["tool:msiexec", "thema:msi"],
+    o = g.new_object("image", "Error dialog of the MSI: 'Setup failed' after an unreachable proxy", ["tool:msiexec", "thema:msi"],
                      {"quelle": "screenshot 10.11.2026", "bild": ref}, instance="anna")
     v = intuition.before("msiexec", {"args": "/i vi-mcp.msi"}, "anna")
     text = json.dumps(v, ensure_ascii=False)
@@ -215,19 +215,19 @@ def test_old_image_insights_become_kind_bild(tmp_path):
     g.open_db(tmp_path / "vi.db")
     try:
         ref = images.store(png())
-        o = g.new_object("erkenntnis", "old style image insight from 0.35.0", ["thema:x", "medium:bild"], {"quelle": "q", "bild": ref}, instance="anna")
-        plain = g.new_object("erkenntnis", "an insight without an image stays one", ["thema:x"], {"quelle": "q"}, instance="anna")
+        o = g.new_object("insight", "old style image insight from 0.35.0", ["thema:x", "medium:bild"], {"quelle": "q", "bild": ref}, instance="anna")
+        plain = g.new_object("insight", "an insight without an image stays one", ["thema:x"], {"quelle": "q"}, instance="anna")
     finally:
         g.close_db()
     g.open_db(tmp_path / "vi.db")  # migration runs when the database is opened
     try:
         m = g.load(o.id)
-        assert m.kind == "bild" and m.id == o.id and "art:bild" in m.hashtags and not {"art:erkenntnis", "medium:bild"} & set(m.hashtags)
-        assert g.load(plain.id).kind == "erkenntnis"
+        assert m.kind == "image" and m.id == o.id and "art:image" in m.hashtags and not {"art:insight", "medium:bild"} & set(m.hashtags)
+        assert g.load(plain.id).kind == "insight"
     finally:
         g.close_db()
 
 
 def test_rules_tell_when_to_save_a_screenshot():
-    assert "Images are their own kind (art:bild)" in tools.RULES
+    assert "Images are their own kind (art:image)" in tools.RULES
     assert "Save a screenshot when it shows what text would lose" in tools.RULES and "Never screenshots with passwords" in tools.RULES

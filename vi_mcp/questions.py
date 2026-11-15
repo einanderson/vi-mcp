@@ -1,6 +1,6 @@
 """Questions between instances — instances learn from each other by asking each other.
 
-A question is an object `art:frage` (geteilt) with `daten`:
+A question is an object `art:question` (geteilt) with `daten`:
   von, an (instance name or "alle"), text, reize, zustand, zugestellt_an [instances], antworten [{instanz, text,
   belege, zeit}], gemeldet (answers the asker has already seen).
 States (exhaustive): `offen` (not yet shown to any target instance) · `zugestellt` (shown to at least one) ·
@@ -69,7 +69,7 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str, conver
     if len(text) > ANSWER_MAX:
         raise ValueError(f"a question has at most {ANSWER_MAX} characters — put longer material into an object (vi_learn) and name its id")
     # 14.11.2026: the question used to be cut to 1000 characters without notice; the whole text is now kept in inhalt
-    o = g.new_object("frage", text[:1000], tags + [f"an:{to}", f"von:{from_}", "zustand:offen"],
+    o = g.new_object("question", text[:1000], tags + [f"an:{to}", f"von:{from_}", "zustand:offen"],
                        {"von": from_, "an": to, "zustand": "offen", "quelle": (source or "").strip()[:500],
                         "zugestellt_an": [], "antworten": [], "gemeldet": 0, **({"inhalt": text} if len(text) > 1000 else {}),
                         **({"von_gespraech": conversation} if conversation else {}), **({"an_gespraech": target} if target else {}),
@@ -122,8 +122,8 @@ def deliver(instance: str | None, conversation: str | None = None) -> list[str]:
     hints = []
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'frage' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt', 'beantwortet') "
-            "AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "  # 0.43.0: a question from the network only after review
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt', 'beantwortet') "
+            "AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "  # 0.43.0: a question from the network only after review
             "AND (json_extract(data, '$.an') IN (?, 'alle') OR json_extract(data, '$.von') = ?) ORDER BY ts", (instance, instance))]
         for oid in ids:
             o = g.load(oid)
@@ -156,7 +156,7 @@ def deliver(instance: str | None, conversation: str | None = None) -> list[str]:
 
 def answer_question(oid: str, instance: str, text: str, evidence_list: str, conversation: str | None = None) -> g.MemoryObject:
     o = g.load(oid)
-    if not o or o.kind != "frage":
+    if not o or o.kind != "question":
         raise ValueError(f"question {oid} unknown")
     d = o.data
     if d["zustand"] == "abgelaufen":
@@ -192,10 +192,10 @@ def listing(instance: str, conversation: str | None = None) -> tuple[list[g.Memo
     the instance's other conversations are to me, and my own are those this conversation asked (and questions asked without one)."""
     with g.lock:
         to_me = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'frage' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt') AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "
             "AND json_extract(data, '$.an') IN (?, 'alle') ORDER BY ts DESC LIMIT 200", (instance,))]
         mine = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'frage' AND json_extract(data, '$.von') = ? ORDER BY ts DESC LIMIT 200", (instance,))]
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? ORDER BY ts DESC LIMIT 200", (instance,))]
 
     def to_this(d: dict) -> bool:
         if d.get("an_gespraech") and d["an_gespraech"] != conversation:
@@ -215,7 +215,7 @@ def let_expire() -> int:
     bound = (datetime.now(timezone.utc) - timedelta(days=EXPIRY_DAYS)).isoformat(timespec="seconds")
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'frage' AND ts < ? AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (bound,))]
+            "SELECT id FROM object WHERE kind = 'question' AND ts < ? AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (bound,))]
         for oid in ids:
             o = g.load(oid)
             _set_state(o, "abgelaufen")

@@ -24,7 +24,7 @@ from . import memory as g
 from . import wiki_merge as wm
 from .logbook import pseudonym, sha256
 
-STATES = ("ausstehend", "frei", "verworfen", "vergessen")
+STATES = ("pending", "released", "discarded", "forgotten")
 MAX_OWN_IN_OUTBOX = 500
 
 
@@ -55,9 +55,9 @@ def _revs(net: str, slug: str) -> tuple[dict[str, wm.Rev], set[str], list[dict]]
     for rev, parents, pub, inst, status, data, recv, decided, own in lines:
         d = json.loads(data) if data else None
         author = (inst if own else pseudonym(pub)) if (own or pub) else "?"
-        revs[rev] = wm.Rev(rev, json.loads(parents), None if (d is None or status == "vergessen") else d["text"], title=(d or {}).get("titel", ""),
+        revs[rev] = wm.Rev(rev, json.loads(parents), None if (d is None or status == "forgotten") else d["text"], title=(d or {}).get("titel", ""),
                            deleted=bool((d or {}).get("geloescht")), author=author, hashtags=list((d or {}).get("hashtags") or []))
-        if status == "frei":
+        if status == "released":
             accepted.add(rev)
         meta.append({"rev": rev, "eltern": json.loads(parents), "autor": author, "status": status, "empfangen": recv, "entschieden": decided,
                      "eigen": bool(own), "notiz": (d or {}).get("notiz", ""), "zeit": (d or {}).get("zeit", "")})
@@ -117,7 +117,7 @@ def write(instance: str, net: str, slug: str, text: str, base_rev: str | None, t
     rev = sha256(content)
     with g.lock:
         g.db().execute("INSERT OR IGNORE INTO page_rev (net, rev, page, parents, pub, instance, seq, status, data, net_id, delete_hash, received, decided, own) "
-                       "VALUES (?,?,?,?,NULL,?,NULL,'frei',?,?,?,?,?,1)",
+                       "VALUES (?,?,?,?,NULL,?,NULL,'released',?,?,?,?,?,1)",
                        (net, rev, slug, json.dumps(content["eltern"]), instance, json.dumps(content, ensure_ascii=False), net_id, content["loesch_hash"], g.now(), g.now()))
         g.db().execute("INSERT OR IGNORE INTO page_own (rev, net, instance, key) VALUES (?,?,?,?)", (rev, net, instance, key))
         g.db().commit()
@@ -133,7 +133,7 @@ def outgoing(net: str) -> list[dict]:
     """Own revisions for the network service; it writes only those it has not written yet (by checksum)."""
     _tables()
     with g.lock:
-        lines = g.db().execute("SELECT data FROM page_rev WHERE net = ? AND own = 1 AND status = 'frei' AND data IS NOT NULL ORDER BY received DESC LIMIT ?",
+        lines = g.db().execute("SELECT data FROM page_rev WHERE net = ? AND own = 1 AND status = 'released' AND data IS NOT NULL ORDER BY received DESC LIMIT ?",
                                (net, MAX_OWN_IN_OUTBOX)).fetchall()
     return [json.loads(d) for (d,) in lines]
 
@@ -170,12 +170,12 @@ def ingest(raw: dict, header: dict, net: str) -> str:
             "herkunft": {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": rev, "netz_id": raw["netz_id"], "netz": net},
             "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": f"{raw['titel']} — {raw['notiz'] or 'edit of the page'}"[:1000],
             "fremd_hashtags": raw["hashtags"], "wiki": {"netz": net, "seite": slug, "rev": rev, "geloescht": raw["geloescht"]}}
-    tags = sorted(set(raw["hashtags"] + ["herkunft:p2p", f"herausgeber:{name}", "pruefer:ausstehend", "modus:quarantaene", f"netz:{net}", "herkunft:wiki"]))
-    g.new_object("seite", data["fremd_text"], tags, data, who=f"import@{name}", reason=f"wiki revision from {name}", oid=oid, mode="quarantaene",
-                 instance=f"p2p-{name}", visibility="intern" if p2p.is_company(net) else None)
+    tags = sorted(set(raw["hashtags"] + ["herkunft:p2p", f"herausgeber:{name}", "pruefer:ausstehend", "modus:quarantine", f"netz:{net}", "herkunft:wiki"]))
+    g.new_object("page", data["fremd_text"], tags, data, who=f"import@{name}", reason=f"wiki revision from {name}", oid=oid, mode="quarantine",
+                 instance=f"p2p-{name}", visibility="internal" if p2p.is_company(net) else None)
     with g.lock:
         g.db().execute("INSERT INTO page_rev (net, rev, page, parents, pub, instance, seq, status, data, net_id, delete_hash, received, own, oid) "
-                       "VALUES (?,?,?,?,?,NULL,?,'ausstehend',?,?,?,?,0,?)",
+                       "VALUES (?,?,?,?,?,NULL,?,'pending',?,?,?,?,0,?)",
                        (net, rev, slug, json.dumps(raw["eltern"]), header["pub"], header["seq"], json.dumps(raw, ensure_ascii=False), raw["netz_id"], raw["loesch_hash"], g.now(), oid))
         g.db().commit()
     materialize(net, slug)  # the page names pending revisions
@@ -190,11 +190,11 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
     _tables()
     with g.lock:
         g.db().execute("UPDATE page_rev SET status = ?, decided = ?, reviewed = COALESCE(reviewed, ?) WHERE net = ? AND rev = ?",
-                       ("frei" if accepted else "verworfen", g.now(), g.now(), w["netz"], w["rev"]))
+                       ("released" if accepted else "discarded", g.now(), g.now(), w["netz"], w["rev"]))
         g.db().commit()
     if accepted:  # the revision lives on in the page; the quarantine object is merged into it
-        o.mode = "aufgegangen"
-        o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:aufgegangen"]
+        o.mode = "merged"
+        o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:merged"]
         o.data["merged_into"] = page_id(w["netz"], w["seite"])
         g.save(o)
     materialize(w["netz"], w["seite"])
@@ -219,7 +219,7 @@ def forget(net_id: str, evidence: str) -> bool:
         return False
     net, rev, slug, _lh, oid = z
     with g.lock:
-        g.db().execute("UPDATE page_rev SET status = 'vergessen', data = NULL, decided = ? WHERE net = ? AND rev = ?", (g.now(), net, rev))
+        g.db().execute("UPDATE page_rev SET status = 'forgotten', data = NULL, decided = ? WHERE net = ? AND rev = ?", (g.now(), net, rev))
         g.db().commit()
     if oid and g.load(oid):
         g.delete([oid])
@@ -228,7 +228,7 @@ def forget(net_id: str, evidence: str) -> bool:
 
 
 def render(v: wm.View, meta: list[dict]) -> str:
-    pending = [m for m in meta if m["status"] == "ausstehend"]
+    pending = [m for m in meta if m["status"] == "pending"]
     head = [f"state {v.state} · heads {', '.join(h[:16] for h in v.heads) or '—'}"
             + (f" · {len(v.conflicts)} conflict(s) between " + "; ".join(f"{c.a_rev[:12]} ({c.a_author}) and {c.b_rev[:12]} ({c.b_author})" for c in v.conflicts)
                + ": resolve with vi_page_write base_rev=<one head> also_parents=<the others>" if v.conflicts else "")
@@ -250,20 +250,20 @@ def materialize(net: str, slug: str) -> wm.View:
         return v
     first = wm.paragraphs(v.text)[:1]
     text = (v.title + (" — " + first[0][:300].replace("\n", " ") if first else ""))[:1000]
-    authors = sorted({m["autor"] for m in meta if m["status"] == "frei"})
+    authors = sorted({m["autor"] for m in meta if m["status"] == "released"})
     foreign = any(not m["eigen"] for m in meta if m["rev"] in v.heads)
     tags = sorted({t for h in v.heads for t in revs[h].hashtags} | {"herkunft:wiki", f"netz:{net}"} | ({"herkunft:p2p"} if foreign else set()))
     data = {"quelle": f"network wiki {net}, page {slug}", "inhalt": render(v, meta),
             "wiki": {"netz": net, "seite": slug, "koepfe": v.heads, "zustand": v.state, "konflikte": len(v.conflicts), "autoren": authors,
-                     "ausstehend": sum(1 for m in meta if m["status"] == "ausstehend"), "revisionen": len(meta)}}
-    mode = "test" if foreign else "aktiv"
+                     "ausstehend": sum(1 for m in meta if m["status"] == "pending"), "revisionen": len(meta)}}
+    mode = "test" if foreign else "active"
     if o:
         o.text, o.hashtags, o.mode = text, tags, mode
         o.data.update(data)
         g.save(o)
     else:
-        g.new_object("seite", text, tags, data, who="vi", reason=f"wiki page {slug}", oid=oid, mode=mode,
-                     instance=None, visibility="intern" if p2p.is_company(net) else None)
+        g.new_object("page", text, tags, data, who="vi", reason=f"wiki page {slug}", oid=oid, mode=mode,
+                     instance=None, visibility="internal" if p2p.is_company(net) else None)
     return v
 
 
@@ -285,7 +285,7 @@ def revoke(instance: str, net: str, rev: str, reason: str) -> dict:
     with g.lock:
         g.db().execute("CREATE TABLE IF NOT EXISTS page_revocation (rev TEXT PRIMARY KEY, net TEXT NOT NULL, net_id TEXT NOT NULL, token TEXT NOT NULL, ts TEXT NOT NULL, reason TEXT NOT NULL)")
         g.db().execute("INSERT OR IGNORE INTO page_revocation (rev, net, net_id, token, ts, reason) VALUES (?,?,?,?,?,?)", (full, net, net_id, token, g.now(), reason[:300]))
-        g.db().execute("UPDATE page_rev SET status = 'vergessen', data = NULL, decided = ? WHERE net = ? AND rev = ?", (g.now(), net, full))
+        g.db().execute("UPDATE page_rev SET status = 'forgotten', data = NULL, decided = ? WHERE net = ? AND rev = ?", (g.now(), net, full))
         g.db().commit()
     materialize(net, slug)
     return {"rev": full, "seite": slug}
@@ -317,13 +317,13 @@ def stats(days: float = 7) -> dict:
     with g.lock:
         by_state = dict(g.db().execute("SELECT status, COUNT(*) FROM page_rev GROUP BY status").fetchall())
         own = g.db().execute("SELECT COUNT(*) FROM page_rev WHERE own = 1").fetchone()[0]
-        foreign_released = g.db().execute("SELECT COUNT(*) FROM page_rev WHERE own = 0 AND status = 'frei'").fetchone()[0]
+        foreign_released = g.db().execute("SELECT COUNT(*) FROM page_rev WHERE own = 0 AND status = 'released'").fetchone()[0]
         total = g.db().execute("SELECT COUNT(*) FROM page_rev").fetchone()[0]
         publishers = g.db().execute("SELECT COUNT(DISTINCT COALESCE(pub, instance)) FROM page_rev").fetchone()[0]
         new_pages = g.db().execute("SELECT COUNT(*) FROM (SELECT net, page, MIN(received) m FROM page_rev GROUP BY net, page) WHERE m >= ?", (since,)).fetchone()[0]
         changed = g.db().execute("SELECT COUNT(DISTINCT net || '|' || page) FROM page_rev WHERE received >= ?", (since,)).fetchone()[0]
-        waits = g.db().execute("SELECT received, decided FROM page_rev WHERE own = 0 AND status = 'frei' AND decided >= ?", (since,)).fetchall()
-        auto = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'seite' AND id LIKE 'seite:rev-%' AND changes LIKE '%automatic%'").fetchone()[0]
+        waits = g.db().execute("SELECT received, decided FROM page_rev WHERE own = 0 AND status = 'released' AND decided >= ?", (since,)).fetchall()
+        auto = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'page' AND id LIKE 'seite:rev-%' AND changes LIKE '%automatic%'").fetchone()[0]
     hours = sorted((datetime.fromisoformat(b.replace("Z", "+00:00")) - datetime.fromisoformat(a.replace("Z", "+00:00"))).total_seconds() / 3600 for a, b in waits)
 
     def q(p):

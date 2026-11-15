@@ -107,7 +107,7 @@ def weighted_observations(since: str | None = None, index: str | None = None, ip
     if index:
         cond, par = cond + " AND idx = ?", par + [index]
     with g.lock:
-        rows = g.db().execute("SELECT id, ts, data, conversation FROM object WHERE kind = 'erfahrung' AND mode = 'aktiv'" + cond + " ORDER BY ts",
+        rows = g.db().execute("SELECT id, ts, data, conversation FROM object WHERE kind = 'experience' AND mode = 'active'" + cond + " ORDER BY ts",
                               tuple(par)).fetchall()
         labeled = {r[0] for r in g.db().execute("SELECT DISTINCT object_id FROM tag WHERE tag IN ('ok:ja', 'ok:nein')")}
         ok_yes = {r[0] for r in g.db().execute("SELECT object_id FROM tag WHERE tag = 'ok:ja'")}
@@ -192,7 +192,7 @@ def ranking(m: g.MemoryObject, triggers: list[str], candidates: list[str], ts: s
 def active(index: str | None = None) -> g.MemoryObject | None:
     """The active router model — of `index` (0.61.0, a special VI) or the shared one."""
     m = g.load(model_id(index)) if index else model()
-    return m if m and m.mode == "aktiv" else None
+    return m if m and m.mode == "active" else None
 
 
 def model_id(index: str | None) -> str:
@@ -273,7 +273,7 @@ def _save_index(index: str, report: dict, weights: dict, intercept: float, mode:
     text = (f"Router model of index {index} ({report.get('zustand')}): {report.get('n', 0)} observations, AUC {report.get('auc_holdout', '—')} "
             f"— {report.get('urteil', report.get('grund', ''))}")
     if m is None:
-        return g.new_object("modell", text, ["modell:router"], data, importance=2, who="vi", oid=oid, mode=mode,
+        return g.new_object("model", text, ["modell:router"], data, importance=2, who="vi", oid=oid, mode=mode,
                             reason=report.get("grund", "learning"), instance=g.SERVER_INSTANCE, index=index)
     m.text, m.data, m.mode = text, {**data, "versionen": m.data.get("versionen", 0) + 1}, mode
     m.change("vi", f"retrained → {mode}", report.get("grund", "learning"))
@@ -283,7 +283,7 @@ def _save_index(index: str, report: dict, weights: dict, intercept: float, mode:
 def train_indexes(reason: str = "sleep", at_most: int = 5) -> list[dict]:
     """Every index with enough experiences, the largest first, at most `at_most` per run."""
     with g.lock:
-        rows = g.db().execute("SELECT idx, COUNT(*) FROM object WHERE kind = 'erfahrung' AND mode = 'aktiv' AND idx <> 'global' "
+        rows = g.db().execute("SELECT idx, COUNT(*) FROM object WHERE kind = 'experience' AND mode = 'active' AND idx <> 'global' "
                               "GROUP BY idx ORDER BY COUNT(*) DESC").fetchall()
     return [train_index(i, reason) for i, n in [r for r in rows if r[1] >= MIN_INDEX_OBS][:at_most]]
 
@@ -352,7 +352,7 @@ def train(reason: str = "sleep") -> dict:
         mode = "test"
     else:
         report.update(zustand="aktiv", urteil=f"holdout AUC {auc:.3f} > {AUC_MIN} and ranking pays off ({u['urteil']}) — router uses the model")
-        mode = "aktiv"
+        mode = "active"
     # 0.30.0: the warning needs only that the model tells failures apart (AUC); the ranking needs more (utility). Two abilities, two gates.
     auc_ok = auc is not None and auc > AUC_MIN
     report["warnung"] = _warn_threshold(clf, vec, obs[-n_test:]) if auc_ok else {"zustand": "aus", "grund": f"holdout AUC {auc} ≤ {AUC_MIN}"}
@@ -360,7 +360,7 @@ def train(reason: str = "sleep") -> dict:
     if mode == "test" and report["champion"]["zustand"] == "schlechter":
         _keep_champion(report)  # the worse challenger is recorded, the champion's weights stay active
     else:
-        _save(report, weights, float(clf.intercept_[0]), mode, new_champion=(reason == "sleep" and mode == "aktiv"))
+        _save(report, weights, float(clf.intercept_[0]), mode, new_champion=(reason == "sleep" and mode == "active"))
     log(f"Learning: {report['zustand']} — n {len(obs)}, features {len(kept)}, AUC {report.get('auc_holdout')}, "
         f"warning {report['warnung'].get('zustand')}")
     return report
@@ -529,7 +529,7 @@ def _holdout_size(y: list[int], groups: list[str] | None = None) -> int:
 
 def _feedbacks() -> list:
     with g.lock:
-        return g.db().execute("SELECT data FROM object WHERE kind = 'erfahrung' AND data LIKE '%\"rueckmeldung\"%'").fetchall()
+        return g.db().execute("SELECT data FROM object WHERE kind = 'experience' AND data LIKE '%\"rueckmeldung\"%'").fetchall()
 
 
 def _base(m: dict) -> dict:
@@ -621,7 +621,7 @@ def _save(report: dict, weights: dict, intercept: float, mode: str, new_champion
     text = (f"Router model ({report.get('zustand')}): {report.get('n', 0)} observations, {report.get('merkmale', 0)} features, "
             f"AUC {report.get('auc_holdout', '—')} — {report.get('urteil', report.get('grund', ''))}")
     if m is None:
-        return g.new_object("modell", text, ["modell:router"], data, importance=2, who="vi", oid=MODEL,
+        return g.new_object("model", text, ["modell:router"], data, importance=2, who="vi", oid=MODEL,
                               mode=mode, reason=report.get("grund", "learning"), instance=g.SERVER_INSTANCE)
     m.text, m.data, m.mode = text, {**data, "versionen": m.data.get("versionen", 0) + 1}, mode
     m.change("vi", f"retrained → {mode}", report.get("grund", "learning"))

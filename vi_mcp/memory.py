@@ -27,13 +27,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from clingo_object.filters import parse_filter
+from clingo_object.filters import parse_filter as _parse_filter
 
 from . import anonymize, names
 from .log_output import log
 
-KINDS = ("erfahrung", "antwort", "erkenntnis", "regel", "reflex", "gespraech", "suche", "frage", "selbst", "schlaf", "modell", "skill", "bewertung", "bild", "seite",
-         "vorschlag", "maschine")  # private virtual-machine state and snapshots
+KINDS = ("experience", "answer", "insight", "rule", "reflex", "conversation", "search", "question", "self", "sleep", "model", "skill", "rating", "image", "page",
+         "proposal", "machine")  # private virtual-machine state and snapshots
 #: strittig = refuted by exactly one foreign instance (still appears, with a note); widerlegt = refuted by ≥ 2 independent foreign
 #: lines (model families; no longer appears); zurueckgezogen = withdrawn by its author (no longer appears). 0.67.0: withdrawn and refuted
 #: are two things — an author who takes a statement back removes the claim, it does not prove the opposite (kollektiv P13; before,
@@ -41,14 +41,14 @@ KINDS = ("erfahrung", "antwort", "erkenntnis", "regel", "reflex", "gespraech", "
 #: archiviert = stub (text, hashtags) stays, content compressed in the archive; visible only with modus:archiviert in the filter
 #: aufgegangen = skill was merged into another one (fusion); stays with a reference, no longer appears in searches
 #: quarantaene = imported and not yet released; appears in no search and no hint
-MODES = ("aktiv", "test", "aus", "defekt", "strittig", "widerlegt", "zurueckgezogen", "archiviert", "aufgegangen", "quarantaene")
+MODES = ("active", "test", "off", "broken", "disputed", "refuted", "withdrawn", "archived", "merged", "quarantine")
 #: modes that no longer appear in searches, hints and exports: one definition, used by every filter
-GONE = ("widerlegt", "zurueckgezogen")
-GONE_SQL = "('widerlegt', 'zurueckgezogen')"
+GONE = ("refuted", "withdrawn")
+GONE_SQL = "(" + ", ".join(f"'{m}'" for m in GONE) + ")"
 #: Collective: who may read an object? privat = only the author instance (results may contain credentials),
 #: geteilt = all instances. The loop (server) sees everything. Exhaustive for KINDS.
-VISIBILITY_PER_KIND = {"erfahrung": "privat", "antwort": "privat", "erkenntnis": "geteilt", "regel": "geteilt", "reflex": "geteilt",
-                "gespraech": "geteilt", "suche": "geteilt", "frage": "geteilt", "selbst": "geteilt", "schlaf": "geteilt", "modell": "geteilt", "skill": "geteilt", "bewertung": "privat", "bild": "geteilt", "seite": "geteilt", "vorschlag": "intern", "maschine": "privat"}
+VISIBILITY_PER_KIND = {"experience": "private", "answer": "private", "insight": "shared", "rule": "shared", "reflex": "shared",
+                "conversation": "shared", "search": "shared", "question": "shared", "self": "shared", "sleep": "shared", "model": "shared", "skill": "shared", "rating": "private", "image": "shared", "page": "shared", "proposal": "internal", "machine": "private"}
 #: author of objects the server creates itself (loop) — a named instance, not NULL
 SERVER_INSTANCE = "vi"
 #: weight bonus per different FOREIGN instance that confirmed (self-confirmation does not count as evidence)
@@ -136,8 +136,8 @@ def open_db(fpath: Path | str) -> None:
             id TEXT PRIMARY KEY, kind TEXT NOT NULL, ts TEXT NOT NULL, last_at TEXT NOT NULL,
             text TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '{}', importance INTEGER NOT NULL DEFAULT 1,
             confirmed INTEGER NOT NULL DEFAULT 0, refuted INTEGER NOT NULL DEFAULT 0, accesses INTEGER NOT NULL DEFAULT 0,
-            mode TEXT NOT NULL DEFAULT 'aktiv', changes TEXT NOT NULL DEFAULT '[]', conversation TEXT,
-            instance TEXT NOT NULL DEFAULT 'vi', visibility TEXT NOT NULL DEFAULT 'geteilt', idx TEXT NOT NULL DEFAULT 'global');
+            mode TEXT NOT NULL DEFAULT 'active', changes TEXT NOT NULL DEFAULT '[]', conversation TEXT,
+            instance TEXT NOT NULL DEFAULT 'vi', visibility TEXT NOT NULL DEFAULT 'shared', idx TEXT NOT NULL DEFAULT 'global');
         CREATE INDEX IF NOT EXISTS object_kind_ts ON object(kind, ts);
         CREATE TABLE IF NOT EXISTS tag (object_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (object_id, tag));
         CREATE INDEX IF NOT EXISTS tag_tag ON tag(tag);
@@ -168,17 +168,17 @@ def backend() -> str:
 
 def refuted_mode(author: str, mode: str, data: dict, latest: str | None = None) -> str:
     """The mode after a refutation (one definition for refute() and the migration): ≥ 2 foreign families → refuted; the author
-    refuted (now or before) → zurueckgezogen; else strittig. Families as in MemoryObject._lines (author and server excluded)."""
+    refuted (now or before) → withdrawn; else disputed. Families as in MemoryObject._lines (author and server excluded)."""
     own = (author, SERVER_INSTANCE)
     entries = data.get("widerlegungen") or []
     covered = {e.get("instanz") for e in entries}
     lines = {e.get("familie") or e.get("instanz") for e in entries if e.get("instanz") not in own}
     lines |= {i for i in (data.get("widerlegt_von") or {}) if i not in own and i not in covered}
     if len(lines) >= 2:
-        return "widerlegt"
-    if latest == author or mode == "zurueckgezogen" or author in (data.get("widerlegt_von") or {}):
-        return "zurueckgezogen"
-    return "strittig"
+        return "refuted"
+    if latest == author or mode == "withdrawn" or author in (data.get("widerlegt_von") or {}):
+        return "withdrawn"
+    return "disputed"
 
 
 def _migrate(con: Any) -> None:
@@ -191,7 +191,7 @@ def _migrate(con: Any) -> None:
                     "AND tag LIKE 'instanz:%' LIMIT 1), 'vi')")
         log("migration: column instanz added")
     if "visibility" not in columns:
-        con.execute("ALTER TABLE object ADD COLUMN visibility TEXT NOT NULL DEFAULT 'geteilt'")
+        con.execute("ALTER TABLE object ADD COLUMN visibility TEXT NOT NULL DEFAULT 'shared'")
         for kind, visibility in VISIBILITY_PER_KIND.items():
             con.execute("UPDATE object SET visibility = ? WHERE kind = ?", (visibility, kind))
         log("migration: column sicht added")
@@ -206,19 +206,19 @@ def _migrate(con: Any) -> None:
     # 0.61.0: the indexes themselves — name as primary key, with kind, description and tags (the user: "jeden Index auch Tags und
     # Beschreibung mitgeben, wenn sie in einer Tabelle stehen"). objekt.idx refers to it; an added column cannot become a real foreign key
     # in SQLite without rebuilding the table, so the reference is kept by the code (indexes.ensure) and checked by a test.
-    con.execute("CREATE TABLE IF NOT EXISTS vi_index (name TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'projekt', "
+    con.execute("CREATE TABLE IF NOT EXISTS vi_index (name TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'project', "
                 "description TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', created TEXT NOT NULL, "
-                "source TEXT NOT NULL DEFAULT 'automatisch')")
+                "source TEXT NOT NULL DEFAULT 'automatic')")
     con.execute("INSERT OR IGNORE INTO vi_index (name, kind, description, created, source) VALUES "
                 "('global', 'global', 'shared knowledge of all projects', ?, 'system')", (now(),))
     con.execute("INSERT OR IGNORE INTO vi_index (name, created) SELECT DISTINCT idx, ? FROM object WHERE idx <> 'global'", (now(),))
     # 0.37.0: an image is its own kind (bild); 0.35.x stored it as an insight with medium:bild. The id stays (edges, history, hints
     # refer to it); kind, art: hashtag and the now redundant medium:bild change.
-    old = [r[0] for r in con.execute("SELECT id FROM object WHERE kind = 'erkenntnis' AND json_extract(data, '$.bild') IS NOT NULL")]
+    old = [r[0] for r in con.execute("SELECT id FROM object WHERE kind = 'insight' AND json_extract(data, '$.bild') IS NOT NULL")]
     for oid in old:
-        con.execute("UPDATE object SET kind = 'bild' WHERE id = ?", (oid,))
-        con.execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('art:erkenntnis', 'medium:bild')", (oid,))
-        con.execute("INSERT OR IGNORE INTO tag (object_id, tag) VALUES (?, 'art:bild')", (oid,))
+        con.execute("UPDATE object SET kind = 'image' WHERE id = ?", (oid,))
+        con.execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('art:insight', 'medium:bild')", (oid,))
+        con.execute("INSERT OR IGNORE INTO tag (object_id, tag) VALUES (?, 'art:image')", (oid,))
     if old:
         log(f"migration: {len(old)} image(s) from kind erkenntnis to kind bild (ids kept)")
     # 0.67.0: widerlegt split in two — an object its author refuted, without two foreign families, was withdrawn, not refuted; so
@@ -226,17 +226,17 @@ def _migrate(con: Any) -> None:
     # A quarantine discard (p2p.discard: a reviewer rejects foreign knowledge) keeps widerlegt.
     # Idempotent (only widerlegt rows are read); the history names the migration.
     moved = 0
-    for oid, author, raw, hist in con.execute("SELECT id, instance, data, changes FROM object WHERE mode = 'widerlegt'").fetchall():
+    for oid, author, raw, hist in con.execute("SELECT id, instance, data, changes FROM object WHERE mode = 'refuted'").fetchall():
         try:
             data = json.loads(raw or "{}")
         except ValueError:
             continue
         by_server = author == SERVER_INSTANCE and not (data.get("widerlegt_von") or {})  # the server discarded its own (sleep: empty skill)
-        if not by_server and (author not in (data.get("widerlegt_von") or {}) or refuted_mode(author, "widerlegt", data) != "zurueckgezogen"):
+        if not by_server and (author not in (data.get("widerlegt_von") or {}) or refuted_mode(author, "refuted", data) != "withdrawn"):
             continue
-        changes = json.loads(hist or "[]") + [{"zeit": now(), "wer": "vi", "was": "zurueckgezogen",
+        changes = json.loads(hist or "[]") + [{"zeit": now(), "wer": "vi", "was": "withdrawn",
                                               "grund": "0.67.0: refuted only by its author — a withdrawal, not a refutation (kollektiv P13)"}]
-        con.execute("UPDATE object SET mode = 'zurueckgezogen', changes = ? WHERE id = ?", (json.dumps(changes, ensure_ascii=False), oid))
+        con.execute("UPDATE object SET mode = 'withdrawn', changes = ? WHERE id = ?", (json.dumps(changes, ensure_ascii=False), oid))
         moved += 1
     if moved:
         log(f"migration: {moved} object(s) widerlegt → zurueckgezogen (refuted only by their author)")
@@ -261,22 +261,22 @@ def _migrate(con: Any) -> None:
                json_extract(o.data, '$.vorher.gezeigt') AS gezeigt_json,
                json_extract(o.data, '$.vorher.kandidaten') AS kandidaten_json,
                json_extract(o.data, '$.vorher.aus_gedaechtnis') AS aus_gedaechtnis
-        FROM object o WHERE o.kind = 'erfahrung'""")
+        FROM object o WHERE o.kind = 'experience'""")
     con.commit()
 
 
 #: Visibilities: privat (only the author instance), geteilt (all, also without a token in open-wiki mode, and every network),
 #: intern (since 0.20.0: all instances with a token, never the tokenless instance — for company knowledge like Confluence; since 0.39.0 a
 #: company network (art firma) carries it to its members, an open network never).
-VISIBILITIES = ("privat", "geteilt", "intern")
+VISIBILITIES = ("private", "shared", "internal")
 #: name of the tokenless instance in open-wiki mode (= config.OPEN; repeated here because config does not know this module).
 OPEN_INSTANCE = "offen"
 
 
 def visible_to(o: "Objekt", instance: str | None) -> bool:
     """May this instance read the object? None = the server itself."""
-    return (instance is None or o.visibility == "geteilt" or o.instance == instance
-            or (o.visibility == "intern" and instance != OPEN_INSTANCE))
+    return (instance is None or o.visibility == "shared" or o.instance == instance
+            or (o.visibility == "internal" and instance != OPEN_INSTANCE))
 
 
 def close_db() -> None:
@@ -304,11 +304,11 @@ class MemoryObject:
     confirmed: int = 0
     refuted: int = 0
     accesses: int = 0
-    mode: str = "aktiv"
+    mode: str = "active"
     changes: list = field(default_factory=list)
     conversation: str | None = None
     instance: str = SERVER_INSTANCE
-    visibility: str = "geteilt"
+    visibility: str = "shared"
     idx: str = "global"  # 0.61.0: the index (vi_mcp/indexes.py)
 
     @staticmethod
@@ -347,8 +347,8 @@ class MemoryObject:
         self.data["bestaetigungen"] = (list(self.data.get("bestaetigungen") or []) + [
             {"instanz": i, "familie": family or i, **({"quelle": source.strip()[:300]} if source else {}), "zeit": now()}])[-100:]
         self.confirmed += 1
-        if self.mode == "strittig" and i != self.instance:
-            self.mode = "aktiv"  # a foreign confirmation settles the dispute — with history
+        if self.mode == "disputed" and i != self.instance:
+            self.mode = "active"  # a foreign confirmation settles the dispute — with history
         note = (" (self-confirmation, no weight bonus)" if i == self.instance else
                 " (same source as the object — not an independent line)" if same_source else "")
         self.change(who, "confirmed" + note, reason)
@@ -501,7 +501,7 @@ def save(o: MemoryObject, *, commit: bool = True) -> MemoryObject:
     if o.idx not in _known_indexes:  # 0.61.0: every index an object refers to has its row (the primary key of vi_index)
         with lock:
             db().execute("INSERT OR IGNORE INTO vi_index (name, kind, created) VALUES (?, ?, ?)",
-                         (o.idx, "global" if o.idx == "global" else "projekt", now()))
+                         (o.idx, "global" if o.idx == "global" else "project", now()))
         _known_indexes.add(o.idx)
     with lock:
         db().execute(f"INSERT OR REPLACE INTO object ({', '.join(COLUMNS)}) VALUES ({', '.join('?' * len(COLUMNS))})",
@@ -561,11 +561,14 @@ def _index_of(explicit: str | None) -> str:
 
 
 def new_object(kind: str, text: str, hashtags: list[str], data: dict | None = None, importance: int = 1,
-                 who: str = "vi", reason: str = "", oid: str | None = None, mode: str = "aktiv",
+                 who: str = "vi", reason: str = "", oid: str | None = None, mode: str = "active",
                  conversation: str | None = None, instance: str | None = None, visibility: str | None = None,
                  index: str | None = None, link: bool = True, commit: bool = True) -> MemoryObject:
     if not commit and link:
         raise ValueError("deferred commit requires link=False")
+    kind, mode = names.english(names.KINDS, kind), names.english(names.MODES, mode)  # 0.67.0: German values of older callers
+    visibility = names.english(names.VISIBILITIES, visibility)
+    hashtags = [names.canonical_tag(t) for t in hashtags]
     if kind not in KINDS:
         raise ValueError(f"art must be one of {', '.join(KINDS)}")
     if visibility is not None and visibility not in VISIBILITIES:
@@ -579,14 +582,14 @@ def new_object(kind: str, text: str, hashtags: list[str], data: dict | None = No
     ts = now()
     # random part: two equal actions in the same second are two objects, not one (otherwise INSERT OR REPLACE
     # silently overwrites the first — found by test_eingebaute_werkzeuge_nie_aus_gedaechtnis)
-    o = MemoryObject(id=oid or f"{kind}:{hash_value(kind, text, ts, json.dumps(data or {}, sort_keys=True), secrets.token_hex(8))}", kind=kind, ts=ts,
+    o = MemoryObject(id=oid or f"{names.id_prefix(kind)}:{hash_value(kind, text, ts, json.dumps(data or {}, sort_keys=True), secrets.token_hex(8))}", kind=kind, ts=ts,
                last_at=ts, text=text, data=data or {}, hashtags=list(hashtags), importance=max(0, min(3, importance)),
                mode=mode, conversation=conversation or current_conversation.get(),
                instance=instance or current_instance.get() or SERVER_INSTANCE, visibility=visibility or VISIBILITY_PER_KIND[kind],
                idx=_index_of(index),
                changes=[{"zeit": ts, "wer": who, "was": "created", "grund": (reason or "created")[:300]}])
     save(o) if commit else save(o, commit=False)
-    if mode != "quarantaene" and link:  # unreviewed content gets no link to own knowledge; code pieces (0.61.0) none either
+    if mode != "quarantine" and link:  # unreviewed content gets no link to own knowledge; code pieces (0.61.0) none either
         link_similar(o)
     return o
 
@@ -594,14 +597,14 @@ def new_object(kind: str, text: str, hashtags: list[str], data: dict | None = No
 # ── Recurring findings: one object per key (0.23.0) ─────────────────────────
 # vi_learn(key=…): the same key from the same instance updates that object instead of adding a new one. Stored fields (English
 # from the start): data.key, data.repeats (how often it was learned), data.history (earlier states, oldest first).
-MERGED = "aufgegangen"  # stored mode value (German, existing): merged into another object, out of searches
-KEY_MODES = ("aktiv", "test", "strittig")  # refuted, archived or merged objects are not continued — a new object starts
+MERGED = "merged"  # stored mode value (German, existing): merged into another object, out of searches
+KEY_MODES = ("active", "test", "disputed")  # refuted, archived or merged objects are not continued — a new object starts
 KEY_HISTORY_MAX = 200
 
 
 def find_by_key(instance: str, key: str) -> MemoryObject | None:
     with lock:
-        r = db().execute(f"SELECT id FROM object WHERE instance = ? AND kind = 'erkenntnis' AND mode IN ({','.join('?' * len(KEY_MODES))}) "
+        r = db().execute(f"SELECT id FROM object WHERE instance = ? AND kind = 'insight' AND mode IN ({','.join('?' * len(KEY_MODES))}) "
                          "AND json_extract(data, '$.key') = ? ORDER BY ts LIMIT 1", (instance, *KEY_MODES, key)).fetchone()
     return load(r[0]) if r else None
 
@@ -642,12 +645,13 @@ def _norm_source(s) -> str:
 
 
 #: 0.30.0: visibilities that may be switched afterwards. "privat" belongs to its instance and is never switched by anyone else.
-SWITCHABLE_VISIBILITY = ("geteilt", "intern")
+SWITCHABLE_VISIBILITY = ("shared", "internal")
 
 
 def set_visibility(o: "MemoryObject", new: str, who: str, reason: str) -> bool:
     """Switch an object between geteilt and intern, recorded with reason in its history. False if it already has that visibility.
     intern stops further sharing with the network; copies already published are recalled with vi_net_forget."""
+    new = names.english(names.VISIBILITIES, new)  # 0.67.0: geteilt/intern of older callers
     if new not in SWITCHABLE_VISIBILITY:
         raise ValueError(f"visibility {new!r}: only shared or internal can be set")
     if o.visibility not in SWITCHABLE_VISIBILITY:
@@ -665,7 +669,7 @@ def merge_by_key(instance: str, key_of, who: str, reason: str, apply: bool = Fal
     The oldest keeps its id and gets the newest text; all earlier states go into its history; the others get mode MERGED
     with a reference (data.merged_into) and drop out of searches — nothing is deleted. apply=False only counts."""
     with lock:
-        rows = db().execute(f"SELECT id, text FROM object WHERE instance = ? AND kind = 'erkenntnis' AND mode IN ({','.join('?' * len(KEY_MODES))}) "
+        rows = db().execute(f"SELECT id, text FROM object WHERE instance = ? AND kind = 'insight' AND mode IN ({','.join('?' * len(KEY_MODES))}) "
                             "ORDER BY ts, id", (instance, *KEY_MODES)).fetchall()
     groups: dict[str, list[str]] = {}
     for oid, text in rows:
@@ -708,7 +712,7 @@ def merge_by_key(instance: str, key_of, who: str, reason: str, apply: bool = Fal
 def link_similar(o: MemoryObject, at_least: int = 2, limit: int = 5) -> None:
     """Zettelkasten: objects sharing ≥ `at_least` content hashtags are linked (A-Mem idea)."""
     content = [t for t in o.hashtags if not t.startswith(ADMIN_PREFIXES)]  # otherwise instanz:/art: would link everything with everything
-    if len(content) < at_least or o.kind in ("antwort",):
+    if len(content) < at_least or o.kind in ("answer",):
         return
     with lock:
         rows = db().execute(
@@ -720,6 +724,11 @@ def link_similar(o: MemoryObject, at_least: int = 2, limit: int = 5) -> None:
 
 # ── Recall: filter language + weighting ──────────────────────────────────────
 
+
+
+def parse_filter(filter_text: str, kinds=None):
+    """The filter language (clingo_object.filters), with the hashtags of clients of 0.66 or older read in their English form (0.67.0)."""
+    return _parse_filter(names.canonical_filter(filter_text), kinds)
 
 
 def known_kinds() -> frozenset[str]:
@@ -763,14 +772,14 @@ def _filter_sql(groups: list, remove: list, viewer: str | None) -> tuple[str, li
     if search_index.get():
         sql += " AND idx = ?"
         par.append(search_index.get())
-    if not any("modus:quarantaene" in grp for grp in groups):
-        sql += " AND mode <> 'quarantaene'"  # only via vi_quarantine
-    if not any("modus:aufgegangen" in grp for grp in groups):
-        sql += " AND mode <> 'aufgegangen'"  # merged skills only on request (reference is in the object)
-    if not any("modus:archiviert" in grp for grp in groups):
-        sql += " AND mode <> 'archiviert'"  # archived objects only on explicit request
+    if not any("modus:quarantine" in grp for grp in groups):
+        sql += " AND mode <> 'quarantine'"  # only via vi_quarantine
+    if not any("modus:merged" in grp for grp in groups):
+        sql += " AND mode <> 'merged'"  # merged skills only on request (reference is in the object)
+    if not any("modus:archived" in grp for grp in groups):
+        sql += " AND mode <> 'archived'"  # archived objects only on explicit request
     if viewer is not None:
-        sql += " AND (visibility = 'geteilt' OR instance = ?" + (" OR visibility = 'intern')" if viewer != OPEN_INSTANCE else ")")
+        sql += " AND (visibility = 'shared' OR instance = ?" + (" OR visibility = 'internal')" if viewer != OPEN_INSTANCE else ")")
         par.append(viewer)
     for g in groups:
         parts = [_tag_condition(t) for t in g]
@@ -790,7 +799,7 @@ def ids_for_filter(filter_text: str, kinds: tuple[str, ...] = (), viewer: str | 
         viewer = current_instance.get()
     groups, remove, _w = parse_filter(filter_text, known_kinds())
     if kinds:
-        groups.append([f"art:{a}" for a in kinds])
+        groups.append([f"art:{names.english(names.KINDS, a)}" for a in kinds])
     sql, par = _filter_sql(groups, remove, viewer)
     with lock:
         return [r[0] for r in db().execute(sql, par)]
@@ -804,7 +813,7 @@ VISIBLE_CHUNK = 900
 #: True switches stop-word removal off for this context — the A/B measurement of the current code against the old behaviour only.
 stop_words_off: contextvars.ContextVar[bool] = contextvars.ContextVar("stoppwoerter_aus", default=False)
 
-#: How the last word search in this context ran: "und" (all words), "oder" (fallback, because too few contained all words) or None.
+#: How the last word search in this context ran: "and" (all words), "or" (fallback, because too few contained all words) or None.
 word_search: contextvars.ContextVar[str | None] = contextvars.ContextVar("wortsuche", default=None)
 
 
@@ -824,7 +833,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
         from .stopwords import content_words
         words = content_words(words)
     if kinds:
-        groups.append([f"art:{a}" for a in kinds])
+        groups.append([f"art:{names.english(names.KINDS, a)}" for a in kinds])
     sql, par = _filter_sql(groups, remove, viewer)
     word_hits: dict[str, float] = {}
     search_kind = None
@@ -832,7 +841,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
         if words:
             if fts:
                 terms = ['"' + w.replace('"', '') + '"' for w in words]
-                search_kind = "und"
+                search_kind = "and"
 
                 def _fts(q: str) -> dict[str, float]:
                     if backend() == "postgres":  # 0.50.0: tsvector ('simple': no stemming, like FTS5 unicode61); ts_rank instead of bm25
@@ -863,7 +872,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
                         # objects with all words stay in front: their rank is lifted above the highest OR rank
                         upper = max(or_hits.values(), default=0.0)
                         word_hits = {**or_hits, **{k: v + abs(upper) + 1 for k, v in word_hits.items()}}
-                        search_kind = "oder"
+                        search_kind = "or"
                 sql += f" AND id IN ({','.join('?' * len(word_hits))})" if word_hits else " AND 1 = 0"
                 par += list(word_hits)
             else:

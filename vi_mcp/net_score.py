@@ -26,7 +26,7 @@ import hashlib
 import json
 import re
 
-from . import memory as g
+from . import memory as g, names
 
 CAP = 20
 HIDE_MIN_OBS = 20
@@ -64,10 +64,10 @@ def _backfill() -> None:
     for oid in ids:
         o = g.load(oid)
         h = (o.data.get("herkunft") or {}) if o else {}
-        if not o or o.kind not in ("erkenntnis", "regel") or "fremd_text" not in o.data:
+        if not o or o.kind not in ("insight", "rule") or "fremd_text" not in o.data:
             skipped += 1
             continue
-        ish = content_hash({"art": o.kind, "text": o.data["fremd_text"], "inhalt": o.data.get("inhalt"), "hashtags": o.data.get("fremd_hashtags") or []})
+        ish = content_hash({"art": names.wire(names.KINDS, o.kind), "text": o.data["fremd_text"], "inhalt": o.data.get("inhalt"), "hashtags": o.data.get("fremd_hashtags") or []})
         with g.lock:
             g.db().execute("INSERT OR IGNORE INTO p2p_content (content_sha, oid) VALUES (?,?)", (ish, oid))
             g.db().execute("INSERT OR IGNORE INTO p2p_holder (content_sha, pub, net, net_id, seq, ts) VALUES (?,?,?,?,?,?)",
@@ -101,10 +101,11 @@ def content_hash(o: dict) -> str:
 
 
 def local_form(o: g.MemoryObject) -> dict:
-    """A local object in the fields the content hash uses (hashtags without the reserved ones)."""
+    """A local object in the fields the content hash uses (hashtags without the reserved ones), in the wire form: the German kind of 0.66,
+    so the same meaning has the same hash on servers before and after 0.67.0."""
     from . import checks
-    d = {"art": o.kind, "text": o.text, "inhalt": o.data.get("inhalt"), "hashtags": [t for t in o.hashtags if not t.startswith(checks.FIXED_HASHTAGS)]}
-    if o.kind == "suche":
+    d = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "inhalt": o.data.get("inhalt"), "hashtags": [t for t in o.hashtags if not t.startswith(checks.FIXED_HASHTAGS)]}
+    if o.kind == "search":
         d.update(filter=o.data.get("filter"), name=o.data.get("name"))
     return d
 
@@ -125,8 +126,8 @@ def find_local(raw: dict, ish: str) -> str | None:
     as "What is missing" shared by many objects hid the matching one — found on the way back of an index file, 40 of 180 contents were
     stored a second time)."""
     where = ("FROM object WHERE kind = ? AND text = ? AND (instance IS NULL OR instance NOT LIKE 'p2p-%') "
-             "AND mode NOT IN ('widerlegt', 'zurueckgezogen', 'quarantaene')")
-    par = (raw.get("art"), str(raw.get("text") or "").strip())
+             "AND mode NOT IN ('refuted', 'withdrawn', 'quarantine')")
+    par = (names.english(names.KINDS, raw.get("art")), str(raw.get("text") or "").strip())  # raw is the wire form: German kind
     with g.lock:
         ids = [r[0] for r in g.db().execute(f"SELECT id {where} AND json_extract(data, '$.inhalt') IS ? LIMIT 20", (*par, raw.get("inhalt")))]
         ids += [r[0] for r in g.db().execute(f"SELECT id {where} LIMIT 500", par) if r[0] not in ids]
@@ -208,7 +209,7 @@ def outgoing(net: str, limit: int = 2000) -> list[dict]:
                                "AND json_extract(o.data, '$.herkunft.netz') IS NULL)", (net, net)).fetchall()
     for ish, oid in lines:
         o = g.load(oid)
-        if not o or o.mode == "quarantaene":
+        if not o or o.mode == "quarantine":
             continue
         m = own_measurement(o)
         if any(m.values()):

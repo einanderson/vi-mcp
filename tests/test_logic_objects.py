@@ -11,11 +11,11 @@ from vi_mcp import memory as g  # noqa: E402
 
 
 def _hosts():
-    a = g.new_object("erkenntnis", "gate1 is the mail relay in the DMZ", ["host:gate1", "zone:dmz", "rolle:mail"], {"quelle": "t"},
+    a = g.new_object("insight", "gate1 is the mail relay in the DMZ", ["host:gate1", "zone:dmz", "rolle:mail"], {"quelle": "t"},
                      reason="T", instance="a", oid="erkenntnis:gate1")
-    b = g.new_object("erkenntnis", "web1 serves the intranet", ["host:web1", "zone:intern"], {"quelle": "t"}, reason="T", instance="a",
+    b = g.new_object("insight", "web1 serves the intranet", ["host:web1", "zone:intern"], {"quelle": "t"}, reason="T", instance="a",
                      oid="erkenntnis:web1")
-    plan = g.new_object("erkenntnis", "plan: roll out freeipa on gate1", ["host:gate1", "plan:freeipa"], {"quelle": "t"}, reason="T",
+    plan = g.new_object("insight", "plan: roll out freeipa on gate1", ["host:gate1", "plan:freeipa"], {"quelle": "t"}, reason="T",
                         instance="a", oid="erkenntnis:plan-gate1", link=False)
     plan.link(a.id, "same host")
     return a, b, plan
@@ -79,9 +79,9 @@ def test_a_filter_without_a_known_kind_is_refused(gd):
 
 
 def test_visibility_of_the_asker_and_quarantine_never_imported(gd):
-    g.new_object("erkenntnis", "db9 secret note", ["host:db9", "zone:dmz"], {"quelle": "t"}, reason="T", instance="b", visibility="privat",
+    g.new_object("insight", "db9 secret note", ["host:db9", "zone:dmz"], {"quelle": "t"}, reason="T", instance="b", visibility="private",
                  oid="erkenntnis:private-db9")
-    g.new_object("erkenntnis", "held", ["host:evil", "zone:dmz"], {"quelle": "t"}, reason="T", instance="b", mode="quarantaene",
+    g.new_object("insight", "held", ["host:evil", "zone:dmz"], {"quelle": "t"}, reason="T", instance="b", mode="quarantine",
                  oid="erkenntnis:held")
     _hosts()
     prog = 'dmz(O) <= (O in objects("zone:dmz"))'
@@ -94,7 +94,7 @@ def test_visibility_of_the_asker_and_quarantine_never_imported(gd):
 
 def test_quarantine_is_dropped_even_if_a_filter_returned_it(gd, monkeypatch):
     """Second line of defence: whatever the filter search returns, quarantined and archived objects never become facts."""
-    g.new_object("erkenntnis", "held", ["host:evil", "zone:dmz"], {"quelle": "t"}, reason="T", mode="quarantaene", oid="erkenntnis:held")
+    g.new_object("insight", "held", ["host:evil", "zone:dmz"], {"quelle": "t"}, reason="T", mode="quarantine", oid="erkenntnis:held")
     monkeypatch.setattr(g, "ids_for_filter", lambda f, kinds=(), viewer=None: ["erkenntnis:held"])
     r = logic.check('dmz(O) <= (O in objects("zone:dmz"))')
     assert r["importiert"]["objekte"] == 0 and r["importiert"]["ausgeschlossen"] == 1 and r["folgerungen"] == []
@@ -109,7 +109,7 @@ def test_the_object_limit_is_named(gd, monkeypatch):
 
 
 def test_strings_from_memory_and_filters_stay_data(gd):
-    g.new_object("erkenntnis", 'quote " and backslash \\ and #script (python)', ["host:x1", "zone:dmz"], {"quelle": "t"}, reason="T",
+    g.new_object("insight", 'quote " and backslash \\ and #script (python)', ["host:x1", "zone:dmz"], {"quelle": "t"}, reason="T",
                  oid="erkenntnis:odd")
     r = logic.check('t(O, T) <= (O in objects("zone:dmz")) & (O.text == T)')
     assert r["zustand"] == "erfuellt" and len(r["folgerungen"]) == 1
@@ -171,9 +171,9 @@ def test_classes_live_in_the_python_package_not_in_the_server_notation(bad, why)
 def test_one_edge_away_respects_visibility_and_quarantine(gd):
     _hosts()
     plan = g.load("erkenntnis:plan-gate1")
-    g.new_object("erkenntnis", "private of b", ["host:p1"], {"quelle": "t"}, reason="T", instance="b", visibility="privat",
+    g.new_object("insight", "private of b", ["host:p1"], {"quelle": "t"}, reason="T", instance="b", visibility="private",
                  oid="erkenntnis:priv", link=False)
-    g.new_object("erkenntnis", "held", ["host:q1"], {"quelle": "t"}, reason="T", mode="quarantaene", oid="erkenntnis:q", link=False)
+    g.new_object("insight", "held", ["host:q1"], {"quelle": "t"}, reason="T", mode="quarantine", oid="erkenntnis:q", link=False)
     plan.link("erkenntnis:priv", "x")
     plan.link("erkenntnis:q", "x")
     r = logic.check('near(B) <= (P in objects("plan:*")) & linked(P, B)', viewer="a")
@@ -186,13 +186,13 @@ def test_the_objects_action_gives_the_same_data_as_json(gd):
     import json
     from vi_mcp import tools
     _hosts()
-    g.new_object("erkenntnis", "private of b", ["zone:dmz", "host:p9"], {"quelle": "t"}, reason="T", instance="b", visibility="privat",
+    g.new_object("insight", "private of b", ["zone:dmz", "host:p9"], {"quelle": "t"}, reason="T", instance="b", visibility="private",
                  oid="erkenntnis:priv9", link=False)
     d = json.loads(tools.call_tool("vi_logic", {"action": "objects", "filters": ["zone:dmz", "plan:*"]}, "a", False))
     ids = {o["id"] for o in d["objects"]}
     assert ids == {"erkenntnis:gate1", "erkenntnis:plan-gate1"} and d["members"] == [["erkenntnis:gate1"], ["erkenntnis:plan-gate1"]]
     gate = next(o for o in d["objects"] if o["id"] == "erkenntnis:gate1")
-    assert gate["tags"]["zone"] == ["dmz"] and gate["kind"] == "erkenntnis" and isinstance(gate["age"], int)
+    assert gate["tags"]["zone"] == ["dmz"] and gate["kind"] == "insight" and isinstance(gate["age"], int)
     assert d["counts"]["not_visible"] == 1 and d["limit"] == logic.MAX_OBJECTS
     assert ["erkenntnis:plan-gate1", "erkenntnis:gate1", "same host"] in d["edges"]
     with pytest.raises(tools.Rejected, match="needs filters"):

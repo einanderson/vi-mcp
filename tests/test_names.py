@@ -46,6 +46,26 @@ def _assert_no_german(con, before: dict[str, int], mapping: dict[str, str]) -> N
         assert con.execute(f"SELECT COUNT(*) FROM {new}").fetchone()[0] == n, (old, new)
 
 
+def _assert_no_german_values(con) -> None:
+    """Step 2: no stored enum value and no value of the hashtags art:/modus: is German any more (counted per column, named)."""
+    left = {}
+    for table, col, m in names.VALUE_COLUMNS:
+        if table in names._tables(con):
+            old = [k for k, v in m.items() if k != v]
+            n = con.execute(f"SELECT COUNT(*) FROM {table} WHERE {col} IN ({','.join('?' * len(old))})", old).fetchone()[0]
+            if n:
+                left[f"{table}.{col}"] = n
+    for k, m in names.TAG_VALUES.items():
+        old = [f"{k}:{o}" for o, n in m.items() if o != n]
+        n = con.execute(f"SELECT COUNT(*) FROM tag WHERE tag IN ({','.join('?' * len(old))})", old).fetchone()[0]
+        if n:
+            left[f"tag {k}:"] = n
+    import json
+    for (raw,) in con.execute("SELECT data FROM object WHERE kind = 'self'"):
+        assert not set(json.loads(raw).get("soll") or {}) & {"werte", "ziele", "stil", "grenzen"}
+    assert not left, left
+
+
 def test_the_mapping_is_one_to_one():
     for m in [names.TABLES, names.LOGBOOK_TABLES, names.INDEXES, *names.COLUMNS.values()]:
         assert len(set(m.values())) == len(m), m  # reversible: no two German names become one English name
@@ -77,6 +97,9 @@ def test_a_0_66_1_memory_is_migrated_in_place_with_a_backup(tmp_path):
         else:
             assert backup.startswith("schema t_") and backup.endswith("_pre_0_67_0")
         assert g.load(g.recall("thema:backup", viewer=None)[0][1].id).text == "Backups on db01.example run at 02:00"
+        with g.lock:
+            _assert_no_german_values(g.db())
+            assert rep["object.kind"] >= 20 and rep["object.visibility"] >= 20 and rep["tag values"] >= 20 and rep["self areas"] == 1
         assert "stored names: English — migrated" in db_migrate._names_lines(g.db(), "object")
     finally:
         g.close_db()
@@ -128,7 +151,7 @@ def test_the_archive_is_migrated(tmp_path):
         assert {"object", "conversation_raw"} <= tables and not tables & GERMAN_TABLES
         assert columns["object"] == {"id", "kind", "instance", "visibility", "archived", "mode_before", "reason", "raw"}
         if not PG:
-            assert con.execute("SELECT kind, mode_before FROM object").fetchone() == ("erkenntnis", "aktiv")
+            assert con.execute("SELECT kind, mode_before FROM object").fetchone() == ("insight", "active")  # step 2: the values too
     finally:
         g.close_db()
 
@@ -148,3 +171,23 @@ def test_a_full_disk_refuses_before_changing_anything(tmp_path, monkeypatch):
     assert con.execute("SELECT COUNT(*) FROM objekt").fetchone()[0] > 0  # still the German schema
     con.close()
     assert dbmod.is_url("x") is False
+
+
+def test_the_network_still_sees_the_wire_form_of_0_66(gd):
+    """Signed entries and content hashes are the German wire form of every server before 0.67.0: the export translates back, the
+    import reads it, and the same meaning keeps the same hash on both sides."""
+    from vi_mcp import net_score, p2p
+    o = g.new_object("insight", "The backup of db01.example runs at 02:00", ["thema:backup"], {"quelle": "crontab -l"}, instance="anna")
+    assert o.id.startswith("erkenntnis:")  # ids are identifiers: the id scheme of 0.66 is kept
+    wire, why = p2p.internal_form(o, {"netz_id": "a" * 32, "loesch_hash": "b" * 64})
+    assert why is None and wire["art"] == "erkenntnis"
+    assert net_score.local_form(o)["art"] == "erkenntnis"
+    old_peer = {"art": "erkenntnis", "text": o.text, "inhalt": None, "hashtags": ["thema:backup"]}
+    assert net_score.content_hash(net_score.local_form(o)) == net_score.content_hash(old_peer)
+
+
+def test_german_values_of_older_clients_are_read_as_english(gd):
+    o = g.new_object("erkenntnis", "kind given the old way", ["modus:aktiv"], {}, mode="aktiv", visibility="geteilt", instance="anna")
+    assert (o.kind, o.mode, o.visibility) == ("insight", "active", "shared") and "modus:active" in o.hashtags
+    assert [h[1].id for h in g.recall("art:erkenntnis kind given", viewer=None)] == [o.id]
+    assert g.recall("art:insight kind given", viewer=None)[0][1].id == o.id

@@ -9,7 +9,7 @@ from vi_mcp import memory as g
 
 
 def _hint():
-    return g.new_object("erkenntnis", "rsync needs --partial to resume interrupted transfers", ["tool:rsync"], {"quelle": "t"}, instance="x")
+    return g.new_object("insight", "rsync needs --partial to resume interrupted transfers", ["tool:rsync"], {"quelle": "t"}, instance="x")
 
 
 def test_hints_are_held_back_on_the_coin_flip_and_recorded(gd, monkeypatch):
@@ -41,7 +41,7 @@ def test_holdback_effect_recovers_a_known_effect(gd):
         held = i % 10 == 0  # 120 held back, 1080 shown
         ok = rng.random() < (0.70 if held else 0.90)  # a true effect of +20 points
         v = {"gezeigt": [] if held else ["erkenntnis:h"], "zurueckgehalten": ["erkenntnis:h"] if held else [], "haltewahrscheinlichkeit": 0.1}
-        g.new_object("erfahrung", f"rsync {i}", ["tool:rsync", f"ok:{'ja' if ok else 'nein'}"], {"vorher": v}, instance="a")
+        g.new_object("experience", f"rsync {i}", ["tool:rsync", f"ok:{'ja' if ok else 'nein'}"], {"vorher": v}, instance="a")
     metrics._GRADES["db"] = None
     e = metrics.holdback_effect()
     assert e["zustand"] == "gemessen" and e["zurueckgehalten"] == 120 and e["gezeigt"] == 1080
@@ -51,7 +51,7 @@ def test_holdback_effect_recovers_a_known_effect(gd):
 def test_too_few_held_back_says_so(gd):
     for i in range(20):
         v = {"gezeigt": [] if i < 5 else ["erkenntnis:h"], "zurueckgehalten": ["erkenntnis:h"] if i < 5 else [], "haltewahrscheinlichkeit": 0.05}
-        g.new_object("erfahrung", f"rsync {i}", ["tool:rsync", "ok:ja"], {"vorher": v}, instance="a")
+        g.new_object("experience", f"rsync {i}", ["tool:rsync", "ok:ja"], {"vorher": v}, instance="a")
     metrics._GRADES["db"] = None
     e = metrics.holdback_effect()
     assert e["zustand"] == "zu_wenig" and "at least 30" in e["urteil"]
@@ -73,7 +73,7 @@ def test_verdict_and_lower_bound_never_disagree(gd):
         held = i < 30
         ok = (i >= 3) if held else True   # held back 27/30, shown 1000/1000
         v = {"gezeigt": [] if held else ["erkenntnis:h"], "zurueckgehalten": ["erkenntnis:h"] if held else [], "haltewahrscheinlichkeit": 0.03}
-        g.new_object("erfahrung", f"rsync {i}", ["tool:rsync", f"ok:{'ja' if ok else 'nein'}"], {"vorher": v}, instance="a")
+        g.new_object("experience", f"rsync {i}", ["tool:rsync", f"ok:{'ja' if ok else 'nein'}"], {"vorher": v}, instance="a")
     metrics._GRADES["db"] = None
     e = metrics.holdback_effect()
     assert e["lower_95"] > 0 and "hints raise the success" in e["urteil"]

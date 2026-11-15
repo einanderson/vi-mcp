@@ -165,7 +165,7 @@ def test_several_addresses_one_memory(tmp_path, monkeypatch):
             r = c.getresponse(); r.read()
             sids.append(r.getheader("Mcp-Session-Id"))
         # both addresses, one process: two conversations in the same memory
-        assert len([o for _, o, _g in g.recall("art:gespraech instanz:x")]) == 2
+        assert len([o for _, o, _g in g.recall("art:conversation instanz:x")]) == 2
     finally:
         for s in srvs:
             s.shutdown(); s.server_close()

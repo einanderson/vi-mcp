@@ -12,15 +12,15 @@ def test_query_metrics_one_relevant_page():
 
 
 def test_page_ranking_counts_a_page_once(gd):
-    a = g.new_object("erkenntnis", "Part 1 of the backup page", ["thema:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
-    b = g.new_object("erkenntnis", "Part 2 of the backup page", ["thema:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
-    c = g.new_object("erkenntnis", "Something own", ["thema:backup"], {"quelle": "session 12.11."})
+    a = g.new_object("insight", "Part 1 of the backup page", ["thema:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
+    b = g.new_object("insight", "Part 2 of the backup page", ["thema:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
+    c = g.new_object("insight", "Something own", ["thema:backup"], {"quelle": "session 12.11."})
     assert evaluation.page_ranking([a.id, b.id, c.id]) == ["https://wiki.example.org/p/1", c.id]
 
 
 def test_run_measures_without_reinforcing(gd, tmp_path):
-    o = g.new_object("erkenntnis", "Borg needs BORG_PASSCOMMAND for unattended backup runs", ["tool:borg"], {"quelle": "test"})
-    g.new_object("erkenntnis", "Nginx reload after certificate renewal", ["tool:nginx"], {"quelle": "test"})
+    o = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended backup runs", ["tool:borg"], {"quelle": "test"})
+    g.new_object("insight", "Nginx reload after certificate renewal", ["tool:nginx"], {"quelle": "test"})
     before = g.load(o.id).accesses
     qs = [{"frage": "How do I run borg backups unattended", "stichworte": "borg passcommand", "target": o.id, "group": o.id, "stratum": "own"},
           {"error": "generation failed", "target": "x"}]
@@ -44,7 +44,7 @@ def test_nightly_writes_questions_in_portions_and_measures_once_a_day(gd, tmp_pa
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
     monkeypatch.setattr(evaluation, "EVAL_N", 6)
     monkeypatch.setattr(evaluation, "EVAL_MIN", 4)
-    objs = [g.new_object("erkenntnis", f"Service number {i} needs restart flag --force-{i} after the upgrade", [f"thema:svc{i}"],
+    objs = [g.new_object("insight", f"Service number {i} needs restart flag --force-{i} after the upgrade", [f"thema:svc{i}"],
                          {"quelle": f"session {i}"}) for i in range(8)]
     by_text = {o.text: o for o in objs}
     monkeypatch.setattr(reflection, "ask_fn", lambda system, user: json.dumps(
@@ -72,8 +72,8 @@ def test_nightly_without_language_model_names_it(gd, tmp_path, monkeypatch):
 def test_search_log_and_clicks_with_rank(gd):
     # 0.57.0: a real vi_recall is logged with its ranking; an opened hit is marked with its rank; a measurement is not logged
     from vi_mcp import tools
-    a = g.new_object("erkenntnis", "Borg needs BORG_PASSCOMMAND for unattended backup runs", ["tool:borg"], {"quelle": "t"})
-    b = g.new_object("erkenntnis", "Borg prune keeps the last seven daily archives", ["tool:borg"], {"quelle": "t"})
+    a = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended backup runs", ["tool:borg"], {"quelle": "t"})
+    b = g.new_object("insight", "Borg prune keeps the last seven daily archives", ["tool:borg"], {"quelle": "t"})
     tools.call_tool("vi_recall", {"filter": "borg"}, "a", False)
     tools.call_tool("vi_recall", {"filter": "borg", "reinforce": False}, "a", False)
     tools.call_tool("vi_object", {"id": b.id}, "a", False)
@@ -88,4 +88,4 @@ def test_usage_log_names_the_search_kind():
     from vi_mcp import usage_stats
     assert usage_stats._hits("vi_recall", "3 objects for “borg lock · default hybrid (embedding 5 ms, 3 of 3 candidates”")[1] == "hybrid"
     assert usage_stats._hits("vi_recall", "2 objects for “borg lock · semantic hybrid (embedding 5 ms”")[1] == "hybrid"
-    assert usage_stats._hits("vi_recall", "1 object for “borg lock”")[1] == "volltext"
+    assert usage_stats._hits("vi_recall", "1 object for “borg lock”")[1] == "fulltext"

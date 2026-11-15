@@ -46,7 +46,7 @@ def _observations(since: str | None = None):
     grades = scorer.grade_details()
     with g.lock:
         lines = g.db().execute("SELECT o.data, o.conversation, (SELECT group_concat(tag, ' ') FROM tag t WHERE t.object_id = o.id AND (t.tag LIKE 'tool:%' OR t.tag LIKE 'ok:%')) "
-                                "FROM object o WHERE o.kind = 'erfahrung' AND o.mode = 'aktiv'" + (" AND o.ts >= ?" if since else ""), (since,) if since else ()).fetchall()
+                                "FROM object o WHERE o.kind = 'experience' AND o.mode = 'active'" + (" AND o.ts >= ?" if since else ""), (since,) if since else ()).fetchall()
     for data, serial, tags in lines:
         tags = (tags or "").split()
         d = json.loads(data)

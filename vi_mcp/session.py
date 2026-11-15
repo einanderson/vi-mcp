@@ -184,11 +184,11 @@ def new_serial() -> str:
     prefix = f"gespraech:{tag}"
     for _ in range(50):
         with g.lock:
-            n = g.db().execute("SELECT max(CAST(substr(id, ?) AS INTEGER)) FROM object WHERE kind = 'gespraech' AND id LIKE ?",
+            n = g.db().execute("SELECT max(CAST(substr(id, ?) AS INTEGER)) FROM object WHERE kind = 'conversation' AND id LIKE ?",
                                (len(prefix) + 1, f"{prefix}%")).fetchone()[0] or 0
             serial = f"{tag}{n + 1:03d}"
             try:
-                g.db().execute("INSERT INTO object (id, kind, ts, last_at) VALUES (?, 'gespraech', ?, ?)",
+                g.db().execute("INSERT INTO object (id, kind, ts, last_at) VALUES (?, 'conversation', ?, ?)",
                                (f"gespraech:{serial}", g.now(), g.now()))
                 g.db().commit()
                 return serial
@@ -201,7 +201,7 @@ def new_serial() -> str:
 def begin(instance: str, client: str, project: str | None = None, family: str | None = None, family_source: str | None = None) -> Session:
     serial = new_serial()
     tag = serial[:8]
-    g.new_object("gespraech", f"Conversation {serial} started ({client}, instance {instance})",
+    g.new_object("conversation", f"Conversation {serial} started ({client}, instance {instance})",
                    [f"serial:{serial}", f"tag:{tag}"],
                    {"serial": serial, "aufrufe": 0, "client": client, **({"project": project} if project else {}),
                     **({"familie": family, "familie_quelle": family_source} if family else {})},
@@ -307,7 +307,7 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
     if o.data.get("zustand") == "geloescht":
         raise ValueError(f"conversation {serial} is already deleted ({o.data['geloescht']['zeit']})")
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE conversation = ? AND visibility = 'privat'", (serial,))]
+        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE conversation = ? AND visibility = 'private'", (serial,))]
         g.db().execute("DELETE FROM conversation_raw WHERE serial = ?", (serial,))
         g.db().commit()
     from . import archive
@@ -326,12 +326,12 @@ def delete_instance_data(instance: str, reason: str) -> dict:
     """Admin (CLI, not via MCP): all private data of an instance — each of its conversations gets a tombstone."""
     with g.lock:
         serials = [r[0][len("gespraech:"):] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'gespraech' AND instance = ? AND json_extract(data, '$.zustand') <> 'geloescht'", (instance,))]
+            "SELECT id FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.zustand') <> 'geloescht'", (instance,))]
     n = 0
     for s in serials:
         n += delete_conversation(s, instance, reason)["objekte"]
     with g.lock:  # private objects without a conversation (e.g. from tests without a session)
-        rest = [r[0] for r in g.db().execute("SELECT id FROM object WHERE instance = ? AND visibility = 'privat'", (instance,))]
+        rest = [r[0] for r in g.db().execute("SELECT id FROM object WHERE instance = ? AND visibility = 'private'", (instance,))]
     n += g.delete(rest)
     return {"gespraeche": len(serials), "objekte": n}
 

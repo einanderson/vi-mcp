@@ -117,7 +117,7 @@ def table(instance: str | None) -> list[dict]:
     rows: dict[str, dict] = {}
     with g.lock:
         ids = list(dict.fromkeys(r[0] for r in g.db().execute(  # DISTINCT with ORDER BY needs the sort column selected (PostgreSQL)
-            "SELECT DISTINCT o.id, o.ts FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag IN (?, ?) AND o.mode IN ('aktiv', 'test') "
+            "SELECT DISTINCT o.id, o.ts FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag IN (?, ?) AND o.mode IN ('active', 'test') "
             "ORDER BY o.ts DESC", OVERVIEW_TAGS)))
     objs = g.load_many(ids)
     for oid in ids:

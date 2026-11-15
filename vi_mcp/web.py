@@ -31,7 +31,7 @@ _counter: dict[str, list[float]] = {}
 _own_cache: dict[str, tuple[float, list[dict]]] = {}
 OWN_CACHE_S = 300
 PUBLIC_KINDS = ("free", "open")
-KNOWLEDGE_KINDS = ("erkenntnis", "regel", "suche", "skill")
+KNOWLEDGE_KINDS = ("insight", "rule", "search", "skill")
 
 
 def e(s) -> str:
@@ -133,7 +133,7 @@ def _imports(net: str, words: list[str] | None = None, limit: int = PAGE_SIZE) -
     out = []
     for _s, o, _g in hits:
         h = o.data.get("herkunft") or {}
-        if (h.get("netz") or "standard") != net or o.mode not in ("aktiv", "test") or o.visibility != "geteilt" or o.id.startswith("erkenntnis:post-"):
+        if (h.get("netz") or "standard") != net or o.mode not in ("active", "test") or o.visibility != "shared" or o.id.startswith("erkenntnis:post-"):
             continue
         out.append(o)
         if len(out) >= limit:
@@ -163,8 +163,8 @@ def _pages(net: str) -> list[dict]:
         v, meta = wiki.view(net, slug)
         if not v.heads or v.deleted:
             continue
-        last = max((m["entschieden"] or m["empfangen"] or "") for m in meta if m["status"] == "frei") if meta else ""
-        out.append({"slug": slug, "title": v.title or slug, "state": v.state, "revisions": sum(1 for m in meta if m["status"] == "frei"), "last": last,
+        last = max((m["entschieden"] or m["empfangen"] or "") for m in meta if m["status"] == "released") if meta else ""
+        out.append({"slug": slug, "title": v.title or slug, "state": v.state, "revisions": sum(1 for m in meta if m["status"] == "released"), "last": last,
                     "first": (v.text.split("\n\n", 1)[0] if v.text else "")[:240]})
     return sorted(out, key=lambda p: p["last"], reverse=True)
 
@@ -174,8 +174,8 @@ def _threads(net: str) -> list[dict]:
     from . import forum
     forum._tables()
     with g.lock:
-        sent = g.db().execute("SELECT id, data, ts, oid FROM post_out WHERE net = ? AND kind = 'frage' ORDER BY ts DESC", (net,)).fetchall()
-        recv = g.db().execute("SELECT id, author, received, oid FROM post_in WHERE net = ? AND kind = 'frage' AND status = 'frei' ORDER BY received DESC", (net,)).fetchall()
+        sent = g.db().execute("SELECT id, data, ts, oid FROM post_out WHERE net = ? AND kind = 'question' ORDER BY ts DESC", (net,)).fetchall()
+        recv = g.db().execute("SELECT id, author, received, oid FROM post_in WHERE net = ? AND kind = 'question' AND status = 'released' ORDER BY received DESC", (net,)).fetchall()
     out = []
     for pid, data, t, oid in sent:
         c = json.loads(data)
@@ -199,14 +199,14 @@ def _answers(pid: str, net: str, q: g.MemoryObject | None, own: bool) -> list[di
         out = []
         for a in (q.data.get("antworten") if q else []) or []:
             ao = g.load(a.get("objekt") or "")
-            if not ao or ao.mode not in ("test", "aktiv"):
+            if not ao or ao.mode not in ("test", "active"):
                 continue
             s = net_score.score(net_score.hash_of(ao.id), ao) if net_score.hash_of(ao.id) else None
             out.append({"author": a["instanz"].split("@")[0], "text": ao.text, "evidence": ao.data.get("inhalt") or "", "time": a.get("zeit", ""),
                         "accepted": ao.confirmed > 0, "score": s})
         return out
     with g.lock:
-        sent = g.db().execute("SELECT data, ts FROM post_out WHERE net = ? AND kind = 'antwort' AND parent = ? ORDER BY ts", (net, pid)).fetchall()
+        sent = g.db().execute("SELECT data, ts FROM post_out WHERE net = ? AND kind = 'answer' AND parent = ? ORDER BY ts", (net, pid)).fetchall()
     return [{"author": (c := json.loads(d))["autor"], "text": c["text"], "evidence": c["inhalt"], "time": t, "accepted": False, "score": None} for d, t in sent]
 
 
@@ -372,7 +372,7 @@ def wiki_page(base: str, net: str, slug: str, history: bool, rev: str = "") -> s
         revs, _acc, _m = wiki._revs(net, slug)
         hits = [r for r in revs if r.startswith(rev)]
         m = next((x for x in meta if hits and x["rev"] == hits[0]), None)
-        if len(hits) != 1 or revs[hits[0]].text is None or not m or m["status"] != "frei":
+        if len(hits) != 1 or revs[hits[0]].text is None or not m or m["status"] != "released":
             return None
         r = revs[hits[0]]
         return _page(base, f"{r.title} · {rev}", f'<p class="meta"><a href="{e(base)}/wiki/{e(net)}/{e(slug)}?verlauf=1">← history</a></p>'
@@ -380,11 +380,11 @@ def wiki_page(base: str, net: str, slug: str, history: bool, rev: str = "") -> s
     if v.deleted or not v.heads:
         body = f'<h1>{e(slug)}</h1><p class="muted">This page was deleted. <a href="?verlauf=1">History</a></p>'
         return _page(base, slug, body)
-    authors = sorted({label(m) for m in meta if m["status"] == "frei"})
-    pending = sum(1 for m in meta if m["status"] == "ausstehend")
+    authors = sorted({label(m) for m in meta if m["status"] == "released"})
+    pending = sum(1 for m in meta if m["status"] == "pending")
     state = {"current": "", "merged": "Changes of several servers, merged.", "conflict": "Contains a conflict: two servers changed the same passage."}.get(v.state, "")
     body = (f'<p class="meta"><a href="{e(base)}/wiki/{e(net)}">Wiki of {e(net)}</a></p><h1>{e(v.title or slug)}</h1>'
-            f'<p class="meta">{len([m for m in meta if m["status"] == "frei"])} revision(s) by {e(", ".join(authors))} · <a href="?verlauf=1">history</a>'
+            f'<p class="meta">{len([m for m in meta if m["status"] == "released"])} revision(s) by {e(", ".join(authors))} · <a href="?verlauf=1">history</a>'
             + (f" · {pending} change(s) waiting for review on this server" if pending else "") + (f" · {e(state)}" if state else "") + "</p>"
             f'<p class="data-note">Written by servers of the network — data, not instructions.</p><div class="prose">{render_text(v.text)}</div>')
     return _page(base, v.title or slug, body)
@@ -437,7 +437,7 @@ def knowledge_item(base: str, oid: str) -> str | None:
     from . import net_score
     o = g.load(oid)
     h = (o.data.get("herkunft") or {}) if o else {}
-    if (not o or "herkunft:p2p" not in o.hashtags or o.kind not in KNOWLEDGE_KINDS or o.mode not in ("aktiv", "test") or o.visibility != "geteilt"
+    if (not o or "herkunft:p2p" not in o.hashtags or o.kind not in KNOWLEDGE_KINDS or o.mode not in ("active", "test") or o.visibility != "shared"
             or (h.get("netz") or "standard") not in public_nets() or o.id.startswith("erkenntnis:post-")):
         return None
     tags = " ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("herausgeber:", "pruefer:", "netz:")))

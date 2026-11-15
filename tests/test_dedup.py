@@ -39,9 +39,9 @@ def test_refuted_object_is_not_continued(gd):
     oid = _learn("cs", "web1 asks bad.example 3× — first state", key="k-2").split()[1]
     o = g.load(oid)
     o.refute("ki@x", "wrong", "x")
-    assert g.load(oid).mode == "strittig" and _learn("cs", "web1 asks bad.example 4× — while disputed", key="k-2").startswith(f"updated {oid}")
+    assert g.load(oid).mode == "disputed" and _learn("cs", "web1 asks bad.example 4× — while disputed", key="k-2").startswith(f"updated {oid}")
     o = g.load(oid)
-    o.mode = "widerlegt"
+    o.mode = "refuted"
     g.save(o)
     new = _learn("cs", "web1 asks bad.example 4× — after refutation", key="k-2").split()[1]
     assert new != oid and g.load(new).data["repeats"] == 1
@@ -64,13 +64,13 @@ def test_merge_by_key_merges_repetitions_and_keeps_every_state(gd):
              "Known error (relevance 2, 9 repeats): smtp01: NTP unreachable — Filter: host:smtp01 rule:2903",
              "Known error (relevance 3, 42 repeats): www2: exploit series — Filter: host:www2 threat:rce",
              "Known error (relevance 3, 85 repeats): www2: ssh brute force — Filter: host:www2 threat:rce"]
-    ids = [g.new_object("erkenntnis", t, ["host:www2" if "www2" in t else "host:smtp01"], {"quelle": f"cs {i}"}, instance="cs").id
+    ids = [g.new_object("insight", t, ["host:www2" if "www2" in t else "host:smtp01"], {"quelle": f"cs {i}"}, instance="cs").id
            for i, t in enumerate(texts)]
-    foreign = g.new_object("erkenntnis", texts[0], ["host:www2"], {"quelle": "x"}, instance="other").id
+    foreign = g.new_object("insight", texts[0], ["host:www2"], {"quelle": "x"}, instance="other").id
     key_of = lambda t: (m.group(1).strip() if (m := re.search(r"— Filter:\s*(.+)$", t)) else None)
     dry = g.merge_by_key("cs", key_of, who="admin", reason="test")
     assert dry == {"objects": 4, "with_key": 4, "keys": 2, "keys_repeated": 1, "merged": 2, "applied": False}
-    assert g.load(ids[2]).mode == "aktiv"  # a dry run changes nothing
+    assert g.load(ids[2]).mode == "active"  # a dry run changes nothing
     r = g.merge_by_key("cs", key_of, who="admin", reason="test", apply=True)
     assert r["merged"] == 2 and r["applied"]
     main = g.load(ids[0])
@@ -78,8 +78,8 @@ def test_merge_by_key_merges_repetitions_and_keeps_every_state(gd):
     assert [h["text"] for h in main.data["history"]] == [texts[0], texts[2]] and main.data["quelle"] == "cs 3"
     for x in (ids[2], ids[3]):
         o = g.load(x)
-        assert o.mode == g.MERGED and o.data["merged_into"] == ids[0] and "modus:aufgegangen" in o.hashtags  # nothing deleted
-    assert g.load(ids[1]).mode == "aktiv" and g.load(foreign).mode == "aktiv"  # other key, other instance untouched
+        assert o.mode == g.MERGED and o.data["merged_into"] == ids[0] and "modus:merged" in o.hashtags  # nothing deleted
+    assert g.load(ids[1]).mode == "active" and g.load(foreign).mode == "active"  # other key, other instance untouched
     assert {x.id for _, x, _g in g.recall("host:www2", viewer=None)} == {ids[0], foreign}
     # afterwards the key continues the main object
     assert _learn("cs", "Known error (relevance 3, 90 repeats): www2: new series", key="host:www2 threat:rce", tags=("host:www2",)).startswith(f"updated {ids[0]}")

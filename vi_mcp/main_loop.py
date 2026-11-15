@@ -26,12 +26,12 @@ def step() -> int:
     bound = (datetime.now(timezone.utc) - timedelta(seconds=intuition.TTL_MAX)).isoformat(timespec="seconds")
     since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
     with g.lock:
-        old = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind = 'antwort' AND ts < ?", (bound,))]
+        old = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind = 'answer' AND ts < ?", (bound,))]
         g.delete(old)
         rows = g.db().execute(
             "SELECT t1.tag, t2.tag, COUNT(*), COUNT(DISTINCT o.instance), group_concat(DISTINCT o.instance) "
             "FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag LIKE 'tool:%' "
-            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.kind = 'erfahrung' AND o.ts >= ? "
+            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.kind = 'experience' AND o.ts >= ? "
             "GROUP BY t1.tag, t2.tag HAVING COUNT(*) >= ?", (since, ERROR_RULE_MIN)).fetchall()
         for tool_tag, error_tag, n, n_inst, instances in rows:
             rid = f"regel:{g.hash_value(tool_tag, error_tag, 'wiederholter-fehler')}"
@@ -40,7 +40,7 @@ def step() -> int:
             data = {"treffer": n, "instanzen": sorted((instances or "").split(",")),
                      "quelle": "loop: experiences of the last 24 h" + (f" at {n_inst} instances" if collective else "")}
             if o is None:
-                g.new_object("regel", f"{tool_tag[5:]} failed {n}× in 24 h the same way ({error_tag[7:]})"
+                g.new_object("rule", f"{tool_tag[5:]} failed {n}× in 24 h the same way ({error_tag[7:]})"
                                         + (f", at {n_inst} instances" if collective else "")
                                         + " — check arguments or reachability before the next call",
                                [tool_tag, f"skill:{tool_tag[5:].split('_')[0]}", error_tag, "regelart:wiederholter-fehler", "modus:test",

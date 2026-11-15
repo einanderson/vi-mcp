@@ -26,7 +26,7 @@ def action(tool, host, ok, context=None, instance="a"):
 
 
 def test_observation_view_and_features(gd):
-    g.new_object("erkenntnis", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T")
+    g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T")
     action("checkmk_get_host", "web1", True, context=["thema:oom"])
     action("checkmk_get_host", "web2", False)
     with g.lock:
@@ -43,7 +43,7 @@ def test_observation_view_and_features(gd):
 
 def test_exploration_is_tagged(gd, monkeypatch):
     for i in range(8):
-        g.new_object("erkenntnis", f"Hinweis {i} zu web3", ["host:web3"], {"quelle": "x"}, reason="T")
+        g.new_object("insight", f"Hinweis {i} zu web3", ["host:web3"], {"quelle": "x"}, reason="T")
     monkeypatch.setattr(learning, "EPSILON", 1.0)
     v = intuition.before("Bash", {"host": "web3"}, "a", False)
     assert v["zugriff"]["exploration"] is True and len(v["zugriff"]["gezeigt"]) == intuition.HINT_BUDGET
@@ -55,7 +55,7 @@ def test_exploration_is_tagged(gd, monkeypatch):
 
 
 def test_prediction_without_sklearn_and_ranking(gd):
-    m = g.new_object("modell", "Testmodell", ["modell:router"],
+    m = g.new_object("model", "Testmodell", ["modell:router"],
                        {"zustand": "aktiv", "gewichte": {"hinweis:regel:gut": 2.0, "hinweis:erkenntnis:schlecht": -2.0, "skill:x": 0.5}, "achsenabschnitt": 0.0},
                        oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
     p = learning.prediction(m, {"skill:x": 1.0, "hinweis:regel:gut": 1.0})
@@ -88,14 +88,14 @@ def test_router_learns_which_hint_helps(gd):
     """Synthetic: hint R (rule) → ok 90 %; hint E (insight) → ok 20 %. Every action is shown exactly one
     of the two (as with budget 1 / exploration). After training: weight(R) > 0 > weight(E), R first."""
     random.seed(7)
-    r = g.new_object("regel", "vor graylog_search Zeitraum setzen", ["skill:graylog"], {"quelle": "x"}, reason="T")
-    e = g.new_object("erkenntnis", "graylog ist immer schnell", ["skill:graylog"], {"quelle": "x"}, reason="T")
+    r = g.new_object("rule", "vor graylog_search Zeitraum setzen", ["skill:graylog"], {"quelle": "x"}, reason="T")
+    e = g.new_object("insight", "graylog ist immer schnell", ["skill:graylog"], {"quelle": "x"}, reason="T")
     for i in range(800):
         args = {"q": i}
         v = intuition.before("graylog_search", args, "a")
         intuition.after("graylog_search", args, True, 1, None, "ok", v["vorher_id"], "a")
     with g.lock:  # set "shown" to exactly one hint and then roll the label
-        rows = g.db().execute("SELECT id, data FROM object WHERE kind = 'erfahrung'").fetchall()
+        rows = g.db().execute("SELECT id, data FROM object WHERE kind = 'experience'").fetchall()
         for i, (oid, data) in enumerate(rows):
             d = json.loads(data)
             only = [r.id] if i % 2 == 0 else [e.id]
@@ -122,8 +122,8 @@ def test_router_learns_which_hint_helps(gd):
 
 def test_bandit_counters_and_ranking(gd):
     from vi_mcp import bandit
-    good = g.new_object("regel", "Zeitraum setzen hilft", ["skill:graylog"], {"quelle": "x"}, reason="T")
-    bad = g.new_object("erkenntnis", "graylog ist immer schnell", ["skill:graylog"], {"quelle": "x"}, reason="T")
+    good = g.new_object("rule", "Zeitraum setzen hilft", ["skill:graylog"], {"quelle": "x"}, reason="T")
+    bad = g.new_object("insight", "graylog ist immer schnell", ["skill:graylog"], {"quelle": "x"}, reason="T")
     v = intuition.before("graylog_search", {"q": 0}, "a")
     assert v["zugriff"]["router"] == "heuristik" and set(v["zugriff"]["gezeigt"]) == {good.id, bad.id}
     # counters: 20× ok after showing "good", 20× not ok after "bad" (booked directly, as after does)
@@ -149,22 +149,22 @@ def test_bandit_counters_and_ranking(gd):
 def test_ineffective_hint_stays_at_half(gd):
     """A hint shown before a tool that almost always succeeds gets no credit; a helpful one does."""
     from vi_mcp import bandit
-    empty = g.new_object("regel", "Bash scheiterte und gelang danach", ["tool:Bash"], {"quelle": "x"}, reason="T")
+    empty = g.new_object("rule", "Bash scheiterte und gelang danach", ["tool:Bash"], {"quelle": "x"}, reason="T")
     rng = random.Random(4)
     for i in range(400):  # Bash without hint: 94 %
-        g.new_object("erfahrung", "Bash", ["tool:Bash", "ok:ja" if rng.random() < 0.94 else "ok:nein"], {"vorher": {"gezeigt": []}, "args": {"i": i}}, reason="T")
+        g.new_object("experience", "Bash", ["tool:Bash", "ok:ja" if rng.random() < 0.94 else "ok:nein"], {"vorher": {"gezeigt": []}, "args": {"i": i}}, reason="T")
     for i in range(300):  # with the empty hint: also 94 %
-        g.new_object("erfahrung", "Bash", ["tool:Bash", "ok:ja" if rng.random() < 0.94 else "ok:nein"], {"vorher": {"gezeigt": [empty.id]}, "args": {"j": i}}, reason="T")
-    helps = g.new_object("regel", "Zeitraum halbieren", ["tool:graylog_search"], {"quelle": "x"}, reason="T")
+        g.new_object("experience", "Bash", ["tool:Bash", "ok:ja" if rng.random() < 0.94 else "ok:nein"], {"vorher": {"gezeigt": [empty.id]}, "args": {"j": i}}, reason="T")
+    helps = g.new_object("rule", "Zeitraum halbieren", ["tool:graylog_search"], {"quelle": "x"}, reason="T")
     for i in range(200):  # graylog without hint 50 %, with hint 90 %
-        g.new_object("erfahrung", "g", ["tool:graylog_search", "ok:ja" if rng.random() < 0.5 else "ok:nein"], {"vorher": {"gezeigt": []}, "args": {"k": i}}, reason="T")
-        g.new_object("erfahrung", "g", ["tool:graylog_search", "ok:ja" if rng.random() < 0.9 else "ok:nein"], {"vorher": {"gezeigt": [helps.id]}, "args": {"l": i}}, reason="T")
+        g.new_object("experience", "g", ["tool:graylog_search", "ok:ja" if rng.random() < 0.5 else "ok:nein"], {"vorher": {"gezeigt": []}, "args": {"k": i}}, reason="T")
+        g.new_object("experience", "g", ["tool:graylog_search", "ok:ja" if rng.random() < 0.9 else "ok:nein"], {"vorher": {"gezeigt": [helps.id]}, "args": {"l": i}}, reason="T")
     r = bandit.recompute()
     assert r["hinweise"] == 2
     e_empty, e_helps = bandit.expectation(g.load(empty.id)), bandit.expectation(g.load(helps.id))
     assert 0.35 < e_empty < 0.65 and e_helps > 0.75, (e_empty, e_helps)
     assert abs(bandit.lift(g.load(empty.id)) or 0) < 0.06 and bandit.lift(g.load(helps.id)) > 0.3
-    old = g.new_object("regel", "Altlast mit falschen Zählern", ["tool:x"], {"quelle": "x", "nuetzlich": {"ja": 226, "nein": 1}}, reason="T")
+    old = g.new_object("rule", "Altlast mit falschen Zählern", ["tool:x"], {"quelle": "x", "nuetzlich": {"ja": 226, "nein": 1}}, reason="T")
     bandit.recompute()
     assert "nuetzlich" not in g.load(old.id).data  # no counters without a rated action
 
@@ -207,14 +207,14 @@ def test_a_tool_that_fails_often_is_no_reason_to_warn(gd):
 
 def test_hint_feedback_is_direct_learning_signal(gd):
     """0.20.9: vi_bestaetige/vi_widerlege of a hint just shown becomes the label of the pair (situation + hint)."""
-    h = g.new_object("erkenntnis", "web7 braucht den Proxy", ["host:web7"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web7 braucht den Proxy", ["host:web7"], {"quelle": "x"}, reason="T", instance="b")
     action("checkmk_get_host", "web7", False)  # the action failed anyway — the indirect label would be 0
     outputs = tools.call_tool("vi_bestaetige", {"id": h.id, "grund": "Hinweis war richtig, Fehler hatte andere Ursache"}, "a", True)
     assert "feedback on the hint" in outputs
     pair = [y for m, y, _ in learning.observations() if f"hinweis:{h.id}" in m]
     assert pair == [1]
     # refuting an object that was not shown: normal refutation, no feedback
-    others = g.new_object("erkenntnis", "web8 ist abgeschaltet", ["host:web8"], {"quelle": "y"}, reason="T", instance="b")
+    others = g.new_object("insight", "web8 ist abgeschaltet", ["host:web8"], {"quelle": "y"}, reason="T", instance="b")
     assert "feedback" not in tools.call_tool("vi_widerlege", {"id": others.id, "grund": "stimmt nicht"}, "a", True)
 
 
@@ -229,7 +229,7 @@ def test_holdout_grows_until_enough_failures():
 def test_contributions_add_up_to_the_prediction(gd):
     """0.29.0: vi_why lays open the same arithmetic as the router — the contributions plus intercept are the logit."""
     import math
-    m = g.new_object("modell", "Testmodell", ["modell:router"],
+    m = g.new_object("model", "Testmodell", ["modell:router"],
                      {"zustand": "aktiv", "gewichte": {"hinweis:regel:gut": 1.5, "hinweisart:regel": 0.25, "hinweis_n:1": -0.2, "skill:x": 0.5},
                       "achsenabschnitt": -0.3}, oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
     f = {"skill:x": 1.0, "hinweis_n:1": 1.0, "hinweis:regel:gut": 1.0, "hinweisart:regel": 1.0, "unbekannt:y": 1.0}
@@ -243,7 +243,7 @@ def test_contributions_add_up_to_the_prediction(gd):
 
 
 def test_vi_why_explains_the_stored_decision(gd):
-    h = g.new_object("erkenntnis", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
     action("checkmk_get_host", "web1", True)
     out = tools.call_tool("vi_why", {"id": h.id}, "a", False)
     assert "position 1 of 1, router heuristik" in out and "1 trigger(s) match" in out and "host:web1" in out and "Router model: none yet" in out
@@ -261,16 +261,16 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
     from datetime import datetime, timedelta, timezone
     from vi_mcp import bandit, metrics
     monkeypatch.setattr(bandit, "base_rate", lambda tool: 0.5)
-    old = g.new_object("erkenntnis", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
-    new = g.new_object("erkenntnis", "web1 hat neues Zertifikat", ["host:web1"], {"quelle": "y"}, reason="T", instance="b")
-    gone = g.new_object("erkenntnis", "web1 alt", ["host:web1"], {"quelle": "z"}, reason="T", instance="b")
+    old = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
+    new = g.new_object("insight", "web1 hat neues Zertifikat", ["host:web1"], {"quelle": "y"}, reason="T", instance="b")
+    gone = g.new_object("insight", "web1 alt", ["host:web1"], {"quelle": "z"}, reason="T", instance="b")
     long_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="milliseconds")
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = ?", (long_ago, old.id))
         g.db().commit()
     for i in range(24):
         ok = i % 4 != 0  # 75 % ok
-        e = g.new_object("erfahrung", f"checkmk_get_host {i}", ["tool:checkmk_get_host", "ok:ja" if ok else "ok:nein"],
+        e = g.new_object("experience", f"checkmk_get_host {i}", ["tool:checkmk_get_host", "ok:ja" if ok else "ok:nein"],
                          {"vorher": {"gezeigt": [old.id, new.id if i % 2 else gone.id]}}, reason="T", instance="a")
     with g.lock:
         g.db().execute("DELETE FROM object WHERE id = ?", (gone.id,))
@@ -284,10 +284,10 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
 
 def test_vi_why_separates_what_is_same_for_every_candidate(gd):
     """0.30.0: hinweis_n moves every lift alike; vi_why reports it apart from what decides the order."""
-    m = g.new_object("modell", "Testmodell", ["modell:router"],
+    m = g.new_object("model", "Testmodell", ["modell:router"],
                      {"zustand": "aktiv", "gewichte": {"hinweis_n:1": -0.35, "hinweis_n:0": 0.05, "hinweisart:erkenntnis": 0.2, "tool:x": 0.1},
                       "achsenabschnitt": 0.0}, oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
-    h = g.new_object("erkenntnis", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
     w = learning.why(m, h.id, ["tool:x"])
     assert abs(w["same_for_all"] - (-0.40)) < 1e-9 and dict(w["distinguishing"]) == {"hinweisart:erkenntnis": 0.2}
     out = tools.call_tool("vi_why", {"id": h.id, "triggers": ["tool:x"]}, "a", False)
@@ -297,7 +297,7 @@ def test_vi_why_separates_what_is_same_for_every_candidate(gd):
 def test_hint_age_is_a_feature(gd):
     """0.30.0: alter:neu when the hint was at most metrics.NEW_DAYS old at the time it was shown."""
     from datetime import datetime, timedelta, timezone
-    h = g.new_object("erkenntnis", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
     now = datetime.now(timezone.utc)
     assert learning.hint_features(h.id, [], now.isoformat())["alter:neu"] == 1.0
     assert "alter:neu" not in learning.hint_features(h.id, [], (now + timedelta(days=8)).isoformat())
@@ -310,13 +310,13 @@ def test_hint_age_is_a_feature(gd):
 def test_good_auc_without_ranking_utility_stays_test(gd):
     """0.30.0: the situation predicts the outcome (high AUC), the two hints do nothing — the order of hints must not go live."""
     rnd = random.Random(3)
-    r = g.new_object("regel", "Hinweis A", ["tool:deploy_run"], {"quelle": "x"}, reason="T")
-    e = g.new_object("erkenntnis", "Hinweis B", ["tool:deploy_run"], {"quelle": "x"}, reason="T")
+    r = g.new_object("rule", "Hinweis A", ["tool:deploy_run"], {"quelle": "x"}, reason="T")
+    e = g.new_object("insight", "Hinweis B", ["tool:deploy_run"], {"quelle": "x"}, reason="T")
     for i in range(1600):
         broken = i % 2 == 0
         ok = rnd.random() < (0.05 if broken else 0.95)
         host = "host:kaputt1" if broken else "host:gut1"
-        g.new_object("erfahrung", "deploy", ["tool:deploy_run", host, "ok:ja" if ok else "ok:nein"],
+        g.new_object("experience", "deploy", ["tool:deploy_run", host, "ok:ja" if ok else "ok:nein"],
                      {"vorher": {"reize": ["tool:deploy_run", host], "gezeigt": [rnd.choice([r.id, e.id])]}, "args": {"i": i}},
                      reason="T", instance="a")
     b = learning.train("Test")
@@ -358,11 +358,11 @@ def test_inseparable_hints_are_named():
 def test_champion_challenger_on_unseen_observations(gd):
     # 0.55.0: the model of the last sleep against the new one, only on observations after the champion was trained
     from vi_mcp import learning
-    old = [g.new_object("erfahrung", f"old {i}", ["tool:Bash"], {}) for i in range(5)]
+    old = [g.new_object("experience", f"old {i}", ["tool:Bash"], {}) for i in range(5)]
     time.sleep(0.01)
     champ = {"gewichte": {"tool:Bash": 2.0}, "achsenabschnitt": 0.0, "trainiert": g.now()}
     time.sleep(0.01)
-    new = [g.new_object("erfahrung", f"new {i}", ["tool:Bash"], {}) for i in range(learning.CHAMPION_MIN_N)]
+    new = [g.new_object("experience", f"new {i}", ["tool:Bash"], {}) for i in range(learning.CHAMPION_MIN_N)]
     holdout = [({"tool:Bash": 1.0}, 1, o.id) for o in old + new]
     assert learning.compare_champion(None, {}, 0.0, holdout)["zustand"] == "kein_champion"
     worse = learning.compare_champion(champ, {"tool:Bash": -2.0}, 0.0, holdout)  # predicts failure where everything succeeded
@@ -393,11 +393,11 @@ def test_calibration_table_and_ece():
 def test_ips_factors_follow_the_logged_offer_probabilities(gd):
     """0.62.0: one factor per observation, 1/p of the hint's offer probability, clipped; 1 where nothing random was logged."""
     from vi_mcp import learning
-    h1 = g.new_object("erkenntnis", "hint one", ["tool:Bash"], {"quelle": "t"}).id
-    h2 = g.new_object("erkenntnis", "hint two", ["tool:Bash"], {"quelle": "t"}).id
-    g.new_object("erfahrung", "Bash ok", ["tool:Bash", "ok:ja"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h1, h2],
+    h1 = g.new_object("insight", "hint one", ["tool:Bash"], {"quelle": "t"}).id
+    h2 = g.new_object("insight", "hint two", ["tool:Bash"], {"quelle": "t"}).id
+    g.new_object("experience", "Bash ok", ["tool:Bash", "ok:ja"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h1, h2],
                                                                             "angebot": {h1: 0.9, h2: 0.02}}})
-    g.new_object("erfahrung", "Bash failed", ["tool:Bash", "ok:nein"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": []}})
+    g.new_object("experience", "Bash failed", ["tool:Bash", "ok:nein"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": []}})
     ips: list = []
     obs = learning.weighted_observations(ips_out=ips)
     assert len(ips) == len(obs) == 3

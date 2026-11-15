@@ -47,7 +47,7 @@ from collections import Counter
 from . import memory as g
 from .code_facts import _q  # one quoting of a string term (the architecture rule no_duplicates found the copy)
 
-KINDS = ("erkenntnis", "regel", "skill")
+KINDS = ("insight", "rule", "skill")
 OBJ_REF = re.compile(r"\b((?:erkenntnis|regel|skill|erfahrung):[0-9A-Za-z_-]{6,})\b")
 URL = re.compile(r"https?://\S+")
 VIL_TO_KIND = {"documented": "document", "hearsay": "hearsay", "inferred": "hearsay"}  # measured, unknown → no kind (docstring)
@@ -92,7 +92,7 @@ def facts_for(o: g.MemoryObject, load=g.load) -> tuple[list[str], dict]:
         elif counter != len(entries):  # entries dropped at the cap, or calls without an entry: origins unknown
             complete = False
             info["not_closed_record"] += 1
-    if o.mode == "quarantaene":
+    if o.mode == "quarantine":
         complete = False
         info["not_closed_quarantine"] += 1
         out.append(f"unreviewed({s})")
@@ -101,7 +101,7 @@ def facts_for(o: g.MemoryObject, load=g.load) -> tuple[list[str], dict]:
     camps = {org: x["camp"] for org, x in origins.items() if x["camp"]}
     out += [f"camp({_q(org)}, {_q(c)})" for org, c in camps.items()]
     info["camps"] += len(camps)
-    if o.instance in _refuters(o) or o.mode == "zurueckgezogen":  # 0.67.0: the mode itself, also for a server-withdrawn skill
+    if o.instance in _refuters(o) or o.mode == "withdrawn":  # 0.67.0: the mode itself, also for a server-withdrawn skill
         out.append(f"withdrawn({s})")
         info["withdrawn"] += 1
     for org, x in origins.items():
@@ -165,13 +165,13 @@ def today(o: g.MemoryObject) -> str:
     """Today's verdict class of an object (exhaustive): withdrawn · refuted_by_author · refuted · disputed · confirmed_2plus ·
     confirmed_1 · unconfirmed · mode_<other>. Since 0.67.0 memory sets `zurueckgezogen` for a withdrawal (P13) and `widerlegt` only for
     two foreign families; a `widerlegt` from before the migration is still told apart (refuted_by_author)."""
-    if o.mode == "zurueckgezogen":
+    if o.mode == "withdrawn":
         return "withdrawn"
-    if o.mode == "widerlegt":
+    if o.mode == "refuted":
         return "refuted_by_author" if o.instance in _refuters(o) and len(o._lines("widerlegungen", "widerlegt_von")) < 2 else "refuted"
-    if o.mode == "strittig":
+    if o.mode == "disputed":
         return "disputed"
-    if o.mode != "aktiv":
+    if o.mode != "active":
         return f"mode_{o.mode}"
     n = o.foreign_confirmations()
     return "confirmed_2plus" if n >= 2 else "confirmed_1" if n == 1 else "unconfirmed"
@@ -203,7 +203,7 @@ def shadow(limit: int | None = None, chunk: int = 2000, examples: int = 5) -> di
     pkg = ph.load("kollektiv")
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            f"SELECT id FROM object WHERE kind IN ({','.join('?' * len(KINDS))}) AND mode NOT IN ('archiviert', 'aufgegangen') ORDER BY id",
+            f"SELECT id FROM object WHERE kind IN ({','.join('?' * len(KINDS))}) AND mode NOT IN ('archived', 'merged') ORDER BY id",
             KINDS)]
     ids = ids[:limit] if limit else ids
     pairs: Counter = Counter()

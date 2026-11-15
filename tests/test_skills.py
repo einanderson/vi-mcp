@@ -20,7 +20,7 @@ def test_solved_skill_appears_and_evolves(gd):
                                       "grund": "dreimal so gelöst"}, "a", True)
     assert 'Skill "graylog-timeout" v1 (test' in r
     sk = g.load("skill:graylog-timeout")
-    assert sk.visibility == "geteilt" and sk.data["problem"]["reize"] == ["fehler:timeout", "tool:graylog_search"]
+    assert sk.visibility == "shared" and sk.data["problem"]["reize"] == ["fehler:timeout", "tool:graylog_search"]
     v = intuition.before("graylog_search", {"q": 1}, "b")
     assert any('Skill "graylog-timeout"' in h and "graylog_system_status → graylog_search" in h for h in v["hinweise"])
     intuition.after("graylog_search", {"q": 1}, True, 1, None, "ok", v["vorher_id"], "b")
@@ -49,7 +49,7 @@ def test_skill_from_recovery_in_sleep(gd):
     assert [x["tool"] for x in sk.data["loesung"]["schritte"]] == ["checkmk_get_host", "Bash", "checkmk_get_host"]
     assert {"tool:checkmk_get_host", "host:cue1"} <= set(sk.data["problem"]["reize"]) and any(t.startswith("fehler:") for t in sk.data["problem"]["reize"])
     assert len(sk.edges()) >= 4
-    assert "herkunft:episode" in sk.hashtags and sk.visibility == "intern" and "Then this call worked" in str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
+    assert "herkunft:episode" in sk.hashtags and sk.visibility == "internal" and "Then this call worked" in str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
     # 0.56.0: a second recovery of the same problem with another measure is another solution (the helper's arguments differ) —
     # same problem key, so sleep proposes merging them; the same measure evolves the solution (tests/test_solutions.py)
     s2 = session.begin("b", "t")
@@ -65,7 +65,7 @@ def test_skill_becomes_disputed_when_useless(gd):
     for _ in range(3):
         bandit.book_entry([sk.id], False)
     assert sleep_cycle.run("Test").data["schritte"]["4c_skills"]["strittig"] == 1
-    assert g.load(sk.id).mode == "strittig"
+    assert g.load(sk.id).mode == "disputed"
 
 
 def test_merge_with_reference_and_proposal(gd):
@@ -79,9 +79,9 @@ def test_merge_with_reference_and_proposal(gd):
     assert new_o.id == "skill:t_x-st-rung"  # slug: underscore stays, umlaut becomes a hyphen
     assert [s["tool"] for s in new_o.data["loesung"]["schritte"]] == ["t_a", "t_x", "t_b"]
     assert new_o.data["problem"]["reize"] == ["fehler:f_1", "host:h9", "tool:t_x"] and new_o.data["fusion_aus"] == [a.id, b.id]
-    assert g.load(a.id).mode == "aufgegangen" and g.load(a.id).data["aufgegangen_in"] == new_o.id
+    assert g.load(a.id).mode == "merged" and g.load(a.id).data["aufgegangen_in"] == new_o.id
     assert [o.id for _, o, _g in g.recall("art:skill", viewer=None)] == [new_o.id]  # merged ones no longer appear in searches
-    assert g.load(a.id).id in [o.id for _, o, _g in g.recall("art:skill modus:aufgegangen", viewer=None)]  # but on request
+    assert g.load(a.id).id in [o.id for _, o, _g in g.recall("art:skill modus:merged", viewer=None)]  # but on request
     assert "MERGED into" in tools.call_tool("vi_skill", {"id": a.id}, "a", True)
     with pytest.raises(tools.Rejected, match="already merged"):
         tools.call_tool("vi_skill_fusion", {"a": a.id, "b": new_o.id, "name": "x", "grund": "nochmal"}, "c", True)

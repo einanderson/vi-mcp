@@ -18,7 +18,7 @@ _spec.loader.exec_module(hook)
 
 
 def _k(text, tags, **kw):
-    return g.new_object("erkenntnis", text, tags, {"quelle": "Messung 11.11.2026"}, instance="a", **kw)
+    return g.new_object("insight", text, tags, {"quelle": "Messung 11.11.2026"}, instance="a", **kw)
 
 
 def test_prompt_words():
@@ -57,9 +57,9 @@ def test_most_shared_words_first_and_host_only_noise_dropped(gd):
 
 def test_disputed_and_private_of_others_stay_out(gd):
     d = _k("ssh build host needs agent forwarding always", ["tool:ssh"])
-    d.mode = "strittig"
+    d.mode = "disputed"
     g.save(d)
-    g.new_object("erkenntnis", "ssh build host private note of bert", ["tool:ssh"], {"quelle": "q"}, instance="bert", visibility="privat")
+    g.new_object("insight", "ssh build host private note of bert", ["tool:ssh"], {"quelle": "q"}, instance="bert", visibility="private")
     assert intuition.prompt_hints("ssh build host", "a")["ids"] == []
 
 
@@ -178,7 +178,7 @@ def test_first_prompt_of_a_session_carries_the_skill_table_once(h):
     """0.53.0: which skills exist — once per session, with its first question; without overview objects nothing."""
     from vi_mcp import capabilities
     capabilities._cache.clear()  # cached per instance for 10 minutes; an earlier test of this module cached an empty table
-    g.new_object("erkenntnis", "Vollständige Doku zu gitlab-api: vi_erinnere doku:gitlab-api. Verbindet sich mit GitLab.",
+    g.new_object("insight", "Vollständige Doku zu gitlab-api: vi_erinnere doku:gitlab-api. Verbindet sich mit GitLab.",
                  ["art-wissen:ueberblick", "doku:gitlab-api", "skill:gitlab"], {"quelle": "skills folder"}, instance="alice")
     ev = {"hook_event_name": "UserPromptSubmit", "session_id": "cc-skills", "cwd": "/tmp", "prompt": "wo liegt das Repo der Web-Komponente?"}
     ctx = h.process(ev)["hookSpecificOutput"]["additionalContext"]

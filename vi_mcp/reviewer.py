@@ -79,8 +79,8 @@ def _candidates(o: g.MemoryObject) -> list[dict]:
         return []
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            f"SELECT t.object_id FROM tag t JOIN object x ON x.id = t.object_id WHERE t.tag IN ({','.join('?' * len(content))}) AND x.mode NOT IN ('quarantaene', 'archiviert') "
-            "AND x.kind IN ('erkenntnis', 'regel') GROUP BY t.object_id HAVING COUNT(*) >= 2 LIMIT 5", content)]
+            f"SELECT t.object_id FROM tag t JOIN object x ON x.id = t.object_id WHERE t.tag IN ({','.join('?' * len(content))}) AND x.mode NOT IN ('quarantine', 'archived') "
+            "AND x.kind IN ('insight', 'rule') GROUP BY t.object_id HAVING COUNT(*) >= 2 LIMIT 5", content)]
     return [{"id": i, "text": g.load(i).text[:200]} for i in ids]
 
 
@@ -89,7 +89,7 @@ def _set(o: g.MemoryObject, result: dict) -> None:
     o.hashtags = [t for t in o.hashtags if not t.startswith("pruefer:")] + [f"pruefer:{result['status']}"]
     o.change("vi", f"reviewer: {result['status']}", "; ".join(result["gruende"])[:280] or "no findings")
     g.save(o)
-    if o.kind == "seite":  # 0.41.0: time from arrival to review, for vi_stats
+    if o.kind == "page":  # 0.41.0: time from arrival to review, for vi_stats
         from . import wiki
         wiki.reviewed(o)
 
@@ -121,14 +121,14 @@ def work_off(limit: int = 100) -> dict:
         return {"zustand": "laeuft_bereits"}
     counter: dict[str, int] = {}
     try:
-        open_ = g.recall("pruefer:ausstehend modus:quarantaene", limit=1, viewer=None)
+        open_ = g.recall("pruefer:ausstehend modus:quarantine", limit=1, viewer=None)
         if not open_:
             return {"zustand": "nichts_offen"}
         reason = selftest(system)
         if reason:
             log(f"reviewer halted: {reason}")
             return {"zustand": "selbsttest_gescheitert", "grund": reason}
-        for _, o, _g in g.recall("pruefer:ausstehend modus:quarantaene", limit=limit, viewer=None):
+        for _, o, _g in g.recall("pruefer:ausstehend modus:quarantine", limit=limit, viewer=None):
             cand = _candidates(o)
             try:
                 result = postprocess(_answer(system, user_input(o, cand)), {k["id"] for k in cand})

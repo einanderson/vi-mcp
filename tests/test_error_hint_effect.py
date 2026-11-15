@@ -6,7 +6,7 @@ from vi_mcp import memory as g
 
 
 def _known_error():
-    g.new_object("erkenntnis", "pkill -f kills its own shell (exit 144): use pgrep and kill the PID",
+    g.new_object("insight", "pkill -f kills its own shell (exit 144): use pgrep and kill the PID",
                  ["thema:pkill", "fehler:Exit_code_144"], {"quelle": "test", "inhalt": "pkill -f pattern matches the shell itself, exit 144"},
                  reason="T")
 

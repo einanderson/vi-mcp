@@ -104,7 +104,7 @@ def installed() -> list[g.MemoryObject]:
     newest: dict[str, g.MemoryObject] = {}
     for _s, o, _w in g.recall(TAG, limit=1000, viewer=None):
         p = o.data.get("philosophie") or {}
-        if p.get("name") and o.mode not in ("widerlegt", "zurueckgezogen", "archiviert") and (p["name"] not in newest or o.ts > newest[p["name"]].ts):
+        if p.get("name") and o.mode not in ("refuted", "withdrawn", "archived") and (p["name"] not in newest or o.ts > newest[p["name"]].ts):
             newest[p["name"]] = o
     return sorted(newest.values(), key=lambda o: o.data["philosophie"]["name"])
 
@@ -128,7 +128,7 @@ def install(ref: str, instance: str, who: str | None = None, visibility: str | N
 def _installed_all(name: str) -> list[g.MemoryObject]:
     """Every installed object of one philosophy (all versions), newest first."""
     objs = [o for _s, o, _w in g.recall(TAG, limit=1000, viewer=None)
-            if (o.data.get("philosophie") or {}).get("name") == name and o.mode not in ("widerlegt", "zurueckgezogen", "archiviert")]
+            if (o.data.get("philosophie") or {}).get("name") == name and o.mode not in ("refuted", "withdrawn", "archived")]
     return sorted(objs, key=lambda o: o.ts, reverse=True)
 
 
@@ -148,7 +148,7 @@ def _target(instance: str | None, index: str | None) -> tuple[str, str]:
 
 def _active_bindings() -> list[g.MemoryObject]:
     return [o for _s, o, _w in g.recall(BIND_TAG, limit=1000, viewer=None)
-            if o.mode == "aktiv" and (o.data.get("philosophie_bindung") or {}).get("name")]
+            if o.mode == "active" and (o.data.get("philosophie_bindung") or {}).get("name")]
 
 
 def bind(name: str, who: str, instance: str | None = None, index: str | None = None, off: bool = False) -> str:
@@ -161,7 +161,7 @@ def bind(name: str, who: str, instance: str | None = None, index: str | None = N
         if not current:
             return f"no active binding of {name} to {kind} {target} — nothing to end"
         for o in current:
-            o.mode = "aus"
+            o.mode = "off"
             o.change(f"ki@{who}", "philosophy binding ended", f"{name} no longer applies to {kind} {target}")
             g.save(o)
         return f"ended: {name} no longer applies to {kind} {target} ({', '.join(o.id for o in current)} kept with mode aus)"
@@ -173,16 +173,16 @@ def bind(name: str, who: str, instance: str | None = None, index: str | None = N
     for o in current:
         if o.data["philosophie_bindung"]["hash"] == h:
             return f"already bound: {name} {inst.data['philosophie']['version']} (hash {h[:16]}…) applies to {kind} {target} — {o.id}"
-        o.mode = "aus"
+        o.mode = "off"
         o.change(f"ki@{who}", "philosophy binding replaced", f"rebound to hash {h[:16]}")
         g.save(o)
     meta = inst.data["philosophie"]
-    o = g.new_object("regel", f"Philosophy binding: {name} {meta['version']} applies to {kind} {target}",
+    o = g.new_object("rule", f"Philosophy binding: {name} {meta['version']} applies to {kind} {target}",
                      [BIND_TAG, f"philosophie:{name}"],
                      {"philosophie_bindung": {"name": name, "version": meta["version"], "hash": h, "installed": inst.id,
                                               "profile": meta.get("profile"), "target_kind": kind, "target": target}},
                      importance=1, who=f"ki@{who}", reason="vi_philosophy use", instance=who,
-                     visibility="intern")
+                     visibility="internal")
     return f"bound {o.id}: {name} {meta['version']} (hash {h[:16]}…) applies to {kind} {target}"
 
 
@@ -261,7 +261,7 @@ def tool(args: dict, instance: str) -> str:
     if action == "evaluate":
         return json.dumps(ph.evaluate(pkg, str(args.get("facts") or "")), ensure_ascii=False, indent=1)
     if action == "install":
-        o = install(ref, instance, None, args.get("visibility") or "intern")
+        o = install(ref, instance, None, args.get("visibility") or "internal")
         return f"installed {o.id} — philosophy {pkg['name']} {pkg['version']}, hash {o.data['philosophie']['hash'][:16]}…"
     if action == "use":
         target = args.get("instance")
@@ -369,7 +369,7 @@ def main(argv: list[str]) -> int:
         if o.cmd == "list":
             print(tool({"action": "list"}, "admin"))
         elif o.cmd == "install":
-            ob = install(o.ref, "admin", "admin", {"shared": "geteilt", "internal": "intern"}[o.visibility])
+            ob = install(o.ref, "admin", "admin", o.visibility)
             print(f"installed {ob.id} (hash {ob.data['philosophie']['hash'][:16]}…)")
         elif o.cmd == "use":
             print(bind(o.name, "admin", o.instance, o.index, o.off))

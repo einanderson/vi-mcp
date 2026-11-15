@@ -179,7 +179,7 @@ def error_signature(text: str) -> str:
 #: error text" — happens by itself: after a failed action the memory searches and hands the best hits back with vi_after (hook:
 #: PostToolUseFailure → additionalContext). At most ERROR_HINTS, only with a real match, never experiences.
 ERROR_HINTS = 2
-ERROR_KINDS = ("erkenntnis", "regel", "suche", "skill")
+ERROR_KINDS = ("insight", "rule", "search", "skill")
 _ERROR_STOP = frozenset("""error errors failed failure the and for with not was were is are has have this that from into exit code status
 http https true false none null traceback most recent call last line file module object type value valueerror keyerror oserror""".split())
 
@@ -217,14 +217,14 @@ def error_hints(tool: str, args: dict, error: str, instance: str | None) -> list
         except Exception:  # noqa: BLE001 — a search must never cost the vi_after
             continue
         for _sc, o, _p in hits:
-            if o.mode not in ("aktiv", "test") or o.id in found:
+            if o.mode not in ("active", "test") or o.id in found:
                 continue
             body = (o.text + " " + str(o.data.get("inhalt") or "")[:4000]).lower()
             shared_words = sum(1 for w in words if w in body) + sum(1 for c in codes if re.search(rf"\b{c}\b", body))
             shared_tags = len((trig - generic) & set(o.hashtags)) + sum(1 for b in programs if re.search(rf"(?<![\w-]){re.escape(b)}(?![\w-])", body))
             tagged = sig in o.hashtags
             if tagged or (shared_words >= 2 and (shared_tags or shared_words >= 3)) or (shared_tags and shared_words >= 1):
-                weight = shared_words + 2 * shared_tags + (3 if tagged else 0) - (4 if o.instance == g.SERVER_INSTANCE and o.kind == "regel" else 0)
+                weight = shared_words + 2 * shared_tags + (3 if tagged else 0) - (4 if o.instance == g.SERVER_INSTANCE and o.kind == "rule" else 0)
                 weight += 2 if "herkunft:episode" in o.hashtags else 0  # 0.56.0: a solution with cause, command and source
                 found[o.id] = (weight, o)
     best = sorted(found.values(), key=lambda x: -x[0])[:ERROR_HINTS]
@@ -277,10 +277,10 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
     # Candidates (heuristic: recency + importance + bonus), then possibly the router model (learned lift), then exploration
     from . import bandit, learning
     import random as _random
-    cand = [o for _, o, _g in g.recall("(" + " OR ".join(search_triggers) + ")", limit=HINT_BUDGET + 24, kinds=("erkenntnis", "regel", "skill", "bild", "seite"))]
+    cand = [o for _, o, _g in g.recall("(" + " OR ".join(search_triggers) + ")", limit=HINT_BUDGET + 24, kinds=("insight", "rule", "skill", "image", "page"))]
     # 0.21.1: disputed items and unconfirmed language-model hypotheses only on request (vi_recall), not unasked before actions.
     # Measured 09.11.: a disputed sleep hypothesis was the most shown hint with 719 reinforcements and pushed out evidenced knowledge.
-    only_on_request = [o for o in cand if o.mode == "strittig" or ("herkunft:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
+    only_on_request = [o for o in cand if o.mode == "disputed" or ("herkunft:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
     cand = [o for o in cand if o not in only_on_request]
     cand = [o for o in cand if "art_wissen:code" not in o.hashtags]  # 0.61.0: imported code is found by search and the file line, no hint
     from . import p2p  # sources that proved harmful are no longer shown
@@ -372,24 +372,24 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
             from . import skills
             from_memory.append(f"{skills.line(o)}{ins} [{o.id}]")
             continue
-        if o.kind == "bild":  # 0.37.0
+        if o.kind == "image":  # 0.37.0
             from . import images
             from_memory.append(f"Image{ins} [{o.id}] ({provenance}): {o.text[:300]} — {images.summary(o)}; vi_object {o.id} shows it "
                                f"[Source: {str(o.data.get('quelle', '—'))[:120]}]")
             continue
-        if o.kind == "seite":  # 0.41.0: a network wiki page — reviewed, maintained by the network
+        if o.kind == "page":  # 0.41.0: a network wiki page — reviewed, maintained by the network
             from_memory.append(f"Wiki page{ins} [{o.id}] ({provenance}): {o.text[:300]} — vi_page_read shows it "
                                f"[Source: {str(o.data.get('quelle', '—'))[:120]}]")
             continue
-        from_memory.append(f"{'Learned' if o.kind == 'erkenntnis' else 'Rule'}{ins} [{o.id}] ({provenance}"
-                               + (", DISPUTED — contradicted by another instance" if o.mode == "strittig" else "")
+        from_memory.append(f"{'Learned' if o.kind == 'insight' else 'Rule'}{ins} [{o.id}] ({provenance}"
+                               + (", DISPUTED — contradicted by another instance" if o.mode == "disputed" else "")
                                + f"; {', '.join(t for t in o.hashtags if t.startswith(('modus:', 'skill:', 'kollektiv:')))[:60]}): "
                                f"{o.text[:300]} [Source: {str(o.data.get('quelle', '—'))[:120]}]"
                                + (f" [complete with code/tables: vi_object {o.id}]" if o.data.get("inhalt") else ""))
     candidate_ids = [o.id for o in cand]
     remaining = len(cand) - len(shown_obj)
     # 1. access to what was learned: searches whose hint triggers match the action run automatically
-    for _, su, _g in g.recall("(" + " OR ".join(search_triggers) + ")", limit=3, kinds=("suche",)):
+    for _, su, _g in g.recall("(" + " OR ".join(search_triggers) + ")", limit=3, kinds=("search",)):
         hits = [o for _, o, _g2 in g.recall(su.data.get("filter", ""), limit=3) if o.id != su.id]
         found += [su.id] + [o.id for o in hits]
         search.append({"suche": su.id, "name": su.data.get("name"), "treffer": [o.id for o in hits]})
@@ -422,7 +422,7 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
     from .config import OPEN
     if read_only(tool, is_read_only) and instance != OPEN and not state_dependent(tool):  # without a token all share one instance: no remembered answers
         ttl = min(ttl_per_tool.get(tool, TTL_DEFAULT), TTL_MAX)
-        for _, o, _g in g.recall(f"art:antwort cache:{_question(tool, args)}", limit=1, viewer=instance):
+        for _, o, _g in g.recall(f"art:answer cache:{_question(tool, args)}", limit=1, viewer=instance):
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(o.ts)).total_seconds()
             if age <= ttl:
                 found.append(o.id)
@@ -462,7 +462,7 @@ def _last_shown(instance: str, hint_id: str) -> tuple[str, str, dict, str] | Non
         return ts, tool, acc, "open action, not reported yet"
     since = (datetime.now(timezone.utc) - timedelta(days=WHY_DAYS)).isoformat(timespec="milliseconds")
     with g.lock:
-        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? AND data LIKE ? ORDER BY ts DESC LIMIT 50",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND instance = ? AND ts >= ? AND data LIKE ? ORDER BY ts DESC LIMIT 50",
                               (instance, since, f"%{hint_id}%")).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
@@ -517,7 +517,7 @@ def opened(instance: str, hint_id: str) -> str | None:
     """0.49.0: the AI opened a shown hint with vi_object — a weak signal of use, kept apart from feedback (not a training label)."""
     since = (datetime.now(timezone.utc) - timedelta(minutes=FEEDBACK_MIN)).isoformat(timespec="milliseconds")
     with g.lock:
-        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 200",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 200",
                               (instance, since)).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
@@ -537,10 +537,10 @@ def feedback(instance: str, hint_id: str, value: int, before_id: str | None = No
     since = (datetime.now(timezone.utc) - timedelta(minutes=FEEDBACK_MIN)).isoformat(timespec="milliseconds")
     with g.lock:
         if before_id:
-            rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? AND json_extract(data, '$.vorher.id') = ?",
+            rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND instance = ? AND ts >= ? AND json_extract(data, '$.vorher.id') = ?",
                                   (instance, since, before_id)).fetchall()
         else:
-            rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 200",
+            rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 200",
                                   (instance, since)).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
@@ -624,7 +624,7 @@ def adopted(o: g.MemoryObject) -> list[str]:
         return []
     here = json.dumps(o.data.get("args") or {}, ensure_ascii=False)
     with g.lock:
-        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND conversation = ? AND ts < ? ORDER BY ts DESC LIMIT ?",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND conversation = ? AND ts < ? ORDER BY ts DESC LIMIT ?",
                               (o.conversation, o.ts, ADOPT_WINDOW)).fetchall()
     found = []
     for (eid,) in rows:
@@ -675,7 +675,7 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
     with g.lock:
         if not ok and error_sig:
             n = g.db().execute("SELECT COUNT(*) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? "
-                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = ? WHERE o.kind = 'erfahrung' AND o.ts >= ?",
+                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = ? WHERE o.kind = 'experience' AND o.ts >= ?",
                                (f"tool:{tool}", f"fehler:{error_sig}", since)).fetchone()[0]
             if n == 0:
                 return "neu", "first error of this kind in 24 h"
@@ -684,7 +684,7 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
             return "chronisch", f"same error #{n + 1} in 24 h — known, no longer surprising"
         if ok:
             n = g.db().execute("SELECT COUNT(*) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? "
-                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = 'ok:nein' WHERE o.kind = 'erfahrung' AND o.ts >= ?",
+                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = 'ok:nein' WHERE o.kind = 'experience' AND o.ts >= ?",
                                (f"tool:{tool}", since)).fetchone()[0]
             if n:
                 return "erholt", f"success after {n} error(s) of the same tool in 24 h"
@@ -710,7 +710,7 @@ def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: 
     from .solutions import EXCERPT_MAX, WEB_TOOLS
     # 0.56.0: what a web search or a fetched page returned is kept as an excerpt — the solution of an episode may come from it
     web = {"auszug": result[:EXCERPT_MAX]} if ok and result and tool in WEB_TOOLS else {}
-    o = g.new_object("erfahrung", text, tags, {"args": args, "dauer_ms": duration_ms, "fehler": error, "vorher": access,
+    o = g.new_object("experience", text, tags, {"args": args, "dauer_ms": duration_ms, "fehler": error, "vorher": access,
                                                   "ueberraschung": {"stufe": level, "grund": reason_u}, **web},
                        importance=SURPRISE[level], reason=f"tool call · surprise {level}: {reason_u}", instance=instance)
     for oid in access.get("gefunden", []):
@@ -724,7 +724,7 @@ def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: 
             old = [r[0] for r in g.db().execute("SELECT t.object_id FROM tag t JOIN object o ON o.id = t.object_id "
                                                 "WHERE t.tag = ? AND o.instance = ?", (f"cache:{fh}", o.instance))]
         g.delete(old)
-        g.new_object("antwort", text, [f"tool:{tool}", f"cache:{fh}"], {"ergebnis": result, "args": args},
+        g.new_object("answer", text, [f"tool:{tool}", f"cache:{fh}"], {"ergebnis": result, "args": args},
                        importance=0, reason="answer remembered", instance=instance)
     from . import session  # late: session does not know intuition
     s = session.current()
@@ -739,7 +739,7 @@ def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: 
 # searches by the tool, not by the topic of the question; this searches by the question. The prompt is not stored (usage keeps tool,
 # outcome, duration and hit count only); hits are not reinforced (an automatic look is no use).
 PROMPT_HINTS = 4
-PROMPT_KINDS = ("erkenntnis", "regel", "skill", "suche", "bild", "seite")
+PROMPT_KINDS = ("insight", "rule", "skill", "search", "image", "page")
 _STOP = set("""der die das den dem des ein eine einen einem einer und oder aber nicht noch auch nur wie was wer wo wann warum wieso
 weshalb ist sind war waren wird werden wurde hat haben hatte kann können konnte muss müssen soll sollen mit ohne für von vom zum zur
 bei beim auf aus nach über unter vor hinter neben zwischen durch gegen ich du er sie es wir ihr mich mir dich dir uns euch sich mein
@@ -780,7 +780,7 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
     need = 2  # an identifier (host name, error code) or a hashtag value counts 2, another shared word 1
     skip = set(shown or [])
     hits = g.recall(" ".join(words), limit=PROMPT_HINTS * 6, kinds=PROMPT_KINDS, viewer=instance, or_fallback=True)
-    cand = [o for _s, o, _g in hits if o.id not in skip and o.mode not in ("strittig", "quarantaene", "widerlegt", "zurueckgezogen", "archiviert")
+    cand = [o for _s, o, _g in hits if o.id not in skip and o.mode not in ("disputed", "quarantine", "refuted", "withdrawn", "archived")
             and not ("herkunft:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
     cand = p2p.without_blocked(cand)
     lw = [w.lower() for w in words]
@@ -804,7 +804,7 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
             continue
         from . import bandit
         provenance = (f"from {o.instance}" if o.instance else "from the server") + f", {bandit.mark(o)}"  # 0.57.0
-        label = {"regel": "Rule", "skill": "Skill", "bild": "Image", "seite": "Wiki page", "suche": "Search"}.get(o.kind, "Learned")
+        label = {"rule": "Rule", "skill": "Skill", "image": "Image", "page": "Wiki page", "search": "Search"}.get(o.kind, "Learned")
         out.append({"id": o.id, "zeile": f"{label} [{o.id}] ({provenance}): {o.text[:300]} — vi_object {o.id} for the complete content "
                                          f"[Source: {str(o.data.get('quelle', '—'))[:120]}]"})
         if len(out) >= PROMPT_HINTS:
