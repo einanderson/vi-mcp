@@ -217,6 +217,15 @@ Linked from [README.md](README.md).
   package's fixed worlds (2 of 16 leaked in a kollektiv kit). It now drops such training rows and reports
   `dropped_as_evaluation_worlds`.
   Evidence: `tests/test_finetune.py::test_no_world_of_the_evaluation_is_in_the_seed_training`.
+- **The round trip did not see a lost reason.** `philosophy_explain.verdict` compared only answer and duty atoms, not whether a
+  `never(...)` fires.
+  - The case found: a rebuilt kollektiv seed without `grund(S, snapshot, closed) <= value(S, n)` agreed on 65 of 65 worlds, although
+    the never rule fired in 16 of them.
+  - The fix: the verdict now also compares whether a never rule is violated. It compares only that one is, not which one, because
+    rule numbers differ between the original and a rebuilt seed.
+  - Earlier round-trip numbers overstate the block that holds such a rule. Training runs 11 and 8 (Claude's literal back-translation)
+    now score 281/322 and 220/322 instead of 296/322 and 235/322; in both, P4 scores 31/46 instead of 46/46.
+  - Evidence: `tests/test_philosophy_explain.py::test_a_rule_only_a_never_needs_is_seen_by_the_round_trip`.
 
 ### What is new in the search
 

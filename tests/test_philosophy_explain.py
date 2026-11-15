@@ -60,6 +60,18 @@ def test_a_faithful_back_translation_agrees_everywhere_and_a_lossy_one_does_not(
     assert any("control (reference prose" in x for x in pe.summary_lines(bad))
 
 
+def test_a_rule_only_a_never_needs_is_seen_by_the_round_trip():
+    # Run 11 (15.11.2026) garbled kollektiv's grund for value n; the round trip agreed on every world, because the verdict did not
+    # compare reported violations. Without that rule the never(...) fires wherever a subject is n.
+    pkg = ph.load("kollektiv")
+    seed = pkg["seed"].replace("grund(S, snapshot, closed) <= value(S, n)\n", "")
+    assert seed != pkg["seed"]
+    facts = pe.worlds(pkg, 30, 77)
+    r = pe.agreement(pkg, seed, facts)
+    assert 0 < r["same"] < r["worlds"]
+    assert pe.agreement(pkg, pkg["seed"], facts)["agreement"] == 1.0
+
+
 def test_each_block_is_measured_on_its_own():
     pkg = ph.load("kollektiv")
     blocks = dict(ph.blocks(pkg["seed"])[0])

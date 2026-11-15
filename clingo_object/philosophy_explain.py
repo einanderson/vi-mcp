@@ -247,8 +247,11 @@ def _with_block(pkg: dict, block: str, rules: str) -> str:
 
 # ── agreement ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-def verdict(pkg: dict, facts: str) -> tuple[tuple, tuple]:
-    """(answer atoms, duty atoms) of the package's program on facts — from the complete answer set, never a display list."""
+def verdict(pkg: dict, facts: str) -> tuple[tuple, tuple, bool]:
+    """(answer atoms, duty atoms, a never rule violated) of the package's program on facts — from the complete answer set, never a
+    display list. The third part makes a missing reason visible: without it a rebuilt seed that drops a rule only a never(...) needs
+    (e.g. kollektiv's grund for value n) agreed on every world (measured 15.11.2026: dropped in 16 of 65 worlds, 0 differences seen).
+    Only whether a never rule fires is compared, not which: rule numbers differ between the original and a rebuilt seed."""
     program, stmts, _f = n.translate_full(ph.program(pkg) + "\n" + facts)  # facts in the notation, as worlds write them
     raw = n.run_program(program, stmts, n.prior_belief, None)
     models = [set(m) for m in raw.get("models") or []]
@@ -257,7 +260,8 @@ def verdict(pkg: dict, facts: str) -> tuple[tuple, tuple]:
     duty = {k for k, v in voc.items() if v["kind"] == "duty"} | {"obligatory", "forbidden", "permitted"}
     answers = tuple(sorted(a for a in atoms if a.split("(", 1)[0] in pkg["answers"]))
     duties = tuple(sorted(a for a in atoms if a.split("(", 1)[0] in duty))
-    return answers, duties
+    violated = any(a.startswith("vi__violated(") for a in atoms)
+    return answers, duties, violated
 
 
 def worlds(pkg: dict, random_n: int = 50, rnd_seed: int = 77) -> list[str]:
