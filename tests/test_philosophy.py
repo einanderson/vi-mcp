@@ -142,3 +142,24 @@ def test_an_external_source_is_a_source_of_truth_only_when_the_statement_was_ver
     assert two["answers"]["acceptance"] == ["acceptance(q,accepted)"]
     same_ref_twice = ph.evaluate(pkg, "source(q, pos, url_a, web)\nsource(q, pos, url_a, rag)\nverified(url_a, q)\nauthor(q, z)\nclosed(q)")
     assert same_ref_twice["answers"]["acceptance"] == ["acceptance(q,tentative)"]  # one reference is one source
+
+
+def test_the_language_is_learned_on_rule_sets_that_share_nothing_with_any_seed():
+    """User, 15.11.2026: first teach the AI clingo, then the seed — and from its understanding it translates the seed into prose.
+    clingo_prose generates valid rule sets with their meaning in English; no predicate of a philosophy package occurs, so the seed's
+    translation later cannot come from memory."""
+    import random
+    from clingo_object import clingo_prose as cp
+    from clingo_object import notation as n
+    seed_vocabulary = set(ph.load("kollektiv")["vocabulary"])
+    assert not (set(cp.UNARY) | set(cp.BINARY) | set(cp.TERNARY)) & seed_vocabulary
+    rnd = random.Random(1)
+    for _ in range(500):
+        code, prose = cp.program(rnd)
+        n.translate(code)
+        assert prose and "<=" not in prose and "~" not in prose
+    ex = cp.examples(400, seed=2)
+    assert {e["meta"]["task"] for e in ex} == {"explain_rules", "write_rules"}
+    text = " ".join(m["content"] for e in ex for m in e["messages"])
+    assert not any(f"{p}(" in text for p in seed_vocabulary if p not in ("forbidden", "obligatory", "may"))
+    assert "cannot be derived" in text and "must not" in text  # default negation and duties are taught in words
