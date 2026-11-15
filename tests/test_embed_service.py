@@ -129,3 +129,41 @@ def test_download_retries_a_dropped_connection(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="SHA256"):  # a wrong hash is not retried
         es._download("https://example/b.zip", tmp_path / "b.zip", "0" * 64)
     assert len(calls) == 2  # first try dropped, second delivered the wrong bytes
+
+
+def test_user_install_writes_a_user_unit(tmp_path, monkeypatch):
+    """Linux without root (deploy/install.sh, a user service): the embedding service becomes a systemd user unit under
+    ~/.config/systemd/user, started with systemctl --user — a system unit in /etc would fail without root."""
+    monkeypatch.setattr(es, "system", lambda: "linux")
+    monkeypatch.setattr(es.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(es, "PACKAGE_DIR", tmp_path / "no-package")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    calls = []
+    monkeypatch.setattr(es.subprocess, "run", lambda c, **kw: calls.append(c))
+    exe, model = tmp_path / "llama" / "bin" / "llama-server", tmp_path / "embed" / es.MODEL_FILE
+    es._service_linux(exe, model, 8767)
+    unit = (tmp_path / ".config" / "systemd" / "user" / f"{es.SERVICE}.service").read_text()
+    assert "User=" not in unit and "ProtectHome" not in unit and "WantedBy=default.target" in unit and "--port 8767" in unit
+    assert calls and all(c[:2] == ["systemctl", "--user"] for c in calls)
+    assert es._systemctl("is-active", es.SERVICE) == ["systemctl", "--user", "is-active", es.SERVICE]
+
+
+def test_root_keeps_the_system_unit(tmp_path, monkeypatch):
+    monkeypatch.setattr(es, "system", lambda: "linux")
+    monkeypatch.setattr(es.os, "geteuid", lambda: 0)
+    assert es.unit_path(es.SERVICE) == Path(f"/etc/systemd/system/{es.SERVICE}.service")
+    assert es._systemctl("daemon-reload") == ["systemctl", "daemon-reload"]
+    unit = es.unit_text(Path("/x/bin/llama-server"), Path("/m/model.gguf"), 8767)
+    assert "User=vi-mcp" in unit and "ProtectHome=yes" in unit and "WantedBy=multi-user.target" in unit
+
+
+def test_package_install_keeps_system_units_without_root(tmp_path, monkeypatch):
+    """A deb/rpm install (/usr/share/vi-mcp) runs its services as system units — a user without sudo asking `embed status` must
+    still query the system manager, not a user manager that knows nothing of them."""
+    monkeypatch.setattr(es, "system", lambda: "linux")
+    monkeypatch.setattr(es.os, "geteuid", lambda: 1000)
+    (tmp_path / "pkg").mkdir()
+    monkeypatch.setattr(es, "PACKAGE_DIR", tmp_path / "pkg")
+    assert not es.user_install()
+    assert es._systemctl("is-active", es.SERVICE) == ["systemctl", "is-active", es.SERVICE]
+    assert es.unit_path(es.SERVICE) == Path(f"/etc/systemd/system/{es.SERVICE}.service")

@@ -3,6 +3,28 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased — user installs (deploy/install.sh) without the Debian package
+
+### What was fixed
+
+- **`embed setup` failed on a user install.** On Linux without root it wrote a system unit to `/etc/systemd/system`
+  (`User=vi-mcp`, `ProtectHome=yes`), which needs root, a `vi-mcp` user and files outside `$HOME` — none of which a user install
+  from `deploy/install.sh` has. Now `embed setup`, `embed status` and `embed remove` use a systemd **user** unit
+  (`~/.config/systemd/user/vi-embed.service`, `vi-rerank.service`, `systemctl --user`) when not running as root **and no package
+  is installed** (`/usr/share/vi-mcp`, the same mark `setup` uses). Packages keep their system units — also when a user without
+  sudo runs `embed status`. The root/package unit is byte-identical to 0.66.1 (`vi-embed` 735 bytes, `vi-rerank` 651 bytes).
+  Evidence: CachyOS (Arch), Python 3.14, RTX 4070 — `vi-mcp embed setup --backend cuda` as user: backend cuda-13, 8.4 ms per text,
+  reranker used, `embed status` shows both services `active` (before: unit write failed; status queried the system manager).
+  `tests/test_embed_service.py`: three new tests (user unit, root unchanged, package without root unchanged).
+- **`deploy/install.sh` lost the token on a first install.** It wrote the token to `~/.config/vi-mcp/token-NAME` without creating
+  the directory: the instance was created, the token file failed (`No such file or directory`), and the next run skipped the
+  instance, so the token was gone. Now the directory is created first.
+  Evidence: fresh `$HOME`, old script → `config.json` with the instance but no token file; new script → token file 44 bytes, 0600.
+- **`deploy/install.sh` assumed the checkout at `~/Dev/code/vi-mcp`.** The unit is now written with the path of the checkout it
+  runs from.
+- **`deploy/install.sh` says when scikit-learn is missing** — without it the router never trains and hints stay in heuristic
+  order; the note names the package for Debian, Arch and Fedora.
+
 ## 0.66.1 — 2026-11-15 — security: two example values removed from the whole history
 
 ### What was fixed
