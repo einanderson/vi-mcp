@@ -23,7 +23,7 @@ import hashlib
 import json
 import re
 
-SCHEMA_VERSION = "qa-v3"
+SCHEMA_VERSION = "qa-v4"
 #: qa-v2 (15.11.2026): grounding counts content words only, and a document's compound tokens also match their parts. With qa-v1, real
 #: answers of Qwen3.6-35B to six short German findings kept 1 of 25 pairs: "Die Domain www.bad-shop.example wurde auf dem Host dns01
 #: erstmals sinkholed." failed on "die, wurde, auf, dem" and on "host"/"dns01" hidden in "host:dns01.example.org". Invented hosts,
@@ -31,6 +31,15 @@ SCHEMA_VERSION = "qa-v3"
 #: qa-v3 (15.11.2026, Codex's review): the question must name the document's subject; the content hash is exact bytes. Known limit of
 #: any word-overlap check, reproduced by Codex: a wrong port that also occurs in the document, or a reversed negation, still passes —
 #: grounding is lexical, not entailment. Numbers are checked exactly (every number of the answer must occur in the document).
+#: qa-v4 (15.11.2026, user: "Die Standardsprache sollte Englisch sein"): questions and answers are written in English whatever the
+#: document's language. Word overlap cannot ground an English answer in a German page, so grounding is now two-step:
+#:   1. fixed rule — every name the answer carries (a token with a digit, dot, colon, slash, underscore or hyphen; a number; a quoted
+#:      term; a capitalised word inside a sentence) occurs in the document, and the answer carries at least one such name, copies at
+#:      least three consecutive words of the document (a command, a setting) or shares GROUNDED of its content words with it
+#:      (same-language answers); otherwise it cannot be shown and is rejected;
+#:   2. a language model checks each kept pair against the document (SUPPORT_SYSTEM) and may only REJECT (project rule: language-model
+#:      verdicts only tighten). This also catches what Codex reproduced against lexical grounding: a reversed negation, a wrong
+#:      relation between names that both occur in the document.
 PAIRS = 5
 DOC_CHARS = 6000
 GROUNDED = 0.8
@@ -39,8 +48,10 @@ SYSTEM = ("You write training questions for a company knowledge base. You get on
           "would really ask and that this document answers, each with a short answer of one to three sentences. Vary the facts and the "
           "wording; when asked for more than 3, ask about the same facts in different words too. Use only facts stated "
           "in the document; copy names, paths, hosts, commands and numbers exactly. Each question must make sense without seeing the "
-          "document: name the system, host or topic, never write 'the document', 'this page' or 'the text'. Write in the language of "
-          "the document. If the document states no answerable fact (an empty table, only a title), return an empty list. "
+          "document: name the system, host or topic, never write 'the document', 'this page' or 'the text'. Write questions and answers "
+          "in English, whatever the language of the document (English is the memory's standard language); keep names, paths, hosts, "
+          "commands, numbers and quoted terms exactly as the document writes them. If the document states no answerable fact (an empty "
+          "table, only a title), return an empty list. "
           'Reply with JSON only: {"pairs": [{"question": "...", "answer": "..."}]}')
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["pairs"],
           "properties": {"pairs": {"type": "array", "items": {"type": "object", "additionalProperties": False,
@@ -58,13 +69,49 @@ diese dieses diesem diesen lautet heisst heißt über ueber unter nach vor durch
 dabei damit dafür dazu sowie bzw jedoch aber wenn dann denn weil dass daß ob ja nein es er
 """.split())
 
+SUPPORT_SYSTEM = ("You check training data for a company knowledge base. You get one document and numbered question-answer pairs "
+                  "written about it, possibly in another language than the document. For each pair decide: supported = the document states "
+                  "what the answer says, as an answer to that question. Not supported = the answer adds a fact, changes a value, name or "
+                  "relation, reverses a statement (e.g. 'must not' becomes 'can'), or the document does not answer the question. Judge only "
+                  "against the document, not against general knowledge. "
+                  'Reply with JSON only: {"verdicts": [{"i": 0, "supported": true, "reason": "..."}]}')
+SUPPORT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["verdicts"],
+                  "properties": {"verdicts": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                                         "required": ["i", "supported", "reason"],
+                                                                         "properties": {"i": {"type": "integer"}, "supported": {"type": "boolean"},
+                                                                                        "reason": {"type": "string"}}}}}}
+
+
+def support_user(document: str, pairs: list[dict]) -> str:
+    return (f"Document:\n{document[:DOC_CHARS]}\n\nPairs:\n"
+            + "\n".join(f"{i}. Q: {p['question']}\n   A: {p['answer']}" for i, p in enumerate(pairs)))
+
+
+def apply_support(pairs: list[dict], text: str) -> tuple[list[dict], dict, bool]:
+    """(pairs the model did not reject, rejected counts, check complete). The model may only reject: a pair without a verdict is
+    neither kept nor silently passed — the whole check counts as incomplete and the caller retries later."""
+    m = re.search(r"\{.*\}", text or "", re.S)
+    try:
+        verdicts = json.loads(m.group(0)).get("verdicts") if m else None
+    except (ValueError, AttributeError):
+        verdicts = None
+    if not isinstance(verdicts, list):
+        return [], {}, False
+    by_i = {v.get("i"): v for v in verdicts if isinstance(v, dict)}
+    if any(i not in by_i for i in range(len(pairs))):
+        return [], {}, False
+    kept = [p for i, p in enumerate(pairs) if by_i[i].get("supported") is True]
+    rejected = len(pairs) - len(kept)
+    return kept, ({"not supported by the document (model check)": rejected} if rejected else {}), True
+
+
 def system_for(pairs: int = PAIRS) -> str:
     return SYSTEM.replace("Write up to 3 questions", f"Write up to {int(pairs)} questions")
 
 
 def prompt_sha256(pairs: int = PAIRS) -> str:
     """Identity of the prompt — part of every pair's version: another prompt regenerates instead of mixing."""
-    return hashlib.sha256((system_for(pairs) + SCHEMA_VERSION).encode()).hexdigest()
+    return hashlib.sha256((system_for(pairs) + SUPPORT_SYSTEM + SCHEMA_VERSION).encode()).hexdigest()
 
 
 def content_sha256(document: str) -> str:
@@ -95,6 +142,30 @@ def numbers(text: str) -> set[str]:
     """Every number, also short ones: a port, a version, a time. The 80 % word rule ignored tokens under three characters, so "port 22"
     passed for a document saying "port 80" (Codex's review 15.11.2026). Every number of an answer must occur in the document."""
     return set(NUMBER.findall(text or ""))
+
+
+QUOTED = re.compile(r"[`\"“„']([^`\"”“'\n]{2,80})[`\"”“']")
+CAPITAL = re.compile(r"(?<=[a-z0-9,;:)] )[A-Z][\w-]{2,}")
+
+
+def names(text: str) -> set[str]:
+    """The language-independent names an answer carries: tokens with a digit, dot, colon, slash, underscore or hyphen (hosts, paths,
+    versions, commands, options), quoted terms and capitalised words inside a sentence (products, systems, people). Lower-cased."""
+    out = {w for w in words(text) if re.search(r"[\d./:_-]", w)}
+    out |= {x.lower().strip() for q in QUOTED.findall(text or "") for x in [q] if x.strip()}
+    out |= {m.lower() for m in CAPITAL.findall(text or "")}
+    return out
+
+
+TOKEN = re.compile(r"[\w./:-]+")
+
+
+def copied_phrase(answer: str, document: str, n: int = 3) -> bool:
+    """The answer copies at least n consecutive words of the document verbatim — a command ("systemctl restart postfix"), a setting,
+    a name of several words. Language-independent evidence like a name."""
+    a = [t.lower() for t in TOKEN.findall(answer or "")]
+    d = " " + " ".join(t.lower() for t in TOKEN.findall(document or "")) + " "
+    return any(" " + " ".join(a[i:i + n]) + " " in d for i in range(len(a) - n + 1))
 
 
 def subject_named(question: str, document: str) -> bool:
@@ -131,10 +202,16 @@ def check(pair, document: str) -> str | None:
     if re.sub(r"\s+", " ", q).lower()[:60] in head:
         return "copied from the document's beginning"
     aw, dw = content_words(a), document_words(document)
-    if not aw or len(aw & dw) / len(aw) < GROUNDED:
-        return "not grounded in the document"
     if not numbers(a) <= numbers(document):
         return "a number the document does not state"
+    nm = names(a)
+    low_doc = (document or "").lower()
+    missing = {x for x in nm if x not in dw and x not in low_doc}
+    if missing:
+        return "a name the document does not state"
+    overlap = len(aw & dw) / len(aw) if aw else 0.0
+    if not nm and overlap < GROUNDED and not copied_phrase(a, document):  # nothing could show the answer is true
+        return "not grounded in the document"
     return None
 
 

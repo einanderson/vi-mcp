@@ -593,6 +593,16 @@ def make_pairs(o: g.MemoryObject) -> dict:
     if pairs is None:
         return {**base, "state": "error", "reason": "no JSON answer", "pairs": [], "probe": None, "rejected": {}}
     kept, rejected = qa_pairs.select(pairs, doc)
+    if kept:  # qa-v4: a language model checks each kept pair against the document and may only reject
+        try:
+            raw_s = _ask_schema(qa_pairs.SUPPORT_SYSTEM, qa_pairs.support_user(doc, kept), qa_pairs.SUPPORT_SCHEMA, "support")
+        except Exception as e:  # noqa: BLE001 — no check, no pairs: retried after PAIRS_RETRY_AFTER_S
+            return {**base, "state": "error", "reason": f"support check: {type(e).__name__}: {str(e)[:100]}", "pairs": [], "probe": None, "rejected": rejected}
+        kept, rej_s, complete = qa_pairs.apply_support(kept, raw_s)
+        if not complete:
+            return {**base, "state": "error", "reason": "support check incomplete (a pair without a verdict)", "pairs": [], "probe": None, "rejected": rejected}
+        for k, v in rej_s.items():
+            rejected[k] = rejected.get(k, 0) + v
     train, probe, close = qa_pairs.split_probe(o.id, kept)
     if close:
         rejected["too close to the object's probe question"] = close

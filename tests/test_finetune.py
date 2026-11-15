@@ -79,14 +79,20 @@ def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo
     assert "max_tokens" not in script and '"enable_thinking": False' in script and (d / "synth_qa.py").stat().st_mode & 0o777 == 0o700
     assert (d / "qa_pairs.py").read_text() == (finetune.Path(finetune.__file__).with_name("qa_pairs.py")).read_text()  # one definition
     assert "max_tokens" not in (d / "probe.py").read_text()
-    calls = []
+    import re
+    calls, support_calls = [], []
 
     class Fake(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             calls.append(body)
             system, doc = body["messages"][0]["content"], body["messages"][1]["content"]
-            if system.startswith("You grade answers"):
+            if system.startswith("You check training data"):  # qa-v4 support check: everything supported here
+                calls.pop()
+                support_calls.append(body)
+                n_pairs = len(re.findall(r"^\d+\. Q:", doc, re.M))
+                content = json.dumps({"verdicts": [{"i": i, "supported": True, "reason": "stated"} for i in range(n_pairs)]})
+            elif system.startswith("You grade answers"):
                 content = json.dumps({"A": "correct", "B": "wrong", "reason": "A names the time"})
             elif "db" not in doc:
                 content = json.dumps({"pairs": []})
@@ -127,8 +133,8 @@ def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo
             assert r["messages"][0]["content"] != pr["question"] and pr["meta"]["question_source"] == "probe"
         assert all(r["messages"][1]["content"].split("Source: ")[1].startswith("https://wiki.example/db") for r in synth)
         report = json.loads((d / "synth_report.json").read_text())
-        assert report["pairs"] == 6 and report["probes"] == 6
-        assert report["rejected"] == {"refers to the document instead of its subject": 6, "not grounded in the document": 6, "length": 6}
+        assert report["pairs"] == 6 and report["probes"] == 6 and len(support_calls) == 6  # every kept pair went through the check
+        assert report["rejected"] == {"refers to the document instead of its subject": 6, "a number the document does not state": 6, "length": 6}
         assert run().returncode == 0 and len(calls) == 18  # resumable: done documents are not asked again
         # --more asks chosen documents again for further, varied pairs; a repeat of the probe is rejected, a repeat of a pair too
         ids = sorted(r["meta"]["id"] for r in synth)
@@ -188,6 +194,8 @@ def test_server_stores_training_pairs_with_a_probe_and_the_export_uses_them(vi, 
     asked = []
 
     def fake(system, user):
+        if system == qa_pairs.SUPPORT_SYSTEM:
+            return json.dumps({"verdicts": [{"i": i, "supported": True, "reason": "stated"} for i in range(user.count(". Q:"))]})
         asked.append(system)
         if "fail" in user:
             raise ConnectionError("model down")
@@ -263,9 +271,10 @@ def test_grounding_counts_facts_not_function_words():
            'host:dns01.example.org bedrohung:"generic:www.bad-shop.example(789736897)"')
     q = "Welche Domain wurde auf dem Host dns01 sinkholed?"
     assert qa_pairs.check({"question": q, "answer": "Die Domain www.bad-shop.example wurde auf dem Host dns01 erstmals sinkholed."}, doc) is None
-    assert qa_pairs.check({"question": q, "answer": "Die Domain wurde auf dns02.example.org am 2025-03-01 von 10.1.2.3 gemeldet."}, doc) == "not grounded in the document"
+    assert qa_pairs.check({"question": q, "answer": "Die Domain wurde auf dns02.example.org am 2025-03-01 von 10.1.2.3 gemeldet."}, doc) in (
+        "a number the document does not state", "a name the document does not state")
     assert qa_pairs.check({"question": q, "answer": "Ja, das ist so."}, doc) == "not grounded in the document"  # no fact at all
-    assert qa_pairs.SCHEMA_VERSION == "qa-v3" and qa_pairs.prompt_sha256() != qa_pairs.prompt_sha256(3)
+    assert qa_pairs.SCHEMA_VERSION == "qa-v4" and qa_pairs.prompt_sha256() != qa_pairs.prompt_sha256(3)
     # qa-v3 (Codex's review): a question must name the subject; the content hash sees whitespace (code, tables)
     assert qa_pairs.check({"question": "What is the port number used?", "answer": "www.bad-shop.example"}, doc) == "names no subject of the document"
     assert qa_pairs.content_sha256("def f():\n    return 1") != qa_pairs.content_sha256("def f():\n  return 1")
@@ -284,7 +293,9 @@ def test_codex_review_findings_on_stored_pairs_are_fixed(vi, monkeypatch):
     pairs = [{"question": "How do I reload nginx on web1.example?", "answer": "Run systemctl reload nginx on web1.example."},
              {"question": "Which directory holds the enabled sites on web1.example?", "answer": "/etc/nginx/sites-enabled"},
              {"question": "Which command reloads nginx on web1.example after a change?", "answer": "systemctl reload nginx"}]
-    monkeypatch.setattr(reflection, "ask_fn", lambda system, user: json.dumps({"pairs": pairs}))
+    monkeypatch.setattr(reflection, "ask_fn", lambda system, user: json.dumps(
+        {"verdicts": [{"i": i, "supported": True, "reason": "stated"} for i in range(user.count(". Q:"))]}
+        if system == qa_pairs.SUPPORT_SYSTEM else {"pairs": pairs}))
     # the probe is chosen by id; make the doc2query question equal to whichever pair became the probe
     res = classify.make_pairs(o)
     assert res["state"] == "ok" and res["probe"]
@@ -317,3 +328,33 @@ def test_codex_review_findings_on_stored_pairs_are_fixed(vi, monkeypatch):
     cur.data["inhalt"] = cur.data["inhalt"] + " Rollback: systemctl restart nginx."
     g.save(cur)
     assert o.id not in classify.pairs_pending(10) and o.id in classify.pairs_pending(10, sample=50)
+
+
+def test_qa_v4_english_pairs_are_grounded_by_names_and_a_model_check_that_may_only_reject(vi, monkeypatch):
+    """qa-v4 (user, 15.11.2026: "Die Standardsprache sollte Englisch sein"): an English answer to a German page is grounded by its names
+    (hosts, paths, numbers, quoted terms); the language model then checks each pair and may only reject; a check without a verdict for
+    every pair stores nothing (retried later) — never a silent pass."""
+    from vi_mcp import classify, qa_pairs, reflection
+    doc = "Postfix auf mail01.example.org: inet_interfaces = loopback-only, relayhost = relay.example.org. Neustart mit systemctl restart postfix."
+    q = "How is Postfix on mail01.example.org configured?"
+    assert qa_pairs.check({"question": q, "answer": "Postfix listens on loopback-only and relays via relay.example.org."}, doc) is None
+    assert qa_pairs.check({"question": q, "answer": "Postfix relays via smtp.other.example."}, doc) == "a name the document does not state"
+    assert qa_pairs.check({"question": q, "answer": "It is configured well by the mail team."}, doc) == "not grounded in the document"
+    assert "in English" in qa_pairs.SYSTEM and qa_pairs.SCHEMA_VERSION == "qa-v4"
+    o = g.new_object("erkenntnis", "Postfix auf mail01.example.org", ["thema:mail"], {"inhalt": doc}, visibility="intern", instance="a")
+    pairs = [{"question": q, "answer": "Postfix listens on loopback-only and relays via relay.example.org."},
+             {"question": "How do I restart Postfix on mail01.example.org?", "answer": "Run systemctl restart postfix."},
+             {"question": "Does Postfix on mail01.example.org accept mail from the internet?", "answer": "Yes, inet_interfaces allows it."}]
+    verdicts = {"value": [True, True, False]}
+
+    def fake(system, user):
+        if system == qa_pairs.SUPPORT_SYSTEM:
+            return json.dumps({"verdicts": [{"i": i, "supported": v, "reason": "x"} for i, v in enumerate(verdicts["value"])]})
+        return json.dumps({"pairs": pairs})
+    monkeypatch.setattr(reflection, "ask_fn", fake)
+    r = classify.make_pairs(g.load(o.id))
+    assert r["state"] == "ok" and len(r["pairs"]) + (1 if r["probe"] else 0) == 2  # the reversed fact was vetoed by the model
+    assert r["rejected"]["not supported by the document (model check)"] == 1
+    verdicts["value"] = [True]  # a verdict missing for two pairs: nothing is stored as checked
+    r = classify.make_pairs(g.load(o.id))
+    assert r["state"] == "error" and "incomplete" in r["reason"] and r["pairs"] == []

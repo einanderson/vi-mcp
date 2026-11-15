@@ -236,16 +236,27 @@ own answer); thinking is switched off. Then run `vi-mcp finetune split KIT` so t
 The pairs are model output checked for word overlap, not verified by a person.
 """
 import argparse, concurrent.futures as cf, json, random, threading, time, urllib.request
-from qa_pairs import DOC_CHARS, PAIRS, key, parse, prompt_sha256, select, split_probe, system_for
+from qa_pairs import (DOC_CHARS, PAIRS, SUPPORT_SYSTEM, apply_support, key, parse, prompt_sha256, select, split_probe, support_user,
+                      system_for)
+
+
+def _chat(url, model, system, user, temperature):
+    body = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "temperature": temperature, "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(url.rstrip("/") + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=600) as r:
+        return json.load(r)["choices"][0]
 
 
 def ask(url, model, document, system):
-    body = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": document[:DOC_CHARS]}],
-            "temperature": 0.3, "chat_template_kwargs": {"enable_thinking": False}}
-    req = urllib.request.Request(url.rstrip("/") + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        choice = json.load(r)["choices"][0]
+    choice = _chat(url, model, system, document[:DOC_CHARS], 0.3)
     return parse(choice["message"].get("content") or ""), choice.get("finish_reason")
+
+
+def support(url, model, document, pairs):
+    """qa-v4: the model may only reject; an incomplete answer keeps nothing (the document is retried in a later run)."""
+    choice = _chat(url, model, SUPPORT_SYSTEM, support_user(document, pairs), 0)
+    return apply_support(pairs, choice["message"].get("content") or "")
 
 
 def rows(name):
@@ -291,21 +302,39 @@ def main():
     rej = open("dataset/synth_rejected.jsonl", "a", encoding="utf-8")
     probe_f = open("dataset/probe_synth.jsonl", "a", encoding="utf-8")
 
+    def checked(d, pairs):
+        """fixed rules first (select), then the model support check, which may only reject"""
+        kept, rejected = select(pairs, d["document"], held.get(d["meta"]["id"], []), set(asked.get(d["meta"]["id"], set())))
+        if not kept:
+            return kept, rejected, None
+        try:
+            kept2, rej2, complete = support(o.url, o.model, d["document"], kept)
+        except Exception as e:  # noqa: BLE001
+            return [], rejected, f"request failed: support {type(e).__name__}"
+        if not complete:
+            return [], rejected, "request failed: support check incomplete"
+        for k, v in rej2.items():
+            rejected[k] = rejected.get(k, 0) + v
+        return kept2, rejected, None
+
     def one(d):
         try:
             pairs, finish = ask(o.url, o.model, d["document"], system)
         except Exception as e:  # noqa: BLE001 — a failed call is counted, never a silent gap; the next run retries it
-            return d, None, f"request failed: {type(e).__name__}"
+            return d, None, {}, f"request failed: {type(e).__name__}"
         if pairs is None or finish != "stop":
-            return d, [], "no JSON answer" if finish == "stop" else f"finish_reason {finish}"
-        return d, pairs, None
+            return d, [], {}, "no JSON answer" if finish == "stop" else f"finish_reason {finish}"
+        kept, rejected, serr = checked(d, pairs)  # in the worker: the support check runs in parallel too
+        return d, kept, rejected, serr
 
     with cf.ThreadPoolExecutor(o.workers) as pool:
-        for d, pairs, error in pool.map(one, todo):
+        for d, kept, rejected, error in pool.map(one, todo):
             with lock:
                 oid = d["meta"]["id"]
                 stats["documents"] += 1
-                kept, rejected = select(pairs, d["document"], held.get(oid, []), asked.setdefault(oid, set()))
+                kept = kept or []
+                for p in kept:
+                    asked.setdefault(oid, set()).add(key(p["question"]))
                 probe = None
                 if oid not in probed:
                     kept, probe, close = split_probe(oid, kept)

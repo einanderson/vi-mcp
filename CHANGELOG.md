@@ -7,6 +7,19 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **qa-v4: training pairs in English, grounded by names and a model check that may only reject.** English is the memory's standard
+  language (user, 15.11.2026). Stored questions and answers are written in English whatever the document's language. Word overlap
+  cannot ground an English answer in a German page, so grounding has two steps.
+  - **Fixed rule:** every name in the answer must occur in the document. Names are hosts, paths, versions, commands with special
+    characters, numbers, quoted terms, and capitalised words inside a sentence. The answer must carry at least one name, copy three
+    consecutive words of the document, or share 80 % of its content words with it. Otherwise the truth cannot be shown and the pair
+    is rejected.
+  - **Model check:** a language model checks each kept pair against the document (`qa_pairs.SUPPORT_SYSTEM`) and may only reject
+    (project rule). This catches what lexical grounding cannot, such as a reversed negation or a wrong relation between names that
+    both occur. If any verdict is missing, nothing is stored and the object is retried.
+  - The server (`classify.make_pairs`) and the kit (`synth_qa.py`, in its parallel workers) share this definition.
+  Evidence: `tests/test_finetune.py::test_qa_v4_english_pairs_are_grounded_by_names_and_a_model_check_that_may_only_reject`.
+
 - **Philosophy packages: equip an AI with a philosophy.** A philosophy is a package. It holds the principles in prose and the same
   principles as a clingo-object rule set, the **seed**, with typed vocabulary, answer values and test worlds. The technique is generic
   (`clingo_object/philosophy.py`, standard library plus clingo, so it also works outside a server).
