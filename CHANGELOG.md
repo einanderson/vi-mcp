@@ -43,6 +43,12 @@ Linked from [README.md](README.md).
   cannot show knowledge injection, because closed-book fine-tuning only knows what it was trained on. On 60 new questions
   about trained documents (a knowledge probe), tuned scored 4 correct and 3 partial vs base 0 and 5 (strict p = 0.0625), so a gain
   is visible but not yet significant. The tuned model never says "I don't know" and invents hosts and IPs.
+- **Third run: the first measured knowledge gain.**
+  - Setup: 500 trained documents with about 5 varied grounded pairs each (`--pairs 8`), LoRA r64, 4 epochs (2,558 rows, 53 min).
+  - Result on the same 60-question knowledge probe: 7 correct and 9 partial vs base 0 and 5.
+  - Statistics: one-sided sign-flip test strict p = 0.008, lenient p = 0.006, graded p = 0.001. The adoption gate is passed.
+  - The absolute level is still low (12 % correct), and the model does not abstain.
+  - Evidence: blind judgments with the key opened afterwards. The base grades were identical in both judging rounds.
 
 ### What is still missing
 

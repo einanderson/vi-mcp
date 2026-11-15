@@ -174,9 +174,24 @@ container exit code.
 Scale E to the time the person allows. A full epoch would have been about 16 h.
 
 **7. Judging task success.** The adoption gate never uses word overlap and never uses the training loss.
-- Use a question catalog the model never trained on:
+- **Know what each catalog measures.** Questions about held-out documents (`eval/recall.json` targets, `split/test.jsonl`)
+  measure generalization to unseen documents. Closed-book fine-tuning cannot answer them, because the model only knows what
+  it trained on. Run 2 (15.11.2026) showed no gain there (p ≈ 0.1).
+- **Knowledge injection is measured with a knowledge probe:** new questions about TRAINED documents that are themselves never
+  trained (Allen-Zhu & Li 2309.14316; EntiGraph 2409.07431).
+  - Write one new grounded question per sampled trained document with the generator.
+  - Keep these questions out of training with `synth_qa.py --hold-out` (word Jaccard < 0.5) and check the final train file again.
+- **What worked (run 3):** 500 trained documents, about 5 varied pairs each (`synth_qa.py --pairs 8 --more`), `--lora-rank 64`,
+  4 epochs, 2,558 rows, 53 min on gfx1151 fp32.
+  - Results on the 60-question probe: base 0 correct / 5 partial, run 2 (r16, 3 epochs, all rows) 4/3, run 3 7/9.
+  - The sign-flip test gives strict p = 0.008 and graded p = 0.001.
+  - Still: the tuned model never abstains and invents hosts and IPs (Gekhman et al. 2405.05904).
+- Use a question catalog of the right kind (above). The model must never have trained on the questions themselves:
   - questions from `eval/recall.json`, whose targets and source pages are held out;
-  - plus a seeded sample of `split/test.jsonl`.
+  - a seeded sample of `split/test.jsonl`;
+  - a knowledge probe on trained documents.
+- Write each answer pair to disk as soon as it exists, with the key in a separate file. Then a partial run can already be judged
+  and a crash loses nothing.
 - Keep the references with the judge; only the questions go to the GPU host.
 - Generate base and tuned answers from the same loaded weights: PEFT `model.disable_adapter()` for the base.
   - Greedy decoding, thinking off, the same system prompt for both.
