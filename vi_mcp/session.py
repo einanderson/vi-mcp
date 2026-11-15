@@ -93,6 +93,91 @@ def recent_project(instance: str, within_s: float = RECENT_S) -> str | None:
     return p if p and time.monotonic() - t <= within_s else None
 
 
+# ── Pairing: the agent's own MCP conversation and its hook's conversation (Unreleased) ───────────────────────────────────────────
+#: A Claude Code session talks to vi-mcp twice: the agent's MCP client (the conversation named in the instructions) and the hook
+#: (vi_before/vi_after/vi_prompt_context, its own conversation). Questions between conversations of one instance need to know that both
+#: are the same asker — otherwise a question would be delivered to its own author through the author's hook. The hook announces every
+#: tool call of the agent in vi_before, with the same arguments, a moment before the agent's MCP client sends it; the first call of the
+#: agent conversation whose fingerprint matches exactly one recent announcement pairs the two. Evidence, not timing alone: the
+#: fingerprint covers tool and arguments. Two hooks announcing the same fingerprint inside the window: not paired, counted.
+ANNOUNCE_S = 60.0
+_announced: dict[str, list[tuple[float, str, str]]] = {}  # instance → [(monotonic time, fingerprint, hook serial)]
+_agent_of: dict[str, str] = {}  # hook serial → agent serial
+_hook_of: dict[str, str] = {}  # agent serial → hook serial
+pairing_counts = {"gekoppelt": 0, "mehrdeutig": 0}
+_announcers: set[str] = set()
+
+
+def fingerprint(tool: str, args: dict) -> str:
+    """Tool and arguments as the hook passes them on (it masks and cuts strings at 2000 characters): strings by their first 80
+    characters, whitespace normalised. Pure."""
+    import hashlib
+
+    def norm(v):
+        if isinstance(v, str):
+            return " ".join(v.split())[:80]
+        if isinstance(v, dict):
+            return {str(k): norm(x) for k, x in sorted(v.items())}
+        if isinstance(v, list):
+            return [norm(x) for x in v[:50]]
+        return v
+    return hashlib.sha256(json.dumps([tool, norm(args or {})], sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:24]
+
+
+def announce(instance: str, hook_serial: str, tool: str, args: dict) -> None:
+    now = time.monotonic()
+    with _reg_lock:
+        items = [x for x in _announced.get(instance, []) if now - x[0] <= ANNOUNCE_S]
+        items.append((now, fingerprint(tool, args), hook_serial))
+        _announced[instance] = items[-200:]
+        _announcers.add(hook_serial)
+
+
+def pair_on_call(instance: str, agent_serial: str, tool: str, args: dict) -> str | None:
+    """Called for every tool call of a conversation that is not a hook's: pair it with the hook that announced exactly this call."""
+    if agent_serial in _hook_of or agent_serial in _agent_of or agent_serial in _announcers:
+        return _hook_of.get(agent_serial)  # a conversation that announces calls is a hook, never an agent
+    fp, now = fingerprint(tool, args), time.monotonic()
+    with _reg_lock:
+        hooks = {h for t, f, h in _announced.get(instance, []) if f == fp and now - t <= ANNOUNCE_S and h != agent_serial
+                 and h not in _agent_of}
+        if len(hooks) != 1:
+            if len(hooks) > 1:
+                pairing_counts["mehrdeutig"] += 1
+            return None
+        hook = hooks.pop()
+        _agent_of[hook], _hook_of[agent_serial] = agent_serial, hook
+        pairing_counts["gekoppelt"] += 1
+    for mine, other, role in ((agent_serial, hook, "hook"), (hook, agent_serial, "agent")):
+        try:
+            note = {"partner": other, "partner_rolle": role,
+                    "partner_grund": f"the hook announced {tool} with the same arguments before the agent sent it"}
+            g.update_data(f"gespraech:{mine}", lambda d, note=note: d.update(note))
+            with g.lock:
+                g.db().commit()
+        except Exception:  # noqa: BLE001 — the pairing holds in memory; the note on the conversation object is only its explanation
+            pass
+    return hook
+
+
+def pairing_of(serial: str | None) -> str | None:
+    """The paired conversation (the agent's hook, or the hook's agent), or None."""
+    return (_hook_of.get(serial) or _agent_of.get(serial)) if serial else None
+
+
+def canonical(serial: str | None) -> str | None:
+    """The conversation that speaks for an asker: a hook's conversation stands for its agent's, once paired."""
+    return _agent_of.get(serial, serial) if serial else None
+
+
+def is_open(serial: str | None) -> bool:
+    """Is this (canonical) conversation still reachable — its own session or its paired hook's session open?"""
+    if not serial:
+        return False
+    alive = {s.serial for s in open_items()}
+    return serial in alive or _hook_of.get(serial) in alive
+
+
 def new_serial() -> str:
     """Highest number of the day + 1, compared numerically (also beyond 999), with INSERT as the lock."""
     tag = datetime.now(timezone.utc).strftime("%Y%m%d")
