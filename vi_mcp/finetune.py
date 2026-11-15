@@ -929,10 +929,13 @@ rebuilt; the other blocks stay the seed's. A rebuilt seed that does not run agre
 The control, back-translated by the same model, stands beside every number: --control FILE (a frozen prose, e.g. the JSON of
 tests/fixtures/kollektiv_principles_1.1.0.json, or plain text), else the items' gold_text (kits of the 1.1.0 format carry the
 historical prose there). Without a control, a low number may be the back-translator's limit, not the model's.
+The back-translator is an endpoint (--judge-url) or a command (--judge-cmd, e.g. "codex exec -s read-only --skip-git-repo-check": it
+runs in a fresh empty directory with stdin closed and gets the prompt as its last argument, the reply is read from its -o file; a
+template with {prompt} {out} {dir} {model} works for any other command-line model).
 Also writes a blind reading aid: per explain item the answers of both models in a random order, next to the seed's rules, with the
 key in a separate file. Works on this kit (eval/philosophy.jsonl, eval/philosophy_answers.jsonl, philosophy/) and on a run-6 kit
 (eval/eval.jsonl, eval/answers.jsonl, no philosophy/ directory: name the package with --package).
-    python phil_roundtrip.py --judge-url URL [--judge-model M] [--random 50] [--control FILE] [--package NAME|DIR] [--who tuned,base]
+    python phil_roundtrip.py --judge-url URL | --judge-cmd CMD [--judge-model M] [--random 50] [--control FILE] [--package NAME|DIR] [--who tuned,base]
     -> eval/philosophy_roundtrip.jsonl (per answer, resumable), eval/philosophy_roundtrip.json, eval/philosophy_blind.md, eval/philosophy_blind_key.json
 """
 import argparse, collections, json, random, sys, time
@@ -940,7 +943,9 @@ from pathlib import Path
 from clingo_object import philosophy as ph, philosophy_explain as pe
 
 a = argparse.ArgumentParser()
-a.add_argument("--judge-url", required=True, help="back-translator: OpenAI-compatible endpoint (…/v1)")
+j = a.add_mutually_exclusive_group(required=True)
+j.add_argument("--judge-url", help="back-translator: OpenAI-compatible endpoint (…/v1)")
+j.add_argument("--judge-cmd", help="back-translator: a command-line model, e.g. \"codex exec -s read-only --skip-git-repo-check\"")
 a.add_argument("--judge-model")
 a.add_argument("--random", type=int, default=50, help="random worlds from the package's generator besides its own worlds")
 a.add_argument("--rnd-seed", type=int, default=77)
@@ -987,7 +992,10 @@ def block_of(it):
 
 
 blocks = dict(ph.blocks(pkg["seed"])[0])
-judge = pe.chat_client(o.judge_url, o.judge_model, proxy=not o.no_proxy)
+if o.judge_cmd:
+    judge, judge_name = pe.command_client(o.judge_cmd, o.judge_model), pe.command_name(o.judge_cmd, o.judge_model)
+else:
+    judge, judge_name = pe.chat_client(o.judge_url, o.judge_model, proxy=not o.no_proxy), o.judge_model or "model at the judge URL"
 facts = pe.worlds(pkg, o.random, o.rnd_seed)
 gold = [pe.verdict(pkg, f) for f in facts]
 
@@ -1056,7 +1064,7 @@ for k, (i, w) in enumerate(todo):
 f.close()
 rows = [r for r in (json.loads(l) for l in out_rows.read_text().splitlines() if l.strip()) if r["who"] != "control"]
 summary = {"package": pkg["name"], "version": pkg["version"], "hash": ph.package_hash(pkg), "kit_hash": kit_hash, "hash_mismatch": mismatch,
-           "back_translator": o.judge_model or "model at the judge URL", "worlds": {"package": len(pkg["worlds"]), "random": len(facts) - len(pkg["worlds"]),
+           "back_translator": judge_name, "worlds": {"package": len(pkg["worlds"]), "random": len(facts) - len(pkg["worlds"]),
            "rnd_seed": o.rnd_seed}, "missing_answers": sorted(i for i in prose_items if i not in answers), "control": control, "sets": {}}
 by = collections.defaultdict(list)
 for r in rows:

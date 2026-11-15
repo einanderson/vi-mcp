@@ -24,8 +24,12 @@ rebuild the seed. Standard library plus clingo; the chat function is any `messag
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
+import shlex
+import subprocess
+import tempfile
 import time
 import urllib.request
 
@@ -47,10 +51,63 @@ def chat_client(url: str, model: str | None = None, timeout: float = TIMEOUT_S, 
     def chat(messages: list[dict]) -> str:
         body = {"messages": messages, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}, **({"model": model} if model else {})}
         req = urllib.request.Request(endpoint, json.dumps(body).encode(), {"Content-Type": "application/json"})
-        text = json.load(opener.open(req, timeout=timeout))["choices"][0]["message"]["content"] or ""
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
-        return re.sub(r"^```\w*\n|```$", "", text.strip(), flags=re.M).strip()
+        return clean(json.load(opener.open(req, timeout=timeout))["choices"][0]["message"]["content"] or "")
     return chat
+
+
+def clean(text: str) -> str:
+    """A model reply without thinking blocks and code fences. Pure."""
+    text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S)
+    return re.sub(r"^```\w*\n|```$", "", text.strip(), flags=re.M).strip()
+
+
+COMMAND_HEAD = ("Do not run any commands and do not read any files. Everything you need is in this message. Below is a conversation; "
+                "write the next assistant reply, and only that reply.")
+
+
+def flatten(messages: list[dict]) -> str:
+    """Chat messages as one prompt for a command-line model: `[role]` and the content, in order. Pure."""
+    return COMMAND_HEAD + "\n\n" + "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in messages) + "\n\n[assistant]\n"
+
+
+def command_client(cmd: str, model: str | None = None, timeout: float = TIMEOUT_S):
+    """A `messages -> text` function that runs a command-line model (no endpoint needed), e.g. `codex exec -s read-only
+    --skip-git-repo-check`. Every call runs in a fresh EMPTY directory with stdin closed, so the model sees nothing but the prompt.
+    - With placeholders the command is a template: {prompt} (the flattened messages), {out} (a file the reply is read from — without
+      it the reply is stdout), {dir} (the empty directory), {model}.
+    - Without placeholders it is called like codex: `<cmd> [-m MODEL] -C <dir> -o <out> <prompt>`, the prompt last.
+    A failing command raises with its exit code and stderr: a broken judge is never scored as the model's failure."""
+    base = shlex.split(cmd)
+    if not base:
+        raise ValueError("an empty judge command")
+    template = any(p in cmd for p in ("{prompt}", "{out}", "{dir}", "{model}"))
+
+    def chat(messages: list[dict]) -> str:
+        prompt = flatten(messages)
+        with tempfile.TemporaryDirectory(prefix="vi-judge-") as d:
+            work = os.path.join(d, "empty")
+            os.mkdir(work)
+            out = os.path.join(d, "reply.txt")
+            if template:
+                values = {"prompt": prompt, "out": out, "dir": work, "model": model or ""}
+                argv = [a.format(**values) if "{" in a else a for a in base]
+            else:
+                argv = base + (["-m", model] if model else []) + ["-C", work, "-o", out, prompt]
+            r = subprocess.run(argv, cwd=work, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+            if r.returncode != 0:
+                raise RuntimeError(f"judge command {base[0]} exited {r.returncode}: {(r.stderr or r.stdout)[-400:]}")
+            reads_file = (not template) or "{out}" in cmd
+            text = open(out, encoding="utf-8").read() if reads_file and os.path.exists(out) else ("" if reads_file else r.stdout)
+            if reads_file and not os.path.exists(out):
+                raise RuntimeError(f"judge command {base[0]} wrote no reply file")
+        return clean(text)
+    return chat
+
+
+def command_name(cmd: str, model: str | None = None) -> str:
+    """How a command judge is recorded: argv[0] (its file name) plus the model if one is given."""
+    argv = shlex.split(cmd)
+    return os.path.basename(argv[0]) + (f" {model}" if model else "") if argv else "?"
 
 
 # ── prompts ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

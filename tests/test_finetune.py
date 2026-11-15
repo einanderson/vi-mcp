@@ -577,3 +577,34 @@ def test_the_round_trip_reads_a_run_6_kit(tmp_path):
         assert out["control"]["source"] == "gold_text of the items"
     finally:
         srv.shutdown()
+
+
+FAKE_JUDGE_CMD = r'''
+import os, sys
+args = sys.argv[1:]
+if os.listdir(os.getcwd()):
+    sys.exit(3)
+prompt = args[-1]
+desc = prompt.split("Description:\n", 1)[1].split("\n\nReply with the rules only", 1)[0]
+reply = desc.split("RULES:\n", 1)[1] if "RULES:" in desc else "value(S <= unclear"
+open(args[args.index("-o") + 1], "w").write(reply)
+'''
+
+
+def test_the_kit_round_trip_takes_a_command_as_back_translator(tmp_path):
+    """--judge-cmd: a command-line model (codex exec) as the independent back-translator — a fake script here, never the real one."""
+    import subprocess
+    import sys
+    pytest.importorskip("clingo")
+    d = tmp_path / "kit"
+    pkg, _items = _roundtrip_kit(d)
+    (tmp_path / "fake_codex.py").write_text(FAKE_JUDGE_CMD)
+    cmd = f"{sys.executable} {tmp_path / 'fake_codex.py'} exec -s read-only --skip-git-repo-check"
+    p = subprocess.run([sys.executable, "phil_roundtrip.py", "--judge-cmd", cmd, "--judge-model", "gpt-x", "--random", "3"],
+                       cwd=d, capture_output=True, text=True, timeout=300)
+    assert p.returncode == 0, p.stderr[-2000:]
+    out = json.loads((d / "eval" / "philosophy_roundtrip.json").read_text())
+    assert out["back_translator"] == f"{Path(sys.executable).name} gpt-x"
+    assert out["sets"]["explain_seed_part"]["tuned"]["exact"] == 7 and out["sets"]["explain_seed_part"]["base"]["ran"] == 0
+    p = subprocess.run([sys.executable, "phil_roundtrip.py", "--judge-cmd", cmd, "--judge-url", "http://x/v1"], cwd=d, capture_output=True, text=True)
+    assert p.returncode != 0 and "not allowed with" in p.stderr  # one back-translator, never two

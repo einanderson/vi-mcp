@@ -57,7 +57,9 @@ of reading the rules, so the round trip would measure the title, not the underst
    or trained unchecked.
 6. **Explain** it: `vi-mcp philosophy explain NAME --url U --model M --judge-url U2 --judge-model M2` (tool: action `explain`).
    - The translator writes English prose per block and for the whole seed.
-   - An independent back-translator, preferably another model family, writes clingo-object from the prose. It gets up to 4 repair
+   - An independent back-translator, preferably another model family, writes clingo-object from the prose: an endpoint
+     (`--judge-url`) or, on the command line only, a command-line model (`--judge-cmd "codex exec -s read-only --skip-git-repo-check"`,
+     run in a fresh empty directory with stdin closed, so it sees nothing but the prompt). It gets up to 4 repair
      rounds with clingo's error messages; ASP commas become `&` and comparisons get parentheses (syntax only, never meaning).
    - Agreement is the share of worlds where the rebuilt seed gives the original's answers and duties: every package world plus
      `--random N` worlds from the package's generator. Per block only that block is rebuilt.

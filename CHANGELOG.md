@@ -19,6 +19,16 @@ Linked from [README.md](README.md).
   - A blind reading aid `eval/philosophy_blind.md` pairs each explain answer with the seed's rules in a random order, with the key in
     `eval/philosophy_blind_key.json`.
   - Answers and control are resumable (`eval/philosophy_roundtrip.jsonl`); the summary is `eval/philosophy_roundtrip.json`.
+  - The back-translator can be a command instead of an endpoint: `--judge-cmd "codex exec -s read-only --skip-git-repo-check"`
+    (decision 15.11.2026: Codex as the back-translator, because its GPT family is independent of the trained Qwen, and Claude wrote the
+    seed). The same option exists for `vi-mcp philosophy explain`.
+    - Every call runs in a fresh empty directory with stdin closed. The prompt is the flattened messages, last on the command line,
+      opening with "Do not run any commands and do not read any files". The reply is read from the `-o` file, code fences stripped.
+    - A template with `{prompt}` `{out}` `{dir}` `{model}` serves any other command-line model.
+    - `back_translator` records argv[0] plus the model.
+    - A failing command stops the run with its exit code: a broken judge is never scored as the model's failure.
+    - The MCP tool never runs a command a caller names; it is offered on the command line only.
+    - Tests use a fake command, never the real codex.
   - It reads this kit's layout and run 6's (`eval/eval.jsonl`, `eval/answers.jsonl`, no `philosophy/`: `--package kollektiv`; the
     1.1.0 → 1.2.0 hash difference is recorded as `hash_mismatch`; the translated seed is identical).
   - Tests (`tests/test_finetune.py`, a fake OpenAI server, no real endpoint): faithful prose agrees on every world, unusable prose is

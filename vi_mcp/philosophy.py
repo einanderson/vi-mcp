@@ -68,18 +68,20 @@ def stored_translation(name: str) -> dict | None:
 
 
 def explain(ref: str, url: str | None, model: str | None, judge_url: str | None, judge_model: str | None, *, random_n: int = 50,
-            per_block: bool = True, prose: str | None = None, control: str | None = None, proxy: bool = True) -> dict:
+            per_block: bool = True, prose: str | None = None, control: str | None = None, proxy: bool = True,
+            judge_cmd: str | None = None) -> dict:
     """The round trip of a philosophy (clingo_object.philosophy_explain): translator prose → independent back-translator → agreement
     with the original's answers and duties. prose: measure given prose instead (a model's recitation); control: a reference prose."""
     from clingo_object import philosophy_explain as pe
-    if not judge_url:
+    if not judge_url and not judge_cmd:
         raise ValueError("explain needs a back-translator (judge_url, judge_model) — without the round trip a translation is unchecked")
     if prose is None and not url:
         raise ValueError("explain needs a translator (url, model), or prose to measure")
     pkg = ph.load(ref)
     names = {"translator": None if prose is not None else (model or "model at the translator URL"),
-             "back_translator": judge_model or "model at the judge URL"}
-    r = pe.round_trip(pkg, pe.chat_client(url, model, proxy=proxy) if prose is None else None, pe.chat_client(judge_url, judge_model, proxy=proxy),
+             "back_translator": pe.command_name(judge_cmd, judge_model) if judge_cmd else (judge_model or "model at the judge URL")}
+    judge = pe.command_client(judge_cmd, judge_model) if judge_cmd else pe.chat_client(judge_url, judge_model, proxy=proxy)
+    r = pe.round_trip(pkg, pe.chat_client(url, model, proxy=proxy) if prose is None else None, judge,
                       prose=prose, control=control, per_block=per_block and prose is None, random_n=random_n, names=names)
     if prose is None and (judge_model or judge_url) == (model or url):
         r["warning"] = "the same model translated and back-translated — not independent; prefer another model family as judge"
@@ -292,7 +294,10 @@ def main(argv: list[str]) -> int:
     ex.add_argument("ref")
     ex.add_argument("--url", help="translator: OpenAI-compatible endpoint (…/v1)")
     ex.add_argument("--model", help="translator model name")
-    ex.add_argument("--judge-url", required=True, help="independent back-translator endpoint (preferably another model family)")
+    jx = ex.add_mutually_exclusive_group(required=True)
+    jx.add_argument("--judge-url", help="independent back-translator endpoint (preferably another model family)")
+    jx.add_argument("--judge-cmd", help="a command-line back-translator, e.g. \"codex exec -s read-only --skip-git-repo-check\" "
+                                        "(command line only — the MCP tool never runs a command a caller names)")
     ex.add_argument("--judge-model", help="back-translator model name")
     ex.add_argument("--random", type=int, default=50, help="random worlds from the package's generator besides its own worlds (default 50)")
     ex.add_argument("--whole-only", action="store_true", help="only the whole seed, not each block")
@@ -327,7 +332,7 @@ def main(argv: list[str]) -> int:
         from clingo_object import philosophy_explain as pe
         read = (lambda f: Path(f).read_text(encoding="utf-8") if f else None)
         r = explain(o.ref, o.url, o.model, o.judge_url, o.judge_model, random_n=o.random, per_block=not o.whole_only,
-                    prose=read(o.prose), control=read(o.control), proxy=not o.no_proxy)
+                    prose=read(o.prose), control=read(o.control), proxy=not o.no_proxy, judge_cmd=o.judge_cmd)
         print("\n".join(pe.summary_lines(r) + ([f"  ! {r['warning']}"] if r.get("warning") else [])))
         if o.json:
             Path(o.json).write_text(json.dumps(r, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
