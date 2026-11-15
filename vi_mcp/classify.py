@@ -207,7 +207,7 @@ def on_search(objs) -> dict:
     out = {"schueler": 0, "eingereiht": 0}
     try:
         ph = prompt_hash()
-        todo = [o for o in objs if o is not None and o.kind in KINDS and o.visibility != "privat" and o.mode not in ("quarantaene", "widerlegt")
+        todo = [o for o in objs if o is not None and o.kind in KINDS and o.visibility != "privat" and o.mode not in ("quarantaene", "widerlegt", "zurueckgezogen")
                 and (o.data.get("klasse") or {}).get("version", {}).get("prompt") != ph]
         if not todo:
             return out
@@ -258,7 +258,7 @@ def _pending_rest(n: int, ph: str) -> list[str]:
     with g.lock:
         rows = g.db().execute(
             "SELECT id, json_extract(daten, '$.klasse.version.prompt') FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') "
-            "AND modus NOT IN ('quarantaene', 'widerlegt', 'aufgegangen', 'archiviert') AND sicht <> 'privat' ORDER BY zeit DESC LIMIT ?",
+            "AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') AND sicht <> 'privat' ORDER BY zeit DESC LIMIT ?",
             (int(n),)).fetchall()
     return [oid for oid, p in rows if p != ph]
 
@@ -335,7 +335,7 @@ def _labelled() -> tuple[list[str], list[str], list[str]]:
     with g.lock:
         rows = g.db().execute(
             "SELECT id, json_extract(daten, '$.klasse.answers'), json_extract(daten, '$.klasse.memory') FROM objekt "
-            "WHERE json_extract(daten, '$.klasse.zustand') = 'einig' AND modus NOT IN ('widerlegt', 'archiviert')").fetchall()
+            "WHERE json_extract(daten, '$.klasse.zustand') = 'einig' AND modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchall()
     rows = [r for r in rows if r[1] in ANSWERS and r[2] in MEMORY]
     return [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
 
@@ -634,7 +634,7 @@ def pairs_pending(limit: int = 20, stale: bool = False, sample: int = 0) -> list
     random N per call (sleep) — the content hash is not in SQL. The export checks every object anyway: stale pairs are never trained."""
     from . import qa_pairs
     ph = qa_pairs.prompt_sha256()
-    live = ("SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', "
+    live = ("SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', "
             "'aufgegangen', 'archiviert') AND sicht <> 'privat' AND NOT EXISTS (SELECT 1 FROM tag t WHERE t.objekt_id = objekt.id "
             "AND t.tag = 'art_wissen:code') ")
     from datetime import datetime, timedelta, timezone
@@ -688,7 +688,7 @@ def pairs_report() -> dict:
         rows = g.db().execute(
             "SELECT json_extract(daten, '$.qa.state'), json_extract(daten, '$.qa.version.prompt') = ?, COUNT(*), "
             "COALESCE(SUM(json_array_length(json_extract(daten, '$.qa.pairs'))), 0), SUM(json_extract(daten, '$.qa.probe') IS NOT NULL) "
-            "FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', 'aufgegangen', 'archiviert') "
+            "FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') "
             "AND sicht <> 'privat' GROUP BY 1, 2", (qa_pairs.prompt_sha256(),)).fetchall()
     out = {"objects": 0, "ok": 0, "empty": 0, "error": 0, "none": 0, "other_prompt": 0, "pairs": 0, "probes": 0}
     for state, current, n, pairs, probes in rows:

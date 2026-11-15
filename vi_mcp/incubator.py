@@ -66,7 +66,10 @@ def status(index: str | None = None) -> dict:
     with g.lock:
         refuted = g.db().execute("SELECT COUNT(*) FROM objekt WHERE modus = 'widerlegt'" + (" AND idx = ?" if index else ""),
                                  ([index] if index else [])).fetchone()[0]
-    out.append(_c("refuted_handled", "erfuellt", refuted, None, f"{refuted} refuted object(s) marked, not deleted (informative)"))
+        withdrawn = g.db().execute("SELECT COUNT(*) FROM objekt WHERE modus = 'zurueckgezogen'" + (" AND idx = ?" if index else ""),
+                                   ([index] if index else [])).fetchone()[0]
+    out.append(_c("refuted_handled", "erfuellt", refuted, None, f"{refuted} refuted and {withdrawn} withdrawn object(s) marked, not deleted "
+                                                             "(informative; withdrawn = taken back by the author, 0.67.0)"))
     hist = evaluation.history(1)
     mrr = (((hist[-1].get("suche") or {}).get("hybrid") or {}).get("gesamt") or {}).get("mrr") if hist else None
     out.append(_c("search", "nicht_gemessen" if mrr is None else "erfuellt" if mrr >= cfg["min_mrr"] else "offen", mrr, cfg["min_mrr"],

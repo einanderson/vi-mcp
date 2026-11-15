@@ -132,7 +132,7 @@ def load(oid: str) -> np.ndarray | None:
 def all_() -> dict[str, np.ndarray]:
     _table()
     with g.lock:
-        rows = g.db().execute("SELECT v.id, v.dim, v.roh FROM vektor v JOIN objekt o ON o.id = v.id WHERE o.modus NOT IN ('widerlegt', 'archiviert', 'quarantaene')").fetchall()
+        rows = g.db().execute("SELECT v.id, v.dim, v.roh FROM vektor v JOIN objekt o ON o.id = v.id WHERE o.modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene')").fetchall()
     return {oid: _unpack(raw, dim) for oid, dim, raw in rows}
 
 
@@ -155,7 +155,7 @@ def catch_up(max_s: float | None = None) -> dict:
     with g.lock:
         missing = g.db().execute(
             f"SELECT o.id, o.text FROM objekt o LEFT JOIN vektor v ON v.id = o.id WHERE v.id IS NULL AND o.art IN ({','.join('?' * len(VECTOR_KINDS))}) "
-            "AND o.modus NOT IN ('widerlegt', 'archiviert', 'quarantaene') AND length(o.text) > 0 "
+            "AND o.modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene') AND length(o.text) > 0 "
             # code structure facts: generated one-line summaries, found by hashtag and clingo — embedding them would only add near
             # duplicates (and proximity edges between them)
             f"AND o.id NOT IN (SELECT objekt_id FROM tag WHERE tag IN ({','.join('?' * len(FACT_TAGS))})) ORDER BY o.zeit DESC",

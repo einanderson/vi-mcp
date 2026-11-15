@@ -34,12 +34,17 @@ from .log_output import log
 
 KINDS = ("erfahrung", "antwort", "erkenntnis", "regel", "reflex", "gespraech", "suche", "frage", "selbst", "schlaf", "modell", "skill", "bewertung", "bild", "seite",
          "vorschlag", "maschine")  # private virtual-machine state and snapshots
-#: strittig = refuted by exactly one foreign instance (still appears, with a note); widerlegt = refuted by the author
-#: or by ≥ 2 different instances (no longer appears)
+#: strittig = refuted by exactly one foreign instance (still appears, with a note); widerlegt = refuted by ≥ 2 independent foreign
+#: lines (model families; no longer appears); zurueckgezogen = withdrawn by its author (no longer appears). 0.67.0: withdrawn and refuted
+#: are two things — an author who takes a statement back removes the claim, it does not prove the opposite (kollektiv P13; before,
+#: both were called widerlegt, and 16 of 17 refuted objects on production were in fact withdrawn by their author).
 #: archiviert = stub (text, hashtags) stays, content compressed in the archive; visible only with modus:archiviert in the filter
 #: aufgegangen = skill was merged into another one (fusion); stays with a reference, no longer appears in searches
 #: quarantaene = imported and not yet released; appears in no search and no hint
-MODES = ("aktiv", "test", "aus", "defekt", "strittig", "widerlegt", "archiviert", "aufgegangen", "quarantaene")
+MODES = ("aktiv", "test", "aus", "defekt", "strittig", "widerlegt", "zurueckgezogen", "archiviert", "aufgegangen", "quarantaene")
+#: modes that no longer appear in searches, hints and exports: one definition, used by every filter
+GONE = ("widerlegt", "zurueckgezogen")
+GONE_SQL = "('widerlegt', 'zurueckgezogen')"
 #: Collective: who may read an object? privat = only the author instance (results may contain credentials),
 #: geteilt = all instances. The loop (server) sees everything. Exhaustive for KINDS.
 VISIBILITY_PER_KIND = {"erfahrung": "privat", "antwort": "privat", "erkenntnis": "geteilt", "regel": "geteilt", "reflex": "geteilt",
@@ -159,6 +164,21 @@ def backend() -> str:
     return dbmod.backend(_db)
 
 
+def refuted_mode(author: str, mode: str, data: dict, latest: str | None = None) -> str:
+    """The mode after a refutation (one definition for refute() and the migration): ≥ 2 foreign families → widerlegt; the author
+    refuted (now or before) → zurueckgezogen; else strittig. Families as in MemoryObject._lines (author and server excluded)."""
+    own = (author, SERVER_INSTANCE)
+    entries = data.get("widerlegungen") or []
+    covered = {e.get("instanz") for e in entries}
+    lines = {e.get("familie") or e.get("instanz") for e in entries if e.get("instanz") not in own}
+    lines |= {i for i in (data.get("widerlegt_von") or {}) if i not in own and i not in covered}
+    if len(lines) >= 2:
+        return "widerlegt"
+    if latest == author or mode == "zurueckgezogen" or author in (data.get("widerlegt_von") or {}):
+        return "zurueckgezogen"
+    return "strittig"
+
+
 def _migrate(con: Any) -> None:
     """0.1.x → 0.2.0: add columns instanz/sicht (author from the hashtag instanz:, visibility from the kind);
     cache hashtag frage:<hash> → cache:<hash> (frage is now a kind)."""
@@ -199,6 +219,25 @@ def _migrate(con: Any) -> None:
         con.execute("INSERT OR IGNORE INTO tag (objekt_id, tag) VALUES (?, 'art:bild')", (oid,))
     if old:
         log(f"migration: {len(old)} image(s) from kind erkenntnis to kind bild (ids kept)")
+    # 0.67.0: widerlegt split in two — an object its author refuted, without two foreign families, was withdrawn, not refuted; so
+    # was an object of the server that the server itself discarded without any refutation record (sleep: a skill without content).
+    # A quarantine discard (p2p.discard: a reviewer rejects foreign knowledge) keeps widerlegt.
+    # Idempotent (only widerlegt rows are read); the history names the migration.
+    moved = 0
+    for oid, author, raw, hist in con.execute("SELECT id, instanz, daten, aenderungen FROM objekt WHERE modus = 'widerlegt'").fetchall():
+        try:
+            data = json.loads(raw or "{}")
+        except ValueError:
+            continue
+        by_server = author == SERVER_INSTANCE and not (data.get("widerlegt_von") or {})  # the server discarded its own (sleep: empty skill)
+        if not by_server and (author not in (data.get("widerlegt_von") or {}) or refuted_mode(author, "widerlegt", data) != "zurueckgezogen"):
+            continue
+        changes = json.loads(hist or "[]") + [{"zeit": now(), "wer": "vi", "was": "zurueckgezogen",
+                                              "grund": "0.67.0: refuted only by its author — a withdrawal, not a refutation (kollektiv P13)"}]
+        con.execute("UPDATE objekt SET modus = 'zurueckgezogen', aenderungen = ? WHERE id = ?", (json.dumps(changes, ensure_ascii=False), oid))
+        moved += 1
+    if moved:
+        log(f"migration: {moved} object(s) widerlegt → zurueckgezogen (refuted only by their author)")
     # the table archiv (0.4–0.9) is replaced by the long-term archive; it is only dropped when empty
     if con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'archiv'").fetchone():
         if con.execute("SELECT COUNT(*) FROM archiv").fetchone()[0] == 0:
@@ -314,8 +353,10 @@ class MemoryObject:
         return save(self)
 
     def refute(self, who: str, reason: str, instance: str | None = None, family: str | None = None) -> "Objekt":
-        """Refute. The author itself or ≥ 2 different families → widerlegt (vanishes from searches); otherwise strittig (stays visible,
-        with a note) — one family alone does not erase the knowledge of another (0.33.0: before, two instances, even of the same model)."""
+        """Refute. ≥ 2 different foreign families → widerlegt; the author itself → zurueckgezogen (withdrawn: the claim is taken back,
+        the opposite is not proven — 0.67.0, before both were widerlegt); both vanish from searches. Otherwise strittig (stays visible,
+        with a note) — one family alone does not erase the knowledge of another (0.33.0: before, two instances, even of the same model).
+        A withdrawn object stays withdrawn when one foreign family refutes it too; two foreign families make it widerlegt."""
         self._require_reason(reason)
         i = instance or SERVER_INSTANCE
         from_ = dict(self.data.get("widerlegt_von") or {})
@@ -323,7 +364,7 @@ class MemoryObject:
         self.data["widerlegt_von"] = from_
         self.data["widerlegungen"] = (list(self.data.get("widerlegungen") or []) + [{"instanz": i, "familie": family or i, "zeit": now()}])[-100:]
         self.refuted += 1
-        self.mode = "widerlegt" if (i == self.instance or len(self._lines("widerlegungen", "widerlegt_von")) >= 2) else "strittig"
+        self.mode = refuted_mode(self.instance, self.mode, self.data, latest=i)
         self.change(who, self.mode, reason)
         return save(self)
 
@@ -717,7 +758,7 @@ search_index: contextvars.ContextVar[str | None] = contextvars.ContextVar("such_
 
 def _filter_sql(groups: list, remove: list, viewer: str | None) -> tuple[str, list]:
     """SQL for mode, visibility and hashtag conditions (without free text) — one source for recall() and ids_for_filter()."""
-    sql, par = "SELECT id FROM objekt WHERE modus <> 'widerlegt'", []
+    sql, par = f"SELECT id FROM objekt WHERE modus NOT IN {GONE_SQL}", []
     if search_index.get():
         sql += " AND idx = ?"
         par.append(search_index.get())
@@ -759,6 +800,9 @@ FTS_POOL = 2000
 #: ids per visibility query — below SQLite's variable limit (999 in older builds; a pool of 10^9 failed with "too many SQL variables")
 VISIBLE_CHUNK = 900
 
+#: True switches stop-word removal off for this context — the A/B measurement of the current code against the old behaviour only.
+stop_words_off: contextvars.ContextVar[bool] = contextvars.ContextVar("stoppwoerter_aus", default=False)
+
 #: How the last word search in this context ran: "und" (all words), "oder" (fallback, because too few contained all words) or None.
 word_search: contextvars.ContextVar[str | None] = contextvars.ContextVar("wortsuche", default=None)
 
@@ -773,6 +817,11 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
     if viewer == "aktuell":
         viewer = current_instance.get()
     groups, remove, words = parse_filter(filter_text, known_kinds())
+    if not stop_words_off.get():
+        # fts-stopwords (15.11.2026): function words leave the query, never the index — a natural question ANDed "wie", "ich",
+        # "der"… and the OR fallback ranked by them (production copy: question Hit@4 0.293 → 0.547). Only stop words: unchanged.
+        from .stopwords import content_words
+        words = content_words(words)
     if kinds:
         groups.append([f"art:{a}" for a in kinds])
     sql, par = _filter_sql(groups, remove, viewer)

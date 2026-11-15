@@ -288,13 +288,13 @@ def test_manual_paragraphs_do_not_displace_experience(gd):
     assert searched.count("Docker-Doku, Abschnitt") >= 6  # the search keeps everything
 
 
-def test_content_empty_auto_skill_is_refuted(gd):
+def test_content_empty_auto_skill_is_withdrawn(gd):
     from vi_mcp import skills
     o = skills.new("auto-test1", ["tool:Bash"], ["Bash", "AskUserQuestion", "Write"], "Bash scheiterte und gelang danach im selben Gespräch", "Schlaf", [], g.SERVER_INSTANCE, who="vi")
     real = skills.new("auto-test2", ["tool:Bash"], ["Bash", "netbox_get_vms"], "Bash scheiterte, netbox_get_vms half", "Schlaf", [], g.SERVER_INSTANCE, who="vi")
     assert skills.content_empty(o) and not skills.content_empty(real)
     skills.rate()
-    assert g.load(o.id).mode == "widerlegt" and g.load(real.id).mode != "widerlegt"
+    assert g.load(o.id).mode == "zurueckgezogen" and g.load(real.id).mode not in g.GONE  # 0.67.0: the server withdraws its own empty skill
 
 
 def test_missing_required_field_rejected_not_silently_answered(gd):

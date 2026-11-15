@@ -4,6 +4,7 @@ import py_compile
 
 import pytest
 
+from clingo_object import philosophy as ph
 from vi_mcp import evaluation, finetune, tools
 from vi_mcp import memory as g
 
@@ -466,6 +467,8 @@ def _roundtrip_kit(d, old_format=False):
     if old_format:
         fx = json.loads((Path(__file__).resolve().parent / "fixtures" / "kollektiv_principles_1.1.0.json").read_text())
         prose = {p["id"]: p["text"] for p in fx["principles"]}
+        keep = [i for i, it in enumerate(items) if it["meta"].get("block") in (None, *prose)]  # a 1.2.0 kit knew P1–P7 only
+        items, answers = [items[i] for i in keep], [answers[i] for i in keep]
         for it in items:  # the 1.1.0 kit: the block as meta.principle and the historical prose as gold_text
             if it["meta"].get("block"):
                 it["meta"]["principle"] = it["meta"].pop("block")
@@ -537,7 +540,8 @@ def test_the_kit_scores_prose_answers_by_the_round_trip(tmp_path):
         out = json.loads((d / "eval" / "philosophy_roundtrip.json").read_text())
         worlds = len(pkg["worlds"]) + 5
         tuned, base = out["sets"]["explain_seed_part"]["tuned"], out["sets"]["explain_seed_part"]["base"]
-        assert tuned["items"] == 7 and tuned["ran"] == 7 and tuned["exact"] == 7 and tuned["agreement_mean"] == 1.0
+        nb = len(ph.blocks(pkg["seed"])[0])  # one item per principle block (12 in kollektiv 1.3.0)
+        assert tuned["items"] == nb and tuned["ran"] == nb and tuned["exact"] == nb and tuned["agreement_mean"] == 1.0
         assert base["ran"] == 0 and base["agreement_mean"] == 0.0 and all(v.endswith("(did not run)") for v in base["per_item"].values())
         assert out["sets"]["explain_seed"]["tuned"]["per_item"]["explain_seed:all"] == f"{worlds}/{worlds}"
         assert out["sets"]["recite"]["tuned"]["exact"] == out["sets"]["recite"]["tuned"]["items"]
@@ -549,7 +553,7 @@ def test_the_kit_scores_prose_answers_by_the_round_trip(tmp_path):
         blind = (d / "eval" / "philosophy_blind.md").read_text()
         key = json.loads((d / "eval" / "philosophy_blind_key.json").read_text())
         assert "tuned" not in blind and "base" not in blind.lower().replace("based", "")
-        assert "counts(S, P, O) <= line(S, P, O, I) & author(S, A) & (I != A)" in blind and len(key) == 8
+        assert "counts(S, P, O) <= line(S, P, O, I) & author(S, A) & (I != A)" in blind and len(key) == nb + 1
         assert all(sorted(v.values()) == ["base", "tuned"] for v in key.values())
         n = len(calls)
         assert run().returncode == 0 and len(calls) == n  # resumable: answers and control are kept, nothing is asked again
@@ -605,6 +609,18 @@ def test_the_kit_round_trip_takes_a_command_as_back_translator(tmp_path):
     assert p.returncode == 0, p.stderr[-2000:]
     out = json.loads((d / "eval" / "philosophy_roundtrip.json").read_text())
     assert out["back_translator"] == f"{Path(sys.executable).name} gpt-x"
-    assert out["sets"]["explain_seed_part"]["tuned"]["exact"] == 7 and out["sets"]["explain_seed_part"]["base"]["ran"] == 0
+    assert out["sets"]["explain_seed_part"]["tuned"]["exact"] == len(ph.blocks(pkg["seed"])[0]) and out["sets"]["explain_seed_part"]["base"]["ran"] == 0
     p = subprocess.run([sys.executable, "phil_roundtrip.py", "--judge-cmd", cmd, "--judge-url", "http://x/v1"], cwd=d, capture_output=True, text=True)
     assert p.returncode != 0 and "not allowed with" in p.stderr  # one back-translator, never two
+
+
+def test_no_world_of_the_evaluation_is_in_the_seed_training(tmp_path):
+    """0.67.0: the seed's training worlds are random, and small worlds recur — runs 5–7 had 73 and 12 training rows whose world stood
+    in their own evaluation (the package's fixed worlds were never filtered). The kit drops such rows and says how many."""
+    from vi_mcp import finetune
+    (tmp_path / "split").mkdir()
+    out = finetune.philosophy_stage(tmp_path, "kollektiv")
+    train = {json.loads(x)["meta"]["facts"] for x in (tmp_path / "split" / "philosophy.train.jsonl").read_text().splitlines()}
+    evals = [json.loads(x) for x in (tmp_path / "eval" / "philosophy.jsonl").read_text().splitlines()]
+    assert not [i["id"] for i in evals if (i.get("meta") or {}).get("facts") in train]
+    assert out["philosophy"]["dropped_as_evaluation_worlds"] >= 1  # this kit draws package worlds at random (measured: 2)

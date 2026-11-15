@@ -241,14 +241,15 @@ def content_empty(o: g.MemoryObject) -> bool:
 
 
 def rate() -> dict:
-    """Skills that fail repeatedly and never help → strittig (named), not deleted. Automatic skills without content → widerlegt."""
+    """Skills that fail repeatedly and never help → strittig (named), not deleted. Automatic skills without content → zurueckgezogen
+    (0.67.0: the server withdraws its own skill; widerlegt is reserved for two independent foreign families)."""
     from . import bandit
     disputed = 0
     for _, o, _g in g.recall("art:skill (modus:test OR modus:aktiv OR modus:strittig)", limit=500, viewer=None):
         if content_empty(o):
-            o.mode = "widerlegt"
-            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:widerlegt"]
-            o.change("vi", "widerlegt", "sleep: solution path consists only of general tools; \"helped\" only counted that the tool usually succeeds anyway")
+            o.mode = "zurueckgezogen"
+            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:zurueckgezogen"]
+            o.change("vi", "zurueckgezogen", "sleep: solution path consists only of general tools; \"helped\" only counted that the tool usually succeeds anyway")
             g.save(o)
     for _, o, _g in g.recall("art:skill (modus:test OR modus:aktiv)", limit=500, viewer=None):
         yes, no = bandit.counter(o)

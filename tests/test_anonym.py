@@ -452,3 +452,27 @@ def test_training_kit_bundles_source_only_not_package_local_configuration(gd, tm
     for path in directory.rglob("*"):
         if path.is_file():
             assert b"PRIVATE-PACKAGE-MARKER" not in path.read_bytes() and b"PRIVATE-CREDENTIAL-MARKER" not in path.read_bytes()
+
+
+# ── 0.67.0: false alarms on Markdown emphasis and German compounds (reported from a wiki page, 15.11.2026) ─────────────────────────
+
+SYNTHETIC_PASSWORD = "qWrtZkLmPx]["  # same shape as a real one (letters of both cases, ends in brackets), invented for this test
+
+
+def test_markdown_emphasis_and_long_compounds_are_no_secret():
+    """A literature summary was refused for the open network as `geheimnis`: the closing * or ** of an emphasis counted as a special
+    character after a capitalised word (_BRACKET_WORD), and long hyphenated German compounds reached the entropy threshold (_mixed)."""
+    for t in ["**Berger** (*The Sacred Canopy*, 1967)", "*Fading Foundations*", "Terror-Management-Effekt", "Kurzzeit-Kausalmechanismus",
+              "**Münchhausen-Trilemma**", "*Traktat über kritische Vernunft*", "_Anziehen_", "**Durkheim**", "Achtung! Bitte lesen."]:
+        assert [f for f in anonymize.findings(t) if f[0] == "geheimnis"] == [], t
+
+
+def test_real_secrets_are_still_found():
+    """The counter-checks from the report: the protection is not loosened for anything that looks like a key."""
+    import random
+    import string
+    rnd = random.Random(7)
+    token43 = "".join(rnd.choice(string.ascii_letters + string.digits + "_-") for _ in range(43))
+    ghp = "ghp_" + "".join(rnd.choice(string.ascii_letters + string.digits) for _ in range(36))
+    for t in [SYNTHETIC_PASSWORD, f"key {token43} end", ghp, "password = hunter2xyz", f"**{SYNTHETIC_PASSWORD}**", f"*{ghp}*"]:
+        assert anonymize.findings(t), t

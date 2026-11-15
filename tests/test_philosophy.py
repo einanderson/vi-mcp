@@ -177,7 +177,7 @@ def test_the_priority_profile_rules_are_pinned_to_their_name():
     # pinned as the translated program, so a marker change (philosophy-v2 dropped the prose comments) cannot hide a rule change:
     # this hash is the same before and after that change
     assert hashlib.sha256(ph.n.translate(rules)[0].encode()).hexdigest() == "b2e98f6f18c948d6f77a5c5381cadf303a1426e8b5e977ae3e5482e5f224510e"
-    assert ph.package_hash(ph.load("kollektiv")) == "fdfd38e8402abbab667eccb6820e42457e64e077c669a05e67ff601ac4ea66a8"  # 1.2.0, seed only
+    assert ph.package_hash(ph.load("kollektiv")) == "1f205f4c84fb6544007bb4c0cf5630fc80a8bed58bc18294a30aed60a4d914d9"  # 1.3.0, seed only (1.2.0 was fdfd38e8…)
 
 
 TIE = ("evidence(q, pos, a, measured)\napplicable(a, q)\nrank(a, 1, 1)\nobserved(a, 10)\n"
@@ -412,3 +412,71 @@ def test_one_solve_with_the_translated_seed_gives_exactly_what_the_full_check_gi
         a, b = ph.solve(pkg, facts), n.check(ph.program(pkg) + "\n" + facts)
         assert sorted(a["folgerungen"]) == sorted(b["folgerungen"]) and a["zustand"] == b["zustand"]
         assert [v["never"] for v in a["verletzt"]] == [v["never"] for v in b["verletzt"]]
+
+
+def test_kollektiv_counts_origins_not_votes_and_names_why_it_holds_back():
+    """kollektiv 1.3.0 — the user (15.11.2026): "Nur weil 1000 Menschen etwas glauben, muss es nicht wahr sein." A thousand repetitions
+    of one origin are one origin; a model-made origin counts for nothing; hearsay, one camp and an extraordinary claim hold acceptance
+    back with the reason; the untestable is its own class. And over random worlds every statement keeps at most one value and one
+    acceptance (the new rules never contradict the old ones)."""
+    import collections
+    import random
+    pytest.importorskip("clingo")
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load("kollektiv")
+    base = "author(s1, z)\nclosed(s1)\n"
+    copies = "".join(f"line(s1, pos, o{i}, m{i})\nderives_from(o{i}, o{i - 1})\n" for i in range(1, 30))
+    v = ph.evaluate(pkg, base + "line(s1, pos, o0, m0)\n" + copies)
+    assert "acceptance(s1,tentative)" in v["answers"]["acceptance"] and "grounded(s1,pos,o0)" in ph.solve(pkg, base + "line(s1, pos, o0, m0)\n" + copies)["folgerungen"]
+    v = ph.evaluate(pkg, base + "line(s1, pos, gen, x)\nmachine_made(gen)\n")
+    assert v["answers"]["value"] == ["value(s1,n)"]
+    two = base + "line(s1, pos, a, x)\nline(s1, pos, b, y)\n"
+    for extra, why in (("evidence_kind(a, hearsay)\nevidence_kind(b, hearsay)\n", "hearsay_only"), ("camp(a, red)\ncamp(b, red)\n", "one_camp"),
+                       ("extraordinary(s1)\n", "extraordinary")):
+        r = ph.solve(pkg, two + extra)
+        assert f"grund(s1,held_back,{why})" in r["folgerungen"] and "acceptance(s1,tentative)" in r["folgerungen"], why
+    assert "acceptance(s1,untestable)" in ph.solve(pkg, two + "untestable(s1)\n")["folgerungen"]
+    rnd = random.Random(11)
+    for _ in range(300):
+        ev = ph.evaluate(pkg, pt.facts_text(pt.draw_world(pkg, rnd)))
+        assert ev["state"] == "erfuellt"
+        for atoms in ev["answers"].values():
+            assert max(collections.Counter(ph._args(a)[0] for a in atoms).values(), default=1) == 1
+
+
+def test_the_language_stage_covers_a_seeds_forms_and_crossed_vocabulary_never_leaks_a_seed_rule():
+    """0.67.0 (run 8): run 7's language stage knew X/Y/Z and arity 1–2 almost only, so seed rules (arity 3–4, constants as arguments,
+    nested duties, closure rules, S/P/O) came out garbled even with neutral names. The extended forms are valid notation, rename their
+    variables consistently in code and prose, and a philosophy's own vocabulary may appear in translation tasks — but no rule of its
+    seed, not even renamed or reordered (normal_rule)."""
+    import random
+    import re
+    from clingo_object import clingo_prose as cp
+    rnd = random.Random(5)
+    seen_forms = set()
+    for _ in range(300):
+        code, prose = cp.program(rnd, extended=1.0, rename=0.0)
+        cp.n.translate(code)  # valid notation
+        seen_forms |= {"quad" for c in code.splitlines() if c.count(",") >= 3} | {"never" for c in code.splitlines() if c.startswith("never(")}
+        seen_forms |= {"duty" for c in code.splitlines() if re.match(r"(may|forbidden|obligatory)\(\w+\(", c)}
+    assert {"quad", "never", "duty"} <= seen_forms
+    code, prose = cp.rename_vars("h(X, Y) <= r(X, Y, Z)", "H holds for X and Y when X r Y via some Z.", random.Random(1))
+    letters = set(re.findall(r"\b[A-Z]\b", code))
+    assert letters and letters.isdisjoint({"X", "Y", "Z"}) and letters == set(re.findall(r"\b[A-Z]\b", prose.replace("H ", "")))
+    assert cp.normal_rule("a(S, P) <= c(P) & b(S, O)") == cp.normal_rule("a(Q, W) <= b(Q, K) & c(W)")  # renamed and reordered: one form
+    kol = ph.load("kollektiv")
+    voc = {p: v["arity"] for p, v in ph.vocabulary(kol).items() if v["kind"] != "duty"}
+    acts = sorted(set(re.findall(r"(?:may|forbidden|obligatory)\((\w+)\(", kol["seed"])))
+    seed_rules = [x for x in kol["seed"].splitlines() if x.strip() and not x.startswith("#")]
+    forbidden = {cp.normal_rule(x) for x in seed_rules}
+    rnd = random.Random(9)
+    for _ in range(500):
+        r = cp.vocab_program(rnd, voc, acts, ["pos", "neg", "t", "f"], forbidden)
+        assert r is not None
+        for rule in r[0].splitlines():
+            assert cp.normal_rule(rule) not in forbidden
+            cp.n.translate(rule)
+    # a seed rule offered as the only possible draw is refused: the guard decides, not luck
+    only = {"line": 4, "author": 2, "counts": 3}
+    refused = cp.vocab_program(random.Random(1), only, [], [], {cp.normal_rule(seed_rules[0])} | forbidden, rules=(1, 1), tries=200)
+    assert refused is None or all(cp.normal_rule(x) != cp.normal_rule(seed_rules[0]) for x in refused[0].splitlines())

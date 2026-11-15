@@ -1140,12 +1140,17 @@ def philosophy_stage(d: Path, name: str, prompts: int = PHILOSOPHY_PROMPTS, seed
     train_facts = {x["meta"]["facts"] for x in phil_train}
     phil_test = [x for x in pt.sft_rows(pkg, heldout * 2, seed + 1, test=True) if x["meta"]["facts"] not in train_facts][:heldout]
     ev = pt.eval_items(pkg, train_facts, lang_test, seed=seed + 100)
+    # 0.67.0: no world of the evaluation in training — eval_items drops judge items seen in training, but the package's fixed worlds
+    # can be drawn at random too (2 of 16 in a kollektiv kit; runs 5–7 had 73 and 12 such rows). Those training rows go, counted.
+    eval_facts = {i["meta"]["facts"] for i in ev["items"] if (i.get("meta") or {}).get("facts")}
+    dropped_for_eval = sum(x["meta"]["facts"] in eval_facts for x in phil_train)
+    phil_train = [x for x in phil_train if x["meta"]["facts"] not in eval_facts]
     (d / "eval").mkdir(mode=0o700, exist_ok=True)
     out = {"name": pkg["name"], "version": pkg["version"], "hash": r["hash"], "seed": seed, "order": ["language", "philosophy", "grpo"],
            "prose_in_training": False, "seed_code_without_comments": True,
            "language": {"train": len(lang_train), "test": len(lang_test), "excluded_predicates": len(vocab),
                         "train_sha256": _rows(split / "language.train.jsonl", lang_train), "test_sha256": _rows(split / "language.test.jsonl", lang_test)},
-           "philosophy": {"train": len(phil_train), "test": len(phil_test),
+           "philosophy": {"train": len(phil_train), "test": len(phil_test), "dropped_as_evaluation_worlds": dropped_for_eval,
                           "tasks": dict(sorted(Counter(x["meta"]["task"] for x in phil_train).items())),
                           "seed_shown": sum(x["meta"]["seed_shown"] for x in phil_train),
                           "train_sha256": _rows(split / "philosophy.train.jsonl", phil_train),

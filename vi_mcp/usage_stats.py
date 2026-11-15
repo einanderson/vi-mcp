@@ -121,7 +121,7 @@ def data(days: float = 7) -> dict:
         knowledge_new = db.execute("SELECT art, sicht, zugriffe, (SELECT tag FROM tag t WHERE t.objekt_id = o.id AND t.tag LIKE 'quelle_art:%') "
                                 "FROM objekt o WHERE art IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') AND zeit >= ?", (since,)).fetchall()
         knowledge_total = db.execute("SELECT COUNT(*), SUM(zugriffe > 0) FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
-                                "AND modus NOT IN ('widerlegt', 'archiviert')").fetchone()
+                                "AND modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchone()
         top = db.execute("SELECT id, zugriffe, substr(text, 1, 80) FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
                          "ORDER BY zugriffe DESC LIMIT 5").fetchall()
         conversations = db.execute("SELECT instanz, COUNT(*) FROM objekt WHERE art = 'gespraech' AND zeit >= ? GROUP BY instanz", (since,)).fetchall()

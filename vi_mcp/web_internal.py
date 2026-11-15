@@ -171,7 +171,8 @@ def _tag_links(base: str, tags: list[str]) -> str:
 
 
 def _hit(base: str, o: g.MemoryObject) -> str:
-    refuted = ' <span class="refuted">refuted</span>' if o.mode == "widerlegt" else ""
+    refuted = (' <span class="refuted">refuted</span>' if o.mode == "widerlegt" else
+               ' <span class="refuted">withdrawn by its author</span>' if o.mode == "zurueckgezogen" else "")
     return (f'<li class="hit"><span class="kind">{e(o.kind)}</span><span class="kind">{e(o.idx)}</span>'
             f'<h3><a href="{e(base)}/o/{urllib.parse.quote(o.id, safe=":")}">{e(o.text[:220])}</a>{refuted}</h3>'
             f'<p class="excerpt muted">{e(_excerpt(o))}</p><p class="meta">{when(o.last_at or o.ts)}'
@@ -188,7 +189,7 @@ def home(base: str, instance: str) -> str:
                     + (f'<p>{e(x["beschreibung"])}</p>' if x.get("beschreibung") else "") + "</div>" for x in rows)
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND sicht <> 'privat' AND modus NOT IN ('quarantaene', 'widerlegt') "
+            "SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND sicht <> 'privat' AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "
             "ORDER BY zeit DESC LIMIT 12")]
     recent = "".join(_hit(base, o) for o in g.load_many(ids).values() if _visible(o) is None)
     body = (f'<div class="hero"><h1>What does the memory know?</h1><form class="search" action="{e(base)}/suche" method="get" role="search">'
@@ -272,7 +273,9 @@ def object_page(base: str, instance: str, oid: str, human: bool = False) -> str 
         return None
     yes, no = bandit.counter(o)
     facts = [("kind", e(o.kind)), ("index", f'<a href="{e(base)}/i/{e(o.idx)}">{e(o.idx)}</a>'), ("author", e(o.instance or "—")),
-             ("visibility", e(o.visibility)), ("state", e(o.mode) + (' <span class="refuted">refuted — do not rely on it</span>' if o.mode == "widerlegt" else "")),
+             ("visibility", e(o.visibility)), ("state", e(o.mode) + (' <span class="refuted">refuted — do not rely on it</span>' if o.mode == "widerlegt" else
+                                     ' <span class="refuted">withdrawn by its author — not proven false, but no longer claimed</span>'
+                                     if o.mode == "zurueckgezogen" else "")),
              ("learned", when(o.ts)), ("last used", when(o.last_at)), ("importance", e(o.importance)),
              ("source", _inline(str(o.data.get("quelle") or "—"))),
              ("measured", f"shown {bandit.shown(o)}× · helped {yes:g} · did not help {no:g} · confirmed by "

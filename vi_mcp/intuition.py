@@ -780,7 +780,7 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
     need = 2  # an identifier (host name, error code) or a hashtag value counts 2, another shared word 1
     skip = set(shown or [])
     hits = g.recall(" ".join(words), limit=PROMPT_HINTS * 6, kinds=PROMPT_KINDS, viewer=instance, or_fallback=True)
-    cand = [o for _s, o, _g in hits if o.id not in skip and o.mode not in ("strittig", "quarantaene", "widerlegt", "archiviert")
+    cand = [o for _s, o, _g in hits if o.id not in skip and o.mode not in ("strittig", "quarantaene", "widerlegt", "zurueckgezogen", "archiviert")
             and not ("herkunft:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
     cand = p2p.without_blocked(cand)
     lw = [w.lower() for w in words]

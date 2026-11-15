@@ -513,7 +513,7 @@ VI: confirm an object (it becomes more important) — with a reason. Counts as f
 
 ### `vi_refute`
 
-VI: refute an object (no longer shown in searches) — with a reason. Counts as feedback if it was just shown as a hint. · German alias `vi_widerlege`
+VI: refute an object — with a reason. Refuted by its author it becomes withdrawn (zurueckgezogen: taken back, not proven false); refuted by two independent model families it becomes refuted (widerlegt); both are no longer shown in searches. One foreign family marks it disputed. Counts as feedback if it was just shown as a hint. · German alias `vi_widerlege`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1160,6 +1160,7 @@ First line of each module's docstring.
 | `on_demand` | Training on demand (since 0.20.0) — instead of only in the nightly sleep. |
 | `p2p` | The memory on the network: anonymous outbox, checked inbox, quarantine, right to be forgotten, value per publisher. |
 | `philosophy` | vi-mcp side of philosophy packages (0.66.0): the command line, installing a checked package into the VI, the tool vi_philosophy. |
+| `philosophy_provenance` | Provenance adapter: the evidence about a knowledge object as input facts of kollektiv 1.3.0 — shadow mode only (Unreleased). |
 | `qa_pairs` | Grounded question-answer pairs for knowledge — the training form of a VI's knowledge (0.65.0). |
 | `questions` | Questions between instances — instances learn from each other by asking each other. |
 | `redteam` | Memory-poisoning test (0.62.0) — how often does planted knowledge reach an agent? Runs in a throw-away memory, never in the real one. |
@@ -1177,6 +1178,7 @@ First line of each module's docstring.
 | `sleep_cycle` | Sleep — the consolidation run (docs/FORSCHUNG.md A4, A5, C2). |
 | `solutions` | Solutions (0.56.0) — which problem was solved by what, with its content, to keep company knowledge. |
 | `stdio_bridge` | 0.36.0: `vi-mcp stdio` — MCP over stdio for clients on the server host, without a token. |
+| `stopwords` | Stop words dropped from a free-text search query before the full-text index is asked (fts-stopwords, 15.11.2026). |
 | `tools` | The MCP tools of the VI. Groups: |
 | `training_eval` | Independent task judgments and executable program evaluation; no word-overlap adoption gate. |
 | `training_runtime` | Standalone training-kit runtime: audited tokenization, assistant targets and real trainer preflight without weight updates. |

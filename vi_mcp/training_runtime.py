@@ -377,6 +377,10 @@ def main(argv=None):
             model = AutoPeftModelForCausalLM.from_pretrained(parent, is_trainable=True, quantization_config=quant,
                                                             dtype=torch.float32 if (o.cpu or o.fp32) else "auto", trust_remote_code=False)
             peft, report["parent_adapter"] = None, str(parent)
+            # a continued stage trains the parent's adapter with the parent's rank; --lora-rank only shapes a new adapter (0.67.0: the
+            # report showed the CLI default 16 for a rank-64 parent)
+            report["lora_rank"] = getattr(parent_config, "r", None) or (parent_config.get("r") if isinstance(parent_config, dict) else None)
+            report["lora_rank_source"] = "parent adapter"
         else:
             if o.stage not in ROOT_STAGES and not o.from_base and not o.preflight:
                 raise ValueError("later stages require an existing parent adapter")

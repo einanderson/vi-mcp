@@ -64,7 +64,8 @@ _FQDN = re.compile(r"(?<![\w@./-])[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?
 #: host names following the name+number scheme: app0815, dbtest01, web-01, db-test-02 (found 08.11.2026: dbtest01 got through)
 _NUMBERED_HOST = re.compile(r"\b[a-z]{2,12}(?:-[a-z]{2,12})*-?\d{2,5}\b", re.I)
 _WORD = re.compile(r"(?<![\w<])[^\s<>\"'`=:,;()\[\]{}]{8,}")
-#: `qWrtZkLmPx][`: special characters at the end split `_WORD`; a variable with an index (`werte[i]`) has no capital letter
+#: `qWrtZkLmPx][` (an invented example of a real shape): special characters at the end split `_WORD`; a variable with an index
+#: (`werte[i]`) has no capital letter
 _BRACKET_WORD = re.compile(r"(?<![\w<])[A-Za-z0-9]{6,}[\]\[!$%&*#]{1,3}(?![\w\]\[])")
 _MCP = re.compile(r"mcp__[\w-]+?__")
 #: hashtags whose value always describes the site or a person
@@ -88,6 +89,13 @@ def _public(host: str) -> bool:
     return any(h == d or h.endswith("." + d) for d in PUBLIC + PRIVATE_EXTRA)
 
 
+#: 0.67.0: a word of letters and hyphens only (Terror-Management-Effekt) is a compound, never a key — real keys carry digits or _ + /
+_COMPOUND = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)+")
+#: 0.67.0: a natural word (only the first letter may be capital, no digit) followed only by * ! # is Markdown emphasis or punctuation
+#: (**Berger**, *Canopy*, Achtung!), never a password; brackets and $ % & stay strict
+_NATURAL_WORD = re.compile(r"[A-Z]?[a-z]+")
+
+
 def _mixed(w: str) -> bool:
     """Does a word look like a password or key? False alarms cost only a placeholder, hits prevent a leak."""
     w = w.strip(".")
@@ -97,7 +105,7 @@ def _mixed(w: str) -> bool:
     if len(w) >= 24:
         distribution = Counter(w)
         entropy = -sum(n / len(w) * math.log2(n / len(w)) for n in distribution.values())
-        if entropy >= 3.5 and sum((gr, kl, zi)) >= 2 and "_" not in w:
+        if entropy >= 3.5 and sum((gr, kl, zi)) >= 2 and "_" not in w and not _COMPOUND.fullmatch(w.strip("*_")):
             return True
     if re.fullmatch(r"[0-9a-f]{32,}", w, re.I):
         return True
@@ -183,6 +191,9 @@ def findings(text: str, known_names: frozenset[str] | set[str] = frozenset()) ->
             raw.append(("geheimnis", m.start(), m.end()))
     for m in _BRACKET_WORD.finditer(text):
         word = m.group(0)
+        stem = word.rstrip("][!$%&*#")
+        if _NATURAL_WORD.fullmatch(stem) and set(word[len(stem):]) <= set("*!#"):
+            continue  # emphasis or punctuation after an ordinary word (0.67.0)
         if any(c.isupper() for c in word) and any(c.islower() for c in word):
             raw.append(("geheimnis", m.start(), m.end()))
     outputs, evidenced = [], []

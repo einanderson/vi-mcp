@@ -381,8 +381,9 @@ TOOLS = [
      "inputSchema": _schema({"id": _S, "reason": _S, "source": {"type": "string", "description": "optional: where you checked it (command, host, time or URL)"}},
                             ["id", "reason"])},
     {"name": "vi_refute",
-     "description": "VI: refute an object (no longer shown in searches) — with a reason. Counts as feedback if it was just shown as a "
-                    "hint.",
+     "description": "VI: refute an object — with a reason. Refuted by its author it becomes withdrawn (zurueckgezogen: taken back, not "
+                    "proven false); refuted by two independent model families it becomes refuted (widerlegt); both are no longer shown in "
+                    "searches. One foreign family marks it disputed. Counts as feedback if it was just shown as a hint.",
      "inputSchema": _schema({"id": _S, "reason": _S}, ["id", "reason"])},
     {"name": "vi_forget",
      "description": "VI: discard remembered answers of a tool (the next call runs fresh).",

@@ -81,7 +81,42 @@ def test_contradiction_disputed_then_refuted(from_seq):
     with session.on_behalf(from_seq[0]):
         o2 = g.new_object("erkenntnis", "eigener Irrtum über Port", ["thema:q"], {"quelle": "x"}, reason="T")
     o2.refute("ki@a", "selbst falsch", "a")
-    assert g.load(o2.id).mode == "widerlegt"  # the author may refute right away
+    assert g.load(o2.id).mode == "zurueckgezogen"  # 0.67.0: the author withdraws right away — taken back, not proven false
+    assert not g.recall("thema:q", viewer=None)  # gone from searches like a refuted object
+
+
+def test_withdrawn_and_refuted_are_two_modes(from_seq, tmp_path):
+    """0.67.0 — the user: "teile widerlegt im Gedächtnis in zwei Begriffe auf". An author's refutation withdraws (zurueckgezogen);
+    two foreign model families refute (widerlegt); a withdrawn object stays withdrawn after one foreign refutation and becomes
+    refuted after two. The migration moves old author-only widerlegt objects, keeps the rest and names itself in the history."""
+    import json
+    with session.on_behalf(from_seq[0]):
+        o = g.new_object("erkenntnis", "w läuft auf Port 81", ["thema:w"], {"quelle": "x"}, reason="T")
+    o = g.load(o.id).refute("ki@a", "selbst falsch", "a")
+    assert o.mode == "zurueckgezogen"
+    o = g.load(o.id).refute("ki@b", "auch falsch", "b", family="fam_b")
+    assert o.mode == "zurueckgezogen"  # one foreign family does not turn a withdrawal into a refutation
+    o = g.load(o.id).refute("ki@c", "falsch gemessen", "c", family="fam_c")
+    assert o.mode == "widerlegt"  # two independent foreign families: refuted
+    assert g.refuted_mode("a", "aktiv", {"widerlegungen": [{"instanz": "b", "familie": "f"}, {"instanz": "c", "familie": "f"}]}) == "strittig"
+    # migration: an old author-only widerlegt becomes zurueckgezogen; a refutation by two families stays widerlegt
+    with session.on_behalf(from_seq[0]):
+        old = g.new_object("erkenntnis", "alt vom Autor widerlegt", ["thema:m"], {"quelle": "x"}, reason="T")
+        kept = g.new_object("erkenntnis", "alt von zwei Familien widerlegt", ["thema:m"], {"quelle": "x"}, reason="T")
+    with g.lock:
+        con = g.db()
+        con.execute("UPDATE objekt SET modus = 'widerlegt', daten = ? WHERE id = ?",
+                    (json.dumps({"quelle": "x", "widerlegt_von": {"a": 1}, "widerlegungen": [{"instanz": "a", "familie": "a"}]}), old.id))
+        con.execute("UPDATE objekt SET modus = 'widerlegt', daten = ? WHERE id = ?",
+                    (json.dumps({"quelle": "x", "widerlegt_von": {"b": 1, "c": 1},
+                                 "widerlegungen": [{"instanz": "b", "familie": "fb"}, {"instanz": "c", "familie": "fc"}]}), kept.id))
+        g._migrate(con)
+        con.commit()
+    assert g.load(old.id).mode == "zurueckgezogen" and g.load(old.id).changes[-1]["was"] == "zurueckgezogen"
+    assert g.load(kept.id).mode == "widerlegt"
+    with g.lock:
+        g._migrate(g.db())  # idempotent: nothing left to move
+    assert g.load(old.id).changes[-1]["was"] == "zurueckgezogen" and len([c for c in g.load(old.id).changes if c["was"] == "zurueckgezogen"]) == 1
 
 
 def test_context_hashtags_as_triggers(gd):

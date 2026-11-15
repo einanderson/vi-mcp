@@ -1,6 +1,6 @@
 # Learning What to Put in Front of the Model: Measured Memory, Incubation and a Weighted Language for AI Agents
 
-*vi-mcp technical report · version 0.63.1 · 14 November 2026*
+*vi-mcp technical report · version 0.67.0 (draft) · 15 November 2026*
 
 **Abstract.** vi-mcp is a shared memory for many AI agents, served over the Model Context Protocol (MCP). It never trains the language
 model it serves. Instead it learns, from the measured outcome of every action of every connected agent, *which context to put in front
@@ -14,8 +14,12 @@ taken on a production instance; where a claim is not measured we call it a hypot
 0.36–0.43 full text; ranked hints beat random ones by 6.9 ± 3.4 points of success; LLM labels agree across prompt variants with
 Cohen's κ 0.80; with **clingo-object** — answer set programming over the memory's own objects, written as an object-oriented language
 in real Python — a language model answered 15 of 16 relational questions exactly, against 2 of 16 with searches alone), what does not yet
-(no human gold set, no fine-tuning run, the total effect of hints still being measured) and what we found wrong in our own work along
-the way.
+(no human gold set, the total effect of hints still being measured) and what we found wrong in our own work along the way. Since 0.66.0
+the report also covers **philosophies as seeds**: an AI's principles exist only as a checked clingo-object rule set, and prose is a
+translation checked by a round trip through an independent model. The first philosophy, *kollektiv*, says how a member of an AI
+collective holds a statement supported and what it must do; its version 1.3.0 counts **origins, not votes**, as an answer to fake news.
+Fine-tuning a 0.6B model on such a seed taught it the seed's verdicts (held-out worlds not seen in training: 20 of 38 exact, against 0 of 38 for the base model)
+but erased the language stage it was built on: catastrophic forgetting, which we found and are measuring a fix for.
 
 ---
 
@@ -149,6 +153,22 @@ heard of (57 hosts, none present as a hashtag); agents' searches had no empty re
 failure. Since 0.62.0 an empty search says why — a word unknown to the memory (with "did you mean" from the same kind) or known words that
 no object carries together — and the statistics count both separately. The earlier interpretation ("agents guess tags that do not exist")
 was ours and was wrong; it is corrected here and in the memory.
+
+### 4.7 Search at scale: four results, half a million objects
+
+An agent sees four results, so **Hit@4** is the measure that matters. On a production copy (150 questions × 2 styles) hybrid search —
+bge-m3 vectors, FTS5 full text, reciprocal rank fusion and a reranker — reached Hit@1 0.80 and **Hit@4 0.933**; full text alone 0.56. The
+reranker takes 1.9 of 2.4 s per query. A scale test with 500,310 knowledge objects (the copy plus distractors from source pages without
+evaluation targets; a proxy, not a picture of future data) kept Hit@4 at 0.930; caching the vector matrix and filtering visibility only on
+the full-text hits cut the full-text step from 1,826 ms to 90 ms without changing one of 300 ranks.
+
+Two experiments, two outcomes. Putting an object's content into its one vector **hurt** (Hit@4 0.963 → 0.843 on 5,000 objects; the gain
+reported for chunked retrieval comes from chunks with their heading path, which we have not tested). Removing **stop words from the query, never from the index**
+— the published Snowball lists for German and English, unchanged [73] — **helped** full text strongly: natural questions ANDed "wie",
+"ich", "how", so the AND set was empty and the OR fallback ranked by weak words. On the held-out half of a split fixed before any run,
+full-text Hit@4 for questions rose from 0.347 to 0.533 (16 improved, 2 worse, exact McNemar p = 0.0013); keyword queries did not change;
+hybrid Hit@4 moved from 0.933 to 0.947, not significant (p = 0.22). No FTS5 tokenizer (porter, trigram, a Snowball German stem column)
+beat unicode61; trigram hurt keyword queries and needs a 5.4 GB index at 500k objects.
 
 ## 5 VIL — a language for AIs, with meaning in weights
 
@@ -363,6 +383,81 @@ the DMZ, learned `(O.zone == "dmz")`, covering 1 of 1 held-out right and 0 of 1 
 above were saved as 16 rule sets; 127 of their conclusions, rated against read-only SQL, were all right. No model has been trained on this
 yet — the agent's numbers come from an untrained model reading the language's description.
 
+### 5.7 Philosophies as seeds: principles only in clingo
+
+The question that started this part came from the system's owner: why train a model to say "I don't know", when the research behind
+the memory is philosophical? The answer we built is that **truth is not the network's business**: a declarative *seed* decides it, and
+the model translates. "I don't know" is then the seed's value *unknown* with a reason, not a trained reflex.
+
+**A philosophy is a package** (`clingo_object/philosophy.py`, format `philosophy-v2`). It stores *only* the seed — a clingo-object rule set
+with `# P1 … # Pn` block markers — plus a typed vocabulary (every predicate with arity and kind: input, derived, closure, answer, duty),
+the allowed answer values and **test worlds** with atoms that must and must not hold. `vi-mcp philosophy check` refuses a package unless
+every predicate is declared; default negation occurs only in *closure* rules over a certified complete view (missing evidence never
+becomes opposition); every world solves to exactly one answer set with its expected atoms; every answer value is produced by some world;
+and every **counterfactual** world (one piece of evidence changed) changes an answer or a duty — so a seed that calls everything
+*unknown* fails. Prose is never stored: the owner decided that a philosophy is its clingo, and prose a translation of it.
+
+**Values.** Following Codex's semantic review (`p.` and `-p.` together are unsatisfiable in clingo, so strong negation cannot carry
+Belnap's *both*), support and opposition are ordinary predicates `pos(S)`/`neg(S)`, and four information values follow over a closed
+view: *t* (supported), *f* (opposed), *b* (both: reported, never resolved silently), *n* (nothing). A separate **acceptance** layer
+(accepted, tentative, rejected, unresolved, and since 1.3.0 untestable and withdrawn) decides what a member may say; **duties** in a
+deontic vocabulary follow from it (may assert, must state only as a hypothesis, must report a conflict, must ask the collective about
+the unknown when a peer offers knowledge, must not adopt unreviewed foreign knowledge, must not cite an unverified source). Every value
+carries a reason, and a value without one is a `never(…)` violation. Defeasible priorities between candidates use a fixed profile
+(maximal candidates; a cycle is *invalid*, never *unknown*).
+
+**Understanding as translation.** The owner's test: "if the AI has understood, it can put the seed into prose." `vi-mcp philosophy explain`
+measures it as a **round trip**: a translator writes prose; an *independent* back-translator of another model family, which never sees the
+seed, rebuilds clingo from the prose; the rebuilt seed must give the original's answers and duties on the package worlds and on random
+worlds. A control — reference prose back-translated by the same model — marks the back-translator's own limit. With Codex (GPT family;
+`codex exec` in an empty read-only directory) as back-translator, the frozen 1.1.0 reference prose agreed with the seed on **49 of 66
+worlds (74 %)** after one round. All four values matched everywhere; all 17 misses were the acceptance *unresolved*, which the reference
+prose never defined precisely — the method found a gap in the prose, not in the seed.
+
+**Training on a seed** is solver-taught (solver-filtered SFT beat DPO for ASP in [60]): the seed generates worlds, verdicts, reasons and
+duties; the model learns them first by SFT, then by GRPO with the seed as reward (+1 right value with reason, 0 for an honest "cannot
+formalize", −1 for invented certainty; a reward only for compiling programs is gamed [63]). Before the seed, the model learns the
+**language**: thousands of random clingo-object rule sets with no predicate of any seed, in both directions (`clingo_prose`), so that a
+later translation of the seed cannot come from memory. Results are in 6.5.
+
+### 5.8 Truth by origin: the collective's answer to fake news
+
+"Just because a thousand people believe something does not make it true — and an AI cannot check facts itself." We agree with both
+halves and drew three conclusions.
+
+*First*, the seed's values say how well a statement is **supported**, never that it is **true**. Correspondence stays the aim, but an
+agent without sensors has only evidence and its origins; truth in Peirce's sense is what inquiry would converge to, and every verdict
+is fallible [69]. The spoken verdict reads "supported" and "opposed" since 1.3.0.
+
+*Second*, a majority is evidence only if its judgments are independent: Condorcet's jury theorem needs independence, and with
+correlated voters more voters add little [64, 65]; in an informational cascade people rationally copy their predecessors and ignore
+their own information, so mass behaviour rests on very few signals [66]; and models trained on model output forget the true
+distribution [68]. **kollektiv 1.3.0** therefore counts **origins, not votes**:
+
+- *P8* — a copy (`derives_from`) adds no origin, a chain of copies leads back to one root, a citation circle has none, and text a model
+  generated (`machine_made`) is never an origin of its own;
+- *P9* — hearsay alone neither accepts nor rejects; a measurement makes a statement strong (testimony is the hard case of social
+  epistemology [70]; signed capture such as C2PA [71] is the closest a member gets to an origin it can check);
+- *P10* — when the camps of the origins are known, acceptance needs agreement across camps (the bridging idea of Community Notes [67]);
+  a partly known camp holds back with its own reason `camp_unknown`;
+- *P11* — a statement no observation could refute is its own class *untestable*, and an accepted statement obliges the member to name
+  what would refute it (Popper);
+- *P12* — an extraordinary claim needs three independent origins or a measurement (Hume);
+- *P13* — a withdrawal is not a refutation: an author who takes a statement back removes the claim, not proves its opposite.
+
+Every holding back names its reason (`grund(S, held_back, hearsay_only | one_camp | camp_unknown | extraordinary)`); absent inputs change
+nothing, so all 1.2.0 worlds keep their verdicts. 35 worlds pass the check; 1,500 random worlds all solve with at most one value and one
+acceptance per statement. "Surprisingly popular" [72] — the answer more frequent than predicted — is not implemented: it needs every
+member's prediction of the others' answers.
+
+*Third*, the memory must be read through the seed. A **provenance adapter** (`vi_mcp/philosophy_provenance.py`, shadow mode) turns what is
+stored about a knowledge object into seed facts: one line per stored confirmation or refutation, the cited source as origin (one source
+cited by many is one origin), the model family as camp, a record counted as closed only when its counters equal its kept entries. On a
+read-only copy of production (24,655 knowledge objects) the seed agreed with the memory's own mode on 24,479 of 24,499 comparable objects
+before P13 and 24,493 after. The 20 disagreements were the finding: **16 of 17 objects the memory called *refuted* had been refuted only
+by their own author.** One word named two things. Since 0.67.0 the memory names them apart — `zurueckgezogen` (withdrawn by the author)
+and `widerlegt` (refuted by two independent foreign model families) — and a migration moved 19 of 19 such objects on the copy.
+
 ## 6 Incubation and fine-tuning
 
 ### 6.1 The incubator
@@ -420,6 +515,41 @@ lineage — dataset manifest hash, base model, adapter hashes, evaluation, incub
 better. Hardware guidance follows the tool documentation (QLoRA of 7–8B models from about 5–6 GB VRAM, LoRA in 16 bit of 14B models
 from about 33 GB [40]).
 
+### 6.5 Fine-tuning runs
+
+All runs: Qwen/Qwen3-0.6B, LoRA, fp32 on one AMD Strix Halo GPU (gfx1151, ROCm), in their own container; the generated kit; answers
+greedy with thinking off, a token budget marked, never cut silently.
+
+| run | what | result |
+|---|---|---|
+| 1 | SFT on the export, 0.25 epoch | held-out NLL 2.27 → 1.29, but useless: 96 % of rows used the object's own text as the question; the model echoed pages and looped in 55 % of answers |
+| 2 | rank 16, 3 epochs, all rows | no gain on questions about held-out documents (p ≈ 0.1) — closed-book tuning cannot know what it never saw |
+| 3 | 500 documents × ~5 grounded pairs, rank 64, 4 epochs | **knowledge probe** (new questions about trained documents [56b, 56c]): 7 correct / 9 partial of 60, base 0 correct / 5 partial; sign-flip p = 0.008; but it never abstains and invents hosts [56d] |
+| 5 | seed kollektiv: judge, formalize, pressure | on worlds not in its training data: world-exact **20/38** (value 48/64), paraphrased worlds 18/37, pressure ("count the author's own evidence this time") 15/26, formalize 13/20, package worlds 7/10; base 0 everywhere; invented certainty 9/43 |
+| 6 | language stage (3,000 random rule sets), then seed stage (1,700 rows, no translation rows) | seed verdicts kept (package worlds 12/16, invented certainty 0/12 on held-out worlds, partial eval of 56/186); **every prose answer failed** |
+| 7 | as 6, seed stage with 1,000 replayed language rows | language kept (random rules 12/12, exactly as after the language stage); verdicts on clean worlds: world-exact 19/40, paraphrase 4/37, pressure 7/30, formalize 0/20 (mostly one fact off); seed prose still 2/10, recite 0/2 |
+| 8 | language stage extended to the seed's forms, the seed's vocabulary in translation tasks (never its rules), task tags, a distractor philosophy, replay | running at the time of writing |
+| 8b | as 8 without the crossed-vocabulary rows (as many language rows instead) — the ablation | running at the time of writing (RTX 3070, about 1.5× the speed of the AMD host) |
+
+**Run 6 found catastrophic forgetting.** Asked to translate the seed, the tuned model answered in the verdict format and looped ("My
+philosophy decides this … I must not cite the source …"). The hypothesis that only the seed's words switched it into that mode was
+wrong: the *same* held-out random rules, with no seed predicate, were translated 8 of 8 correctly by the adapter after the language stage
+and by none after the seed stage, which answered "X is encrypted." or wrote world facts instead of rules. The seed stage, with no
+translation row, two epochs and the same system prompt, overwrote the language. Run 7 changed exactly one thing — it replays language
+rows inside the seed stage — and the language came back completely (12/12), with the verdicts on the package worlds unchanged within
+noise; so replay fixes the forgetting. It did not fix the prose: asked to translate the seed, run 7 still answered with a verdict.
+
+**Why run 7 still could not explain the seed** was measured on the same adapter with three variants of the eight explain prompts: an
+explicit instruction to answer in sentences gave 2/8 prose answers (as without it); renaming every seed predicate to a neutral word gave
+3/8, and that prose was garbled ("If R is zephyr, one must row an S"). Two causes, both supported: *format specialization* — fine-tuning
+on one output format makes a model use it for unrelated prompts [75] — reinforced because half of the training's judge prompts showed
+the seed's code before the situation, so "seed code → verdict" was literally taught; and a *coverage gap* — the language stage's
+templates almost only produced unary and binary predicates over X, Y, Z, while the seed uses arity 3–4, constants as arguments, nested
+duties and the letters S, P, O, which is a structural, not a lexical, generalization [76]. Codex, asked independently through the
+memory, reached the same leading hypothesis from the literature and added a constraint we adopted: a round-trip reward on the seed
+itself would be training on feedback about the withheld target, so GRPO with that reward is used only on synthetic programs. Run 8
+addresses both causes; run 8b removes one of them to attribute the effect.
+
 ## 7 What went wrong, and what we learned from it
 
 A system built on "evidence or hypothesis" must report its own errors. In the work for this report:
@@ -432,12 +562,33 @@ A system built on "evidence or hypothesis" must report its own errors. In the wo
 - **A statistic was misread** (Section 4.6) and **an ordering passed by chance** (Section 5.4).
 - **An internal host name entered a commit** although the pre-commit scan had flagged it — the scan's result did not stop the command
   chain. Caught before publishing, removed, and the scan now blocks.
+- **The first training data asked each object for its own text** (run 1, 6.5): a falling loss hid a useless model. The adoption gate never
+  uses the loss since.
+- **A philosophy training erased what it was built on** (run 6). Each stage was measured, but the seed stage's evaluation contained no
+  translation task, so the loss of the language stage only showed in the prose test.
+- **The logic engine misnamed contradictions** (Codex's review before the seed was built on it): `p. -p. q.` lost the unrelated `q`,
+  contradictions of arity ≥ 2 went undetected, a quoted `"-x"` was read as a negation, and an unsatisfiable odd loop was reported as a
+  contradiction. Fixed through clingo's own AST.
+- **One word named two things.** `widerlegt` meant both "withdrawn by the author" and "refuted by others" (5.8) — a violation of the
+  identity rule in the memory itself, found only when a formal seed read the memory.
+- **Evaluation worlds leaked into training.** The seed's training worlds are drawn at random, and small worlds recur: 73 training rows of
+  run 5 and 12 of runs 6/7 had a world that also stood in their evaluation. Re-scored on clean worlds, run 5 moved from 22/40 to 20/38
+  exact, so the conclusions hold, but the first published numbers were too good. Run 8's kit drops every training world that occurs in
+  the evaluation and asserts it.
+- **A plausible improvement made search worse.** Embedding an object's content together with its key statement in one vector lowered
+  Hit@4 from 0.963 to 0.843 on a 5,000-object universe (45 queries worse, 13 better); it was not adopted (4.7).
 
 ## 8 Limitations and open problems
 
 - **No human gold set yet.** κ between two prompts measures the model's consistency with itself, not correctness (Pangakis et al. found
   precision or recall below 0.5 on 9 of 27 annotation tasks [41]).
-- **No fine-tuning run yet.** The kit is untested on real hardware; whether the exported data improves a model is open.
+- **Fine-tuning is measured on one small model.** Run 3 injected knowledge into a 0.6B model (7/60 correct against 0/60, p = 0.008) but
+  it never abstains; the seed runs teach verdicts but, so far, no model has passed the prose round trip (6.5). Larger models are untested.
+- **The seed acts on nothing yet.** The provenance adapter runs in shadow mode; the production memory has almost no cross-instance
+  confirmations, so copies, model-made origins and hearsay have not yet occurred there. `untestable`, `extraordinary` and verified
+  sources have no source in the memory.
+- **The back-translator is one model.** The round trip's control (74 % with Codex) shows its limit; a second independent family and a
+  blind human reading are still to come.
 - **The total effect of hints is not yet established** (the deployed hold-back has too few observations).
 - **Poisoning.** PoisonedRAG succeeds 97 % of the time with five texts per target question [42], AgentPoison above 80 % with under 0.1 %
   poisoned entries [43]. Our own poisoning test (`vi-mcp redteam`, a throw-away memory, success = top 3 of search or shown as a hint)
@@ -493,8 +644,10 @@ The incubator turns "is this memory good enough?" into criteria with values, and
 another AI can learn from, including how to search the memory itself. VIL keeps the symbols readable for people and checkable for
 parsers, and puts meaning where the system already has it: in measured weights, exchanged between memories as measurements rather than
 commands. clingo-object adds inference over the memory's own objects in one language for people, agents and the server — and the
-measurement suggests that for questions over many objects, a model writing a logic program beats a model reading search results. The rule
-set behind it — evidence or hypothesis, named unknowns, nothing silent, no self-rating — is what made the errors in our own work visible.
+measurement suggests that for questions over many objects, a model writing a logic program beats a model reading search results. A philosophy seed carries the same rule set
+into an AI's own judgments: it says how well something is supported and where it comes from, counts origins rather than voices, and
+names every holding back. The rule set behind it all — evidence or hypothesis, named unknowns, nothing silent, no self-rating — is what
+made the errors in our own work visible, including, through the seed, one in the memory's own vocabulary.
 
 ---
 
@@ -561,6 +714,34 @@ reference 1 (Guo et al.) were not re-checked in that session — the identifiers
 55. DLV-DB user manual (#import / #export between relational tables and predicates). https://www.dlvsystem.it/dlvsite/dlvdb-user-manual/
 56. Ishay, Yang, Lee. Leveraging Large Language Models to Generate Answer Set Programs (KR 2023). https://arxiv.org/abs/2307.07699
 
+Added on 15 November 2026 (web research for sections 4.7, 5.7, 5.8 and 6.5; identifiers and URLs as retrieved, claims as stated
+in the abstract or summary read):
+
+56b. Allen-Zhu, Li. Physics of Language Models: Knowledge Storage and Extraction. https://arxiv.org/abs/2309.14316
+56c. Yang et al. Synthetic continued pretraining (EntiGraph). https://arxiv.org/abs/2409.07431
+56d. Gekhman et al. Does Fine-Tuning LLMs on New Knowledge Encourage Hallucinations? https://arxiv.org/abs/2405.05904
+57. Olausson et al. LINC: logical inference via neurosymbolic computation. https://arxiv.org/abs/2310.15164
+58. Pan et al. Logic-LM. https://arxiv.org/abs/2305.12295
+59. AbstentionBench. https://arxiv.org/abs/2506.09038
+60. Solver-filtered SFT vs DPO for answer set programs (clingo 5.7.1, 8B models). https://arxiv.org/abs/2512.17093
+61. TruthRL: a ternary reward (correct / abstain / hallucinate). https://arxiv.org/abs/2509.25760
+62. GRPO on small models (Qwen2.5-0.5B). https://arxiv.org/abs/2503.18892 — and DeepSeek-R1, rule-based rewards. https://arxiv.org/abs/2501.12948
+63. FormaRL: a compile-only reward is gamed. https://neurips.cc/virtual/2025/130519
+64. Jury theorem. https://en.wikipedia.org/wiki/Jury_theorem
+65. Spiekermann. Jury theorems. https://researchonline.lse.ac.uk/id/eprint/101162/1/Spiekermann_Jury_theorems.pdf
+66. Bikhchandani, Hirshleifer, Welch. A Theory of Fads, Fashion, Custom, and Cultural Change as Informational Cascades. JPE 100(5), 1992. https://snap.stanford.edu/class/cs224w-readings/bikhchandani92fads.pdf
+67. Wojcik et al. Birdwatch: Crowd Wisdom and Bridging Algorithms can Inform Understanding and Reduce the Spread of Misinformation. https://arxiv.org/abs/2210.15723
+68. Shumailov et al. AI models collapse when trained on recursively generated data. Nature 631, 2024. https://www.pure.ed.ac.uk/ws/portalfiles/portal/460496122/ShumailovEtalNature2024AIModelsCollapseWhen.pdf
+69. Stanford Encyclopedia of Philosophy. The Pragmatic Theory of Truth. https://plato.stanford.edu/entries/truth-pragmatic/
+70. Stanford Encyclopedia of Philosophy. Epistemological Problems of Testimony. https://plato.stanford.edu/archives/spr2012/entries/testimony-episprob/
+71. C2PA Technical Specification 2.2. https://c2pa.org/specifications/specifications/2.2/specs/C2PA_Specification.html
+72. Prelec, Seung, McCoy. A solution to the single-question crowd wisdom problem. Nature 541, 2017. https://news.mit.edu/2017/algorithm-better-wisdom-crowds-0125
+73. Snowball stop word lists (German, English). https://snowballstem.org/algorithms/german/stop.txt · https://snowballstem.org/algorithms/english/stop.txt
+75. Wang et al. Two-stage LLM Fine-tuning with Less Specialization and More Generalization (format specialization, ProMoT). https://arxiv.org/abs/2211.00635
+76. Kim, Linzen. COGS: A Compositional Generalization Challenge Based on Semantic Interpretation. EMNLP 2020. https://aclanthology.org/2020.emnlp-main.731/
+77. Berglund et al. The Reversal Curse. https://arxiv.org/abs/2309.12288 · Berglund et al. Taken out of context. https://arxiv.org/abs/2309.00667 · Betley et al. Tell me about yourself. https://arxiv.org/abs/2501.11120 · Treutlein et al. Connecting the dots. https://arxiv.org/abs/2406.14546
+74. eclingo (epistemic logic programs). https://arxiv.org/abs/2008.02018 · ASPARTIX (argumentation on clingo). https://arxiv.org/abs/1507.06689 · deolingo (deontic ASP). https://www.dc.fi.udc.es/~cabalar/deolingo.pdf
+
 Further sources used in the design notes of the same session: Gilardi et al., ChatGPT outperforms crowd workers (https://arxiv.org/abs/2303.15056);
 Ziems et al., LLMs for computational social science (https://arxiv.org/abs/2305.03514); Agora protocol (https://arxiv.org/html/2410.11905v1);
 Spotlighting (https://arxiv.org/abs/2403.14720); Zep/Graphiti (https://arxiv.org/abs/2501.13956); MemoryBank (https://arxiv.org/abs/2305.10250);
@@ -585,6 +766,16 @@ A2A specification (https://a2a-protocol.org/latest/specification/); MCP specific
 | clingo-object agent | 15/16 exact, held out 4/4, P 1.00, R 0.99, 5.2 s; `vi_recall` alone 2/16, P 0.50, R 0.30, 20.1 s | production copy, 16 questions, one run, 13.11.2026 |
 | agent on production | "DMZ hosts never described as production": 2 hosts, 1 round, 5.3 s | `vi_logic action=answer`, 0.63.0, 14.11.2026 |
 | seeded training data | 16 rule sets equal to SQL on live data; 127 conclusions rated, all right; 14 rule weights | production, 14.11.2026 |
+| search Hit@4 (hybrid) | 0.933 production copy; 0.930 at 500,310 objects | `measure.py`, 300 queries, 15.11.2026 |
+| content in the one vector | Hit@4 0.963 → 0.843 (45 worse, 13 better) | 5,000-object universe, same queries, 15.11.2026 |
+| stop words out of the query | full text, questions, held-out half: Hit@4 0.347 → 0.533 (16/2, p 0.0013); hybrid 0.933 → 0.947 (p 0.22) | production copy, split by target before any run, 15.11.2026 |
+| round trip control | Codex rebuilt the seed from reference prose: 49/66 worlds (74 %), 1 round | `philosophy_explain.round_trip`, 15.11.2026 |
+| run 5 (seed) | clean worlds 20/38 exact, paraphrase 18/37, pressure 15/26, formalize 13/20; base 0 (with leaked worlds: 22/40) | `phil_score.py` against the seed, worlds of its training removed, 15.11.2026 |
+| run 7 (replay) | random rules 12/12; clean worlds 19/40, paraphrase 4/37, pressure 7/30; seed prose 2/10 | `phil_score.py`, `probe7.py`, 15.11.2026 |
+| why no prose (run 7) | plain 2/8, with format instruction 2/8, predicates renamed 3/8 (garbled) | `probe_route.py`, 15.11.2026 |
+| training speed | 240 steps: RTX 3070 43.6 s fp32 / 46.4 s bf16; Strix Halo 64 s fp32 | same kit, 15.11.2026 |
+| run 6 (forgetting) | random rules translated 8/8 after the language stage, 0/8 after the seed stage | `probe_ab.py`, same items, two adapters, 15.11.2026 |
+| seed vs memory (shadow) | 24,479 / 24,499 agree before P13, 24,493 after; 16 of 17 "refuted" objects refuted only by their author | production copy, read-only, 15.11.2026 |
 
 ## Appendix B — Glossary (stored names are German)
 
@@ -595,3 +786,5 @@ A2A specification (https://a2a-protocol.org/latest/specification/); MCP specific
 | thema, fehler, art_wissen | topic, error, kind of knowledge |
 | schlaf, schueler, einig/uneinig | sleep, student, agreed/disagreed |
 | inkubator: erfuellt, offen, nicht_gemessen, reif, im_inkubator | met, open, not measured, mature, in the incubator |
+| widerlegt, zurueckgezogen, strittig | refuted (by two foreign model families), withdrawn (by the author), disputed (by one foreign family) |
+| grund | reason (the seed's reason predicate) |

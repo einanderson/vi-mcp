@@ -136,7 +136,7 @@ def summary() -> list[dict]:
     from . import learning
     from . import memory as g
     with g.lock:
-        rows = g.db().execute("SELECT idx, art, COUNT(*) FROM objekt WHERE modus NOT IN ('widerlegt', 'aufgegangen') GROUP BY idx, art").fetchall()
+        rows = g.db().execute("SELECT idx, art, COUNT(*) FROM objekt WHERE modus NOT IN ('widerlegt', 'zurueckgezogen', 'aufgegangen') GROUP BY idx, art").fetchall()
     reg = registry()
     per: dict[str, dict] = {name: {"index": name, "objekte": 0, "erfahrungen": 0, "wissen": 0, "code": 0} for name in reg}
     with g.lock:

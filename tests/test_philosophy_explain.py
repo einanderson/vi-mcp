@@ -66,7 +66,7 @@ def test_each_block_is_measured_on_its_own():
 
     def back(msgs):  # a back-translator that gets every block right except P1, where it drops the guard
         text = msgs[0]["content"]
-        b = next(k for k in blocks if f"PROSE-{k}" in text)
+        b = next(k for k in blocks if f"PROSE-{k}." in text)  # with the dot: PROSE-P1 is a prefix of PROSE-P10
         rules = "\n".join(blocks[b])
         return rules.replace(" & (I != A)", "") if b == "P1" else rules
 
@@ -74,8 +74,8 @@ def test_each_block_is_measured_on_its_own():
         text = msgs[-1]["content"]
         for k in blocks:
             if f"rules of block {k} " in text:
-                return f"PROSE-{k}"
-        return "PROSE-P1"  # the whole seed: measured like P1 here
+                return f"PROSE-{k}."
+        return "PROSE-P1."  # the whole seed: measured like P1 here
     r = pe.round_trip(pkg, trans, back, random_n=30)
     assert r["blocks"]["P1"]["agreement"] < 1.0
     assert all(r["blocks"][b]["agreement"] == 1.0 for b in blocks if b != "P1")

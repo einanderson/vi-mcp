@@ -125,7 +125,7 @@ def find_local(raw: dict, ish: str) -> str | None:
     as "What is missing" shared by many objects hid the matching one — found on the way back of an index file, 40 of 180 contents were
     stored a second time)."""
     where = ("FROM objekt WHERE art = ? AND text = ? AND (instanz IS NULL OR instanz NOT LIKE 'p2p-%') "
-             "AND modus NOT IN ('widerlegt', 'quarantaene')")
+             "AND modus NOT IN ('widerlegt', 'zurueckgezogen', 'quarantaene')")
     par = (raw.get("art"), str(raw.get("text") or "").strip())
     with g.lock:
         ids = [r[0] for r in g.db().execute(f"SELECT id {where} AND json_extract(daten, '$.inhalt') IS ? LIMIT 20", (*par, raw.get("inhalt")))]

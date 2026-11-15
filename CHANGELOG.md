@@ -3,6 +3,201 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What is new
+
+- **kollektiv 1.3.0: origins count, not votes — the collective's answer to fake news.** The user asked on 15.11.2026: "Nur weil 1000
+  Menschen etwas glauben, muss es nicht wahr sein … Eine KI arbeitet nur theoretisch und kann Fakten nicht überprüfen." The seed now
+  says how well a statement is **supported**, never that it is true; the spoken verdict reads "supported/opposed", no longer
+  "true/false". Five new principles, each a block of the seed:
+  - **P8, origins, not votes.** `derives_from(O, R)`: a copy, re-post or summary adds no origin, and a chain of copies leads back to
+    one root. `machine_made(O)`: text a model generated is never an origin; it counts only through the source it derives from. A
+    citation circle has no root and counts for nothing. Background: Condorcet's jury theorem needs independent judgments;
+    informational cascades (Bikhchandani, Hirshleifer, Welch 1992); model collapse (Shumailov et al., Nature 2024).
+  - **P9, weight of evidence.** `evidence_kind(R, measured|signed|document|hearsay)`: hearsay alone can neither accept nor reject.
+  - **P10, bridging.** `camp(R, C)`: when the camps are known, acceptance needs agreement across camps (Community Notes, Wojcik et al.
+    2022).
+  - **P11, testability.** A statement that no observation could refute gets its own acceptance value `untestable`, neither accepted nor
+    rejected. An accepted statement without a named refuting observation (`testable_by`) obliges the member to name one (Popper).
+  - **P12, extraordinary claims need more.** `extraordinary(S)` needs three independent origins or a measurement (Hume).
+  - **P13, a withdrawal is not a refutation.** `withdrawn(S)`: when the author withdraws a statement and no one else has given
+    evidence, the statement gets the acceptance value `withdrawn`, never `rejected`. Withdrawing removes the claim; it does not prove
+    the opposite (Codex, round 1). The shadow comparison found this: 16 of 17 objects refuted on production were refuted only by
+    their own author. The memory now names the two apart as well (see "What has changed").
+  - P10 names a partly known camp `camp_unknown`, not `one_camp`, so missing camp data is never reported as one-sidedness.
+
+  Every holding back names its reason: `grund(S, held_back, hearsay_only|one_camp|extraordinary)`. Inputs that are absent change
+  nothing, so every world of 1.2.0 keeps its verdict.
+  Evidence:
+  - `vi-mcp philosophy check kollektiv`: 35 of 35 worlds (19 new, with counterfactuals), every value and acceptance produced;
+  - 1,500 random worlds all solve, with at most one value and one acceptance per statement;
+  - `tests/test_philosophy.py::test_kollektiv_counts_origins_not_votes_and_names_why_it_holds_back`. Package hash `1f205f4c…` (1.2.0
+    was `fdfd38e8…`).
+- **A provenance adapter fills kollektiv 1.3.0's inputs from the memory. Shadow mode only: it changes nothing.**
+  `vi_mcp/philosophy_provenance.py` turns what is stored about a knowledge object into seed facts. The mapping is documented
+  input by input in the module.
+  - author; one line per stored confirmation or refutation entry. The origin is the cited source (one source is ONE origin however
+    many confirm it), a named object, or the confirmer's own check.
+  - closed only when the object's counters equal the entries kept. confirm/refute keep 100 entries but count every call; dropped
+    entries are neither invented nor ignored.
+  - camp = the model family, for every origin that has one. The seed judges a partly known camp (P10 `camp_unknown`); one place
+    decides.
+  - withdrawn(S) when the author's own refutation entry exists (P13): a withdrawal removes the claim, it does not prove the opposite.
+    Shadow reads memory's new mode `zurueckgezogen` as the class `withdrawn`; an unmigrated `widerlegt` is still split into
+    `refuted_by_author` and `refuted`.
+  - derives_from along objects whose source names another object; machine_made for the automatic server instance without a source
+    and for sleep-LLM objects without a URL.
+  - evidence_kind: a URL is a document. vil's documented → document and hearsay → hearsay. inferred → hearsay (a model's conclusion
+    is no record). vil's measured → none, because it means "followed as a hint, outcome counted", not "the statement was measured".
+  - The object's own URL becomes an unverified source (P7).
+  - untestable, testable_by, extraordinary and verified are never filled: the memory holds no such data.
+  - `vi-mcp philosophy shadow kollektiv [--limit N] [--db COPY] [--json F]` compares the seed's acceptance with today's object mode
+    (refuted_by_author, refuted, disputed, confirmed by 2+ / 1 independent line, unconfirmed) and counts disagreements by class, with
+    example ids.
+  - Tests: `tests/test_philosophy_provenance.py` (8, a throw-away memory):
+    - 1000 confirmations copied from one origin stay tentative, while today's count calls them 1000 lines; two real origins are
+      accepted;
+    - a record cut at its cap concludes nothing;
+    - a withdrawal by the author gives `withdrawn`, never `rejected`, and others' evidence survives it; two foreign families reject;
+    - model-made and copied origins add nothing;
+    - hearsay alone is held back with its reason;
+    - every known camp is given and the seed names a partly known one `camp_unknown`;
+    - untestable is never guessed;
+    - shadow leaves every object unchanged (checksum).
+  - Measured on a copy of the production database, read-only, objekt-table checksum identical before and after (24,655
+    knowledge objects, 5.5 s):
+    - 24,499 comparable, 24,493 agree, 6 disagree. Unconfirmed → unresolved 24,469; refuted_by_author → withdrawn 14;
+      disputed → unresolved 10;
+    - disagreements: refuted_by_author → tentative 2 (the author withdrew, one foreign confirmation remains — P13 lets others'
+      evidence survive); disputed → tentative 2 (one refuting origin, value f); refuted_by_author → no verdict 1 (record
+      incomplete); refuted → unresolved 1 (widerlegt with no refutation record at all);
+    - quarantine → no verdict 3; test mode 153 (not compared);
+    - filled: lines from 17 refutation entries and 2 confirmation entries plus 9 older instance counts, camps 17, withdrawn 17,
+      20,557 unverified own URL sources. No derives_from, machine_made or hearsay origin occurs in this database: the production
+      memory has almost no cross-instance confirmations yet.
+    - Before P13 (seed 7e880ca) the same copy gave 20 disagreements: 16 of the 17 refuted objects had been refuted by their own
+      author, which the seed then could only call unresolved.
+
+### What has changed
+
+- **The open-network secret check no longer flags Markdown emphasis or long German compounds** (reported 15.11.2026: a wiki page
+  of literature notes was refused as `geheimnis`). A natural word (only the first letter capital, no digit) followed only by `*`,
+  `!` or `#` is emphasis or punctuation (`**Berger**`, `*The Sacred Canopy*`, `Achtung!`); a word of letters and hyphens only
+  (`Terror-Management-Effekt`) never takes the entropy branch. Brackets, `$ % &`, digits and inner capitals stay strict.
+  Measured on 30,000 objects of a production copy: characters no longer flagged in 3,929 objects (shapes `Aa-Aa` 1,335,
+  `Aa-Aa-Aa` 1,114, `Aa!` 648, …); 7 objects gained flagged characters, because a shorter finding that a removed longer one had
+  covered now shows. Evidence: `tests/test_anonym.py::test_markdown_emphasis_and_long_compounds_are_no_secret` and
+  `::test_real_secrets_are_still_found` (an invented password of the real shape, a 43-character token, a GitHub token, `password = …`).
+- **A continued training stage reports the rank it really trains.** With a parent adapter the stage loads the parent's own LoRA
+  rank; the report showed the `--lora-rank` default (16) for a rank-64 parent. It now reports the parent's rank with
+  `lora_rank_source: parent adapter`.
+- `clingo_prose.examples(…, rules=(min, max))` sets the program length; the run-11 kit trains programs of 10–40 rules.
+
+- **`widerlegt` is split in two: `zurueckgezogen` (withdrawn by its author) and `widerlegt` (refuted by others).** The user decided
+  on 15.11.2026: "teile widerlegt im Gedächtnis in zwei Begriffe auf". Until now one word named two different things. An author who
+  takes a statement back removes the claim; that does not prove the opposite (kollektiv P13).
+  - `vi_refute` by the author, or by the server on its own object (sleep: an automatic skill without content), sets the new mode
+    `zurueckgezogen`.
+  - Only two independent foreign model families set `widerlegt`.
+  - One foreign family still sets `strittig`. A withdrawn object stays withdrawn after one foreign refutation, and becomes
+    `widerlegt` after two.
+  - Both modes vanish from searches, hints, vectors, classification, questions and the network score, exactly as `widerlegt` did.
+    One definition, `memory.GONE`, now names them for every filter.
+  - The internal web page shows "withdrawn by its author — not proven false, but no longer claimed". The incubator counts both.
+  - Migration at start: an old `widerlegt` object refuted only by its author (fewer than two foreign families), or discarded by the
+    server without any refutation record, becomes `zurueckgezogen`, with a history entry. It is idempotent.
+  Evidence:
+  - on a copy of the production database, 19 of 19 `widerlegt` objects became `zurueckgezogen`: 18 refuted only by their author,
+    1 empty automatic skill;
+  - `tests/test_kollektiv.py::test_withdrawn_and_refuted_are_two_modes` (decision, migration, idempotence) and
+    `tests/test_kern.py::test_content_empty_auto_skill_is_withdrawn`.
+  - The same tests pass on PostgreSQL 16 (`VI_MCP_TEST_PG`; 121 passed, 2 skipped: collective, core, philosophy, provenance, stop words).
+
+### What is missing
+
+- A quarantine discard (`p2p.discard`, a reviewer rejects foreign knowledge) still sets `widerlegt`. Strictly, that is a third thing:
+  rejected in review, not refuted by two families. It stays `widerlegt` until there is a decision.
+- The provenance adapter runs in shadow mode only; nothing acts on its verdicts. `testable_by`, `untestable`, `extraordinary` and
+  `verified` have no source in the memory and stay empty.
+- Sleep insights carry evidence edges to experiences (observed outcomes of actions). They are not used as lines yet: whether an
+  insight a model generalised from experiences is supported by them is a modelling decision still to be made.
+- "Surprisingly popular" (Prelec, Seung, McCoy, Nature 2017: the answer more frequent than predicted) needs every member's prediction
+  of the others' answers, which no member reports yet.
+- Run 6 trained on 1.2.0. A model that knows 1.3.0 needs a new kit.
+
+- **The paper (`docs/PAPER.md`) is updated from 0.63.1 to this release.** New: 4.7 search at scale (Hit@4, 500k objects, the content-vector
+  A/B, stop words), 5.7 philosophies as seeds (format, values, round trip, training), 5.8 truth by origin (kollektiv 1.3.0, the shadow
+  comparison, the split of `widerlegt`), 6.5 the fine-tuning runs 1–7 with the forgetting finding. Errors, limitations, 19 references
+  and 8 measurements in Appendix A are added. It no longer claims "no fine-tuning run yet".
+
+- **The language stage covers a seed's forms, and a philosophy's own words appear in translation tasks (run 8).** Run 7 could translate
+  random rules (12/12) but answered the seed's rules with a verdict. Measured on its adapter: an explicit "answer in sentences" left it at
+  2/8 prose, and renaming the seed's predicates gave 3/8, garbled. So the cause is format routing plus a language stage that never showed
+  the seed's forms.
+  - `clingo_prose.program(…, extended=, rename=)`: relations of arity 3–4, constants as arguments, nested duties, `never` with default
+    negation, closure rules, other variable letters (S, P, O …), consistent in code and prose.
+  - `clingo_prose.vocab_program`: random rule sets over a philosophy's vocabulary, with generic prose. A seed rule never occurs, not even
+    renamed or reordered (`normal_rule`, a canonical form).
+  Evidence: `tests/test_philosophy.py::test_the_language_stage_covers_a_seeds_forms_and_crossed_vocabulary_never_leaks_a_seed_rule`.
+
+### What was fixed in the measurement
+
+- **Evaluation worlds had leaked into training.** 73 training rows of run 5 and 12 of runs 6/7 shared a world with their evaluation.
+  Re-scored on clean worlds: run 5 has 20/38 exact instead of 22/40. The paper names both numbers. Run 8's kit drops such rows and
+  asserts it. The product kit had the same gap: `vi-mcp finetune kit --philosophy` filtered judge worlds against training, but not the
+  package's fixed worlds (2 of 16 leaked in a kollektiv kit). It now drops such training rows and reports
+  `dropped_as_evaluation_worlds`.
+  Evidence: `tests/test_finetune.py::test_no_world_of_the_evaluation_is_in_the_seed_training`.
+
+### What is new in the search
+
+- **A free-text search drops function words from the query, never from the index.** Natural questions ANDed every word, "wie",
+  "ich", "der" and "how" included, so the AND set was empty or wrong, and the OR fallback ranked by those weak words.
+  `memory.recall` now removes the published Snowball stop words, German (231) and English (174), from the query's words
+  (`vi_mcp/stopwords.py`). The lists are bundled unchanged, with their source URLs and BSD-3-Clause license, and without additions.
+  The German list has "daß" but not "dass"; it is left as published. A query of stop words only ("wie ist das") is searched as
+  typed and never emptied. The full-text list of hybrid search changes with it.
+
+  Measured 15.11.2026 on a production copy: 150 targets × 2 styles. The split is by target, seeded 50/50 (seed 20261115) before any
+  run, and nothing was tuned. The figures are paired exact McNemar tests against the code before (improved/worse/p).
+
+  | full text | natural questions Hit@1 | Hit@4 | keywords Hit@1 | Hit@4 | median ms (questions) |
+  |---|---|---|---|---|---|
+  | held-out half, before → after | 0.067 → 0.253 (15/1, p 0.0005) | 0.347 → 0.533 (16/2, p 0.0013) | 0.560 → 0.560 (0/0) | 0.773 → 0.760 (0/1, p 1.0) | 78 → 38 |
+  | all 300 queries | 0.107 → 0.300 (32/3) | 0.293 → 0.540 (39/2) | 0.580 → 0.580 | 0.833 → 0.827 (0/1) | 76 → 37 |
+
+  - **Hybrid does not get significantly better.** One run on the same 300 queries, with the reranker as today, against the search-top4
+    run of the same queries (`results_cache.json`):
+    - Hit@1 0.800 → 0.797 (3/4, p 1.0);
+    - Hit@4 0.933 → 0.947 (5/1, p 0.22);
+    - held-out half: Hit@4 0.947 → 0.960 (2/0, p 0.5);
+    - median 2,424 → 2,552 ms. The baseline is an earlier run, so this time difference is not attributed to the change.
+  - At 500,310 objects (copy with distractors), full text: p50 349 → 130 ms, p95 894 → 328 ms.
+
+  Evidence: `tests/test_stopwords.py` (the lists pinned by hash, the fallback for a stop-word-only query, a natural question finding
+  the runbook instead of small talk).
+
+### What was measured and not adopted
+
+- **No FTS5 tokenizer beats unicode61.** The production copy was rebuilt per variant; the same 300 queries ran; paired McNemar
+  against unicode61; full text only:
+
+  | variant | questions H1/H4 | keywords H1/H4 | index | p50/p95 ms | questions H4 ± | keywords H4 ± |
+  |---|---|---|---|---|---|---|
+  | unicode61 (kept) | 0.107/0.293 | 0.580/0.833 | 114 MB | 44/76 | – | – |
+  | unicode61 remove_diacritics 2 | 0.107/0.293 | 0.580/0.833 | 114 MB | 49/82 | 0/0 | 0/0 |
+  | porter unicode61 | 0.093/0.307 | 0.567/0.847 | 113 MB | 47/81 | 6/4 p 0.75 | 2/0 p 0.50 |
+  | trigram | 0.080/0.327 | 0.467/0.773 | 289 MB | 68/142 | 12/7 p 0.36 | 7/16 p 0.09 |
+  | Snowball German stem column (text OR stem) | 0.087/0.320 | 0.587/0.853 | 195 MB | 67/147 | 5/1 p 0.22 | 3/0 p 0.25 |
+  | stemmed text only | 0.093/0.320 | 0.567/0.853 | 99 MB | 51/87 | 9/5 p 0.42 | 3/0 p 0.25 |
+
+  - Trigram hurts keyword queries.
+  - At 500,310 objects, trigram needs a 5.4 GB index (unicode61: 2.1 GB) at p50 754 ms (unicode61: 349 ms).
+  - Stemming after stop-word removal adds 3–5 net queries, not significant (p ≥ 0.18).
+  - The stemmer used is Snowball German 3.1, written out and identical to `snowballstemmer` 3.1.1 on all 182,135 distinct words of
+    the copy. It is not shipped, because nothing won.
+
 ## 0.66.1 — 2026-11-15 — security: two example values removed from the whole history
 
 ### What was fixed
@@ -43,7 +238,7 @@ Linked from [README.md](README.md).
   - B, key statement plus the first 3,600 characters of content in one vector: Hit@1 0.77, **Hit@4 0.843**, MRR 0.807.
     Natural questions fell from 0.94 to 0.747.
   - 45 queries ranked worse and 13 better. One long vector per object dilutes the key statement.
-  - Next to test instead: content in chunks, each with its heading path, as it-aikb indexes it.
+  - Next to test instead: content in chunks, each with its heading path, as chunked retrieval systems index it.
   Evidence: `measure.py` on two copies (`vi_subA.db` and `vi_subB.db`), 15.11.2026.
 
 

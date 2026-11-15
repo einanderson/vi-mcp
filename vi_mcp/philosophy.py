@@ -104,7 +104,7 @@ def installed() -> list[g.MemoryObject]:
     newest: dict[str, g.MemoryObject] = {}
     for _s, o, _w in g.recall(TAG, limit=1000, viewer=None):
         p = o.data.get("philosophie") or {}
-        if p.get("name") and o.mode not in ("widerlegt", "archiviert") and (p["name"] not in newest or o.ts > newest[p["name"]].ts):
+        if p.get("name") and o.mode not in ("widerlegt", "zurueckgezogen", "archiviert") and (p["name"] not in newest or o.ts > newest[p["name"]].ts):
             newest[p["name"]] = o
     return sorted(newest.values(), key=lambda o: o.data["philosophie"]["name"])
 
@@ -128,7 +128,7 @@ def install(ref: str, instance: str, who: str | None = None, visibility: str | N
 def _installed_all(name: str) -> list[g.MemoryObject]:
     """Every installed object of one philosophy (all versions), newest first."""
     objs = [o for _s, o, _w in g.recall(TAG, limit=1000, viewer=None)
-            if (o.data.get("philosophie") or {}).get("name") == name and o.mode not in ("widerlegt", "archiviert")]
+            if (o.data.get("philosophie") or {}).get("name") == name and o.mode not in ("widerlegt", "zurueckgezogen", "archiviert")]
     return sorted(objs, key=lambda o: o.ts, reverse=True)
 
 
@@ -275,6 +275,7 @@ def tool(args: dict, instance: str) -> str:
 def main(argv: list[str]) -> int:
     """vi-mcp philosophy guide | list | show REF | check REF | new DIR --name N [--author A] | evaluate REF --facts FILE | install REF
     | explain REF --url U --model M --judge-url U2 --judge-model M2 [--random N] [--prose F] [--control F] [--store]
+    | shadow kollektiv [--limit N] [--db COPY] [--json F]
     | use NAME --instance I | --index X [--off] | bound --instance I | --index X"""
     import argparse
     a = argparse.ArgumentParser(prog="vi-mcp philosophy", description="equip an AI with a philosophy: packages of a clingo-object seed and test worlds")
@@ -306,6 +307,11 @@ def main(argv: list[str]) -> int:
     ex.add_argument("--no-proxy", action="store_true", help="talk to the endpoints without the environment's proxy")
     ex.add_argument("--json", help="write the full report to this file")
     ex.add_argument("--store", action="store_true", help="store the report on the installed object of this hash (derived, never a source)")
+    sh = u.add_parser("shadow", help="kollektiv's acceptance from the memory's provenance next to today's object mode — changes nothing")
+    sh.add_argument("name")
+    sh.add_argument("--limit", type=int)
+    sh.add_argument("--db", help="a database file (use a COPY: opening it may migrate its schema); default: the configured one")
+    sh.add_argument("--json", help="write the full report to this file")
     ins = u.add_parser("install", help="check and store in the VI as a rule set")
     ins.add_argument("ref")
     ins.add_argument("--visibility", choices=["shared", "internal"], default="internal")
@@ -327,6 +333,9 @@ def main(argv: list[str]) -> int:
     if o.cmd == "show":
         print("\n".join(show_lines(ph.load(o.ref))))  # without the memory; vi_philosophy show adds a stored translation
         return 0
+    if o.cmd == "shadow":
+        from . import philosophy_provenance
+        return philosophy_provenance.main_shadow(o.name, o.limit, o.db, o.json)
     if o.cmd == "explain":
         from pathlib import Path
         from clingo_object import philosophy_explain as pe

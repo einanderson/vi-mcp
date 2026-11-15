@@ -75,7 +75,7 @@ def run(batch: int = BATCH) -> dict:
     names, themen = vocabulary()
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            f"SELECT id FROM objekt WHERE id IN ({_doc_ids_sql()}) AND modus NOT IN ('aufgegangen', 'widerlegt') "
+            f"SELECT id FROM objekt WHERE id IN ({_doc_ids_sql()}) AND modus NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
             "AND COALESCE(CAST(json_extract(daten, '$.derived_triggers.version') AS REAL), 0) < ? ORDER BY zeit LIMIT ?", (*DOC_TAGS, VERSION, batch))]
     too_common_h: set[str] = set()
     too_common_t: set[str] = set()
@@ -120,5 +120,5 @@ def run(batch: int = BATCH) -> dict:
 def _remaining() -> int:
     with g.lock:
         return g.db().execute(
-            f"SELECT COUNT(*) FROM objekt WHERE id IN ({_doc_ids_sql()}) AND modus NOT IN ('aufgegangen', 'widerlegt') "
+            f"SELECT COUNT(*) FROM objekt WHERE id IN ({_doc_ids_sql()}) AND modus NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
             "AND COALESCE(CAST(json_extract(daten, '$.derived_triggers.version') AS REAL), 0) < ?", (*DOC_TAGS, VERSION)).fetchone()[0]
