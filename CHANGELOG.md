@@ -22,6 +22,12 @@ Linked from [README.md](README.md).
   Evidence: fresh `$HOME`, old script → `config.json` with the instance but no token file; new script → token file 44 bytes, 0600.
 - **`deploy/install.sh` assumed the checkout at `~/Dev/code/vi-mcp`.** The unit is now written with the path of the checkout it
   runs from.
+- **The hook logged a `JSONDecodeError` before every `vi_learn`/`vi_recall`.** It parsed the answer of `vi_context` as JSON, but
+  `vi_context` answers plain text ("project … noted …"). The project was noted anyway (the server acts before it answers); only
+  the hook log filled with errors. Now the hook reads it as text.
+  Evidence: `~/.cache/vi-mcp/hook/hook.log` showed `vi_context: JSONDecodeError: Expecting value: line 1 column 1 (char 0)` three
+  times in one evening; `tests/test_hook.py::test_vi_context_answer_is_plain_text_and_logs_no_error` against a real server fails
+  without the fix and passes with it.
 - **`deploy/install.sh` says when scikit-learn is missing** — without it the router never trains and hints stay in heuristic
   order; the note names the package for Debian, Arch and Fedora.
 
