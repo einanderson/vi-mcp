@@ -245,12 +245,18 @@ TOOLS = [
                     "clingo-object rule set (the seed), proven by test worlds. action guide (default): the technique step by step; list: "
                     "built-in and installed philosophies; show: principles, inputs, answers and seed of one; check: every rule of the "
                     "format (vocabulary, no default negation outside closure, words for every rule, worlds, coverage, counterfactuals); "
-                    "evaluate: the seed's verdict on facts; install: check and store it in the VI as a rule set.",
-     "inputSchema": _schema({"action": {"type": "string", "enum": ["guide", "list", "show", "check", "evaluate", "install"],
-                                        "description": "guide (default), list, show, check, evaluate or install"},
-                             "name": {"type": "string", "description": "a built-in philosophy (e.g. kollektiv) or a package directory on the server"},
+                    "evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per "
+                    "philosophy); install: check and store it in the VI as a rule set; use: bind an installed philosophy (its hash) to "
+                    "yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes "
+                    "visibility, review or tool rights.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["guide", "list", "show", "check", "evaluate", "install", "use", "bound"],
+                                        "description": "guide (default), list, show, check, evaluate, install, use or bound"},
+                             "name": {"type": "string", "description": "a built-in philosophy (e.g. kollektiv, messung) or a package directory on the server"},
                              "facts": {"type": "string", "description": "evaluate: facts in clingo-object notation, one per line"},
-                             "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "install: default internal"}})},
+                             "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "install: default internal"},
+                             "instance": {"type": "string", "description": "use: only yourself (others are bound by an administrator on the server)"},
+                             "index": {"type": "string", "description": "use/bound/evaluate: an index instead of the instance"},
+                             "off": {"type": "boolean", "description": "use: end the binding (kept as a tombstone)"}})},
     {"name": "vi_incubator",
      "description": "VI: is this VI (or one index) mature enough to fine-tune an AI with it? Every criterion — knowledge, checked share, "
                     "search quality, hint model, no harm from hints, labels, training data — with threshold, measured value and state.",

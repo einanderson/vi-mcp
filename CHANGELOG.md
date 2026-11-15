@@ -39,6 +39,42 @@ Linked from [README.md](README.md).
   The package follows Codex's semantic review (`frage:e05f78b192e7fdb964119b82`).
   Evidence: `tests/test_philosophy.py` (15 tests).
 
+- **Philosophy packages v2: defeasible priorities, a second philosophy, binding.** Built from Codex's review
+  (`frage:e05f78b192e7fdb964119b82`, question 3 and addendum).
+  - **Priority profile `maximal-candidates-v1`** (`profile.priority`). Its fixed rules run with the seed and are covered by the
+    package hash. When pieces of evidence about one statement disagree:
+    - one strict lexicographic tuple decides: authority, then quality, then observation time. The time counts only where the
+      group permits supersession (`supersedes`); the arrival time never counts;
+    - a cycle, an unranked or a twice-ranked candidate makes the group **invalid**. This is reported as a violation and gives no
+      value, never "unknown";
+    - raw conflicts and every suppression stay visible; `evaluate` shows them under `priority`;
+    - `check` refuses a seed that derives what the profile owns, or derives candidates from effective verdicts.
+  - **Second built-in package `messung`** (measured-only acceptance):
+    - only an applicable measurement admits a statement; documentation and hearsay never do, are held back with their reason and
+      create the duty to measure;
+    - 19 worlds hold every counterexample of the review: 2- and 3-cycles, "superior OR newer", ties, arrival time versus
+      observation time, unranked and twice-ranked candidates;
+    - it checks from a directory while the `kollektiv` module cannot even be imported, so the engine is not wired to the first
+      philosophy. The training generator draws, judges, speaks and reads back its worlds without change.
+  - **Binding:** `vi-mcp philosophy use NAME --instance I | --index X [--off]` and `bound`, also `vi_philosophy` actions `use`
+    and `bound`.
+    - A binding is an internal object holding the name and the **hash** it was bound to. Its state is `current`, `stale` (a
+      newer install does not take over silently) or `missing`.
+    - Ending a binding leaves a tombstone.
+    - With two philosophies on one instance, `evaluate` without a name returns one verdict per philosophy, never merged.
+    - An instance binds only itself; an administrator binds others.
+  - `kollektiv` is unchanged: package hash `8d213463…` and its training data are byte-identical before and after. The sha256 of
+    500 generated examples plus prose was measured on `main` and on this branch.
+  Evidence: `tests/test_philosophy.py` (28 tests). `vi-mcp philosophy check messung`: 19/19 worlds, every value and acceptance
+  covered.
+
+### What is still missing
+
+- No reinstatement semantics (a candidate whose defeater is itself defeated stays suppressed), no Brewka/Eiter preferred answer
+  sets, no imports or composition between philosophies.
+- A binding does not yet reach a session's instructions, and no server path evaluates a bound philosophy before an action. It is
+  visible through `vi_philosophy` only.
+
 ### What was fixed
 
 - **The logic engine names contradictions correctly.** Codex's review on 15.11.2026, done before the philosophical seed builds on

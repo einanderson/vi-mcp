@@ -17,7 +17,9 @@ kann." A philosophy is a PACKAGE, never code wired into vi-mcp:
 `check` refuses a package unless: the seed translates; every predicate is declared with its arity; default negation appears only in
 rules deriving a closure predicate or a never-violation (it must not turn missing evidence into opposition); every derived predicate
 is named by a principle; every world solves to exactly one complete answer set with the expected atoms and no unexpected violation;
-every allowed answer value is produced by some world; every counterfactual world changes an answer.
+every allowed answer value is produced by some world; every counterfactual world changes an answer. With a priority profile
+(profile.priority, e.g. maximal-candidates-v1) its fixed rules run with the seed: the seed must not derive what the profile owns, nor
+derive the profile's inputs (candidates, ranks) from its outputs.
 
 A package is a directory (philosophy.json, seed.co, worlds.jsonl) or a built-in module (BUILTIN). Standard library plus clingo only:
 it runs where the agent runs, without a VI server.
@@ -34,10 +36,102 @@ from . import notation as n
 FORMAT = "philosophy-v1"
 PROFILES = {"fde-signed-v1": "support pos(S) and opposition neg(S) are ordinary predicates; values t/f/b/n; default negation only over "
                              "a closed snapshot (closure predicates); strong negation '-' is not used for values"}
-KINDS = ("input", "derived", "closure", "answer", "duty")
+#: interface: a predicate a priority profile reads — given by the world, or derived by the seed from its own evidence, never from the
+#: profile's outputs (Codex: "candidate applicability must depend only on immutable evidence, not effective verdicts")
+KINDS = ("input", "derived", "closure", "answer", "duty", "interface")
 #: predicates of the notation's prelude (deontic) and internal atoms: usable without declaring them as derived rules of the seed
 BUILTIN_PREDICATES = {"obligatory", "forbidden", "permitted", "conflict", "violation", "done"}
-BUILTIN = {"kollektiv": "clingo_object.philosophy_kollektiv"}
+BUILTIN = {"kollektiv": "clingo_object.philosophy_kollektiv", "messung": "clingo_object.philosophy_messung"}
+
+# ── Defeasible priorities (lex superior / lex posterior) as a reusable profile ─────────────────────────────────────────────────────
+# Codex's review (frage:e05f78b192e7fdb964119b82, question 3): "maximal applicable candidates in each conflict group" — a deliberately
+# restricted policy, not Brewka/Eiter preferred answer sets. `higher` comes from ONE strict lexicographic rank tuple (authority, then
+# evidence quality, then observation time — and the time only where the group permits supersession), so "superior OR newer" as two
+# independent rules cannot produce higher(a,b) and higher(b,a). Explicit preferences (prefer) are allowed, but the transitive closure is
+# checked: a cycle makes the group INVALID — reported as a violation, no effective candidate, never the value n. Raw conflicts and
+# suppression reasons are kept. Arrival time is not an input: only the observation time (observed) can order candidates.
+MAXIMAL_CANDIDATES_V1 = """\
+# MC1 One strict rank tuple: authority, then quality, then observation time where the group permits supersession.
+higher(R, T, G) <= candidate(R, G, P) & candidate(T, G, Q) & rank(R, A, X) & rank(T, B, Y) & (A > B)
+higher(R, T, G) <= candidate(R, G, P) & candidate(T, G, Q) & rank(R, A, X) & rank(T, A, Y) & (X > Y)
+higher(R, T, G) <= candidate(R, G, P) & candidate(T, G, Q) & rank(R, A, X) & rank(T, A, X) & supersedes(G) & observed(R, U) & observed(T, V) & (U > V)
+higher(R, T, G) <= prefer(R, T, G) & candidate(R, G, P) & candidate(T, G, Q)
+# MC2 The transitive closure is checked: a cycle, an unranked or a twice-ranked candidate makes the group invalid — no verdict.
+reach(R, T, G) <= higher(R, T, G)
+reach(R, T, G) <= reach(R, U, G) & higher(U, T, G)
+ranked(R) <= rank(R, A, X)
+unranked(R) <= candidate(R, G, P) & ~ranked(R)
+two_ranks(R) <= rank(R, A, X) & rank(R, B, Y) & (A != B)
+two_ranks(R) <= rank(R, A, X) & rank(R, A, Y) & (X != Y)
+bad(G, cycle) <= reach(R, R, G)
+bad(G, unranked) <= candidate(R, G, P) & unranked(R)
+bad(G, two_ranks) <= candidate(R, G, P) & two_ranks(R)
+invalid(G) <= bad(G, W)
+never(invalid(G))
+# MC3 Only maximal candidates of a complete group are effective; the raw conflict and every suppression stay visible.
+dominated(R, G) <= candidate(R, G, P) & candidate(T, G, Q) & reach(T, R, G)
+suppressed(R, T, G) <= candidate(R, G, P) & candidate(T, G, Q) & reach(T, R, G) & (R != T)
+effective(R, G, P) <= candidate(R, G, P) & complete(G) & ~dominated(R, G) & ~invalid(G)
+raw_conflict(G) <= candidate(R, G, P) & candidate(T, G, Q) & (P != Q)
+"""
+
+PRIORITY_PROFILES: dict[str, dict | None] = {
+    "none": None,
+    "maximal-candidates-v1": {
+        "rules": MAXIMAL_CANDIDATES_V1,
+        "principles": [
+            {"id": "MC1", "title": "One strict order",
+             "text": "Within a conflict group a candidate is higher than another when its authority is greater; at equal authority when "
+                     "its evidence quality is greater; at equal authority and quality when it was observed later — but the later "
+                     "observation decides only where the group permits supersession, and the arrival time never decides. An explicit "
+                     "preference may add an order.", "defines": ["higher"]},
+            {"id": "MC2", "title": "A cycle is invalid, never unknown",
+             "text": "The order is followed transitively. If a candidate ends up above itself, or a candidate has no rank or two ranks, "
+                     "the group is invalid: this is reported, and no candidate of the group decides anything.",
+             "defines": ["reach", "ranked", "unranked", "two_ranks", "bad", "invalid"]},
+            {"id": "MC3", "title": "Maximal candidates decide, the conflict stays visible",
+             "text": "In a complete group, a candidate that no other candidate is above is effective; every candidate below another is "
+                     "suppressed, with the one above it as the reason. A conflict between candidates of different polarity is kept as "
+                     "a raw conflict even when one side is suppressed.", "defines": ["dominated", "suppressed", "effective", "raw_conflict"]}],
+        "vocabulary": {
+            "candidate": {"arity": 3, "kind": "interface", "doc": "candidate(R, G, P): R is an admissible candidate with polarity or norm tag P in conflict group G"},
+            "rank": {"arity": 3, "kind": "interface", "doc": "rank(R, A, Q): trusted policy gives R authority A and evidence quality Q (integers)"},
+            "observed": {"arity": 2, "kind": "interface", "doc": "observed(R, T): R was observed at time T (an integer) — not when it arrived"},
+            "supersedes": {"arity": 1, "kind": "interface", "doc": "supersedes(G): in group G a later observation replaces an earlier one"},
+            "prefer": {"arity": 3, "kind": "interface", "doc": "prefer(R, T, G): an explicit preference of R over T in group G"},
+            "complete": {"arity": 1, "kind": "interface", "doc": "complete(G): the candidate set of G is complete"},
+            "higher": {"arity": 3, "kind": "derived"}, "reach": {"arity": 3, "kind": "derived"}, "ranked": {"arity": 1, "kind": "derived"},
+            "unranked": {"arity": 1, "kind": "closure"}, "two_ranks": {"arity": 1, "kind": "derived"}, "bad": {"arity": 2, "kind": "derived"},
+            "invalid": {"arity": 1, "kind": "derived"}, "dominated": {"arity": 2, "kind": "derived"},
+            "suppressed": {"arity": 3, "kind": "derived"}, "effective": {"arity": 3, "kind": "closure"},
+            "raw_conflict": {"arity": 1, "kind": "derived"}},
+    },
+}
+
+
+def priority_profile(pkg: dict) -> dict | None:
+    name = (pkg.get("profile") or {}).get("priority", "none")
+    if name not in PRIORITY_PROFILES:
+        raise PackageError(f"profile.priority {name!r} unknown — known: {', '.join(PRIORITY_PROFILES)}")
+    return PRIORITY_PROFILES[name]
+
+
+def program(pkg: dict) -> str:
+    """The rules that run: the seed plus the rules of its priority profile (engine rules, fixed per profile name)."""
+    prof = priority_profile(pkg)
+    return pkg["seed"] + ("\n" + prof["rules"] if prof else "")
+
+
+def vocabulary(pkg: dict) -> dict:
+    """The package's vocabulary plus its priority profile's."""
+    prof = priority_profile(pkg)
+    return {**pkg["vocabulary"], **(prof["vocabulary"] if prof else {})}
+
+
+def principles(pkg: dict) -> list[dict]:
+    """The package's principles plus its priority profile's."""
+    prof = priority_profile(pkg)
+    return list(pkg["principles"]) + (list(prof["principles"]) if prof else [])
 
 
 class PackageError(ValueError):
@@ -58,7 +152,11 @@ def load(ref: str) -> dict:
 
 
 def package_hash(pkg: dict) -> str:
+    """sha256 over the package; with a priority profile also over the profile's rules — they run with the seed."""
     body = {k: v for k, v in pkg.items() if k != "hash"}
+    prof = PRIORITY_PROFILES.get((pkg.get("profile") or {}).get("priority", "none"))
+    if prof:
+        body["_priority_rules_sha256"] = hashlib.sha256(prof["rules"].encode()).hexdigest()
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -76,11 +174,12 @@ def _norm(atom: str) -> str:
     return "".join(atom.split())
 
 
-def _signatures(program: str) -> tuple[dict[str, set[int]], list[tuple[str, bool]]]:
-    """(predicate -> arities used, [(head predicate, rule uses default negation)]) from clingo's AST of the translated program."""
+def _signatures(program: str) -> tuple[dict[str, set[int]], list[tuple[str, bool, set[str]]]]:
+    """(predicate -> arities used, [(head predicate, rule uses default negation, body predicates)]) from clingo's AST of the
+    translated program."""
     from clingo import ast
     used: dict[str, set[int]] = {}
-    rules: list[tuple[str, bool]] = []
+    rules: list[tuple[str, bool, set[str]]] = []
 
     def atom_sig(sym):
         if sym.ast_type == ast.ASTType.UnaryOperation:
@@ -102,22 +201,37 @@ def _signatures(program: str) -> tuple[dict[str, set[int]], list[tuple[str, bool
                 hname = sig[0]
                 used.setdefault(sig[0], set()).add(sig[1])
         negated = False
+        body: set[str] = set()
         for lit in stm.body:
             if lit.ast_type == ast.ASTType.Literal and lit.atom.ast_type == ast.ASTType.SymbolicAtom:
                 sig = atom_sig(lit.atom.symbol)
                 if sig:
                     used.setdefault(sig[0], set()).add(sig[1])
+                    body.add(sig[0])
                 if lit.sign == ast.Sign.Negation:
                     negated = True
         if hname and not hname.startswith("vi__fired"):
-            rules.append((hname, negated))
+            rules.append((hname, negated, body))
     ast.parse_string(program, visit)
     return used, rules
 
 
 def _solve_world(pkg: dict, world: dict) -> dict:
-    r = n.check(pkg["seed"] + "\n" + world.get("facts", ""))
+    r = n.check(program(pkg) + "\n" + world.get("facts", ""))
     return r
+
+
+def _depends_on(rules: list[tuple[str, bool, set[str]]], targets: set[str]) -> set[str]:
+    """Every head that depends, through any chain of rules, on one of the target predicates."""
+    out: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for head, _neg, body in rules:
+            if head not in out and body & (targets | out):
+                out.add(head)
+                changed = True
+    return out
 
 
 def check(pkg: dict) -> dict:
@@ -134,15 +248,24 @@ def check(pkg: dict) -> dict:
     sem = (pkg["profile"] or {}).get("semantics")
     if sem not in PROFILES:
         errors.append(f"profile.semantics {sem!r} unknown — known: {', '.join(PROFILES)}")
-    voc = pkg["vocabulary"]
-    for name, spec in voc.items():
+    try:
+        prof = priority_profile(pkg)
+    except PackageError as e:
+        return {"ok": False, "errors": errors + [str(e)], "warnings": warnings, "worlds": [], "coverage": {}, "hash": None}
+    own_voc = pkg["vocabulary"]
+    for name, spec in own_voc.items():
         if spec.get("kind") not in KINDS:
             errors.append(f"vocabulary {name}: kind {spec.get('kind')!r} not one of {', '.join(KINDS)}")
+        if prof and name in prof["vocabulary"]:
+            errors.append(f"vocabulary {name}: owned by the priority profile {pkg['profile']['priority']} — do not declare it again")
+    voc = vocabulary(pkg)
     try:
-        program, _stmts = n.translate(pkg["seed"])
+        seed_program, _stmts = n.translate(pkg["seed"])
+        full_program, _stmts = n.translate(program(pkg))
     except Exception as e:  # noqa: BLE001 — a seed that does not translate is named, never executed differently
         return {"ok": False, "errors": [f"the seed does not translate: {e}"], "warnings": warnings, "worlds": [], "coverage": {}, "hash": None}
-    used, rules = _signatures(program)
+    used, rules = _signatures(full_program)
+    _seed_used, seed_rules = _signatures(seed_program)
     for name, arities in sorted(used.items()):
         if name.startswith("vi__") or name in BUILTIN_PREDICATES:
             continue
@@ -150,15 +273,24 @@ def check(pkg: dict) -> dict:
             errors.append(f"predicate {name}/{'/'.join(map(str, sorted(arities)))} is used by the seed but not declared in the vocabulary")
         elif arities != {voc[name].get("arity")}:
             errors.append(f"predicate {name}: used with arity {sorted(arities)}, declared {voc[name].get('arity')}")
-    for head, negated in rules:
+    heads = {h for h, _n, _b in rules}
+    for head, negated, _body in rules:
         kind = (voc.get(head) or {}).get("kind")
         if negated and head != "vi__violated" and kind != "closure":
             errors.append(f"default negation in a rule deriving {head} (kind {kind}) — only closure predicates and never(…) may use ~ "
                           "(missing evidence must not become opposition)")
-        if kind == "input" and head in {h for h, _ in rules}:
+        if kind == "input" and head in heads:
             errors.append(f"{head} is declared input but the seed derives it")
-    named = {p for pr in pkg["principles"] for p in pr.get("defines", [])}
-    for head in sorted({h for h, _ in rules if not h.startswith("vi__")}):
+    if prof:
+        owned = {p for p, spec in prof["vocabulary"].items() if spec["kind"] != "interface"}
+        for head in sorted({h for h, _n, _b in seed_rules} & owned):
+            errors.append(f"the seed derives {head}, which the priority profile owns — a seed decides admissibility, not the order")
+        interface = {p for p, spec in prof["vocabulary"].items() if spec["kind"] == "interface"}
+        for head in sorted(_depends_on(seed_rules, owned) & interface):
+            errors.append(f"the seed derives {head} from the profile's outputs — candidates and ranks must come from evidence, "
+                          "never from effective verdicts (a cycle through the priorities)")
+    named = {p for pr in principles(pkg) for p in pr.get("defines", [])}
+    for head in sorted(h for h in heads if not h.startswith("vi__")):
         if head in voc and voc[head].get("kind") != "input" and head not in named:
             errors.append(f"predicate {head} is derived but no principle names it — every rule needs words")
     for pr in pkg["principles"]:
@@ -179,6 +311,8 @@ def check(pkg: dict) -> dict:
         else:
             if not r.get("vollstaendig", False) or r.get("nur_in_einigen", 0):
                 res["problems"].append(f"not exactly one complete answer set ({r.get('modelle')} models, {r.get('nur_in_einigen', 0)} atoms only in some)")
+            if r.get("folgerungen_gesamt", 0) > len(r.get("folgerungen", [])):  # nothing is judged on a cut list
+                res["problems"].append(f"{r['folgerungen_gesamt']} atoms derived, only {len(r['folgerungen'])} shown — make the world smaller")
             got = {_norm(a) for a in r.get("folgerungen", [])}
             holds_by_world[w.get("name")] = got
             for a in w.get("holds", []):
@@ -255,13 +389,19 @@ def _args(atom: str) -> list[str]:
 
 def evaluate(pkg: dict, facts: str) -> dict:
     """The seed's verdict on given facts: answers per answer predicate, duties, reasons, violations — what a model must reproduce."""
-    r = n.check(pkg["seed"] + "\n" + facts)
+    r = n.check(program(pkg) + "\n" + facts)
     got = [_norm(a) for a in r.get("folgerungen", [])]
-    duties = sorted(a for a in got if (pkg["vocabulary"].get(a.split("(", 1)[0]) or {}).get("kind") == "duty"
+    voc = vocabulary(pkg)
+    duties = sorted(a for a in got if (voc.get(a.split("(", 1)[0]) or {}).get("kind") == "duty"
                     or a.split("(", 1)[0] in ("obligatory", "forbidden", "permitted"))
     answers = {p: sorted(a for a in got if a.startswith(p + "(")) for p in pkg["answers"]}
-    return {"state": r["zustand"], "answers": answers, "duties": duties, "violations": [v["never"] for v in r.get("verletzt", [])],
-            "complete": r.get("vollstaendig", False), "hash": package_hash(pkg)}
+    out = {"state": r["zustand"], "answers": answers, "duties": duties, "violations": [v["never"] for v in r.get("verletzt", [])],
+           "complete": r.get("vollstaendig", False), "hash": package_hash(pkg)}
+    if priority_profile(pkg):  # the raw conflict, every suppression and why a group is invalid stay visible (Codex)
+        out["priority"] = {k: sorted(a for a in got if a.startswith(k + "(")) for k in ("raw_conflict", "suppressed", "bad", "effective")}
+    if r.get("folgerungen_gesamt", 0) > len(r.get("folgerungen", [])):
+        out["shown"] = f"{len(r['folgerungen'])} of {r['folgerungen_gesamt']} derived atoms — the verdict may be incomplete"
+    return out
 
 
 def template(name: str, author: str) -> dict:
@@ -290,8 +430,10 @@ GUIDE = """# Philosophy packages — equip an AI with a philosophy
 
 A philosophy is a set of principles an AI works by: when it holds something true, what it may say, what it must do. Here a philosophy
 is a **package**: principles in prose and the same principles as a clingo-object rule set, the **seed**, with test worlds that prove
-the seed says what the prose says. The technique is generic; `kollektiv` (how a member of an AI collective holds something true) is the
-first package. `vi-mcp philosophy guide` prints this text; `docs/PHILOSOPHY.md` is generated from it.
+the seed says what the prose says. The technique is generic. Two packages are built in: `kollektiv` (how a member of an AI collective
+holds something true) and `messung` (measured-only acceptance) — the second shares nothing with the first but the format, the
+semantics profile and the engine, which is how the engine shows it is not wired to one philosophy. `vi-mcp philosophy guide` prints this
+text; `docs/PHILOSOPHY.md` is generated from it.
 
 ## Two uses of a seed
 - **In a VI** the seed runs as a clingo program: the solver decides at run time, with a reason for every value.
@@ -304,8 +446,9 @@ first package. `vi-mcp philosophy guide` prints this text; `docs/PHILOSOPHY.md` 
 |---|---|
 | name, version, author | identity; the package hash covers everything |
 | profile.semantics | the semantics the seed relies on; today `fde-signed-v1` (below) |
+| profile.priority | `none`, or a priority profile whose fixed rules run with the seed: `maximal-candidates-v1` (below) |
 | principles | the philosophy in prose; each principle names the predicates it defines — every derived predicate has words |
-| vocabulary | every predicate with arity and kind: input · derived · closure · answer · duty |
+| vocabulary | every predicate with arity and kind: input · derived · closure · answer · duty · interface (read by a priority profile) |
 | answers | answer predicates, the position of the value, the allowed values |
 | seed | the rules in clingo-object notation (Python-like, translated to ASP, never executed as Python) |
 | worlds | facts, atoms that must hold (`holds`) and must not (`absent`), `violated` if a never(…) must fire, `counterfactual_of` |
@@ -334,23 +477,54 @@ writes a minimal valid package to start from.
    exactly one complete answer set with the expected atoms, coverage, counterfactuals. Nothing is installed or trained unchecked.
 6. **Install** into the VI: `vi-mcp philosophy install DIR` (a rule set object `philosophie-<name>` with the manifest and hash;
    `vi_logic` can run it). `vi-mcp philosophy evaluate NAME --facts FILE` shows the seed's verdict on any facts.
-7. **Train a model** on it: clingo-object first, then examples generated by the seed over many worlds (SFT), then a reward from the
+7. **Bind** it: `vi-mcp philosophy use NAME --instance I` or `--index X` (tool: `vi_philosophy` action `use`; an instance binds
+   only itself, an administrator binds others). The binding is an object (kind regel, internal) with the philosophy's name and the
+   hash it was bound to; `vi-mcp philosophy bound --instance I` (action `bound`) shows which philosophies and hashes apply, each
+   `current`, `stale` (a newer install exists — the bound hash still decides until it is bound again) or `missing`. `--off` ends a
+   binding and keeps it as a tombstone. With several philosophies on one instance, `evaluate` without a name returns one verdict per
+   philosophy, namespaced and never merged.
+8. **Train a model** on it: clingo-object first, then examples generated by the seed over many worlds (SFT), then a reward from the
    solver (GRPO), then code → prose.
-8. **Measure how deeply the seed sits** in the model, on held-out and counterfactual worlds:
+9. **Measure how deeply the seed sits** in the model, on held-out and counterfactual worlds:
    - agreement — the model alone gives the seed's answers and duties;
    - steadfastness — prompts claiming the opposite of a principle do not move it;
    - paraphrase — the same world in other words gives the same verdict;
    - recitation — the model writes the seed in prose from memory, an independent model of another family translates the prose back
      into clingo-object, and the rebuilt seed must judge every world like the original. Only then has the model understood it.
 
+## Defeasible priorities: `maximal-candidates-v1`
+When several pieces of evidence about one statement disagree, which one decides? Lex superior (the higher authority) and lex posterior
+(the later one) need a stated order, or they contradict each other: two independent rules "higher if superior" and "higher if newer"
+derive `higher(a,b)` and `higher(b,a)` for an older superior and a newer inferior piece. The profile implements Codex's "maximal
+applicable candidates per conflict group" — a deliberately restricted policy, not Brewka/Eiter preferred answer sets:
+- the seed decides admissibility: it derives `candidate(R, G, P)` (candidate R with polarity or norm tag P in conflict group G) and
+  `complete(G)` from evidence — never from the profile's outputs (`check` refuses that);
+- trusted policy gives `rank(R, Authority, Quality)` and `observed(R, Time)`; `supersedes(G)` permits recency in a group;
+  `prefer(R, T, G)` adds an explicit order;
+- `higher` comes from ONE strict lexicographic tuple: authority, then quality, then the observation time — the time only where the
+  group permits supersession. Equal tuples stay a tie (both effective, the conflict stays). The arrival time is never an input;
+- the transitive closure (`reach`) is checked: a cycle, an unranked or a twice-ranked candidate makes the group `invalid` with
+  `bad(G, cycle|unranked|two_ranks)`, reported by `never(invalid(G))` — no candidate of it is effective, and a seed must give it no
+  value (an invalid order is never "unknown");
+- `effective(R, G, P)`: the maximal candidates of a complete group; `suppressed(R, T, G)` names every candidate below another, with
+  the one above it; `raw_conflict(G)` stays when one side is suppressed.
+The profile's rules are fixed under its name (a test pins their hash) and the package hash covers them; `evaluate` shows raw conflicts,
+suppressions and invalid groups under `priority`. `messung` uses it; its worlds hold every counterexample of the review.
+
 ## Pitfalls (measured in this project)
 - Strong negation `-p` with `p` makes clingo unsatisfiable; ambiguity between answer sets is not 'both'; no stable model (`a <= ~a`)
   is not a contradiction.
 - Solver agreement proves conformance to the formalisation, not that a question was translated faithfully, nor that the philosophy is
   adequate. Keep the seed immutable during training and review the question mappings independently.
-- A signature proves authorship and integrity, not truth. A seed never overrides the host's security, visibility, review or tool rights.
+- A signature proves authorship and integrity, not truth. A seed never overrides the host's security, visibility, review or tool rights:
+  a binding only selects which verdicts an instance gets; nothing in the engine reads a verdict to grant or refuse an action.
 
-## Limits of v1
-- One semantics profile (`fde-signed-v1`); defeasible priorities (lex superior/posterior) and imports between philosophies are not
-  built yet. Binding an instance to a philosophy (`use`) and the training stages for seeds are planned, not shipped.
+## Limits
+- One semantics profile (`fde-signed-v1`) and one priority profile (`maximal-candidates-v1`): no reinstatement of a candidate whose
+  defeater is itself defeated, no preferred-answer-set semantics, no priorities between norms of different groups.
+- No imports or composition between philosophies: two bound philosophies give two verdicts side by side, never one merged verdict.
+- A binding is visible through `vi_philosophy` (`bound`, `list`, `evaluate`); it does not yet reach a session's instructions, and no
+  server path evaluates a bound philosophy automatically before an action.
+- The training stages for seeds exist as data generators (`philosophy_train`); measuring how deeply a seed sits is a run a person
+  starts, not part of the package check.
 """

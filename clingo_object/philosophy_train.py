@@ -25,6 +25,11 @@ TASKS = ("judge", "formalize", "pressure", "explain", "recite")
 SYSTEM = "You are a member of an AI collective and work strictly by its philosophy."
 
 
+def _system(pkg: dict) -> str:
+    """The system prompt: the package's own (speak.system), else the collective's wording of the first package."""
+    return pkg["speak"].get("system", SYSTEM)
+
+
 def draw_world(pkg: dict, rnd: random.Random) -> list[tuple]:
     """Ground input facts as tuples (pred, args...) drawn by the package's generator spec."""
     gen = pkg["generator"]
@@ -34,15 +39,25 @@ def draw_world(pkg: dict, rnd: random.Random) -> list[tuple]:
     facts: list[tuple] = []
     for s in subjects:
         for spec in gen["facts"]:
-            if "p" in spec and rnd.random() >= spec["p"]:
-                continue
-            if spec.get("requires") and not any(f[0] == spec["requires"] and f[1] == s for f in facts):
-                continue
-            c_lo, c_hi = spec.get("count", [1, 1])
-            for _ in range(rnd.randint(c_lo, c_hi)):
+            if "each" in spec:  # one fact per distinct argument of earlier facts about the subject (e.g. one rank per event), once per world
+                pred, pos = spec["each"].split(".")
+                at = spec["args"].index("$each")
+                rounds = [v for v in dict.fromkeys(f[int(pos) + 1] for f in facts if f[0] == pred and f[1] == s)
+                          if not any(f[0] == spec["pred"] and f[at + 1] == v for f in facts)]
+                rounds = [v for v in rounds if "p" not in spec or rnd.random() < spec["p"]]
+            else:
+                if "p" in spec and rnd.random() >= spec["p"]:
+                    continue
+                if spec.get("requires") and not any(f[0] == spec["requires"] and f[1] == s for f in facts):
+                    continue
+                c_lo, c_hi = spec.get("count", [1, 1])
+                rounds = [None] * rnd.randint(c_lo, c_hi)
+            for each in rounds:
                 args = []
                 for a in spec["args"]:
-                    if a == "$S":
+                    if a == "$each":
+                        args.append(each)
+                    elif a == "$S":
                         args.append(s)
                     elif a.startswith("$of:"):  # an argument of an earlier fact about the subject (e.g. the reference that was verified)
                         pred, pos = a[4:].split(".")
@@ -88,7 +103,7 @@ def verdict(pkg: dict, facts: list[tuple]) -> dict:
             args = ph._args(a)
             per.setdefault(args[0], {})[pred] = args[pos]
     reasons: dict[str, list[str]] = {}
-    r = ph.n.check(pkg["seed"] + "\n" + facts_text(facts))
+    r = ph.n.check(ph.program(pkg) + "\n" + facts_text(facts))
     for a in r.get("folgerungen", []):
         if a.startswith(pkg["speak"]["reason_predicate"] + "("):
             args = ph._args(a)
@@ -204,7 +219,7 @@ def examples(pkg: dict, n: int, seed: int, test: bool = False, weights=(0.6, 0.2
             p = rnd.choice(pressures)
             q = f"Situation: {situation}\n{p}\n{pkg['speak']['question']}"
             a = pkg["speak"]["pressure_reply"] + "\n" + speak(pkg, v)
-        out.append({"messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": q}, {"role": "assistant", "content": a}],
+        out.append({"messages": [{"role": "system", "content": _system(pkg)}, {"role": "user", "content": q}, {"role": "assistant", "content": a}],
                     "meta": {**meta, "task": task}})
     return out
 
@@ -212,6 +227,7 @@ def examples(pkg: dict, n: int, seed: int, test: bool = False, weights=(0.6, 0.2
 def prose_examples(pkg: dict, paraphrases: dict[str, list[str]] | None = None) -> list[dict]:
     """explain (rules of a principle → its prose) and recite (no code → all principles). paraphrases: extra checked wordings per id."""
     seed_lines = pkg["seed"].splitlines()
+    ids = {p["id"] for p in pkg["principles"]}
     out = []
     for pr in pkg["principles"]:
         block, on = [], False
@@ -219,18 +235,18 @@ def prose_examples(pkg: dict, paraphrases: dict[str, list[str]] | None = None) -
             if line.startswith(f"# {pr['id']} "):
                 on = True
                 continue
-            if on and line.startswith("# P"):
+            if on and line.startswith("# ") and line[2:].split(" ", 1)[0] in ids:
                 break
             if on and line.strip():
                 block.append(line)
         texts = [pr["text"]] + list((paraphrases or {}).get(pr["id"], []))
         for t in texts:
-            out.append({"messages": [{"role": "system", "content": SYSTEM},
+            out.append({"messages": [{"role": "system", "content": _system(pkg)},
                                      {"role": "user", "content": "Explain these rules of your philosophy in plain words:\n" + "\n".join(block)},
                                      {"role": "assistant", "content": f"{pr['id']} {pr.get('title', '')}: {t}"}],
                         "meta": {"task": "explain", "principle": pr["id"], "package": pkg["name"]}})
     recite = "\n".join(f"{p['id']} {p.get('title', '')}: {p['text']}" for p in pkg["principles"])
     for q in pkg["speak"]["recite_questions"]:
-        out.append({"messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": q}, {"role": "assistant", "content": recite}],
+        out.append({"messages": [{"role": "system", "content": _system(pkg)}, {"role": "user", "content": q}, {"role": "assistant", "content": recite}],
                     "meta": {"task": "recite", "package": pkg["name"]}})
     return out
