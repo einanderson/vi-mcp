@@ -83,7 +83,7 @@ def test_the_tool_and_install_store_a_checked_philosophy_as_a_rule_set(gd):
     o = g.load(oid)
     assert o.kind == "regel" and "philosophie:kollektiv" in o.hashtags and o.visibility == "intern"
     assert o.data["philosophie"]["hash"] == ph.package_hash(ph.load("kollektiv")) and o.data["logik"]["quelle"] == ph.load("kollektiv")["seed"]
-    assert "kollektiv 1.0.0" in tools.call_tool("vi_philosophy", {"action": "list"}, "a", False)
+    assert f"kollektiv {ph.load('kollektiv')['version']}" in tools.call_tool("vi_philosophy", {"action": "list"}, "a", False)
 
 
 def test_install_refuses_a_package_that_fails_its_checks(gd, tmp_path):
@@ -126,3 +126,19 @@ def test_training_data_is_the_seeds_verdict_spoken_and_read_back_without_loss():
     prose = pt.prose_examples(pkg)
     assert {r["meta"]["task"] for r in prose} == {"explain", "recite"} and len(prose) == len(pkg["principles"]) + 3
     assert "counts(S, P, O) <= line" in prose[0]["messages"][1]["content"] and prose[0]["messages"][2]["content"].startswith("P1 ")
+
+
+def test_an_external_source_is_a_source_of_truth_only_when_the_statement_was_verified_against_it():
+    """User, 15.11.2026: "An der Kollektiv-Philosophie muss auch eine externe Quelle (RAG, Web) als Quelle der Wahrheit gelten …
+    aber eine Wahrheit muss man immer nachweisen können." P7: verified → a line whose reason is the reference; unverified → nothing,
+    plus the duty to verify and the ban on citing it; two independent verified sources → accepted."""
+    pkg = ph.load("kollektiv")
+    one = ph.evaluate(pkg, "source(q, pos, url_a, web)\nverified(url_a, q)\nauthor(q, z)\nclosed(q)")
+    assert one["answers"]["acceptance"] == ["acceptance(q,tentative)"] and one["answers"]["value"] == ["value(q,t)"]
+    unproven = ph.evaluate(pkg, "source(q, pos, url_a, web)\nauthor(q, z)\nclosed(q)")
+    assert unproven["answers"]["value"] == ["value(q,n)"]
+    assert "obligatory(verify(url_a,q))" in unproven["duties"] and "forbidden(cite(url_a,q))" in unproven["duties"]
+    two = ph.evaluate(pkg, "source(q, pos, url_a, web)\nverified(url_a, q)\nsource(q, pos, doc_b, rag)\nverified(doc_b, q)\nauthor(q, z)\nclosed(q)")
+    assert two["answers"]["acceptance"] == ["acceptance(q,accepted)"]
+    same_ref_twice = ph.evaluate(pkg, "source(q, pos, url_a, web)\nsource(q, pos, url_a, rag)\nverified(url_a, q)\nauthor(q, z)\nclosed(q)")
+    assert same_ref_twice["answers"]["acceptance"] == ["acceptance(q,tentative)"]  # one reference is one source

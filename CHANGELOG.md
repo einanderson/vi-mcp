@@ -31,6 +31,11 @@ Linked from [README.md](README.md).
   - 12 worlds cover self-confirmation, the same origin twice, an unrelated statement next to a conflict, an open view and
     counterfactuals.
 
+  Version 1.1.0 adds **P7: external sources count only when they are proven.** A retrieval hit or a web page is a source of truth
+  like any other line, but only once the statement was verified against it. The verified passage was found, and the reference is
+  then the reason. An unverified source counts for nothing, must be verified and must not be cited. Two independent verified
+  sources make a statement accepted; one makes it a hypothesis. The same reference twice is one source.
+  User decision 15.11.2026: "eine Wahrheit muss man immer nachweisen können". 16 worlds in total.
   The package follows Codex's semantic review (`frage:e05f78b192e7fdb964119b82`).
   Evidence: `tests/test_philosophy.py` (15 tests).
 

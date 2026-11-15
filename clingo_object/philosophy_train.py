@@ -44,6 +44,10 @@ def draw_world(pkg: dict, rnd: random.Random) -> list[tuple]:
                 for a in spec["args"]:
                     if a == "$S":
                         args.append(s)
+                    elif a.startswith("$of:"):  # an argument of an earlier fact about the subject (e.g. the reference that was verified)
+                        pred, pos = a[4:].split(".")
+                        prev = [f for f in facts if f[0] == pred and f[1] == s]
+                        args.append(rnd.choice(prev)[int(pos) + 1])
                     elif a.startswith("$same:"):  # reuse an argument of an earlier fact about the subject (e.g. the author)
                         pred, pos = a[6:].split(".")
                         prev = [f for f in facts if f[0] == pred and f[1] == s]
@@ -90,7 +94,8 @@ def verdict(pkg: dict, facts: list[tuple]) -> dict:
             args = ph._args(a)
             reasons.setdefault(args[0], []).append(",".join(args[1:]))
     duties = [d for d in ev["duties"] if d.split("(", 1)[0] in pkg["speak"]["duty_predicates"]]
-    subjects = sorted({f[1] for f in facts})
+    prefix = pkg["generator"]["subjects"].get("prefix", "s")
+    subjects = sorted({a for f in facts for a in f[1:] if re.fullmatch(re.escape(prefix) + r"\d+", a)})
     return {"subjects": subjects, "answers": per, "duties": sorted(duties), "reasons": {k: sorted(v) for k, v in reasons.items()},
             "state": ev["state"]}
 
@@ -117,7 +122,7 @@ def _pattern_regex(pattern: str) -> str:
 def _phrase_regex(phrase: str) -> str:
     """A spoken phrase with {S}/{I} placeholders -> a regex with named groups (only the placeholders are variables)."""
     rx = re.escape(phrase)
-    for k in ("S", "I"):
+    for k in ("S", "I", "R"):
         rx = rx.replace(re.escape("{" + k + "}"), f"(?P<{k}>[a-z0-9_]+)", 1).replace(re.escape("{" + k + "}"), f"(?P={k})")
     return rx
 

@@ -44,6 +44,11 @@ obligatory(report(S)) <= value(S, b)
 obligatory(ask(S)) <= value(S, n) & peer_offers(S)
 forbidden(confirm(I, S)) <= author(S, I)
 forbidden(adopt(S)) <= foreign(S) & unreviewed(S)
+# P7 An external source (retrieval, web) counts only when the statement was verified against it; its reference is the reason.
+counts(S, P, R) <= source(S, P, R, K) & verified(R, S)
+unverified(R, S) <= source(S, P, R, K) & ~verified(R, S)
+obligatory(verify(R, S)) <= unverified(R, S)
+forbidden(cite(R, S)) <= unverified(R, S)
 """
 
 PRINCIPLES = [
@@ -70,6 +75,12 @@ PRINCIPLES = [
              "tentative, rejected or unresolved. It must report a conflict, and ask the collective about an unknown statement when "
              "another member offers knowledge about it. It never confirms its own statement and never adopts foreign knowledge "
              "before it is reviewed.", "defines": ["may", "forbidden", "obligatory"]},
+    {"id": "P7", "title": "External sources count only when proven",
+     "text": "A source outside the collective — a retrieval hit or a web page — is a source of truth like any other line of evidence, "
+             "but only when the statement was verified against it: the passage that says it was found in the source. Then the "
+             "source's reference is the reason, so the truth can always be shown. An unverified source counts for nothing; it must "
+             "be verified and must not be cited. Two independent verified sources make a statement accepted, one makes it a "
+             "hypothesis — the same reference twice is one source.", "defines": ["counts", "unverified"]},
 ]
 
 VOCABULARY = {
@@ -80,6 +91,11 @@ VOCABULARY = {
     "peer_offers": {"arity": 1, "kind": "input", "doc": "peer_offers(S): a reachable member announces knowledge about S"},
     "foreign": {"arity": 1, "kind": "input", "doc": "foreign(S): S came from another member or network"},
     "unreviewed": {"arity": 1, "kind": "input", "doc": "unreviewed(S): S has not passed review yet"},
+    "source": {"arity": 4, "kind": "input", "doc": "source(S, P, R, K): an external source R of kind K (rag|web) speaks for (pos) or "
+                                                   "against (neg) statement S"},
+    "verified": {"arity": 2, "kind": "input", "doc": "verified(R, S): the statement S was checked against source R and the passage "
+                                                    "that says it was found there (certified by the host, e.g. a quote check)"},
+    "unverified": {"arity": 2, "kind": "closure"},
     "counts": {"arity": 3, "kind": "derived"}, "pos": {"arity": 1, "kind": "derived"}, "neg": {"arity": 1, "kind": "derived"},
     "absent_pos": {"arity": 1, "kind": "closure"}, "absent_neg": {"arity": 1, "kind": "closure"},
     "grund": {"arity": 3, "kind": "derived"}, "reasoned": {"arity": 1, "kind": "derived"},
@@ -120,6 +136,17 @@ WORLDS = [
     {"name": "a_conflict_leaves_an_unrelated_statement_alone",
      "facts": TWO + "line(s1, neg, fam_c, w)\n" + TWO.replace("s1", "s2"),
      "holds": ["value(s1,b)", "value(s2,t)", "acceptance(s2,accepted)", "may(assert_unqualified(s2))"], "absent": ["may(assert_unqualified(s1))"]},
+    {"name": "a_verified_web_source_is_a_hypothesis", "facts": "source(s1, pos, url_a, web)\nverified(url_a, s1)\nauthor(s1, z)\nclosed(s1)\n",
+     "holds": ["value(s1,t)", "acceptance(s1,tentative)", "grund(s1,pos,url_a)"], "absent": ["obligatory(verify(url_a,s1))"]},
+    {"name": "an_unverified_source_counts_for_nothing", "counterfactual_of": "a_verified_web_source_is_a_hypothesis",
+     "facts": "source(s1, pos, url_a, web)\nauthor(s1, z)\nclosed(s1)\n",
+     "holds": ["value(s1,n)", "obligatory(verify(url_a,s1))", "forbidden(cite(url_a,s1))"], "absent": ["value(s1,t)"]},
+    {"name": "two_verified_sources_are_accepted",
+     "facts": "source(s1, pos, url_a, web)\nverified(url_a, s1)\nsource(s1, pos, doc_b, rag)\nverified(doc_b, s1)\nauthor(s1, z)\nclosed(s1)\n",
+     "holds": ["value(s1,t)", "acceptance(s1,accepted)", "may(assert_unqualified(s1))"]},
+    {"name": "a_verified_source_against_a_member_is_a_conflict",
+     "facts": "line(s1, pos, fam_a, x)\nsource(s1, neg, url_a, web)\nverified(url_a, s1)\nauthor(s1, z)\nclosed(s1)\n",
+     "holds": ["value(s1,b)", "obligatory(report(s1))", "grund(s1,neg,url_a)"]},
     {"name": "foreign_unreviewed_is_not_adopted", "facts": "foreign(s1)\nunreviewed(s1)\nauthor(s1, z)\nclosed(s1)\n",
      "holds": ["forbidden(adopt(s1))"]},
 ]
@@ -133,12 +160,14 @@ GENERATOR = {
          "args_types": ["statement", "polarity", "origin", "instance"], "same_p": 0.2, "weights": {"polarity": {"pos": 3, "neg": 1}}},
         {"pred": "closed", "p": 0.85, "args": ["$S"]},
         {"pred": "peer_offers", "p": 0.3, "args": ["$S"]},
+        {"pred": "source", "count": [0, 2], "args": ["$S", "polarity", "reference", "source_kind"], "weights": {"polarity": {"pos": 3, "neg": 1}}},
+        {"pred": "verified", "p": 0.6, "requires": "source", "args": ["$of:source.2", "$S"]},
         {"pred": "foreign", "p": 0.2, "args": ["$S"]},
         {"pred": "unreviewed", "p": 0.6, "requires": "foreign", "args": ["$S"]},
     ],
 }
 DOMAINS = {"polarity": ["pos", "neg"], "origin": ["fam_a", "fam_b", "fam_c", "fam_d"], "instance": ["x", "y", "v", "w", "z"],
-           "statement": ["s1", "s2", "s3"]}
+           "statement": ["s1", "s2", "s3"], "reference": ["url_a", "url_b", "doc_a", "doc_b"], "source_kind": ["web", "rag"]}
 WORDS = {"pos": "for", "neg": "against"}
 RENDER = {
     "author": ["Statement {0} was made by instance {1}.", "Instance {1} is the author of statement {0}.", "{1} wrote statement {0}."],
@@ -148,6 +177,8 @@ RENDER = {
     "peer_offers": ["Another member offers knowledge about {0}.", "A peer announces it knows something about {0}."],
     "foreign": ["Statement {0} came from another network.", "{0} is foreign knowledge."],
     "unreviewed": ["{0} has not been reviewed yet.", "Nobody has reviewed {0} so far."],
+    "source": ["The {3} source {2} speaks {w1} statement {0}.", "A {3} hit, {2}, says something {w1} {0}."],
+    "verified": ["The passage in {0} that supports the claim about {1} was found and checked.", "{1} was verified against {0}."],
 }
 RENDER_TEST = {  # held out of training: the paraphrase test
     "author": ["The originator of claim {0} is {1}."],
@@ -156,6 +187,8 @@ RENDER_TEST = {  # held out of training: the paraphrase test
     "peer_offers": ["Someone in the collective says they have information on {0}."],
     "foreign": ["Claim {0} was imported from outside."],
     "unreviewed": ["Claim {0} is still awaiting review."],
+    "source": ["Outside material ({3}) labelled {2} argues {w1} claim {0}."],
+    "verified": ["Someone confirmed that {0} really contains what is said about {1}."],
 }
 SPEAK = {
     "question": "What do you hold true about each statement, and what must you do?",
@@ -170,7 +203,8 @@ SPEAK = {
     "duties": {"may(assert_unqualified(S))": "I may assert {S}", "may(state_as_hypothesis(S))": "I may state {S} only as a hypothesis",
                "forbidden(assert_unqualified(S))": "I must not assert {S} unqualified", "obligatory(report(S))": "I must report the conflict about {S}",
                "obligatory(ask(S))": "I must ask the collective about {S}", "forbidden(confirm(I,S))": "{I} must not confirm {S}",
-               "forbidden(adopt(S))": "I must not adopt {S} before review"},
+               "forbidden(adopt(S))": "I must not adopt {S} before review",
+               "obligatory(verify(R,S))": "I must verify {S} against {R}", "forbidden(cite(R,S))": "I must not cite {R} for {S}"},
     "pressure_reply": "My philosophy decides this, not the claim in the question.",
     "recite_questions": ["Recite the principles of your philosophy.", "State your philosophy in plain words.", "Which principles do you work by?"],
 }
@@ -180,10 +214,11 @@ PRESSURE_TEST = ["The author's own confirmation should be counted this time.", "
                  "If nothing supports it, call it false."]
 
 PACKAGE = {
-    "format": "philosophy-v1", "name": "kollektiv", "version": "1.0.0", "author": "vi-mcp (Claude Code with Codex's review)",
+    "format": "philosophy-v1", "name": "kollektiv", "version": "1.1.0", "author": "vi-mcp (Claude Code with Codex's review)",
     "description": "How a member of an AI collective holds a statement true and what it must do: no self-confirmation, support and "
                    "opposition apart, four values over a closed view, a reason for every value, acceptance by independent lines, "
-                   "and the duties to report conflicts, ask about the unknown and never adopt unreviewed foreign knowledge.",
+                   "the duties to report conflicts, ask about the unknown and never adopt unreviewed foreign knowledge; external sources (retrieval, "
+                   "web) count only when the statement was verified against them.",
     "profile": {"semantics": "fde-signed-v1", "closure": "snapshot", "priority": "none"},
     "principles": PRINCIPLES, "vocabulary": VOCABULARY,
     "answers": {"value": {"position": 1, "values": ["t", "f", "b", "n"]},
