@@ -7,6 +7,52 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Philosophy packages store only the clingo seed; prose is a translation, checked by its round trip.** User decision
+  (15.11.2026, confirmed twice): "Wir hatten gesagt, dass wir nur clingo speichern und diese dann in Prosa übersetzt werden …
+  Deswegen trainierst du die VI auf clingo-object." Scope: philosophy packages only; normal knowledge storage is unchanged.
+  - Format `philosophy-v2` (`clingo_object/philosophy.py`): the seed is the single stored source. `principles` is no longer a field.
+    A package that still stores it, or says `philosophy-v1`, is refused with the reason.
+  - The seed's rules stand in blocks marked by an id comment (`# P1`) and nothing else. A title is not allowed: any word next to the
+    rules is meaning outside them, and a translator would copy it instead of reading the rules.
+  - `check` now requires every rule to lie in a marked block, with no other comment, no rule before the first marker and no marker
+    twice. This replaces "every derived predicate is named by a principle"; every other check stays.
+  - The priority profile `maximal-candidates-v1` lost its prose too. Its rules are now pinned as the translated program; that hash
+    (`b2e98f6f…`) is the same before and after.
+  - **Packages:** kollektiv 1.2.0, messung 1.1.0 and code 1.1.0 keep their seeds, vocabularies, worlds and training specs.
+    - The translated ASP of all three seeds is byte-identical before and after (sha256 of `notation.translate(seed)`), so every verdict
+      is unchanged.
+    - **The package hashes change:** kollektiv `8d213463…` → `fdfd38e8…`, messung `8ed31063…` → `b1277f8e…`, code `6f795887…` →
+      `09d6da84…`. Once the new version is installed, a binding to the old hash shows `stale` until it is bound again; the old
+      installed object keeps its v1 manifest and still matches its hash.
+    - Training run 6 uses frozen data and is unaffected.
+    - kollektiv's old prose is frozen in `tests/fixtures/kollektiv_principles_1.1.0.json` as the historical prose of 1.1.0. It is the
+      gold reference of a running evaluation and is never loaded as a source.
+  - New `vi-mcp philosophy explain NAME --url U --model M --judge-url U2 --judge-model M2` (tool `vi_philosophy` action `explain`,
+    `clingo_object/philosophy_explain.py`):
+    - A translator writes English prose per block and for the whole seed.
+    - An independent back-translator writes clingo-object from it, with up to 4 repair rounds fed with clingo's error messages.
+      `normalize` fixes syntax only: ASP commas become `&`, `not` becomes `~`, comparisons get parentheses, and `never(A) <= B` becomes
+      `never(A & B)`.
+    - Agreement is the share of package worlds plus `--random N` generator worlds where the rebuilt seed gives the original's answers
+      AND duties, reported per block (only that block rebuilt) and overall.
+    - `--control FILE` back-translates a reference prose alike, and its number stands beside every other.
+    - `--prose FILE` measures given prose instead, for example a model's recitation.
+    - `--store` keeps the report on the installed object as a DERIVED translation, with translator, back-translator, package hash and
+      agreement. `show` prints it marked as derived, and as stale once the seed changes.
+  - `philosophy_train` no longer trains prose: `prose_examples` (explain/recite) is removed rather than rebuilt on translations, because
+    a translation is only as good as its round trip. The model learns clingo-object, then the seed; its prose is measured, not trained.
+  - **Measured, one live run** (15.11.2026, kollektiv 1.2.0, qwen27b as translator AND back-translator — not independent, the only model
+    cleared for this run; 16 package worlds + 50 random, seed 77; 694 s):
+    - every block 66/66 (P5 after one repair round). Per block, the back-translator sees the other blocks' rules as context, so this
+      is the easier test;
+    - the whole seed 0/66: it did not run. In all four rounds the model wrote `never(…) <= …`, which the notation refuses. Applying the
+      `never` normalization added afterwards to the stored fourth-round output, offline with no new model call, gives 37/66 (56 %). The
+      rebuilt P1 compares the wrong variables (`I != O` instead of `I != A`): self-confirmation is not kept;
+    - control (kollektiv's original 1.1.0 prose, same back-translator) 0/66: it did not run. The model used `#count` aggregates, which
+      the notation lacks; the prompt now says so. The earlier control with another prompt was 40 % on 150 worlds.
+  - Tests: `tests/test_philosophy_explain.py` (8, the models replaced by functions) and `tests/test_philosophy.py` adapted (block
+    checks, v1 refusal, the profile pin on the translated program).
+
 - **Sessions of the same instance can ask each other (vi_ask).** Every Claude Code session on a machine uses the instance
   `claude-code`. Before, `vi_ask` refused a question to the own instance (`questions.py`: `to == from_`) and delivered per instance,
   so two sessions could not reach each other through the VI.
@@ -159,6 +205,13 @@ Linked from [README.md](README.md).
   the asker's own hook may show it its own question once. `vi_ask` says so when the asking conversation is not paired yet.
 - Pairings live in the server process. After a restart all conversations are new, and answers to older same-instance questions go
   to any conversation of the instance.
+- Philosophy round trip: the only live measurement used one model for both directions. An independent back-translator of another
+  family is still to be measured. The whole-seed number after the `never` fix (56 %) comes from re-normalizing a stored output, not
+  from a new run.
+- The skill text `philosophie` outside this repository still describes stored prose principles; it is regenerated from
+  `docs/PHILOSOPHY.md` by whoever maintains the skills.
+- An answered broadcast question (`to="<instance>"`) is still delivered to conversations of the instance that have not seen it yet,
+  as it was for instances before. This is kept on purpose (decision 15.11.2026): another conversation may add an answer.
 
 - Code facts: the QA pairs per function (`code_facts.training_pairs`) are not exported by `vi-mcp dataset`/`finetune kit` yet.
   `dataset.py` skips every `art_wissen:code` object; an opt-in stage per index is the planned step.

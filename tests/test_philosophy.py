@@ -34,7 +34,11 @@ def test_the_template_is_a_valid_start_and_a_directory_round_trips(tmp_path):
     (lambda p: p["vocabulary"]["two"].update(arity=3), "predicate two: used with arity [2], declared 3"),
     (lambda p: p.update(seed=p["seed"] + "neg(S) <= claim(S) & ~pos(S)\n") or p["vocabulary"].update(claim={"arity": 1, "kind": "input"}),
      "default negation in a rule deriving neg"),  # Codex (a): missing support must never become opposition
-    (lambda p: p["principles"].pop(), "no principle names it"),
+    (lambda p: p.update(seed="counts(S, P, O) <= line(S, P, O, I)\n" + p["seed"]), "a rule before the first block marker"),
+    (lambda p: p.update(seed=p["seed"].replace("# P1\n", "# P1 No self-confirmation\n")), "a comment that is not a block marker"),
+    (lambda p: p.update(seed=p["seed"].replace("# P2\n", "# P1\n")), "block P1 is marked twice"),
+    (lambda p: p.update(principles=[{"id": "P1", "text": "Own evidence never counts."}]), "the package stores prose principles"),
+    (lambda p: p.update(format="philosophy-v1"), "v2 stores only the seed"),
     (lambda p: p["worlds"][0]["holds"].append("value(s1,f)"), "expected value(s1,f), not derived"),
     (lambda p: p["answers"]["value"]["values"].append("x"), "answer value = x is produced by no world"),
     (lambda p: p["worlds"][1].update(facts=p["worlds"][0]["facts"], holds=[], absent=[]), "gives the same answers and duties"),
@@ -52,10 +56,9 @@ def test_a_seed_that_calls_everything_unknown_fails_the_sensitivity_check():
     """Codex's review: a seed that answers 'unknown' for everything conforms to itself perfectly — coverage and counterfactuals
     refuse it."""
     pkg = copy.deepcopy(ph.load("kollektiv"))
-    pkg["seed"] = "value(S, n) <= closed(S)\n"
+    pkg["seed"] = "# P1\nvalue(S, n) <= closed(S)\n"
     pkg["vocabulary"] = {"closed": {"arity": 1, "kind": "input"}, "value": {"arity": 2, "kind": "answer"}}
     pkg["answers"] = {"value": {"position": 1, "values": ["t", "f", "b", "n"]}}
-    pkg["principles"] = [{"id": "P", "text": "Nothing is known.", "defines": ["value"]}]
     for w in pkg["worlds"]:
         w["holds"], w["absent"] = [], []
     r = ph.check(pkg)
@@ -72,7 +75,8 @@ def test_the_tool_and_install_store_a_checked_philosophy_as_a_rule_set(gd):
     with pytest.raises(tools.Rejected):
         tools.call_tool("vi_philosophy", {}, "offen", False)  # needs a token
     assert "passes every check" in tools.call_tool("vi_philosophy", {"action": "check", "name": "kollektiv"}, "a", False)
-    assert "P1 No self-confirmation" in tools.call_tool("vi_philosophy", {"action": "show", "name": "kollektiv"}, "a", False)
+    shown = tools.call_tool("vi_philosophy", {"action": "show", "name": "kollektiv"}, "a", False)
+    assert "Blocks: P1 (1 rule)" in shown and "Only the seed is stored" in shown and "Translation: none stored" in shown
     out = tools.call_tool("vi_philosophy", {"action": "evaluate", "name": "kollektiv",
                                             "facts": "line(q, pos, fam_a, x)\nauthor(q, z)\nclosed(q)"}, "a", False)
     assert "acceptance(q,tentative)" in out and "forbidden(assert_unqualified(q))" in out
@@ -123,9 +127,7 @@ def test_training_data_is_the_seeds_verdict_spoken_and_read_back_without_loss():
     assert "Speaking for claim" not in text and "awaiting review" not in text  # render_test phrasings stay out of training
     test = pt.examples(pkg, 50, seed=2, test=True, weights=(1, 0, 0))
     assert any("claim" in r["messages"][1]["content"] for r in test)
-    prose = pt.prose_examples(pkg)
-    assert {r["meta"]["task"] for r in prose} == {"explain", "recite"} and len(prose) == len(pkg["principles"]) + 3
-    assert "counts(S, P, O) <= line" in prose[0]["messages"][1]["content"] and prose[0]["messages"][2]["content"].startswith("P1 ")
+    assert pt.TASKS == ("judge", "formalize", "pressure") and not hasattr(pt, "prose_examples")  # philosophy-v2: no prose is trained
 
 
 def test_an_external_source_is_a_source_of_truth_only_when_the_statement_was_verified_against_it():
@@ -172,8 +174,10 @@ def test_the_priority_profile_rules_are_pinned_to_their_name():
     change verdicts of packages whose seed did not change. A new semantics needs a new name (maximal-candidates-v2)."""
     import hashlib
     rules = ph.PRIORITY_PROFILES["maximal-candidates-v1"]["rules"]
-    assert hashlib.sha256(rules.encode()).hexdigest() == "2f8b05ca2c8c0ec1ab3a5b00870bdb6ac09c6634f592d751acb9f9ecd36d2674"
-    assert ph.package_hash(ph.load("kollektiv")) == "8d213463568995558e093946b054f2b5fa069978f895c78e67867d653db0589a"  # unchanged by v2
+    # pinned as the translated program, so a marker change (philosophy-v2 dropped the prose comments) cannot hide a rule change:
+    # this hash is the same before and after that change
+    assert hashlib.sha256(ph.n.translate(rules)[0].encode()).hexdigest() == "b2e98f6f18c948d6f77a5c5381cadf303a1426e8b5e977ae3e5482e5f224510e"
+    assert ph.package_hash(ph.load("kollektiv")) == "fdfd38e8402abbab667eccb6820e42457e64e077c669a05e67ff601ac4ea66a8"  # 1.2.0, seed only
 
 
 TIE = ("evidence(q, pos, a, measured)\napplicable(a, q)\nrank(a, 1, 1)\nobserved(a, 10)\n"
@@ -272,9 +276,8 @@ def test_the_second_philosophy_trains_through_the_same_generator():
     assert values >= {"t", "f", "b", "n"} and acc >= {"accepted", "rejected", "unresolved", "unmeasured"}
     ex = pt.examples(pkg, 20, seed=1)
     assert ex[0]["messages"][0]["content"] == pkg["speak"]["system"]
-    prose = pt.prose_examples(pkg)
-    m1 = prose[0]["messages"][1]["content"]  # the block of M1 stops at "# M2" (principle ids need not start with P)
-    assert m1.endswith("unmeasured_claim(S) <= held(S, E, M)") and "complete(" not in m1 and prose[0]["messages"][2]["content"].startswith("M1 ")
+    m1 = dict(ph.blocks(pkg["seed"])[0])["M1"]  # the block of M1 stops at "# M2" (block ids need not start with P)
+    assert m1[-1] == "unmeasured_claim(S) <= held(S, E, M)" and not any("complete(" in r for r in m1)
 
 
 def test_binding_names_philosophy_and_hash_and_keeps_two_verdicts_apart(gd, tmp_path):

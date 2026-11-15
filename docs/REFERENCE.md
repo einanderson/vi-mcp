@@ -361,17 +361,26 @@ VI: fine-tune an AI with the knowledge of this VI. When the user says they want 
 
 ### `vi_philosophy`
 
-VI: equip an AI with a philosophy. A philosophy is a package: principles in prose and the same principles as a clingo-object rule set (the seed), proven by test worlds. action guide (default): the technique step by step; list: built-in and installed philosophies; show: principles, inputs, answers and seed of one; check: every rule of the format (vocabulary, no default negation outside closure, words for every rule, worlds, coverage, counterfactuals); evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per philosophy); install: check and store it in the VI as a rule set; use: bind an installed philosophy (its hash) to yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes visibility, review or tool rights.
+VI: equip an AI with a philosophy. A philosophy is a package that stores only a clingo-object rule set (the seed, in blocks marked # P1), proven by test worlds; prose is a translation, checked by its round trip. action guide (default): the technique step by step; list: built-in and installed philosophies; show: seed, inputs, answers and the latest derived translation of one; check: every rule of the format (vocabulary, no default negation outside closure, every rule in a marked block, worlds, coverage, counterfactuals); explain: translate the seed into prose (url, model) and back with an independent model (judge_url, judge_model), agreement on the package's and random worlds per block, store: keep it as a derived translation; evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per philosophy); install: check and store it in the VI as a rule set; use: bind an installed philosophy (its hash) to yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes visibility, review or tool rights.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string (guide, list, show, check, evaluate, install, use, bound) |  | guide (default), list, show, check, evaluate, install, use or bound (German: `aktion`) |
+| `action` | string (guide, list, show, check, evaluate, install, use, bound, explain) |  | guide (default), list, show, check, evaluate, install, use, bound or explain (German: `aktion`) |
 | `name` | string |  | a built-in philosophy (e.g. kollektiv, messung) or a package directory on the server |
 | `facts` | string |  | evaluate: facts in clingo-object notation, one per line |
 | `visibility` | string (shared, internal) |  | install: default internal (German: `sicht`) |
 | `instance` | string |  | use: only yourself (others are bound by an administrator on the server) |
 | `index` | string |  | use/bound/evaluate: an index instead of the instance |
 | `off` | boolean |  | use: end the binding (kept as a tombstone) |
+| `url` | string |  | explain: translator endpoint (OpenAI-compatible, …/v1) |
+| `model` | string |  | explain: translator model |
+| `judge_url` | string |  | explain: independent back-translator endpoint (another model family) |
+| `judge_model` | string |  | explain: back-translator model |
+| `random` | integer |  | explain: random worlds besides the package's own (default 50) |
+| `whole_only` | boolean |  | explain: only the whole seed, not each block |
+| `prose` | string |  | explain: measure this prose (e.g. a model's recitation) instead of translating |
+| `control` | string |  | explain: a reference prose, back-translated alike and reported beside every number |
+| `store` | boolean |  | explain: store the report on the installed object of this hash (derived, never a source) |
 
 ### `vi_incubator`
 

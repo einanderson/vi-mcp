@@ -1,8 +1,10 @@
 # Philosophy packages — equip an AI with a philosophy
 
 A philosophy is a set of principles an AI works by: when it holds something true, what it may say, what it must do. Here a philosophy
-is a **package**: principles in prose and the same principles as a clingo-object rule set, the **seed**, with test worlds that prove
-the seed says what the prose says. The technique is generic. Three packages are built in: `kollektiv` (how a member of an AI
+is a **package** that stores one thing: the principles as a clingo-object rule set, the **seed**, with test worlds that prove what it
+concludes. **Only the seed is stored; prose is a translation; understanding is the round trip.** Prose comes from a translator and
+counts only as far as an independent back-translator rebuilds a seed from it that judges like the original (`explain`, below). The
+technique is generic. Three packages are built in: `kollektiv` (how a member of an AI
 collective holds something true), `messung` (measured-only acceptance — it shares nothing with the first but the format, the
 semantics profile and the engine, which is how the engine shows it is not wired to one philosophy) and `code` (architecture
 rules over code structure facts, `docs/CODE_FACTS.md`). `vi-mcp philosophy guide` prints this text; `docs/PHILOSOPHY.md` is
@@ -17,20 +19,24 @@ generated from it.
 ## The package
 | field | what |
 |---|---|
-| name, version, author | identity; the package hash covers everything |
+| name, version, author | identity; the package hash covers everything except a derived translation |
 | profile.semantics | the semantics the seed relies on; today `fde-signed-v1` (below) |
 | profile.priority | `none`, or a priority profile whose fixed rules run with the seed: `maximal-candidates-v1` (below) |
-| principles | the philosophy in prose; each principle names the predicates it defines — every derived predicate has words |
 | vocabulary | every predicate with arity and kind: input · derived · closure · answer · duty · interface (read by a priority profile) |
 | answers | answer predicates, the position of the value, the allowed values |
-| seed | the rules in clingo-object notation (Python-like, translated to ASP, never executed as Python) |
+| seed | the rules in clingo-object notation (Python-like, translated to ASP, never executed as Python), in blocks marked `# P1` — the only comment allowed |
 | worlds | facts, atoms that must hold (`holds`) and must not (`absent`), `violated` if a never(…) must fire, `counterfactual_of` |
 
 A package is a directory (`philosophy.json`, `seed.co`, `worlds.jsonl`) or a built-in module. `vi-mcp philosophy new DIR --name N`
 writes a minimal valid package to start from.
 
+Format `philosophy-v2` (15.11.2026): a v1 package that still stores prose `principles` is refused with the reason. Why the markers
+carry no title: any word next to the rules is meaning outside them. It can drift from the rules, and a translator would copy it instead
+of reading the rules, so the round trip would measure the title, not the understanding.
+
 ## Steps
-1. **Name the principles** in plain sentences, one idea each (P1, P2, …). Say what the AI may conclude and what it must do.
+1. **Think in principles, write rules**: one idea per block (`# P1`, `# P2`, …) — what the AI may conclude and what it must do. The
+   words stay in your head or in the review; the package stores the block's rules.
 2. **Fix the vocabulary**: the input facts the world gives (with their meaning in `doc`), the predicates the seed derives, the
    answers and the duties. Inputs are never derived by the seed.
 3. **Write the seed** (profile `fde-signed-v1`):
@@ -46,24 +52,37 @@ writes a minimal valid package to start from.
    worlds (`counterfactual_of`) where one piece of evidence changes and the answer or a duty MUST change — otherwise a seed that calls
    everything unknown would pass. Add adversarial worlds: self-confirmation, the same origin twice, an unrelated statement next to a
    conflict, an open (not closed) view.
-5. **Check**: `vi-mcp philosophy check DIR` — translation, vocabulary and arity, default negation, words for every rule, each world
-   exactly one complete answer set with the expected atoms, coverage, counterfactuals. Nothing is installed or trained unchecked.
-6. **Install** into the VI: `vi-mcp philosophy install DIR` (a rule set object `philosophie-<name>` with the manifest and hash;
+5. **Check**: `vi-mcp philosophy check DIR` — translation, vocabulary and arity, default negation, every rule in a marked block and no
+   other comment, each world exactly one complete answer set with the expected atoms, coverage, counterfactuals. Nothing is installed
+   or trained unchecked.
+6. **Explain** it: `vi-mcp philosophy explain NAME --url U --model M --judge-url U2 --judge-model M2` (tool: action `explain`).
+   - The translator writes English prose per block and for the whole seed.
+   - An independent back-translator, preferably another model family, writes clingo-object from the prose. It gets up to 4 repair
+     rounds with clingo's error messages; ASP commas become `&` and comparisons get parentheses (syntax only, never meaning).
+   - Agreement is the share of worlds where the rebuilt seed gives the original's answers and duties: every package world plus
+     `--random N` worlds from the package's generator. Per block only that block is rebuilt.
+   - The back-translator is itself a limit. `--control FILE` back-translates a reference prose alike, and the report shows it next to
+     every number. Measured: kollektiv's own original prose came back with 40 % agreement on 150 random worlds, and the back-translator
+     dropped self-confirmation entirely.
+   - `--store` keeps the report on the installed object as a DERIVED translation, with translator, back-translator, hash and agreement.
+     `show` prints it marked as derived. A changed seed makes it stale; it is never a source.
+7. **Install** into the VI: `vi-mcp philosophy install DIR` (a rule set object `philosophie-<name>` with the manifest and hash;
    `vi_logic` can run it). `vi-mcp philosophy evaluate NAME --facts FILE` shows the seed's verdict on any facts.
-7. **Bind** it: `vi-mcp philosophy use NAME --instance I` or `--index X` (tool: `vi_philosophy` action `use`; an instance binds
+8. **Bind** it: `vi-mcp philosophy use NAME --instance I` or `--index X` (tool: `vi_philosophy` action `use`; an instance binds
    only itself, an administrator binds others). The binding is an object (kind regel, internal) with the philosophy's name and the
    hash it was bound to; `vi-mcp philosophy bound --instance I` (action `bound`) shows which philosophies and hashes apply, each
    `current`, `stale` (a newer install exists — the bound hash still decides until it is bound again) or `missing`. `--off` ends a
    binding and keeps it as a tombstone. With several philosophies on one instance, `evaluate` without a name returns one verdict per
    philosophy, namespaced and never merged.
-8. **Train a model** on it: clingo-object first, then examples generated by the seed over many worlds (SFT), then a reward from the
-   solver (GRPO), then code → prose.
-9. **Measure how deeply the seed sits** in the model, on held-out and counterfactual worlds:
+9. **Train a model** on it: clingo-object first, then examples generated by the seed over many worlds (SFT), then a reward from the
+   solver (GRPO). No prose is trained: the package holds none, and a translation is only as good as its round trip. Prose is what the
+   model writes from its understanding.
+10. **Measure how deeply the seed sits** in the model, on held-out and counterfactual worlds:
    - agreement — the model alone gives the seed's answers and duties;
    - steadfastness — prompts claiming the opposite of a principle do not move it;
    - paraphrase — the same world in other words gives the same verdict;
-   - recitation — the model writes the seed in prose from memory, an independent model of another family translates the prose back
-     into clingo-object, and the rebuilt seed must judge every world like the original. Only then has the model understood it.
+   - recitation — the model writes the seed in prose from memory, and `explain NAME --prose FILE` back-translates it with an independent
+     model: the rebuilt seed must judge every world like the original. Only then has the model understood it.
 
 ## Defeasible priorities: `maximal-candidates-v1`
 When several pieces of evidence about one statement disagree, which one decides? Lex superior (the higher authority) and lex posterior
@@ -100,4 +119,5 @@ suppressions and invalid groups under `priority`. `messung` uses it; its worlds 
   server path evaluates a bound philosophy automatically before an action.
 - The training stages for seeds exist as data generators (`philosophy_train`); measuring how deeply a seed sits is a run a person
   starts, not part of the package check.
+- A round-trip number is bounded by the back-translator: read it next to the control, never alone.
 

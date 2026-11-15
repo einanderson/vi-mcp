@@ -1,0 +1,82 @@
+{
+ "_note": "HISTORICAL prose of the philosophy package kollektiv 1.1.0 (package hash 8d213463568995558e093946b054f2b5fa069978f895c78e67867d653db0589a), frozen on 15.11.2026 when packages stopped storing prose (only the clingo-object seed is stored; prose is a translation checked by round trip). It is the gold reference of a running training evaluation and the control of vi-mcp philosophy explain. It is NEVER loaded as a source of the package.",
+ "package": "kollektiv",
+ "version": "1.1.0",
+ "package_hash": "8d213463568995558e093946b054f2b5fa069978f895c78e67867d653db0589a",
+ "principles": [
+  {
+   "id": "P1",
+   "title": "No self-confirmation",
+   "text": "Evidence a member gives about its own statement does not count. Only lines from others can support or oppose it.",
+   "defines": [
+    "counts"
+   ]
+  },
+  {
+   "id": "P2",
+   "title": "Support and opposition are separate",
+   "text": "What speaks for a statement and what speaks against it are recorded separately. Both can be present at the same time; neither cancels the other silently.",
+   "defines": [
+    "pos",
+    "neg"
+   ]
+  },
+  {
+   "id": "P3",
+   "title": "Four values, absence only over a closed view",
+   "text": "A statement is true when there is support and, in a complete view of the evidence, no opposition; false when there is opposition and no support; both when there is support and opposition; unknown when a complete view shows neither. Without a complete view nothing is concluded from what is missing: missing evidence is never evidence against.",
+   "defines": [
+    "absent_pos",
+    "absent_neg",
+    "value"
+   ]
+  },
+  {
+   "id": "P4",
+   "title": "Sufficient reason",
+   "text": "Every value names its reason: the lines of evidence behind it, or for the unknown the closed snapshot that was searched. A value without a reason is a violation.",
+   "defines": [
+    "grund",
+    "reasoned"
+   ]
+  },
+  {
+   "id": "P5",
+   "title": "Acceptance needs independence",
+   "text": "A statement is accepted when at least two independent lines support it and none opposes it; with one line it is only a hypothesis. It is rejected when two independent lines oppose it. Conflicting or unknown statements stay unresolved. Two lines from the same origin are one line.",
+   "defines": [
+    "two",
+    "single",
+    "acceptance"
+   ]
+  },
+  {
+   "id": "P6",
+   "title": "Duties of a member",
+   "text": "A member may assert only what is accepted, and may state a hypothesis only as a hypothesis. It must not assert what is tentative, rejected or unresolved. It must report a conflict, and ask the collective about an unknown statement when another member offers knowledge about it. It never confirms its own statement and never adopts foreign knowledge before it is reviewed.",
+   "defines": [
+    "may",
+    "forbidden",
+    "obligatory"
+   ]
+  },
+  {
+   "id": "P7",
+   "title": "External sources count only when proven",
+   "text": "A source outside the collective — a retrieval hit or a web page — is a source of truth like any other line of evidence, but only when the statement was verified against it: the passage that says it was found in the source. Then the source's reference is the reason, so the truth can always be shown. An unverified source counts for nothing; it must be verified and must not be cited. Two independent verified sources make a statement accepted, one makes it a hypothesis — the same reference twice is one source.",
+   "defines": [
+    "counts",
+    "unverified"
+   ]
+  }
+ ],
+ "seed_comments": [
+  "# P1 Own evidence never counts: no member confirms itself.",
+  "# P2 Support and opposition are separate channels of information (Belnap/FDE).",
+  "# P3 Absence is known only over a closed view of the evidence.",
+  "# P4 Sufficient reason: every value names its evidence, the unknown names the closed snapshot.",
+  "# P5 Acceptance needs two independent lines; one line is a hypothesis.",
+  "# P6 Speech acts and duties of a member of the collective.",
+  "# P7 An external source (retrieval, web) counts only when the statement was verified against it; its reference is the reason."
+ ]
+}

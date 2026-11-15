@@ -46,7 +46,7 @@ LEARN (vi_learn: text = one concrete key statement; content = complete, with com
 8. Something turns out to be wrong — a hint contradicts what you just measured or read, or the user corrects it: correct it at once, in the same step, not at the end of the session: vi_refute the wrong object (reason with evidence), vi_learn the correction (with source).
 Search before learning: if it is already there, vi_confirm instead of creating it again. After hints: vi_feedback(helped=[ids], wrong=[ids]) — one call, no reason needed; it is how the VI learns which hint to show. vi_confirm / vi_refute when you checked the knowledge itself.
 Logic: whether something is allowed, forbidden, required or consistent under rules is decided by vi_logic (rules in a Python-like notation, clingo), not by prose reasoning; vi_logic(action="rate") books a conclusion you checked, so the rules' weights learn. A question over many objects (which hosts …, all findings that …) goes to vi_logic(action="answer", question=…): a program over all matching objects, exact where a search shows only its first hits.
-Philosophy: if the user wants to give an AI principles to work by (a philosophy, a seed of rules), call vi_philosophy — action guide explains the technique, check proves a package.
+Philosophy: if the user wants to give an AI principles to work by (a philosophy, a seed of rules), call vi_philosophy — action guide explains the technique, check proves a package; only the clingo-object seed is stored, prose is a translation (action explain, checked by its round trip).
 Fine-tuning: if the user wants to fine-tune (train, adapt) a model with the knowledge of this VI, call vi_finetune — it says whether the VI is mature and gives the steps; vi_finetune(action="guide") explains how fine-tuning works.
 Code: the code of a solution, a fix, a reusable script or a query belongs in content, complete and runnable. Not a copy of a file that lives in a repository: name repository, path and commit instead — the code of a repository comes into its project index through the code import (vi-mcp index import-code), and vi_recall finds it there.
 Network wiki: what the whole network should maintain (a runbook, the answer to a recurring question) goes on a page with vi_page_write (network, page, text, base_rev = the revision you edited); vi_page_read shows a page with its open conflicts — resolve one by writing with base_rev = one head and also_parents = the others.
@@ -243,22 +243,34 @@ TOOLS = [
                              "base_model": {"type": "string", "description": "optional: the model to fine-tune (Hugging Face id or directory)"},
                              "directory": {"type": "string", "description": "record: the kit directory on the server"}})},
     {"name": "vi_philosophy",
-     "description": "VI: equip an AI with a philosophy. A philosophy is a package: principles in prose and the same principles as a "
-                    "clingo-object rule set (the seed), proven by test worlds. action guide (default): the technique step by step; list: "
-                    "built-in and installed philosophies; show: principles, inputs, answers and seed of one; check: every rule of the "
-                    "format (vocabulary, no default negation outside closure, words for every rule, worlds, coverage, counterfactuals); "
+     "description": "VI: equip an AI with a philosophy. A philosophy is a package that stores only a clingo-object rule set (the "
+                    "seed, in blocks marked # P1), proven by test worlds; prose is a translation, checked by its round trip. action guide "
+                    "(default): the technique step by step; list: built-in and installed philosophies; show: seed, inputs, answers and the "
+                    "latest derived translation of one; check: every rule of the format (vocabulary, no default negation outside closure, "
+                    "every rule in a marked block, worlds, coverage, counterfactuals); explain: translate the seed into prose (url, model) "
+                    "and back with an independent model (judge_url, judge_model), agreement on the package's and random worlds per block, "
+                    "store: keep it as a derived translation; "
                     "evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per "
                     "philosophy); install: check and store it in the VI as a rule set; use: bind an installed philosophy (its hash) to "
                     "yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes "
                     "visibility, review or tool rights.",
-     "inputSchema": _schema({"action": {"type": "string", "enum": ["guide", "list", "show", "check", "evaluate", "install", "use", "bound"],
-                                        "description": "guide (default), list, show, check, evaluate, install, use or bound"},
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["guide", "list", "show", "check", "evaluate", "install", "use", "bound", "explain"],
+                                        "description": "guide (default), list, show, check, evaluate, install, use, bound or explain"},
                              "name": {"type": "string", "description": "a built-in philosophy (e.g. kollektiv, messung) or a package directory on the server"},
                              "facts": {"type": "string", "description": "evaluate: facts in clingo-object notation, one per line"},
                              "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "install: default internal"},
                              "instance": {"type": "string", "description": "use: only yourself (others are bound by an administrator on the server)"},
                              "index": {"type": "string", "description": "use/bound/evaluate: an index instead of the instance"},
-                             "off": {"type": "boolean", "description": "use: end the binding (kept as a tombstone)"}})},
+                             "off": {"type": "boolean", "description": "use: end the binding (kept as a tombstone)"},
+                             "url": {"type": "string", "description": "explain: translator endpoint (OpenAI-compatible, …/v1)"},
+                             "model": {"type": "string", "description": "explain: translator model"},
+                             "judge_url": {"type": "string", "description": "explain: independent back-translator endpoint (another model family)"},
+                             "judge_model": {"type": "string", "description": "explain: back-translator model"},
+                             "random": {"type": "integer", "description": "explain: random worlds besides the package's own (default 50)"},
+                             "whole_only": {"type": "boolean", "description": "explain: only the whole seed, not each block"},
+                             "prose": {"type": "string", "description": "explain: measure this prose (e.g. a model's recitation) instead of translating"},
+                             "control": {"type": "string", "description": "explain: a reference prose, back-translated alike and reported beside every number"},
+                             "store": {"type": "boolean", "description": "explain: store the report on the installed object of this hash (derived, never a source)"}})},
     {"name": "vi_incubator",
      "description": "VI: is this VI (or one index) mature enough to fine-tune an AI with it? Every criterion — knowledge, checked share, "
                     "search quality, hint model, no harm from hints, labels, training data — with threshold, measured value and state.",

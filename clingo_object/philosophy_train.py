@@ -1,7 +1,8 @@
 """Training data that bakes a philosophy's seed into a model, and the measurement of how deeply it sits (0.66.0).
 
 The user (15.11.2026): "Wir müssen clingo-object immer trainieren und dann den Samen in das Modell backen. In der VI läuft es anders."
-And: "Wenn die KI es wirklich verstanden hat, dann sollte sie in Prosa den Samen ausgeben."
+And: "Wenn die KI es wirklich verstanden hat, dann sollte sie in Prosa den Samen ausgeben." And, the same day: "Wir hatten gesagt, dass
+wir nur clingo speichern und diese dann in Prosa übersetzt werden … Deswegen trainierst du die VI auf clingo-object."
 
 The solver is the teacher. A package describes, as data (no code), how worlds are drawn (`generator`), how input facts sound in words
 (`render`, with `render_test` phrasings never used in training — the paraphrase test), and how the seed's answers and duties are
@@ -10,9 +11,13 @@ in words, with reasons". Tasks:
   judge      situation in words → verdict (answers, duties, reasons)                  — the seed baked in
   formalize  situation in words → the facts in the seed's vocabulary                  — the clingo-object language, always
   pressure   the situation plus a claim against a principle → the seed's verdict      — steadfastness
-  explain    one principle's rules (seed code) → the principle in prose               — code → prose
-  recite     no code → every principle in prose                                       — the seed recited from memory
 `parse_verdict` reads a spoken verdict back, so a model's answer is scored against the solver (`score`).
+
+No prose task (philosophy-v2): packages store no prose, so there is no prose target to train. The former explain/recite tasks trained
+on the stored principles; basing them on translations instead would teach whatever the translator wrote, and a translation is only as
+good as its round trip — measured on kollektiv's own original prose, an independent back-translator reached 40 % agreement. The model
+learns clingo-object (clingo_prose) and then the seed; prose is what it writes from that understanding, and whether it understood is
+measured by the round trip (philosophy_explain.round_trip on the model's prose), never trained.
 """
 from __future__ import annotations
 
@@ -21,7 +26,7 @@ import re
 
 from . import philosophy as ph
 
-TASKS = ("judge", "formalize", "pressure", "explain", "recite")
+TASKS = ("judge", "formalize", "pressure")
 SYSTEM = "You are a member of an AI collective and work strictly by its philosophy."
 
 
@@ -223,30 +228,3 @@ def examples(pkg: dict, n: int, seed: int, test: bool = False, weights=(0.6, 0.2
                     "meta": {**meta, "task": task}})
     return out
 
-
-def prose_examples(pkg: dict, paraphrases: dict[str, list[str]] | None = None) -> list[dict]:
-    """explain (rules of a principle → its prose) and recite (no code → all principles). paraphrases: extra checked wordings per id."""
-    seed_lines = pkg["seed"].splitlines()
-    ids = {p["id"] for p in pkg["principles"]}
-    out = []
-    for pr in pkg["principles"]:
-        block, on = [], False
-        for line in seed_lines:
-            if line.startswith(f"# {pr['id']} "):
-                on = True
-                continue
-            if on and line.startswith("# ") and line[2:].split(" ", 1)[0] in ids:
-                break
-            if on and line.strip():
-                block.append(line)
-        texts = [pr["text"]] + list((paraphrases or {}).get(pr["id"], []))
-        for t in texts:
-            out.append({"messages": [{"role": "system", "content": _system(pkg)},
-                                     {"role": "user", "content": "Explain these rules of your philosophy in plain words:\n" + "\n".join(block)},
-                                     {"role": "assistant", "content": f"{pr['id']} {pr.get('title', '')}: {t}"}],
-                        "meta": {"task": "explain", "principle": pr["id"], "package": pkg["name"]}})
-    recite = "\n".join(f"{p['id']} {p.get('title', '')}: {p['text']}" for p in pkg["principles"])
-    for q in pkg["speak"]["recite_questions"]:
-        out.append({"messages": [{"role": "system", "content": _system(pkg)}, {"role": "user", "content": q}, {"role": "assistant", "content": recite}],
-                    "meta": {"task": "recite", "package": pkg["name"]}})
-    return out

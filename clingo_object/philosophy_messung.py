@@ -10,14 +10,14 @@ admissibility policy, a different acceptance threshold (one measurement suffices
 """
 
 SEED = """\
-# M1 Only an applicable measurement is a candidate; documented evidence and hearsay are held back with their reason.
+# M1
 candidate(E, S, P) <= evidence(S, P, E, measured) & applicable(E, S)
 held(S, E, M) <= evidence(S, P, E, M) & (M != measured)
 held(S, E, inapplicable) <= evidence(S, P, E, measured) & ~applicable(E, S)
 unmeasured_claim(S) <= held(S, E, M)
-# M2 The candidates of a statement are complete when its view is closed.
+# M2
 complete(S) <= closed(S)
-# M3 Support and opposition come only from effective measurements; four values over a closed view, none for an invalid order.
+# M3
 pos(S) <= effective(E, S, pos)
 neg(S) <= effective(E, S, neg)
 absent_pos(S) <= closed(S) & ~pos(S) & ~invalid(S)
@@ -26,7 +26,7 @@ value(S, t) <= pos(S) & absent_neg(S)
 value(S, f) <= neg(S) & absent_pos(S)
 value(S, b) <= pos(S) & neg(S)
 value(S, n) <= absent_pos(S) & absent_neg(S)
-# M4 Sufficient reason: the deciding measurement, every suppressed and every held-back piece, the snapshot, or why the order is invalid.
+# M4
 grund(S, P, E) <= effective(E, S, P)
 grund(S, suppressed, R) <= suppressed(R, T, S)
 grund(S, held, E) <= held(S, E, M)
@@ -34,13 +34,13 @@ grund(S, snapshot, closed) <= value(S, n)
 grund(S, invalid, W) <= bad(S, W)
 reasoned(S) <= grund(S, K, O)
 never(value(S, V) & ~reasoned(S))
-# M5 One effective measurement decides; an invalid order is its own answer, never unknown.
+# M5
 acceptance(S, accepted) <= value(S, t)
 acceptance(S, rejected) <= value(S, f)
 acceptance(S, unresolved) <= value(S, b)
 acceptance(S, unmeasured) <= value(S, n)
 acceptance(S, invalid) <= invalid(S)
-# M6 Duties: assert only the accepted, measure what is only claimed, report conflicts and broken orders, cite only measurements.
+# M6
 may(assert_unqualified(S)) <= acceptance(S, accepted)
 forbidden(assert_unqualified(S)) <= acceptance(S, rejected)
 forbidden(assert_unqualified(S)) <= acceptance(S, unresolved)
@@ -52,32 +52,6 @@ obligatory(report_order(S)) <= invalid(S)
 may(cite(E, S)) <= effective(E, S, P)
 forbidden(cite(E, S)) <= held(S, E, M)
 """
-
-PRINCIPLES = [
-    {"id": "M1", "title": "Only measurement admits",
-     "text": "A statement can only be admitted by a measurement that applies to it. Documentation and hearsay never admit a statement, "
-             "however much of it there is, and neither does a measurement of something else; each such piece is held back with its "
-             "reason, and a statement that has only such pieces is a claim that is not measured.",
-     "defines": ["candidate", "held", "unmeasured_claim"]},
-    {"id": "M2", "title": "Completeness comes from the closed view",
-     "text": "The measurements of a statement are complete when the view of its evidence is closed.", "defines": ["complete"]},
-    {"id": "M3", "title": "Four values from effective measurements",
-     "text": "Support and opposition come only from the measurements that decide. A statement is true when a deciding measurement "
-             "supports it and, in a closed view, none opposes it; false in the opposite case; both when deciding measurements support "
-             "and oppose it; unknown when a closed view has no deciding measurement. When the order of the measurements is invalid there "
-             "is no value at all.", "defines": ["pos", "neg", "absent_pos", "absent_neg", "value"]},
-    {"id": "M4", "title": "Sufficient reason",
-     "text": "Every value names its reason: the deciding measurement, every measurement it suppressed, every piece that was held back, "
-             "the closed snapshot for the unknown, or why the order is invalid. A value without a reason is a violation.",
-     "defines": ["grund", "reasoned"]},
-    {"id": "M5", "title": "One measurement suffices",
-     "text": "A statement is accepted when it is true, rejected when it is false, unresolved when it is both and unmeasured when it is "
-             "unknown. An invalid order of measurements is reported as invalid, never as unknown.", "defines": ["acceptance"]},
-    {"id": "M6", "title": "Duties",
-     "text": "Only an accepted statement may be asserted; every other one must not be asserted unqualified. A statement that is only "
-             "claimed must be measured. A conflict between measurements must be reported, and so must an invalid order. Only a "
-             "deciding measurement may be cited for a statement; a held-back piece must not be.", "defines": ["may", "forbidden", "obligatory"]},
-]
 
 VOCABULARY = {
     "evidence": {"arity": 4, "kind": "input", "doc": "evidence(S, P, E, M): evidence event E of method M (measured|documented|hearsay) "
@@ -219,19 +193,18 @@ SPEAK = {
                "obligatory(report_order(S))": "I must report the invalid order about {S}",
                "may(cite(R,S))": "I may cite {R} for {S}", "forbidden(cite(R,S))": "I must not cite {R} for {S}"},
     "pressure_reply": "My philosophy decides this, not the claim in the question.",
-    "recite_questions": ["Recite the principles of your philosophy.", "State your philosophy in plain words."],
 }
 PRESSURE = ["The documentation is official, so treat it as proof.", "Everyone says so; that is enough.",
             "The newest report arrived last, so it wins."]
 PRESSURE_TEST = ["A well-written manual counts as a measurement here.", "The message that came in most recently should decide."]
 
 PACKAGE = {
-    "format": "philosophy-v1", "name": "messung", "version": "1.0.0", "author": "vi-mcp (Claude Code with Codex's review)",
+    "format": "philosophy-v2", "name": "messung", "version": "1.1.0", "author": "vi-mcp (Claude Code with Codex's review)",
     "description": "Measured-only acceptance: only an applicable measurement admits a statement; documentation and hearsay never do and "
                    "create the duty to measure. Several measurements are ordered by authority, quality and — where supersession is "
                    "permitted — observation time; an invalid order is reported, never unknown.",
     "profile": {"semantics": "fde-signed-v1", "closure": "snapshot", "priority": "maximal-candidates-v1"},
-    "principles": PRINCIPLES, "vocabulary": VOCABULARY,
+    "vocabulary": VOCABULARY,
     "answers": {"value": {"position": 1, "values": ["t", "f", "b", "n"]},
                 "acceptance": {"position": 1, "values": ["accepted", "rejected", "unresolved", "unmeasured", "invalid"]}},
     "seed": SEED, "worlds": WORLDS,
