@@ -449,7 +449,7 @@ def _hold(p: dict, what: str, rules: list[str], prog_hash: str, rule_set: str | 
         return
     target = g.load(p["ziel"])
     g.new_object("proposal", f"Proposal from a logic program: {what}",
-                 ["topic:logik", f"vorschlag:{p['aktion']}", "mode:quarantine"],
+                 ["topic:logik", f"proposal:{p['aktion']}", "mode:quarantine"],
                  {"vorschlag": {k: p[k] for k in _PROPOSAL_KEYS if k in p}, "regeln": rules,
                   # a proposal changes another object: always sensitive, so only the release right (a person: vi-mcp release) decides
                   "pruefung": {"regeln": [f"logic proposal: {what}"[:160]], "pruefer": None},

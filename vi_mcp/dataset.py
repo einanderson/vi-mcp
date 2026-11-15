@@ -465,7 +465,7 @@ def _situation(o: g.MemoryObject) -> str:
 def _versions() -> dict:
     from . import classify, learning
     m = learning.model()
-    st = g.load(classify.STUDENT)
+    st = g.load(classify.student_id())
     return {"vi_mcp": __version__, "format": FORMAT_VERSION, "router": (m.data.get("trainiert") if m else None),
             "classify_prompt": classify.prompt_hash(), "classify_schema": classify.SCHEMA_VERSION,
             "student": (st.data.get("trainiert") if st else None), "time": g.now()}

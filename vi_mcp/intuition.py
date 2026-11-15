@@ -18,7 +18,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from . import memory as g
+from . import memory as g, names
 from . import indexes, reflexes
 
 #: Tools that change something (word parts in the name) — never answered from memory. A client can
@@ -566,7 +566,7 @@ def after(tool: str, args: dict, ok: bool, duration_ms: int, error: str | None, 
     reinforced = 0
     if ok:  # hints after which the action succeeded are reinforced (consolidation) — not already when shown
         for oid in access.get("gefunden", []):
-            if not oid.startswith("antwort:"):
+            if not names.id_has_kind(oid, "answer"):
                 h = g.load(oid)
                 if h:
                     h.access()
@@ -633,7 +633,7 @@ def adopted(o: g.MemoryObject) -> list[str]:
         before_args = json.dumps(e.data.get("args") or {}, ensure_ascii=False) if e else ""
         new = []
         for h in v.get("gezeigt") or []:
-            if not h.startswith(("erkenntnis:", "regel:", "skill:", "seite:")) or h in (e.data.get("genutzt") or []):
+            if not h.startswith(names.id_prefixes("insight", "rule", "skill", "page")) or h in (e.data.get("genutzt") or []):
                 continue
             if any(t in here and t not in before_args for t in _hint_tokens(h)):
                 new.append(h)

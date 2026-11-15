@@ -88,7 +88,7 @@ def test_image_with_description_and_sam3_regions_round_trip(srv):
     oid = text.split()[1]
     assert "image png 64×48" in text and "3 regions (red plug ×2, network cable)" in text
     o = g.load(oid)
-    assert o.kind == "image" and oid.startswith("bild:")  # 0.37.0: its own kind
+    assert o.kind == "image" and oid.startswith("image:")  # 0.37.0: its own kind
     assert {"kind:image", "shows:red-plug", "shows:network-cable"} <= set(o.hashtags) and "medium:bild" not in o.hashtags
     assert oid in _call(port, sid, "vi_recall", {"filter": "kind:image"}, tok)["content"][0]["text"]
     assert oid in _call(port, sid, "vi_recall", {"filter": "Patch panel uplinks"}, tok)["content"][0]["text"]  # free text includes images

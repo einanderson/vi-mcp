@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import __version__
 from . import memory as g
-from . import api_en, bandit, config, images, indexes, questions, intuition, archive, learning, metrics, net_score, p2p, reflexes, sleep_cycle, scorer, self_model, session, skills, vector
+from . import api_en, names, bandit, config, images, indexes, questions, intuition, archive, learning, metrics, net_score, p2p, reflexes, sleep_cycle, scorer, self_model, session, skills, vector
 from .main_loop import progress as loop_progress, LOOP_S
 
 _O = {"type": "object"}
@@ -1550,7 +1550,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             if name == "vi_tag":
                 o.tag(args.get("add") or [], args.get("remove") or [], who, args.get("reason", ""))
             elif name == "vi_confirm":
-                if o.kind == "self" and o.id != self_model.CORE:
+                if o.kind == "self" and o.id != self_model.core_id():
                     k = self_model.adopt(o, instance, reflex_permission, args.get("reason", ""))
                     return f"proposal {o.id} adopted into the self → version {k.data['version']}"
                 o.confirm(who, args.get("reason", ""), instance, family=family, source=(args.get("source") or "").strip() or None)
@@ -1603,7 +1603,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 session.persist(open_)
             with g.lock:
                 row = g.db().execute("SELECT raw FROM conversation_raw WHERE serial = ?", (args["serial"],)).fetchone()
-            o = g.load(f"gespraech:{args['serial']}")
+            o = g.load_keyed("conversation", args["serial"])
             if not o:
                 raise Rejected(f"conversation {args['serial']} unknown")
             if o.instance != instance:
@@ -1627,9 +1627,10 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         groups, _removed, words = g.parse_filter(args.get("filter") or "", g.known_kinds())
         if not groups and not words:
             raise Rejected("filter needs at least one hashtag or one word")
-        oid = f"suche:{re.sub(r'[^a-z0-9_-]', '-', n.lower())[:40]}"
+        slug = re.sub(r'[^a-z0-9_-]', '-', n.lower())[:40]
+        oid = g.keyed_id("search", slug)
         try:
-            o = g.new_object("search", args["story"].strip()[:500], rz + [f"suche:{oid[6:]}"],
+            o = g.new_object("search", args["story"].strip()[:500], rz + [f"search:{slug}"],
                                {"name": n, "filter": args["filter"].strip(), "quelle": args["source"].strip()[:500]},
                                importance=2, who=f"ki@{instance}", oid=oid, reason="vi_learn_search")
         except ValueError as e:
@@ -1683,8 +1684,8 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         return intuition.explain(o, instance, t or None)
     if name == "vi_drilldown":
         filt = (args.get("filter") or "").strip()
-        if filt.startswith("suche:"):
-            su = g.load(filt)
+        if filt.startswith(("search:", "suche:")):  # a saved search by its hashtag (= its id key)
+            su = g.load_keyed("search", names.id_key(filt))
             if not su:
                 raise Rejected(f"learned search {filt} unknown")
             su.access()

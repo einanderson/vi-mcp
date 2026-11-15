@@ -284,14 +284,14 @@ def test_delete_conversation_tombstone(from_seq):
     with g.lock:
         assert g.db().execute("SELECT COUNT(*) FROM conversation_raw WHERE serial = ?", (a.serial,)).fetchone()[0] == 0
         assert g.db().execute("SELECT COUNT(*) FROM edge WHERE a = ? OR b = ?", (e, e)).fetchone()[0] == 0
-    gs = g.load(f"gespraech:{a.serial}")
+    gs = g.load_keyed("conversation", a.serial)
     assert gs.data["zustand"] == "geloescht" and gs.data["geloescht"]["objekte"] == 2 and "state:geloescht" in gs.hashtags
     assert "geheim" not in gs.text and "Zugangsdaten im Verlauf" in gs.text
     with pytest.raises(tools.Rejected, match="already deleted"):
         as_user(a, "vi_loesche_gespraech", {"serial": a.serial, "grund": "nochmal"})
     session.finish(b.id)
     r = session.delete_instance_data("b", "Admin: Instanz aufgelöst")  # admin path (CLI): all conversations → tombstones
-    assert r["gespraeche"] == 1 and g.load(f"gespraech:{b.serial}").data["zustand"] == "geloescht"
+    assert r["gespraeche"] == 1 and g.load_keyed("conversation", b.serial).data["zustand"] == "geloescht"
 
 
 

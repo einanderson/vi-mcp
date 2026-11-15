@@ -55,7 +55,7 @@ def test_write_read_and_find(w):
     out = _call("vi_page_read", {"network": "standard", "page": "backup/borg-restore"})
     assert "Borg restore — network wiki standard" in out and "Step two: borg extract" in out and "state current" in out
     hits = _call("vi_recall", {"filter": "borg restore"})
-    assert "seite:standard:backup/borg-restore" in hits
+    assert "page:standard:backup/borg-restore" in hits
     with pytest.raises(tools.Rejected, match="give base_rev"):
         _call("vi_page_write", {"network": "standard", "page": "backup/borg-restore", "text": BASE + "\n\nMore."})
     assert "1 page(s) in network standard" in _call("vi_page_read", {"network": "standard"})

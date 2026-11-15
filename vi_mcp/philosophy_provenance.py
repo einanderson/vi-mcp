@@ -48,7 +48,7 @@ from . import memory as g
 from .code_facts import _q  # one quoting of a string term (the architecture rule no_duplicates found the copy)
 
 KINDS = ("insight", "rule", "skill")
-OBJ_REF = re.compile(r"\b((?:erkenntnis|regel|skill|erfahrung):[0-9A-Za-z_-]{6,})\b")
+OBJ_REF = re.compile(r"\b((?:erkenntnis|regel|skill|erfahrung|insight|rule|experience):[0-9A-Za-z_-]{6,})\b")  # ids of 0.66 and later
 URL = re.compile(r"https?://\S+")
 VIL_TO_KIND = {"documented": "document", "hearsay": "hearsay", "inferred": "hearsay"}  # measured, unknown → no kind (docstring)
 

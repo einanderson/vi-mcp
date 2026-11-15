@@ -22,7 +22,7 @@ import zlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from . import memory as g
+from . import memory as g, names
 
 IDLE_S = 4 * 3600
 
@@ -152,7 +152,7 @@ def pair_on_call(instance: str, agent_serial: str, tool: str, args: dict) -> str
         try:
             note = {"partner": other, "partner_rolle": role,
                     "partner_grund": f"the hook announced {tool} with the same arguments before the agent sent it"}
-            g.update_data(f"gespraech:{mine}", lambda d, note=note: d.update(note))
+            g.update_data(g.keyed_id("conversation", mine), lambda d, note=note: d.update(note))
             with g.lock:
                 g.db().commit()
         except Exception:  # noqa: BLE001 — the pairing holds in memory; the note on the conversation object is only its explanation
@@ -181,15 +181,15 @@ def is_open(serial: str | None) -> bool:
 def new_serial() -> str:
     """Highest number of the day + 1, compared numerically (also beyond 999), with INSERT as the lock."""
     tag = datetime.now(timezone.utc).strftime("%Y%m%d")
-    prefix = f"gespraech:{tag}"
+    prefixes = names.ids("conversation", tag)  # 0.67.0: today's serials may already exist under the German prefix of 0.66
     for _ in range(50):
         with g.lock:
-            n = g.db().execute("SELECT max(CAST(substr(id, ?) AS INTEGER)) FROM object WHERE kind = 'conversation' AND id LIKE ?",
-                               (len(prefix) + 1, f"{prefix}%")).fetchone()[0] or 0
+            n = max(g.db().execute("SELECT max(CAST(substr(id, ?) AS INTEGER)) FROM object WHERE kind = 'conversation' AND id LIKE ?",
+                                   (len(p) + 1, f"{p}%")).fetchone()[0] or 0 for p in prefixes)
             serial = f"{tag}{n + 1:03d}"
             try:
                 g.db().execute("INSERT INTO object (id, kind, ts, last_at) VALUES (?, 'conversation', ?, ?)",
-                               (f"gespraech:{serial}", g.now(), g.now()))
+                               (names.new_id("conversation", serial), g.now(), g.now()))
                 g.db().commit()
                 return serial
             except sqlite3.IntegrityError:
@@ -205,7 +205,7 @@ def begin(instance: str, client: str, project: str | None = None, family: str | 
                    [f"serial:{serial}", f"tag:{tag}"],
                    {"serial": serial, "aufrufe": 0, "client": client, **({"project": project} if project else {}),
                     **({"familie": family, "familie_quelle": family_source} if family else {})},
-                   oid=f"gespraech:{serial}", reason="session started", conversation=serial, instance=instance)
+                   oid=names.new_id("conversation", serial), reason="session started", conversation=serial, instance=instance)
     s = Session(id=secrets.token_urlsafe(24), serial=serial, instance=instance, client=client, project=project, family=family)
     with _reg_lock:
         _sessions[s.id] = s
@@ -231,7 +231,7 @@ def persist(s: Session, state: str = "offen") -> None:
     """Summary + hashtags on the conversation object, raw history compressed next to it. Idempotent."""
     with s.lock:
         turns = list(s.turns)
-    o = g.load(f"gespraech:{s.serial}")
+    o = g.load_keyed("conversation", s.serial)
     if not o or (not turns and state == "offen"):
         return
     tools: dict[str, int] = {}
@@ -297,7 +297,7 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
     history. Only the author instance may delete; open conversations cannot be deleted (end them first)."""
     if not (reason or "").strip():
         raise ValueError("reason is required")
-    o = g.load(f"gespraech:{serial}")
+    o = g.load_keyed("conversation", serial)
     if not o:
         raise ValueError(f"conversation {serial} unknown")
     if o.instance != instance:
@@ -325,7 +325,7 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
 def delete_instance_data(instance: str, reason: str) -> dict:
     """Admin (CLI, not via MCP): all private data of an instance — each of its conversations gets a tombstone."""
     with g.lock:
-        serials = [r[0][len("gespraech:"):] for r in g.db().execute(
+        serials = [names.id_key(r[0]) for r in g.db().execute(
             "SELECT id FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.zustand') <> 'geloescht'", (instance,))]
     n = 0
     for s in serials:

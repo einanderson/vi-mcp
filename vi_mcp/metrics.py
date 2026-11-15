@@ -10,14 +10,14 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 
-from . import memory as g
+from . import memory as g, names
 
 AT_LEAST = 10
 
 
 def _with_hint(o: g.MemoryObject) -> bool:
     v = o.data.get("vorher") or {}
-    return any(not oid.startswith("antwort:") for oid in v.get("gefunden", []))
+    return any(not names.id_has_kind(oid, "answer") for oid in v.get("gefunden", []))
 
 
 _GRADES: dict = {"t": 0.0, "v": {}, "db": None}

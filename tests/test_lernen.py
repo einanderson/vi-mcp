@@ -35,7 +35,7 @@ def test_observation_view_and_features(gd):
     b = learning.observations()
     assert len(b) == 2  # one pair (with hint) + one baseline (without)
     with_hint = next(m for m, y, _ in b if y == 1)
-    assert "topic:oom" in with_hint and "hint_kind:erkenntnis" in with_hint and "hint_n:1" in with_hint and any(k.startswith("hint:erkenntnis:") for k in with_hint)
+    assert "topic:oom" in with_hint and "hint_kind:insight" in with_hint and "hint_n:1" in with_hint and any(k.startswith("hint:insight:") for k in with_hint)
     without = next(m for m, y, _ in b if y == 0)
     assert "hint_n:0" in without and not any(k.startswith("hint:") for k in without)
     assert "topic:oom" in g.recall("tool:checkmk_get_host ok:ja", viewer=None)[0][1].hashtags  # context stimulus is a tag
@@ -57,7 +57,7 @@ def test_exploration_is_tagged(gd, monkeypatch):
 def test_prediction_without_sklearn_and_ranking(gd):
     m = g.new_object("model", "Testmodell", ["modell:router"],
                        {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 2.0, "hint:erkenntnis:schlecht": -2.0, "skill:x": 0.5}, "achsenabschnitt": 0.0},
-                       oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
+                       oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
     p = learning.prediction(m, {"skill:x": 1.0, "hint:regel:gut": 1.0})
     assert abs(p - 1 / (1 + 2.718281828 ** -2.5)) < 1e-6
     r = learning.ranking(m, ["skill:x"], ["erkenntnis:schlecht", "erkenntnis:neutral", "regel:gut"])
@@ -68,7 +68,7 @@ def test_too_little_data_and_missing_sklearn(gd, monkeypatch):
     action("t_a", "h", True)
     b = learning.train("Test")
     if HAS_SKLEARN:
-        assert b["zustand"] == "zu_wenig_daten" and g.load(learning.MODEL).mode == "test" and learning.active() is None
+        assert b["zustand"] == "zu_wenig_daten" and g.load(learning.model_id(None)).mode == "test" and learning.active() is None
         assert "zu_wenig_daten" in tools.call_tool("vi_modell", {}, "a", True)
     else:
         assert b["zustand"] == "uebersprungen" and "python3-sklearn" in b["grund"]
@@ -231,7 +231,7 @@ def test_contributions_add_up_to_the_prediction(gd):
     import math
     m = g.new_object("model", "Testmodell", ["modell:router"],
                      {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 1.5, "hint_kind:regel": 0.25, "hint_n:1": -0.2, "skill:x": 0.5},
-                      "achsenabschnitt": -0.3}, oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
+                      "achsenabschnitt": -0.3}, oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
     f = {"skill:x": 1.0, "hint_n:1": 1.0, "hint:regel:gut": 1.0, "hint_kind:regel": 1.0, "unbekannt:y": 1.0}
     c = learning.contributions(m, f)
     assert c[0] == ("hint:regel:gut", 1.5) and "unbekannt:y" not in dict(c)
@@ -285,11 +285,11 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
 def test_vi_why_separates_what_is_same_for_every_candidate(gd):
     """0.30.0: hinweis_n moves every lift alike; vi_why reports it apart from what decides the order."""
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                     {"zustand": "aktiv", "gewichte": {"hint_n:1": -0.35, "hint_n:0": 0.05, "hint_kind:erkenntnis": 0.2, "tool:x": 0.1},
-                      "achsenabschnitt": 0.0}, oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
+                     {"zustand": "aktiv", "gewichte": {"hint_n:1": -0.35, "hint_n:0": 0.05, "hint_kind:insight": 0.2, "tool:x": 0.1},
+                      "achsenabschnitt": 0.0}, oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
     h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
     w = learning.why(m, h.id, ["tool:x"])
-    assert abs(w["same_for_all"] - (-0.40)) < 1e-9 and dict(w["distinguishing"]) == {"hint_kind:erkenntnis": 0.2}
+    assert abs(w["same_for_all"] - (-0.40)) < 1e-9 and dict(w["distinguishing"]) == {"hint_kind:insight": 0.2}
     out = tools.call_tool("vi_why", {"id": h.id, "triggers": ["tool:x"]}, "a", False)
     assert "decides the order): +0.200" in out and "never the order): hint_n:1 − hint_n:0 = -0.400" in out
 

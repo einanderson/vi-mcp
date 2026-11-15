@@ -85,7 +85,7 @@ def test_session_family_is_used_unless_the_operator_declared_one(gd):
     from vi_mcp import config, server, session
     inst = config.Instance("b", "0" * 64)
     _a, s = server._initialize({"id": 1, "params": {"clientInfo": {"name": "claude-code", "version": "2.1"}}}, inst)
-    assert s.family == "claude" and g.load(f"gespraech:{s.serial}").data["familie"] == "claude"
+    assert s.family == "claude" and g.load_keyed("conversation", s.serial).data["familie"] == "claude"
     o = _fact()
     tools.call_tool("vi_confirm", {"id": o.id, "reason": "geprüft"}, "b", False, False, inst.family or s.family)
     assert g.load(o.id).data["bestaetigungen"][-1]["familie"] == "claude"

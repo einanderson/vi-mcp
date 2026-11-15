@@ -152,12 +152,12 @@ def ingest(raw: dict, header: dict, net: str) -> str:
         data = {**common, "von": f"{raw['autor']}@{net}", "an": "alle", "zustand": "offen", "quelle": raw["inhalt"] or f"question in network {net}",
                 "zugestellt_an": [], "antworten": [], "gemeldet": 0}
         o = g.new_object("question", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["to:alle", "state:offen"])), data, importance=2,
-                         who=f"import@{name}", reason=f"question from {raw['autor']} in {net}", oid=f"frage:post-{pid[:32]}", mode="quarantine",
+                         who=f"import@{name}", reason=f"question from {raw['autor']} in {net}", oid=g.keyed_id("question", f"post-{pid[:32]}"), mode="quarantine",
                          instance=f"p2p-{name}", visibility="internal" if company else None)
     else:
         data = {**common, "quelle": (raw["inhalt"] or f"answer in network {net}")[:500], "inhalt": raw["inhalt"], "frage": mine[0]}
         o = g.new_object("insight", raw["text"], sorted(set(raw["hashtags"] + tags)), data, who=f"import@{name}", reason=f"answer from {raw['autor']} in {net}",
-                         oid=f"erkenntnis:post-{pid[:32]}", mode="quarantine", instance=f"p2p-{name}", visibility="internal" if company else None)
+                         oid=g.keyed_id("insight", f"post-{pid[:32]}"), mode="quarantine", instance=f"p2p-{name}", visibility="internal" if company else None)
         form = {"art": "erkenntnis", "text": raw["text"], "inhalt": raw["inhalt"], "hashtags": raw["hashtags"]}
         ish = net_score.content_hash(form)  # an answer is content like any other: holders and network score
         net_score.link(ish, o.id)

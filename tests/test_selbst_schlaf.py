@@ -27,7 +27,7 @@ def _experience(tool, host, ok, instance="a", error=None):
 
 def test_self_core_and_narrative(gd):
     k = self_model.core()
-    assert k.id == self_model.CORE and k.data["version"] == 1 and k.instance == g.SERVER_INSTANCE and k.visibility == "shared"
+    assert k.id == self_model.core_id() and k.data["version"] == 1 and k.instance == g.SERVER_INSTANCE and k.visibility == "shared"
     assert "self v1" in k.data["erzaehlung"] and "Limits:" in k.data["erzaehlung"]
     assert len(k.data["erzaehlung"].split()) <= 151
     assert self_model.core().id == k.id  # idempotent

@@ -1263,12 +1263,12 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
         verdict += (f"; knowledge probe ({probe['n']} questions about trained objects): tuned {t['correct']} correct / {t['partial']} partial,"
                     f" base {b['correct']} / {b['partial']}, strict p {probe['strict']['p_one_sided']:.4f}"
                     + ("" if probe_ok else " — NOT for this kit's probe file"))
-    oid = f"modell:finetune:{run['kit'][:19].replace(':', '').replace('-', '')}"
+    oid = g.keyed_id("model", f"finetune:{run['kit'][:19].replace(':', '').replace('-', '')}")
     data = {**run, "adapter_sha256": adapters, "bewertung": ev, "wissensprobe": probe, "urteil": verdict, "erfasst": g.now()}
     text = f"Fine-tuned model on {run['base_model']} ({', '.join(adapters)}): {verdict}"
     o = g.load(oid)
     if o is None:
-        return g.new_object("model", text, ["modell:finetune"], data, importance=2, who=who, oid=oid, mode="active" if better else "test",
+        return g.new_object("model", text, ["model:finetune"], data, importance=2, who=who, oid=oid, mode="active" if better else "test",
                             reason="fine-tuning run recorded", instance=g.SERVER_INSTANCE, index=run.get("index"))
     o.text, o.data, o.mode = text, data, "active" if better else "test"
     o.change(who, "fine-tuning run updated", verdict)

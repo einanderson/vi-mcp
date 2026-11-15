@@ -30,7 +30,7 @@ def test_project_is_the_last_part_of_the_working_directory(gd):
     assert server.project_name("C:\\Users\\anna\\my project") == "my_project"
     assert server.project_name(None) is None and server.project_name("/") is None
     s = session.begin("a", "claude-code-hook 1", "cue-print")
-    assert g.load(f"gespraech:{s.serial}").data["project"] == "cue-print"
+    assert g.load_keyed("conversation", s.serial).data["project"] == "cue-print"
 
 
 def test_stats_count_rules_only_while_calls_are_recorded_and_show_projects(gd):

@@ -10,7 +10,7 @@ def _model(weights, layer=None, mode="active"):
     data = {"gewichte": weights, "achsenabschnitt": 0.0, "zustand": "aktiv", "quoten": {"_gesamt": [100, 20]}}
     if layer is not None:
         data["llm_schicht"] = layer
-    return g.new_object("model", "router", ["modell:router"], data, oid=learning.MODEL, mode=mode, instance=g.SERVER_INSTANCE)
+    return g.new_object("model", "router", ["model:router"], data, oid=learning.model_id(None), mode=mode, instance=g.SERVER_INSTANCE)
 
 
 def test_check_keeps_only_editable_bounded_reasoned_changes():
@@ -38,7 +38,7 @@ def test_layer_survives_and_counts_only_when_tested_or_active(gd, monkeypatch):
     assert weight_writer.arm(m) is None
     # the daily fit stores new weights and keeps the layer
     learning._save({"zustand": "aktiv", "trainiert": g.now(), "n": 1}, {"tool:Bash": 2.0}, 0.1, "aktiv")
-    assert g.load(learning.MODEL).data["llm_schicht"]["deltas"]["hint:erkenntnis:a"]["delta"] == 0.7
+    assert g.load(learning.model_id(None)).data["llm_schicht"]["deltas"]["hint:erkenntnis:a"]["delta"] == 0.7
 
 
 def test_card_never_shows_network_texts(gd):

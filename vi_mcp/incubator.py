@@ -93,7 +93,7 @@ def status(index: str | None = None) -> dict:
                       + (" — noninferiority established" if safe else " — noninferiority not established")))
     labelled = sum(1 for *_x, k in rows if k in ("einig", "uneinig", "schueler"))
     lshare = round(labelled / n, 3) if n else 0.0
-    st = g.load(classify.STUDENT)
+    st = g.load(classify.student_id())
     lab_ok = n and lshare >= cfg["min_labelled"] and st is not None and st.mode == "active"
     out.append(_c("labels", "erfuellt" if lab_ok else "offen", lshare, cfg["min_labelled"],
                   f"{labelled} of {n} classified; student {'active' if st is not None and st.mode == 'active' else st.mode if st else 'not trained'}"))

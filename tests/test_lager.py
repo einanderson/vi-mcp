@@ -106,7 +106,7 @@ def test_private_stays_private_and_delete_works_in_archive(gd):
         e = intuition.after("t_x", {"host": "p1"}, True, 1, None, "ok", v["vorher_id"], "a")["erfahrung"]
     session.finish(a.id)
     _age(e, archive.DAYS["experience"] + 1)
-    _age(f"gespraech:{a.serial}", archive.DAYS_RAW + 1)
+    _age(g.keyed_id("conversation", a.serial), archive.DAYS_RAW + 1)
     r = archive.cleanup()
     assert r["rohverlaeufe"] == 1 and g.load(e).mode == "archived"
     with g.lock:
@@ -127,7 +127,7 @@ def test_open_conversation_stays(gd):
         v = intuition.before("t_y", {}, "a")
         intuition.after("t_y", {}, True, 1, None, "ok", v["vorher_id"], "a")
     session.persist(s)
-    _age(f"gespraech:{s.serial}", archive.DAYS_RAW + 1)
+    _age(g.keyed_id("conversation", s.serial), archive.DAYS_RAW + 1)
     assert archive.cleanup()["rohverlaeufe"] == 0
 
 

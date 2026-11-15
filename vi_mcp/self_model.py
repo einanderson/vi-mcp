@@ -17,7 +17,9 @@ from datetime import datetime
 
 from . import memory as g
 
-CORE = "selbst:kern"
+def core_id() -> str:
+    """The id of the self model (selbst:kern up to 0.66, self:kern for a memory created later)."""
+    return g.keyed_id("self", "kern")
 AREAS = ("values", "goals", "style", "limits")
 EVIDENCE_MIN, DAYS_MIN = 3, 2
 REPEAT_PER = 25
@@ -52,12 +54,12 @@ def _table() -> None:
 def core() -> g.MemoryObject:
     """Load the self; the first time, create it with the default target (version 1, reason: project rules)."""
     _table()
-    o = g.load(CORE)
+    o = g.load(core_id())
     if o:
         return o
-    o = g.new_object("self", "Self of the VI (version 1)", ["selbst:kern"],
+    o = g.new_object("self", "Self of the VI (version 1)", ["self:kern"],
                        {"version": 1, "soll": json.loads(json.dumps(DEFAULT_TARGET)), "ist": {}, "erzaehlung": ""},
-                       importance=3, who="vi", oid=CORE, reason="created from the project rules (CLAUDE.md, ARCHITECTURE.md)",
+                       importance=3, who="vi", oid=core_id(), reason="created from the project rules (CLAUDE.md, ARCHITECTURE.md)",
                        instance=g.SERVER_INSTANCE)
     with g.lock:
         for area, sentences in DEFAULT_TARGET.items():
@@ -118,7 +120,7 @@ def proposal(instance: str, area: str, sentence: str, reason: str, evidence_list
 
 def adopt(v: g.MemoryObject, instance: str, trusted: bool, reason: str) -> g.MemoryObject:
     """A proposal becomes part of the target — only through ANOTHER, trusted instance."""
-    if v.kind != "self" or v.id == CORE or v.mode != "test":
+    if v.kind != "self" or v.id == core_id() or v.mode != "test":
         raise ValueError("not an open self proposal")
     if v.instance == instance:
         raise ValueError("one's own proposal does not count as confirmation (no self-confirmation)")

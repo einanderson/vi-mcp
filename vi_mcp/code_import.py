@@ -286,7 +286,8 @@ CODE_TAG = "knowledge_kind:code"
 
 def piece_id(index: str, repo: str, path: str, symbol: str) -> str:
     import hashlib
-    return "erkenntnis:code-" + hashlib.sha256(f"{index}|{repo}|{path}|{symbol}".encode()).hexdigest()[:24]
+    from . import memory as g
+    return g.keyed_id("insight", "code-" + hashlib.sha256(f"{index}|{repo}|{path}|{symbol}".encode()).hexdigest()[:24])
 
 
 def tag_value(s: str) -> str:

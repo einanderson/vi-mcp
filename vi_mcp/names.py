@@ -250,9 +250,37 @@ def wire(mapping: dict[str, str], value):
 
 
 def id_prefix(kind: str) -> str:
-    """The prefix of a new object id. Object ids are identifiers, not names: edges, vectors, network ids, other objects' data and hints
-    already shown refer to them, so the id scheme of 0.66 (the German kind) is kept for every object, old and new."""
-    return wire(KINDS, kind)
+    """The prefix of a new object id: the English kind (the user's decision, 15.11.2026: "only new ids English"). An existing id keeps
+    its German prefix (erkenntnis:…, gespraech:<serial>) — edges, vectors, network ids, other objects' data and hints already shown refer
+    to it. So every lookup by prefix accepts both (ids, id_has_kind, memory.load_keyed)."""
+    return english(KINDS, kind)
+
+
+def new_id(kind: str, key: str) -> str:
+    """The id a new object with a known key gets (gespraech:<serial> → conversation:<serial> from 0.67.0 on)."""
+    return f"{id_prefix(kind)}:{key}"
+
+
+def ids(kind: str, key: str) -> tuple[str, str]:
+    """Both ids an object with this kind and key may have: the English one (0.67.0 and later) and the German one (before)."""
+    en = english(KINDS, kind)
+    return f"{en}:{key}", f"{wire(KINDS, en)}:{key}"
+
+
+def id_has_kind(oid: str, kind: str) -> bool:
+    """Whether an id belongs to this kind, whatever language its prefix has."""
+    en = english(KINDS, kind)
+    return isinstance(oid, str) and (oid.startswith(f"{en}:") or oid.startswith(f"{wire(KINDS, en)}:"))
+
+
+def id_prefixes(*kinds: str) -> tuple[str, ...]:
+    """Every id prefix of these kinds in both languages, for str.startswith (("insight:", "erkenntnis:", …))."""
+    return tuple(p for k in kinds for p in dict.fromkeys(f"{x.split(':', 1)[0]}:" for x in ids(k, "")))
+
+
+def id_key(oid: str) -> str:
+    """The part of an id after its kind prefix."""
+    return oid.split(":", 1)[1] if isinstance(oid, str) and ":" in oid else oid
 
 
 def canonical_tag(tag: str) -> str:

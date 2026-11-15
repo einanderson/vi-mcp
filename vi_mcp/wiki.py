@@ -43,7 +43,8 @@ def _tables() -> None:
 
 
 def page_id(net: str, slug: str) -> str:
-    return f"seite:{net}:{slug}"
+    """The page object of a wiki page: seite:<net>:<slug> up to 0.66 (kept), page:<net>:<slug> for a page first seen later."""
+    return g.keyed_id("page", f"{net}:{slug}")
 
 
 def _revs(net: str, slug: str) -> tuple[dict[str, wm.Rev], set[str], list[dict]]:
@@ -165,7 +166,7 @@ def ingest(raw: dict, header: dict, net: str) -> str:
         return "bekannt"  # revoked before it arrived: stays away
     slug, name = raw["seite"], pseudonym(header["pub"])
     revs, _acc, _meta = _revs(net, slug)
-    oid = f"seite:rev-{rev[:32]}"
+    oid = g.keyed_id("page", f"rev-{rev[:32]}")
     data = {"quelle": raw["quelle"] or f"wiki page {slug} in network {net}", "inhalt": _diff(revs, raw["eltern"], raw["text"]),
             "herkunft": {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": rev, "netz_id": raw["netz_id"], "netz": net},
             "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": f"{raw['titel']} — {raw['notiz'] or 'edit of the page'}"[:1000],
@@ -323,7 +324,7 @@ def stats(days: float = 7) -> dict:
         new_pages = g.db().execute("SELECT COUNT(*) FROM (SELECT net, page, MIN(received) m FROM page_rev GROUP BY net, page) WHERE m >= ?", (since,)).fetchone()[0]
         changed = g.db().execute("SELECT COUNT(DISTINCT net || '|' || page) FROM page_rev WHERE received >= ?", (since,)).fetchone()[0]
         waits = g.db().execute("SELECT received, decided FROM page_rev WHERE own = 0 AND status = 'released' AND decided >= ?", (since,)).fetchall()
-        auto = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'page' AND id LIKE 'seite:rev-%' AND changes LIKE '%automatic%'").fetchone()[0]
+        auto = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'page' AND (id LIKE 'seite:rev-%' OR id LIKE 'page:rev-%') AND changes LIKE '%automatic%'").fetchone()[0]
     hours = sorted((datetime.fromisoformat(b.replace("Z", "+00:00")) - datetime.fromisoformat(a.replace("Z", "+00:00"))).total_seconds() / 3600 for a, b in waits)
 
     def q(p):

@@ -39,7 +39,7 @@ def test_recall_filter_fulltext_and_link(gd):
     g.new_object("insight", "Timeout auf db1", ["host:db1", "topic:timeout"], reason="T")
     ids = [o.id for _, o, _g in g.recall("host:web1")]
     assert set(ids) == {a.id, b.id}
-    assert [o.id for _, o, _g in g.recall("(host:web1 OR host:db1) !topic:disk")][0].startswith("erkenntnis:")
+    assert [o.id for _, o, _g in g.recall("(host:web1 OR host:db1) !topic:disk")][0].startswith("insight:")
     assert len(g.recall("(host:web1 OR host:db1) !topic:disk")) == 1
     assert [o.id for _, o, _g in g.recall("langsam")] == [b.id]
     assert (a.id, "2 shared hashtags") in b.edges()
@@ -96,7 +96,7 @@ def test_session_conversation_and_persist(gd):
         o = g.new_object("insight", "im Gespräch gelernt", ["topic:x"], reason="T")
     assert o.conversation == s.serial
     assert session.finish(s.id)
-    gs = g.load(f"gespraech:{s.serial}")
+    gs = g.load_keyed("conversation", s.serial)
     assert gs.data["aufrufe"] == 1 and gs.data["zustand"] == "beendet"
     assert {"tool:netbox_get_devices", "host:web1", "instance:test", "state:beendet", "ok:ja"} <= set(gs.hashtags)
     assert session.find(s.id) is None
@@ -188,7 +188,7 @@ def test_complete_knowledge_is_preserved(gd):
     from vi_mcp import tools
     table = "| GET | /api/hosts | Liste |\n" * 2000 + "\ndef baue_abfrage(token = lese_token()):\n    return Zaunkoenig(token)\n"
     r = tools.call_tool("vi_lerne", {"text": "Die Hosts-API liefert Listen", "inhalt": table, "hashtags": ["topic:api"], "quelle": "Handbuch Kapitel 3"}, "a", False)
-    oid = next(w.strip("[]") for w in r.split() if w.startswith(("[erkenntnis:", "erkenntnis:")))
+    oid = next(w.strip("[]") for w in r.split() if w.startswith(("[insight:", "insight:")))
     full = next(o for _, o, _g in g.recall("topic:api", viewer=None))
     assert full.data["inhalt"] == table.strip() and len(full.text) < 100
     assert full.id.startswith(oid[:20])

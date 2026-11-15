@@ -88,7 +88,7 @@ def test_answer_comes_back_reviewed_and_can_be_rated(f):
     _release(release=False)
     q = g.load(q.id)
     a = q.data["antworten"][0]
-    assert a["instanz"] == "ki-9876543210@standard" and a["objekt"].startswith("erkenntnis:post-") and q.data["zustand"] == "beantwortet"
+    assert a["instanz"] == "ki-9876543210@standard" and a["objekt"].startswith("insight:post-") and q.data["zustand"] == "beantwortet"
     hints = questions.deliver("a")
     assert any("borg extract repo::archive" in h for h in hints)
     listing = tools.call_tool("vi_questions", {}, "a", True)

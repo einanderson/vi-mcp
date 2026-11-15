@@ -1,7 +1,7 @@
 """Learning — the router learns from the hint lift instead of us setting its weights (docs/TRAINING.md 4a/4b).
 
 Observation = a reported action with label `ok` (0/1); features = triggers of the action (tool, skill, host, thema,
-time of day) × shown hints (`hint:<id>`, `hint_kind:<art>`, `hinweis_n`). From this a **logistic regression**
+time of day) × shown hints (`hint:<id>`, `hint_kind:<kind>`, `hint_n`). From this a **logistic regression**
 learns P(ok | triggers, hint) — the weight per feature is directly readable (sufficient reason). The router then orders
 candidates by expected **lift** = P(ok | triggers, hint) − P(ok | triggers) instead of recency + importance.
 
@@ -20,10 +20,9 @@ from __future__ import annotations
 import json
 import math
 
-from . import memory as g
+from . import memory as g, names
 from .log_output import log
 
-MODEL = "modell:router"
 MIN_PER_FEATURE = 10
 MIN_EVENTS = 50
 AUC_MIN = 0.6
@@ -70,7 +69,7 @@ def _born(hid: str, cache: dict | None) -> str | None:
 
 
 def hint_features(hid: str, triggers: list[str] | None = None, ts: str | None = None, born: dict | None = None) -> dict:
-    m = {f"hint:{hid}": 1.0, f"hint_kind:{hid.split(':')[0]}": 1.0}
+    m = {f"hint:{hid}": 1.0, f"hint_kind:{names.english(names.KINDS, hid.split(':')[0])}": 1.0}  # the same feature for old and new ids
     # 0.30.0: was the hint new when it was shown (≤ metrics.NEW_DAYS)? Its weight answers the cold-start question directly, and the
     # router can make up for it. Same threshold as the observation point metrics.lift_by_age — one definition of "new".
     if ts and (b := _born(hid, born)):
@@ -123,7 +122,7 @@ def weighted_observations(since: str | None = None, index: str | None = None, ip
             continue
         y, w, _src = scorer.label(d, oid in ok_yes, serial, grades)
         base = action_features(v.get("reize", []), ts)
-        shown = [h for h in v.get("gezeigt", v.get("gefunden", [])) if not h.startswith("antwort:")]
+        shown = [h for h in v.get("gezeigt", v.get("gefunden", [])) if not names.id_has_kind(h, "answer")]
         base[f"hint_n:{min(4, len(shown))}"] = 1.0
         offer = v.get("angebot") or {}
         if not shown:
@@ -144,7 +143,7 @@ def _sigmoid(z: float) -> float:
 
 
 def model() -> g.MemoryObject | None:
-    return g.load(MODEL)
+    return g.load(model_id(None))
 
 
 def prediction(m: g.MemoryObject, features: dict) -> float:
@@ -196,8 +195,9 @@ def active(index: str | None = None) -> g.MemoryObject | None:
 
 
 def model_id(index: str | None) -> str:
-    """0.61.0: modell:router for the shared model, modell:router@<index> for an index's own one."""
-    return MODEL if not index or index == "global" else f"{MODEL}@{index}"
+    """0.61.0: the shared model (key router), an index's own one (key router@<index>). 0.67.0: modell:… up to 0.66, model:… for a model
+    trained later — the existing id is kept."""
+    return g.keyed_id("model", "router" if not index or index == "global" else f"router@{index}")
 
 
 #: 0.61.0: an index gets its own model only with this much data — fewer observations would fit noise
@@ -273,7 +273,7 @@ def _save_index(index: str, report: dict, weights: dict, intercept: float, mode:
     text = (f"Router model of index {index} ({report.get('zustand')}): {report.get('n', 0)} observations, AUC {report.get('auc_holdout', '—')} "
             f"— {report.get('urteil', report.get('grund', ''))}")
     if m is None:
-        return g.new_object("model", text, ["modell:router"], data, importance=2, who="vi", oid=oid, mode=mode,
+        return g.new_object("model", text, ["model:router"], data, importance=2, who="vi", oid=oid, mode=mode,
                             reason=report.get("grund", "learning"), instance=g.SERVER_INSTANCE, index=index)
     m.text, m.data, m.mode = text, {**data, "versionen": m.data.get("versionen", 0) + 1}, mode
     m.change("vi", f"retrained → {mode}", report.get("grund", "learning"))
@@ -608,7 +608,7 @@ def warning(triggers: list[str], ts: str | None = None) -> str | None:
 
 
 def _save(report: dict, weights: dict, intercept: float, mode: str, new_champion: bool = False) -> g.MemoryObject:
-    m = g.load(MODEL)
+    m = g.load(model_id(None))
     data = {**report, "gewichte": weights, "achsenabschnitt": round(intercept, 4)}
     # 0.55.0: the champion is the model of the last sleep in which it went active; carried over by every other training
     if new_champion:
@@ -621,7 +621,7 @@ def _save(report: dict, weights: dict, intercept: float, mode: str, new_champion
     text = (f"Router model ({report.get('zustand')}): {report.get('n', 0)} observations, {report.get('merkmale', 0)} features, "
             f"AUC {report.get('auc_holdout', '—')} — {report.get('urteil', report.get('grund', ''))}")
     if m is None:
-        return g.new_object("model", text, ["modell:router"], data, importance=2, who="vi", oid=MODEL,
+        return g.new_object("model", text, ["model:router"], data, importance=2, who="vi", oid=model_id(None),
                               mode=mode, reason=report.get("grund", "learning"), instance=g.SERVER_INSTANCE)
     m.text, m.data, m.mode = text, {**data, "versionen": m.data.get("versionen", 0) + 1}, mode
     m.change("vi", f"retrained → {mode}", report.get("grund", "learning"))
@@ -732,7 +732,7 @@ def calibration(p, y, bins: int = 10) -> dict:
 
 def _keep_champion(report: dict) -> None:
     """A challenger worse than the champion: record its report, keep the champion's weights active (named in the model text)."""
-    m = g.load(MODEL)
+    m = g.load(model_id(None))
     champ = champion()
     if m is None or not champ:
         return

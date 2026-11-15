@@ -71,7 +71,7 @@ def test_session_end_and_server_restart(h):
     h.process(ev("PreToolUse", "cc-9", tool_name="Grep", tool_input={"pattern": "a"}, tool_use_id="g1"))
     serial = [o for _, o, _g in g.recall("kind:conversation instance:laptop")][0].data["serial"]
     h.process(ev("SessionEnd", "cc-9", reason="exit"))
-    gs = g.load(f"gespraech:{serial}")
+    gs = g.load_keyed("conversation", serial)
     assert gs.data["zustand"] == "beendet" and gs.data["ohne_ergebnis"] == 1  # before without after: named
     # state file points to an unknown session (server restarted) → hook registers again
     h.write("sitzung", "cc-10", {"mcp_session_id": "veraltet"})

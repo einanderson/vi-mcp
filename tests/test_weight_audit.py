@@ -5,7 +5,7 @@ from vi_mcp import memory as g
 
 def _model(weights):
     return g.new_object("model", "Testmodell", ["modell:router"], {"zustand": "aktiv", "gewichte": weights, "achsenabschnitt": 0.0},
-                        oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
+                        oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
 
 
 def test_no_model_is_a_named_state(gd):
@@ -29,7 +29,7 @@ def test_each_class_is_found(gd):
     by = {f["klasse"]: f for f in r["befunde"]}
     assert by["dominant"]["merkmal"] == "hour:14" and by["contradicts"]["merkmal"] == f"hint:{good.id}"
     assert "-30 points over 30 showings" in by["contradicts"]["grund"] and "peer1" in by["network"]["grund"]
-    assert g.load(learning.MODEL).data["gewichte"] == m.data["gewichte"] and g.load(good.id).mode == "active"  # read only
+    assert g.load(learning.model_id(None)).data["gewichte"] == m.data["gewichte"] and g.load(good.id).mode == "active"  # read only
     assert "Weight audit: dominant 1" in tools.call_tool("vi_modell", {}, "a", True)
 
 

@@ -112,7 +112,7 @@ def test_two_sessions_two_conversations(srv):
     serial_a = session.find_without_touching(sa).serial
     assert request(port, "DELETE", None, tok_a, sa)[0] == 204
     assert request(port, "POST", {"jsonrpc": "2.0", "id": 9, "method": "ping"}, tok_a, sa)[0] == 404
-    gs = g.load(f"gespraech:{serial_a}")
+    gs = g.load_keyed("conversation", serial_a)
     # 2 actions: one with after, one only with before → ok:unbekannt, not vanished
     assert gs.data["zustand"] == "beendet" and gs.data["aufrufe"] == 2 and gs.data["ohne_ergebnis"] == 1
     assert [o.text for _, o, _g in g.recall("tool:checkmk_get_host ok:unbekannt")][0].endswith("(vi_after missing)")

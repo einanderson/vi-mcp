@@ -186,7 +186,7 @@ def test_the_network_still_sees_the_wire_form_of_0_66(gd):
     import reads it, and the same meaning keeps the same hash on both sides."""
     from vi_mcp import net_score, p2p
     o = g.new_object("insight", "The backup of db01.example runs at 02:00", ["thema:backup"], {"quelle": "crontab -l"}, instance="anna")
-    assert o.id.startswith("erkenntnis:")  # ids are identifiers: the id scheme of 0.66 is kept
+    assert o.id.startswith("insight:")  # the user's decision: only new ids are English
     wire, why = p2p.internal_form(o, {"netz_id": "a" * 32, "loesch_hash": "b" * 64})
     assert why is None and wire["art"] == "erkenntnis"
     assert net_score.local_form(o)["art"] == "erkenntnis"
@@ -213,3 +213,24 @@ def test_hashtags_travel_in_the_wire_form_and_reserved_ones_never_pass(gd):
     assert checks.check(good).mem_object["hashtags"] == ["topic:a"]  # reserved in both languages
     assert checks.check({**good, "hashtags": ["topic:a", "location:MUC-1"]}).verdict == "ablehnen"
     assert checks.check({**good, "art": "suche", "name": "s", "reize": ["tool:x"], "filter": "mode:archived"}).verdict == "ablehnen"
+
+
+def test_old_and_new_ids_are_found_alike(gd):
+    """The user, 15.11.2026: "only new ids English". An id of 0.66 keeps its German prefix; a new object gets the English one; every
+    lookup by kind or key finds both."""
+    from vi_mcp import bandit, session
+    old = g.new_object("insight", "a fact learned under 0.66", ["topic:ids"], {"quelle": "x"}, instance="anna", oid="erkenntnis:0123456789abcdef")
+    new = g.new_object("insight", "a fact learned under 0.67", ["topic:ids"], {"quelle": "x"}, instance="anna")
+    assert new.id.startswith("insight:") and old.id.startswith("erkenntnis:")
+    for f in ("kind:insight topic:ids", "art:erkenntnis topic:ids"):
+        assert {h[1].id for h in g.recall(f, viewer=None)} == {old.id, new.id}, f
+    assert {h[1].id for h in g.recall("topic:ids", kinds=("insight",), viewer=None)} == {old.id, new.id}
+    assert names.id_has_kind(old.id, "insight") and names.id_has_kind(new.id, "erkenntnis")
+    assert old.id.startswith(bandit.HINT_KINDS) and new.id.startswith(bandit.HINT_KINDS)
+    # a conversation of 0.66 is found by its serial; a new one is conversation:<serial>
+    g.new_object("conversation", "old conversation", ["serial:20261101001"], {"serial": "20261101001"}, oid="gespraech:20261101001")
+    assert g.load_keyed("conversation", "20261101001").id == "gespraech:20261101001"
+    assert g.keyed_id("conversation", "20261101001") == "gespraech:20261101001" and g.keyed_id("conversation", "x9") == "conversation:x9"
+    s = session.begin("anna", "test")
+    assert g.load_keyed("conversation", s.serial).id == f"conversation:{s.serial}"
+    session.finish(s.id)

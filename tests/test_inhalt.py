@@ -59,7 +59,7 @@ def test_features_and_switches(knowledge, monkeypatch):
     m = learning.hint_features(knowledge["tls"][0], ["topic:tls", "hour:3"])
     assert "naehe" in m and any(k.startswith("content:") for k in m)
     monkeypatch.setattr(learning, "CONTENT", False)
-    assert set(learning.hint_features(knowledge["tls"][0], ["topic:tls"])) == {f"hint:{knowledge['tls'][0]}", "hint_kind:erkenntnis"}
+    assert set(learning.hint_features(knowledge["tls"][0], ["topic:tls"])) == {f"hint:{knowledge['tls'][0]}", "hint_kind:insight"}
 
 
 def test_model_learns_the_content(knowledge, monkeypatch):

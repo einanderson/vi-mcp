@@ -19,9 +19,9 @@ import random
 import time
 from collections import defaultdict
 
-from . import memory as g
+from . import memory as g, names
 
-HINT_KINDS = ("erkenntnis:", "regel:", "suche:", "skill:", "bild:", "seite:")
+HINT_KINDS = names.id_prefixes("insight", "rule", "search", "skill", "image", "page")  # ids of 0.66 (German) and later (English)
 
 
 BASE_DAYS = 90

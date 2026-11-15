@@ -316,7 +316,9 @@ def main(argv: list[str]) -> int:
 # share of the student's labels is checked by the LLM (agreement recorded on the model object — drift becomes visible). Active only
 # where its sure labels are ≥ 90 % right on ≥ 10 % of the objects (5-fold cross-validation, C chosen from C_GRID).
 
-STUDENT = "modell:klassen"
+def student_id() -> str:
+    """The id of the student model (modell:klassen up to 0.66, model:klassen for a memory created later)."""
+    return g.keyed_id("model", "klassen")
 MIN_PER_CLASS = 15
 MIN_TOTAL = 120
 SURE = 0.8
@@ -390,9 +392,9 @@ def train_student(who: str = "sleep") -> dict:
     text = (f"Student for the AI-language labels ({state}): {len(keep)} agreed LLM labels; where sure (≥ {SURE}): "
             + ", ".join(f"{h} {d.get('genauigkeit_sicher', '—')} right on {d.get('abdeckung', '—')} of objects (C {d.get('C', '—')})"
                         for h, d in heads.items()))
-    m = g.load(STUDENT)
+    m = g.load(student_id())
     if m is None:
-        g.new_object("model", text, ["modell:klassen"], report, importance=2, who=who, oid=STUDENT, mode=state, reason="student trained",
+        g.new_object("model", text, ["model:klassen"], report, importance=2, who=who, oid=student_id(), mode=state, reason="student trained",
                      instance=g.SERVER_INSTANCE)
     else:
         m.text, m.data, m.mode = text, {**report, "pruefung": m.data.get("pruefung", {"geprueft": 0, "gleich": 0})}, state
@@ -417,7 +419,7 @@ def _predict(head: dict, v) -> tuple[str, float]:
 def student_label(o: g.MemoryObject) -> dict | None:
     """The student's label for one object, or None if it is not active, has no vector or is not sure (≥ SURE on both heads)."""
     from . import vector
-    m = g.load(STUDENT)
+    m = g.load(student_id())
     if m is None or m.mode != "active":
         return None
     v = vector.load(o.id)
@@ -458,7 +460,7 @@ def run_with_student(limit: int = 20, who: str = "sleep", rng=None) -> dict:
             out["geprueft"] += 1
             out["gleich"] += int(llm["answers"] == lab["answers"])
         apply(o, llm, who)
-    m = g.load(STUDENT)
+    m = g.load(student_id())
     if m is not None and out["geprueft"]:
         p = m.data.get("pruefung", {"geprueft": 0, "gleich": 0})
         m.data = {**m.data, "pruefung": {"geprueft": p["geprueft"] + out["geprueft"], "gleich": p["gleich"] + out["gleich"]}}

@@ -164,7 +164,7 @@ def data(days: float = 7) -> dict:
     for z, i, tot, d_json, tooltag, oktag in exps:
         d = json.loads(d_json)
         v = d.get("vorher") or {}
-        shown += len([h for h in v.get("gezeigt") or [] if not h.startswith("antwort:")])
+        shown += len([h for h in v.get("gezeigt") or [] if not names.id_has_kind(h, "answer")])
         feedbacks += len(d.get("rueckmeldung") or {})
         opened += len(d.get("geoeffnet") or {})
         adopted += len(d.get("genutzt") or [])  # 0.59.0: implicit feedback

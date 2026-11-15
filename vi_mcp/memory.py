@@ -67,7 +67,7 @@ TAG = re.compile(r"^[a-z][a-z0-9_-]{0,30}:[^\s()]+$")
 FIXED_TAG_PREFIXES = ("kind:", "tool:", "instance:", "origin:", "publisher:", "reviewer:", "mode:")
 #: hashtags that are administration, not content (ignored for linking and drilldown)
 ADMIN_PREFIXES = ("kind:", "cache:", "ok:", "serial:", "tag:", "instance:", "state:", "to:", "from:", "surprise:",
-              "mode:", "origin:", "conflict:", "selbst:", "self_area:", "modell:", "fusion:", "duplicate:", "scorer:", "target:", "grade:")
+              "mode:", "origin:", "conflict:", "self:", "self_area:", "model:", "fusion:", "duplicate:", "scorer:", "target:", "grade:")
 
 lock = threading.RLock()
 _KINDS_CACHE: dict = {"t": float("-inf"), "kinds": frozenset()}
@@ -472,6 +472,25 @@ def _data_json(o: MemoryObject) -> str:
             return js
     log(f"{o.id}: daten with {size_before} chars over limit {DATA_MAX} — replaced")
     return json.dumps({"gekuerzt_zeichen": size_before, "grund": f"daten over {DATA_MAX} chars"})
+
+
+def load_keyed(kind: str, key: str) -> MemoryObject | None:
+    """An object with a known key (a conversation's serial, a skill's name, the router model): under its English id (0.67.0 and later)
+    or under the German one it got before."""
+    for oid in names.ids(kind, key):
+        o = load(oid)
+        if o is not None:
+            return o
+    return None
+
+
+def keyed_id(kind: str, key: str) -> str:
+    """The id of the object with this key: the existing one (German or English), else the English id a new object gets."""
+    with lock:
+        for oid in names.ids(kind, key):
+            if db().execute("SELECT 1 FROM object WHERE id = ?", (oid,)).fetchone():
+                return oid
+    return names.new_id(kind, key)
 
 
 def load_many(oids: list[str]) -> dict[str, MemoryObject]:

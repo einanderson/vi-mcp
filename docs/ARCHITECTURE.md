@@ -67,7 +67,8 @@ access goes through one process, a later switch is a change in `memory.py`, not 
 > database of 0.66 or older is renamed when it is opened, after a backup copy (SQLite `<file>.pre-0.67.0.db`, PostgreSQL schema
 > `<schema>_pre_0_67_0`); the counts per class go into the table `name_migration`, the log and `vi-mcp db status`. Still German until
 > the next steps of the same migration: JSON keys in object data (`quelle`, `inhalt`, …) and the system values of hashtags (`ok:ja`,
-> `state:offen`, …). Object ids keep the scheme of 0.66 (`erkenntnis:…`): they are identifiers, referenced everywhere.
+> `state:offen`, …). Object ids: an existing id keeps its German prefix (`erkenntnis:…`), a new object gets the English
+> one (`insight:…`); every lookup accepts both (`names.ids`, `id_has_kind`, `memory.load_keyed`/`keyed_id`).
 > The P2P wire format (signed logbook entries, content hashes) stays German for good: every signature and hash of the network depends
 > on it, so it is translated at the network boundary. The configuration files are English since 0.51.0 (keys and network kinds `free`/`open`/`company`); the
 > German keys of older files are still read (`config.normalize`, `net_service.english_file`) and rewritten in English at package install. The MCP interface (tool names, parameters, enum values) is English since

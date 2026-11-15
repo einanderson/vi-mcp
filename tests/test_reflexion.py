@@ -56,7 +56,7 @@ def test_reflection_creates_checked_insight_test(gd, monkeypatch):
     e = [o for _, o, _g in g.recall("origin:schlaf-llm", viewer=None)][0]
     assert e.mode == "test" and e.instance == g.SERVER_INSTANCE and "Timeout" in e.text
     assert {"topic:timeout", "host:cue1", "skill:graylog", "mode:test"} <= set(e.hashtags)
-    assert sorted(b for b, _ in e.edges() if b.startswith("erfahrung:")) == sorted(ids)
+    assert sorted(b for b, _ in e.edges() if b.startswith("experience:")) == sorted(ids)
     # step 4 (template) did NOT abstract the same cluster twice: reflection runs first and counts as schema
     assert b.data["schritte"]["4_abstraktion"] == 0
     assert sleep_cycle.run("Test 2").data["schritte"]["4b_reflexion"]["neu"] == 0  # idempotent per cluster and day

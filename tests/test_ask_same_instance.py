@@ -68,7 +68,7 @@ def test_the_hook_of_the_asker_never_gets_its_own_question(gd):
     b, b_hook = session.begin(I, "claude-code 1"), session.begin(I, "claude-code-hook 1")
     call(a_hook, "vi_before", {"tool": "vi_ask", "args": ASK})  # the hook announces the agent's call …
     qid = _qid(call(a, "vi_ask", ASK))  # … and the agent's own call pairs both
-    assert session.canonical(a_hook.serial) == a.serial and g.load(f"gespraech:{a.serial}").data["partner"] == a_hook.serial
+    assert session.canonical(a_hook.serial) == a.serial and g.load_keyed("conversation", a.serial).data["partner"] == a_hook.serial
     assert not asked(a_hook)  # the asker's hook stands for the asker
     assert qid in asked(b_hook)[0]
     ans = {"id": qid, "text": "Session b holds the file open in its worktree", "evidence": "lsof on the file"}

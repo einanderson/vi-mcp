@@ -119,7 +119,7 @@ def code_run() -> dict:
             ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND mode = 'active' AND conversation IS ? ORDER BY ts, rowid", (serial,))]
         mem_objects = g.load_many(ids)
         entry_batch = [mem_objects[i] for i in ids if i in mem_objects]
-        signals = list(open_[serial].signals) if serial in open_ else ((g.load(f"gespraech:{serial}").data.get("signale", []) if serial and g.load(f"gespraech:{serial}") else []))
+        signals = list(open_[serial].signals) if serial in open_ else ((getattr(g.load_keyed("conversation", serial) if serial else None, "data", None) or {}).get("signale", []))
         grades = rate_conversation([_form(o) for o in entry_batch], signals)
         changes = []
         for o in entry_batch:
@@ -198,7 +198,7 @@ def model_run(limit: int = MODEL_PER_RUN) -> dict:
         if n >= limit:
             break
         d, serial = o.data, o.data.get("serial")
-        oid = f"bewertung:modell-{serial}-v{MODEL_VERSION}"
+        oid = g.keyed_id("rating", f"modell-{serial}-v{MODEL_VERSION}")
         if d.get("zustand") not in ("beendet", "abgelaufen", "unterbrochen") or d.get("aufrufe", 0) < MIN_TURNS_MODEL or g.load(oid):
             continue
         turns = _log_output(serial)

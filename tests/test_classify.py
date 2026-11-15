@@ -118,7 +118,7 @@ def test_student_learns_the_labels_labels_new_objects_and_is_audited(gd, llm):
     by_llm = [o for o in labelled if o.data["klasse"]["zustand"] == "einig"]
     assert len(calls) == 2 * len(by_llm) == 2 * out["einig"]  # the LLM was asked only for the objects it labelled (audits or unsure)
     assert out["geprueft"] == out["einig"] and out["gleich"] == out["geprueft"]  # every LLM call here audited a sure student label
-    assert g.load(classify.STUDENT).data["pruefung"] == {"geprueft": out["geprueft"], "gleich": out["gleich"]}
+    assert g.load(classify.student_id()).data["pruefung"] == {"geprueft": out["geprueft"], "gleich": out["gleich"]}
 
 
 def test_student_needs_enough_agreed_labels_and_stays_test_below_the_gate(gd, llm):

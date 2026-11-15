@@ -22,7 +22,7 @@ import time
 import urllib.parse
 
 from . import __version__
-from . import memory as g
+from . import memory as g, names
 
 BASE = "/web"
 PAGE_SIZE = 50
@@ -133,7 +133,7 @@ def _imports(net: str, words: list[str] | None = None, limit: int = PAGE_SIZE) -
     out = []
     for _s, o, _g in hits:
         h = o.data.get("herkunft") or {}
-        if (h.get("netz") or "standard") != net or o.mode not in ("active", "test") or o.visibility != "shared" or o.id.startswith("erkenntnis:post-"):
+        if (h.get("netz") or "standard") != net or o.mode not in ("active", "test") or o.visibility != "shared" or (names.id_has_kind(o.id, "insight") and names.id_key(o.id).startswith("post-")):
             continue
         out.append(o)
         if len(out) >= limit:
@@ -438,7 +438,7 @@ def knowledge_item(base: str, oid: str) -> str | None:
     o = g.load(oid)
     h = (o.data.get("herkunft") or {}) if o else {}
     if (not o or "origin:p2p" not in o.hashtags or o.kind not in KNOWLEDGE_KINDS or o.mode not in ("active", "test") or o.visibility != "shared"
-            or (h.get("netz") or "standard") not in public_nets() or o.id.startswith("erkenntnis:post-")):
+            or (h.get("netz") or "standard") not in public_nets() or (names.id_has_kind(o.id, "insight") and names.id_key(o.id).startswith("post-"))):
         return None
     tags = " ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("publisher:", "reviewer:", "net:")))
     nl = net_score.line(o)

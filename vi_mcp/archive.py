@@ -27,7 +27,7 @@ import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import memory as g
+from . import memory as g, names
 from .log_output import log
 
 DAYS = {"experience": 30, "sleep": 90, "insight": 180, "rule": 180, "search": 180, "skill": 180, "image": 180}
@@ -37,7 +37,7 @@ STUB_CHARS = 200
 #: Free share of the main file from which it is rewritten
 VACUUM_FROM = 0.25
 #: Edges to these targets protect an experience if they are evidence
-EVIDENCE_TARGETS = ("erkenntnis:", "regel:", "suche:", "skill:", "selbst:")
+EVIDENCE_TARGETS = names.id_prefixes("insight", "rule", "search", "skill", "self")  # ids of 0.66 (German) and later (English)
 
 _con = None  # sqlite3.Connection or db.PgConnection
 _fpath: Path | None = None
@@ -166,7 +166,7 @@ def _unused() -> list[tuple[str, str]]:
             outputs += [(r[0], f"housekeeping: {kind}, {DAYS[kind]} days neither recalled, changed nor shown") for r in g.db().execute(
                 "SELECT id FROM object o WHERE kind = ? AND mode NOT IN ('archived', 'quarantine') AND last_at < ? "
                 "AND COALESCE(json_extract(data, '$.zuletzt_gezeigt'), '') < ? "
-                "AND NOT EXISTS (SELECT 1 FROM edge k WHERE k.a = o.id AND k.b LIKE 'selbst:%')", (kind, bound, bound))]
+                "AND NOT EXISTS (SELECT 1 FROM edge k WHERE k.a = o.id AND (k.b LIKE 'selbst:%' OR k.b LIKE 'self:%'))", (kind, bound, bound))]
     return outputs
 
 
@@ -175,7 +175,7 @@ def _raw_histories() -> int:
     open_ = {s.serial for s in session.open_items()}
     bound = _bound(DAYS_RAW)
     with g.lock:
-        lines = g.db().execute("SELECT r.serial, r.raw, r.length FROM conversation_raw r JOIN object o ON o.id = 'gespraech:' || r.serial "
+        lines = g.db().execute("SELECT r.serial, r.raw, r.length FROM conversation_raw r JOIN object o ON o.id IN ('gespraech:' || r.serial, 'conversation:' || r.serial) "  # ids of 0.66 and later
                                 "WHERE o.last_at < ?", (bound,)).fetchall()
     n = 0
     for serial, content_raw, length in lines:

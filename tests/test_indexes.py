@@ -145,8 +145,8 @@ def test_an_index_gets_its_own_model_only_when_it_beats_the_shared_one(gd):
     _actions("cue-print", 1200, True, h.id, rng)  # in cue-print it helps
     r = learning.train_index("cue-print", "test")
     assert r["zustand"] == "aktiv", r.get("urteil")
-    assert r["gegen_gemeinsam"]["differenz"] < 0 and learning.active("cue-print").id == "modell:router@cue-print"
-    assert g.load("modell:router@cue-print").idx == "cue-print"
+    assert r["gegen_gemeinsam"]["differenz"] < 0 and learning.active("cue-print").id == "model:router@cue-print"
+    assert g.load("model:router@cue-print").idx == "cue-print"
     small = learning.train_index("tiny", "test")
     assert small["zustand"] == "zu_wenig_daten" and learning.active("tiny") is None
     assert [x["index"] for x in learning.train_indexes("test")] == ["cue-print"]  # global is the shared model, not an index model

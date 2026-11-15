@@ -673,7 +673,7 @@ def _create(b: checks.Finding, header: dict, sha: str, net: str = STANDARD) -> g
         tags += [names.canonical_tag(t) for t in o["reize"]]
     if o["art"] == "reflex":
         data.update(name=f"p2p_{name.replace('-', '_')}_{o['name']}"[:40], art="vorher", code=o["code"], laeufe=0, fehler=0)
-    oid = f"{o['art']}:p2p-{name}-{short}"
+    oid = g.keyed_id(names.english(names.KINDS, o["art"]), f"p2p-{name}-{short}")
     return g.new_object(names.english(names.KINDS, o["art"]), o["text"], sorted(set(tags)), data, importance=o["wichtigkeit"], who=f"import@{name}", reason=f"import from {name}",
                           oid=oid, mode="quarantine", instance=instance, visibility="internal" if is_company(net) else None)
 

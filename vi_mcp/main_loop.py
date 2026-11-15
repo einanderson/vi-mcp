@@ -34,7 +34,7 @@ def step() -> int:
             "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'error:%' WHERE o.kind = 'experience' AND o.ts >= ? "
             "GROUP BY t1.tag, t2.tag HAVING COUNT(*) >= ?", (since, ERROR_RULE_MIN)).fetchall()
         for tool_tag, error_tag, n, n_inst, instances in rows:
-            rid = f"regel:{g.hash_value(tool_tag, error_tag, 'wiederholter-fehler')}"
+            rid = g.keyed_id("rule", g.hash_value(tool_tag, error_tag, "wiederholter-fehler"))
             collective = n_inst >= 2
             o = g.load(rid)
             data = {"treffer": n, "instanzen": sorted((instances or "").split(",")),
