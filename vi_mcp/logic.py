@@ -347,7 +347,7 @@ def verify(source: str, expected: list[str], reference: str, question: str, inst
     with g.lock:
         raw = _run(source, viewer=instance)
         r = {**check_result(raw, belief), "ausfuehrung_hash": raw["ausfuehrung_hash"]}
-        if r["zustand"] in ("zeitlimit", "widerspruch") or not r.get("vollstaendig") or (r.get("importiert") or {}).get("abgeschnitten"):
+        if r["zustand"] in ("zeitlimit", "widerspruch", "unloesbar") or not r.get("vollstaendig") or (r.get("importiert") or {}).get("abgeschnitten"):
             raise LogicError("verify needs a complete execution without timeout, contradiction or cut objects")
         projections = [{a for a in m if a.startswith(predicate + "(") or a == predicate} for m in raw["map"]]
         if any(a != projections[0] for a in projections):
@@ -405,7 +405,7 @@ def store_proposals(source: str, instance: str, rule_set: str | None = None) -> 
     tombstone. The same proposal again is counted, not stored twice."""
     from . import memory as g
     r = check(source, viewer=instance)
-    if r["zustand"] in ("zeitlimit", "widerspruch"):
+    if r["zustand"] in ("zeitlimit", "widerspruch", "unloesbar"):
         raise LogicError(f"no proposals from a program in state {r['zustand']}: {r['grund']}")
     _program, stmts = translate(source)
     by_nr = {s["nr"]: s["text"] for s in stmts if "nr" in s}

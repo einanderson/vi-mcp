@@ -3,6 +3,23 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What was fixed
+
+- **The logic engine names contradictions correctly.** Codex's review on 15.11.2026, done before the philosophical seed builds on
+  the engine, reproduced four errors, all fixed:
+  - `p. -p. q.` lost the unrelated fact q; now p is `both` and q is `true`.
+  - A contradiction in a predicate of arity 2 or more (`p(a,b)` with `-p(a,b)`) went undetected, because the regex detectors covered
+    arity 0 and 1 only.
+  - A quoted string such as `"-x"` was read as a negation.
+  - A program with no stable model for another reason, such as the odd loop `a <= ~a`, was reported as a contradiction. It now gets
+    its own state `unloesbar`, and every query returns `no_model`.
+  
+  Strong negation is now renamed through clingo's own AST, for every arity, over all answer sets. Two answer sets that disagree give
+  `undetermined`, never Belnap `both`.
+  Evidence: `tests/test_logic.py::test_contradictions_are_named_for_every_arity_and_never_confused_with_no_model_or_ambiguity`.
+
 ## 0.65.0 — 2026-11-15 — knowledge stored training-ready; the knowledge probe in the kit; fine-tuning from zero
 
 ### What was fixed

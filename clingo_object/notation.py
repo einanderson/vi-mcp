@@ -463,17 +463,52 @@ def proposals(model: set[str]) -> list[dict]:
     return out
 
 
-def _contradictions(program: str) -> list[str]:
-    """Which atoms are derived together with their strong negation — solved again with strong negation renamed, so the contradiction
-    is named instead of making the whole answer vanish (Belnap's 'both')."""
-    renamed = re.sub(r"(?<![\w\"])-([a-z][a-z0-9_]*)", r"neg__\1", program)
-    preds = set(re.findall(r"neg__([a-z][a-z0-9_]*)", renamed))
-    extra = "\n".join(f"vi__both({p}(X)) :- {p}(X), neg__{p}(X).\nvi__both({p}) :- {p}, neg__{p}." for p in preds)
+NEG = "neg__"
+
+
+def _signed_view(program: str) -> dict:
+    """The program with strong negation turned into ordinary predicates (p(…) / neg__p(…)), so p and -p may hold together and the
+    contradiction is NAMED instead of making the whole answer vanish (Belnap's 'both').
+
+    Codex's review (15.11.2026) reproduced what the former regex version got wrong: `p. -p. q.` lost the unrelated fact q;
+    `p(a,b). -p(a,b).` was not detected (only arity 0 and 1 had detectors); a quoted "-x" was read as a negation. Now: clingo's own
+    AST (strings untouched, every arity), all answer sets, and atoms mapped back to `-p(…)`. If even this view has no stable model,
+    the program has none for another reason (an odd loop such as `a :- not a`) — that is not a contradiction."""
+    from clingo import ast
+    preds: set[tuple[str, int]] = set()
+
+    class Rename(ast.Transformer):
+        def visit_SymbolicAtom(self, node):
+            sym = node.symbol
+            if sym.ast_type == ast.ASTType.UnaryOperation and sym.operator_type == ast.UnaryOperator.Minus \
+                    and sym.argument.ast_type == ast.ASTType.Function:
+                f = sym.argument
+                preds.add((f.name, len(f.arguments)))
+                return node.update(symbol=f.update(name=NEG + f.name))
+            return node
+    out: list[str] = []
     try:
-        r = _solve(renamed + "\n" + extra, limit=1)
+        ast.parse_string(program, lambda st: out.append(str(Rename()(st))))
+    except RuntimeError as e:
+        raise LogicError(f"the program could not be parsed: {e}") from None
+    extra = []
+    for name, n in sorted(preds):
+        args = "(" + ",".join(f"X{i}" for i in range(n)) + ")" if n else ""
+        extra.append(f"vi__both({name}{args}) :- {name}{args}, {NEG}{name}{args}.")
+    r = _solve("\n".join(out + extra))
+    back = lambda a: "-" + a[len(NEG):] if a.startswith(NEG) else a
+    models = [{back(a) for a in m if not a.startswith("vi__both(")} for m in r["models"]]
+    both = [sorted(a[9:-1] for a in m if a.startswith("vi__both(")) for m in r["models"]]
+    return {"models": models, "both_per_model": both, "both": sorted({a for b in both for a in b}),
+            "satisfiable": bool(r["models"]), "complete": r["complete"]}
+
+
+def _contradictions(program: str) -> list[str]:
+    """Atoms derived together with their strong negation, in any answer set of the signed view."""
+    try:
+        return _signed_view(program)["both"]
     except LogicError:
         return []
-    return sorted({a[9:-1] for m in r["models"] for a in m if a.startswith("vi__both(")})
 
 
 def _query(q: str) -> str:
@@ -505,7 +540,7 @@ def reference_answers(expected, predicate: str = "ans") -> list[str]:
 
 def lines(r: dict) -> list[str]:
     """A check result for people and agents."""
-    if r["zustand"] in ("zeitlimit", "widerspruch"):
+    if r["zustand"] in ("zeitlimit", "widerspruch", "unloesbar"):
         return [f"state: {r['zustand']} — {r['grund']}"] + [f"  both: {a}" for a in r.get("widersprueche", [])]
     out = [f"state: {'violated' if r['zustand'] == 'verletzt' else 'satisfied'} · {r['aussagen']} statements · stable models: {r['modelle']}"
            + (f" · most probable: {r['wahrscheinlichste']} ({r['wahrscheinlichkeit']})" if "wahrscheinlichste" in r else "")
@@ -586,9 +621,13 @@ def check_result(r: dict, belief=prior_belief) -> dict:
         return {"zustand": "zeitlimit", "grund": f"no answer within {r['timeout_s']} s — the search was stopped", "aussagen": len(stmts),
                 **({"importiert": r["importiert"]} if r.get("importiert") else {})}
     if not r["models"]:
-        # only strong negation between hard rules can make the translated program unsatisfiable (never(…) only marks): p and -p together
-        return {"zustand": "widerspruch", "grund": "the program derives an atom and its strong negation (p and -p) — see contradictions",
-                "widersprueche": _contradictions(r["program"]), "aussagen": len(stmts), "hinweise": r["notes"]}
+        both = _contradictions(r["program"])
+        if both:  # an atom and its strong negation together (Belnap 'both'): named, never resolved silently
+            return {"zustand": "widerspruch", "grund": "the program derives an atom and its strong negation (p and -p) — see contradictions",
+                    "widersprueche": both, "aussagen": len(stmts), "hinweise": r["notes"]}
+        # no stable model for another reason — e.g. an odd loop through default negation (a <= ~a); that is not a contradiction
+        return {"zustand": "unloesbar", "grund": "the program has no stable model and no atom with its strong negation — e.g. an odd loop "
+                "through default negation (a <= ~a)", "aussagen": len(stmts), "hinweise": r["notes"]}
     best = r["map"]
     common = set.intersection(*best)
     violated = sorted(int(a[13:-1]) for a in common if a.startswith("vi__violated("))
@@ -630,9 +669,20 @@ def check_result(r: dict, belief=prior_belief) -> dict:
 def ask_result(r: dict, qs: list[str]) -> dict:
     """Answers for (already translated) query atoms: true, false, both, unknown, not_derived — or undetermined across answer sets."""
     if not r["models"]:
-        both = set(_contradictions(r["program"]))
-        return {q: ("both" if q.lstrip("-") in both else "unknown") for q in qs}
-    models = r["map"]
+        # the signed view keeps every unrelated fact (p. -p. q. → p both, q true); without any stable model the answer is named
+        try:
+            view = _signed_view(r["program"])
+        except LogicError:
+            view = {"satisfiable": False}
+        if not view["satisfiable"]:
+            return {q: "no_model" for q in qs}
+        return _values(view["models"], qs, r["program"])
+    return _values(r["map"], qs, r["program"])
+
+
+def _values(models: list[set[str]], qs: list[str], program: str) -> dict:
+    """Per query atom over answer sets: true, false, both (p and -p in every answer set), undetermined (answer sets disagree),
+    not_derived or unknown. Ambiguity between answer sets is never 'both' (Codex's review 15.11.2026)."""
     out = {}
     for q in qs:
         neg, base = _split(q)
@@ -640,13 +690,16 @@ def ask_result(r: dict, qs: list[str]) -> dict:
         neg_all = all(f"-{base}" in m for m in models)
         pos_some = any(base in m for m in models)
         neg_some = any(f"-{base}" in m for m in models)
+        if pos_all and neg_all:
+            out[q] = "both"
+            continue
         if pos_all and not neg_some:
             v = "true"
         elif neg_all and not pos_some:
             v = "false"
         elif pos_some or neg_some:
             v = "undetermined"
-        elif re.search(r"\b" + re.escape(base.split("(")[0]) + r"\b", PRELUDE + r["program"]):
+        elif re.search(r"\b" + re.escape(base.split("(")[0]) + r"\b", PRELUDE + program):
             v = "not_derived"  # the program defines the predicate, this instance does not follow (negation as failure) — not "unknown"
         else:
             v = "unknown"  # the program says nothing about the predicate (Kleene: no value)

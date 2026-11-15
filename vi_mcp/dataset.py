@@ -233,7 +233,7 @@ def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None
         except Exception as e:  # noqa: BLE001 — a rule set that no longer solves is counted, not an example
             skipped[f"logic: rule set does not solve ({type(e).__name__})"] += 1
             continue
-        if r["zustand"] in ("zeitlimit", "widerspruch") or not r.get("vollstaendig", False) or (r.get("importiert") or {}).get("abgeschnitten"):
+        if r["zustand"] in ("zeitlimit", "widerspruch", "unloesbar") or not r.get("vollstaendig", False) or (r.get("importiert") or {}).get("abgeschnitten"):
             skipped[f"logic: rule set in state {r['zustand']}"] += 1
             continue
         proof = o.data["logik"].get("pruefung") or {}

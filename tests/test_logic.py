@@ -230,3 +230,17 @@ def test_a_long_list_of_conclusions_says_how_many_there_are():
     assert r["folgerungen_gesamt"] == 250 and len(r["folgerungen"]) == 200
     line = next(x for x in logic.lines(r) if x.strip().startswith("follows"))
     assert line.strip().startswith("follows (250, the first 200 kept in the result)") and "210 more" in line
+
+
+def test_contradictions_are_named_for_every_arity_and_never_confused_with_no_model_or_ambiguity():
+    """Codex's review of the engine (15.11.2026, before the philosophical seed builds on it): `p. -p. q.` lost q; p(a,b) with -p(a,b)
+    went undetected (regex detectors for arity 0 and 1 only); a quoted "-x" counted as a negation; `a <= ~a` was reported as a
+    contradiction. Now: clingo's AST, every arity, unrelated facts kept, no stable model named separately, ambiguity is not 'both'."""
+    from clingo_object import notation as n
+    assert n.ask("p\n-p\nq", ["p", "q"]) == {"p": "both", "q": "true"}
+    assert n.check("p(a,b)\n-p(a,b)")["widersprueche"] == ["p(a,b)"] and n.ask("p(a,b)\n-p(a,b)", ["p(a,b)"]) == {"p(a,b)": "both"}
+    assert n.check('p("-x")')["zustand"] == "erfuellt" and n.ask('p("-x")', ['p("-x")']) == {'p("-x")': "true"}
+    r = n.check("a <= ~a")
+    assert r["zustand"] == "unloesbar" and "widersprueche" not in r and n.ask("a <= ~a", ["a"]) == {"a": "no_model"}
+    assert n.ask("p <= ~q\nq <= ~p", ["p"]) == {"p": "undetermined"}  # two answer sets disagree: ambiguity, not Belnap 'both'
+    assert n.ask("p(a)", ["p(b)"]) == {"p(b)": "not_derived"}  # procedural, never 'false'
