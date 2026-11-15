@@ -361,14 +361,17 @@ VI: fine-tune an AI with the knowledge of this VI. When the user says they want 
 
 ### `vi_philosophy`
 
-VI: equip an AI with a philosophy. A philosophy is a package: principles in prose and the same principles as a clingo-object rule set (the seed), proven by test worlds. action guide (default): the technique step by step; list: built-in and installed philosophies; show: principles, inputs, answers and seed of one; check: every rule of the format (vocabulary, no default negation outside closure, words for every rule, worlds, coverage, counterfactuals); evaluate: the seed's verdict on facts; install: check and store it in the VI as a rule set.
+VI: equip an AI with a philosophy. A philosophy is a package: principles in prose and the same principles as a clingo-object rule set (the seed), proven by test worlds. action guide (default): the technique step by step; list: built-in and installed philosophies; show: principles, inputs, answers and seed of one; check: every rule of the format (vocabulary, no default negation outside closure, words for every rule, worlds, coverage, counterfactuals); evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per philosophy); install: check and store it in the VI as a rule set; use: bind an installed philosophy (its hash) to yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes visibility, review or tool rights.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string (guide, list, show, check, evaluate, install) |  | guide (default), list, show, check, evaluate or install (German: `aktion`) |
-| `name` | string |  | a built-in philosophy (e.g. kollektiv) or a package directory on the server |
+| `action` | string (guide, list, show, check, evaluate, install, use, bound) |  | guide (default), list, show, check, evaluate, install, use or bound (German: `aktion`) |
+| `name` | string |  | a built-in philosophy (e.g. kollektiv, messung) or a package directory on the server |
 | `facts` | string |  | evaluate: facts in clingo-object notation, one per line |
 | `visibility` | string (shared, internal) |  | install: default internal (German: `sicht`) |
+| `instance` | string |  | use: only yourself (others are bound by an administrator on the server) |
+| `index` | string |  | use/bound/evaluate: an index instead of the instance |
+| `off` | boolean |  | use: end the binding (kept as a tombstone) |
 
 ### `vi_incubator`
 

@@ -163,3 +163,163 @@ def test_the_language_is_learned_on_rule_sets_that_share_nothing_with_any_seed()
     text = " ".join(m["content"] for e in ex for m in e["messages"])
     assert not any(f"{p}(" in text for p in seed_vocabulary if p not in ("forbidden", "obligatory", "may"))
     assert "cannot be derived" in text and "must not" in text  # default negation and duties are taught in words
+
+
+# ── philosophy packages v2: defeasible priorities, a second package, binding (Codex's review frage:e05f78b192e7fdb964119b82) ────────
+
+def test_the_priority_profile_rules_are_pinned_to_their_name():
+    """The profile's rules run with every seed that names it, and the package hash covers them; changing them under the same name would
+    change verdicts of packages whose seed did not change. A new semantics needs a new name (maximal-candidates-v2)."""
+    import hashlib
+    rules = ph.PRIORITY_PROFILES["maximal-candidates-v1"]["rules"]
+    assert hashlib.sha256(rules.encode()).hexdigest() == "2f8b05ca2c8c0ec1ab3a5b00870bdb6ac09c6634f592d751acb9f9ecd36d2674"
+    assert ph.package_hash(ph.load("kollektiv")) == "8d213463568995558e093946b054f2b5fa069978f895c78e67867d653db0589a"  # unchanged by v2
+
+
+TIE = ("evidence(q, pos, a, measured)\napplicable(a, q)\nrank(a, 1, 1)\nobserved(a, 10)\n"
+       "evidence(q, neg, b, measured)\napplicable(b, q)\nrank(b, 1, 1)\nobserved(b, 20)\nclosed(q)\n")
+
+
+def test_codex_counterexamples_under_maximal_candidates():
+    """Each counterexample of the review, what it gives now. Cycles are INVALID with a reported violation and no value — never n."""
+    from clingo_object import notation as n
+    pkg = ph.load("messung")
+    # a > b > a: invalid, reported, no verdict, the raw conflict kept
+    two = ph.evaluate(pkg, TIE + "prefer(a, b, q)\nprefer(b, a, q)")
+    assert two["answers"] == {"value": [], "acceptance": ["acceptance(q,invalid)"]} and two["violations"] == ["never(invalid(G))"]
+    assert two["priority"]["bad"] == ["bad(q,cycle)"] and two["priority"]["raw_conflict"] == ["raw_conflict(q)"]
+    assert two["priority"]["effective"] == [] and "obligatory(report_order(q))" in two["duties"]
+    # 3-cycle
+    three = ph.evaluate(pkg, TIE + "evidence(q, pos, c, measured)\napplicable(c, q)\nrank(c, 1, 1)\n"
+                                   "prefer(a, b, q)\nprefer(b, c, q)\nprefer(c, a, q)")
+    assert three["answers"]["acceptance"] == ["acceptance(q,invalid)"] and three["answers"]["value"] == []
+    # "superior OR newer" as two independent rules gives higher(a,b) AND higher(b,a) — the raw counterexample, reproduced …
+    raw = n.check("authority(a, 2)\nauthority(b, 1)\ntime(a, 10)\ntime(b, 20)\n"
+                  "higher(X, Y) <= authority(X, A) & authority(Y, B) & (A > B)\nhigher(X, Y) <= time(X, T) & time(Y, U) & (T > U)")
+    assert {"higher(a,b)", "higher(b,a)"} <= {"".join(x.split()) for x in raw["folgerungen"]}
+    # … and under the profile's one lexicographic tuple only authority decides, recency never reverses it
+    lex = ph.evaluate(pkg, TIE.replace("rank(a, 1, 1)", "rank(a, 2, 1)") + "supersedes(q)")
+    assert lex["answers"]["value"] == ["value(q,t)"] and lex["priority"]["suppressed"] == ["suppressed(b,a,q)"]
+    assert lex["violations"] == [] and lex["priority"]["raw_conflict"] == ["raw_conflict(q)"]
+    # a tie stays a conflict: both channels effective, nothing suppressed
+    tie = ph.evaluate(pkg, TIE)
+    assert tie["answers"]["value"] == ["value(q,b)"] and tie["priority"]["suppressed"] == [] and len(tie["priority"]["effective"]) == 2
+    # recency decides only where supersession is permitted, by observation time — the arrival time never
+    newer = ph.evaluate(pkg, TIE + "supersedes(q)\narrived(a, 99)\narrived(b, 1)")
+    assert newer["answers"]["value"] == ["value(q,f)"] and newer["priority"]["suppressed"] == ["suppressed(a,b,q)"]
+
+
+@pytest.mark.parametrize("mutate, message", [
+    (lambda p: p.update(seed=p["seed"] + "higher(R, T, G) <= observed(R, U) & observed(T, V) & candidate(R, G, P) & candidate(T, G, Q) & (U > V)\n"),
+     "the seed derives higher, which the priority profile owns"),
+    (lambda p: p.update(seed=p["seed"] + "candidate(E, S, pos) <= effective(E, S, neg)\n"), "derives candidate from the profile's outputs"),
+    (lambda p: p["vocabulary"].update(rank={"arity": 3, "kind": "input"}), "vocabulary rank: owned by the priority profile"),
+    (lambda p: p["profile"].update(priority="whatever-wins"), "profile.priority 'whatever-wins' unknown"),
+    (lambda p: p["worlds"][-1].update(facts=p["worlds"][-1]["facts"] + "prefer(e1, e1, s1)\n"), "unexpected violation"),
+])
+def test_check_keeps_the_order_out_of_the_seeds_hands(mutate, message):
+    pkg = copy.deepcopy(ph.load("messung"))
+    mutate(pkg)
+    r = ph.check(pkg)
+    assert not r["ok"] and any(message in e for e in r["errors"]), r["errors"]
+
+
+def test_a_second_philosophy_passes_the_same_contracts_and_the_engine_is_not_wired_to_the_first(tmp_path):
+    """messung varies admissibility (only measurement admits), acceptance (one measurement suffices) and duties — same format, proof
+    and execution contracts. It checks from a directory and with the first package's module impossible to import."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    pkg = ph.load("messung")
+    r = ph.check(pkg)
+    assert r["ok"], r["errors"]
+    assert all(r["coverage"]["acceptance"].values()) and all(r["coverage"]["value"].values())
+    assert sum(1 for w in pkg["worlds"] if w.get("counterfactual_of")) >= 8
+    assert not set(pkg["vocabulary"]) & {"line", "author", "peer_offers", "foreign", "unreviewed", "source", "verified"}
+    back = ph.load(str(ph.write(pkg, str(tmp_path / "m"))))
+    assert ph.check(back)["ok"] and ph.package_hash(back) == ph.package_hash(pkg)
+    root = Path(__file__).resolve().parent.parent
+    code = ("import sys; sys.modules['clingo_object.philosophy_kollektiv'] = None\n"
+            "from clingo_object import philosophy as ph\n"
+            f"r = ph.check(ph.load({str(tmp_path / 'm')!r})); assert r['ok'], r['errors']\n"
+            "assert ph.evaluate(ph.load('messung'), 'evidence(q, pos, d, documented)\\nclosed(q)')['answers']['acceptance'] == ['acceptance(q,unmeasured)']\n"
+            "print('ok')")
+    out = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
+    assert out.stdout.strip() == "ok", out.stderr
+    engine = (root / "clingo_object" / "philosophy.py").read_text(encoding="utf-8").split("GUIDE = ")[0]
+    assert not any(f"{p}(" in engine for p in ("line", "author", "peer_offers", "unreviewed", "verified"))
+    # the documented evidence never admits, however much of it
+    many = ph.evaluate(pkg, "".join(f"evidence(q, pos, d{i}, documented)\n" for i in range(6)) + "evidence(q, pos, h, hearsay)\nclosed(q)")
+    assert many["answers"]["value"] == ["value(q,n)"] and "obligatory(measure(q))" in many["duties"]
+
+
+def test_the_second_philosophy_trains_through_the_same_generator():
+    """philosophy_train needs no change per package: messung's worlds are drawn (one rank per event), judged by seed plus profile,
+    spoken and read back exactly; its own system prompt is used."""
+    import random
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load("messung")
+    rnd = random.Random(5)
+    values, acc = set(), set()
+    for _ in range(200):
+        facts = pt.draw_world(pkg, rnd)
+        assert len({f[1] for f in facts if f[0] == "rank"}) == sum(1 for f in facts if f[0] == "rank")  # one rank per event
+        v = pt.verdict(pkg, facts)
+        sc = pt.score(pkg, v, pt.parse_verdict(pkg, pt.speak(pkg, v)))
+        assert sc["duties_exact"] and all(x["wrong"] == x["missing"] == 0 for x in sc["answers"].values())
+        values |= {a.get("value") for a in v["answers"].values()}
+        acc |= {a.get("acceptance") for a in v["answers"].values()}
+    assert values >= {"t", "f", "b", "n"} and acc >= {"accepted", "rejected", "unresolved", "unmeasured"}
+    ex = pt.examples(pkg, 20, seed=1)
+    assert ex[0]["messages"][0]["content"] == pkg["speak"]["system"]
+    prose = pt.prose_examples(pkg)
+    m1 = prose[0]["messages"][1]["content"]  # the block of M1 stops at "# M2" (principle ids need not start with P)
+    assert m1.endswith("unmeasured_claim(S) <= held(S, E, M)") and "complete(" not in m1 and prose[0]["messages"][2]["content"].startswith("M1 ")
+
+
+def test_binding_names_philosophy_and_hash_and_keeps_two_verdicts_apart(gd, tmp_path):
+    from vi_mcp import memory as g
+    from vi_mcp import philosophy, tools
+    with pytest.raises(tools.Rejected, match="not installed"):
+        tools.call_tool("vi_philosophy", {"action": "use", "name": "messung"}, "a", False)
+    for name in ("kollektiv", "messung"):
+        tools.call_tool("vi_philosophy", {"action": "install", "name": name}, "a", False)
+    assert "bound" in tools.call_tool("vi_philosophy", {"action": "use", "name": "kollektiv"}, "a", False)
+    assert "bound" in tools.call_tool("vi_philosophy", {"action": "use", "name": "messung"}, "a", False)
+    assert "already bound" in tools.call_tool("vi_philosophy", {"action": "use", "name": "messung"}, "a", False)
+    rows = philosophy.bindings("a")
+    assert [(b["name"], b["hash"], b["state"]) for b in rows] == [("kollektiv", ph.package_hash(ph.load("kollektiv")), "current"),
+                                                                 ("messung", ph.package_hash(ph.load("messung")), "current")]
+    assert philosophy.bindings("b") == []  # another instance is not bound
+    shown = tools.call_tool("vi_philosophy", {"action": "bound"}, "a", False)
+    assert "kollektiv" in shown and "messung" in shown and ph.package_hash(ph.load("messung"))[:16] in shown
+    # two philosophies, one fact base: verdicts namespaced, never merged
+    import json
+    facts = "line(q, pos, fam_a, x)\nline(q, pos, fam_b, y)\nauthor(q, z)\nevidence(q, pos, d1, documented)\nclosed(q)"
+    both = json.loads(tools.call_tool("vi_philosophy", {"action": "evaluate", "facts": facts}, "a", False))
+    assert set(both) == {"kollektiv", "messung"}
+    assert both["kollektiv"]["verdict"]["answers"]["acceptance"] == ["acceptance(q,accepted)"]
+    assert both["messung"]["verdict"]["answers"]["acceptance"] == ["acceptance(q,unmeasured)"]
+    assert both["kollektiv"]["hash"] != both["messung"]["hash"]
+    # a seed never overrides tool rights: an instance binds only itself; the binding is internal knowledge
+    with pytest.raises(tools.Rejected, match="binds only itself"):
+        tools.call_tool("vi_philosophy", {"action": "use", "name": "messung", "instance": "b"}, "a", False)
+    with pytest.raises(tools.Rejected):
+        tools.call_tool("vi_philosophy", {"action": "bound"}, "offen", False)
+    assert g.load(rows[0]["binding"]).visibility == "intern"
+    # an index
+    assert "index proj" in tools.call_tool("vi_philosophy", {"action": "use", "name": "messung", "index": "Proj"}, "a", False)
+    assert [b["name"] for b in philosophy.bindings(index="proj")] == ["messung"]
+    # a newer install does not silently take over: the binding is stale and still evaluates with the bound hash
+    old_hash = rows[1]["hash"]
+    newer = ph.load("messung")
+    newer["version"] = "1.0.1"
+    philosophy.install(str(ph.write(newer, str(tmp_path / "m2"))), "a")
+    st = {b["name"]: b for b in philosophy.bindings("a")}
+    assert st["messung"]["state"] == "stale" and st["messung"]["hash"] == old_hash
+    assert philosophy.evaluate_bound(facts, "a")["messung"]["verdict"]["hash"] == old_hash
+    # ending a binding leaves a tombstone, nothing vanishes
+    assert "ended" in tools.call_tool("vi_philosophy", {"action": "use", "name": "kollektiv", "off": True}, "a", False)
+    assert [b["name"] for b in philosophy.bindings("a")] == ["messung"]
+    gone = g.load(rows[0]["binding"])
+    assert gone.mode == "aus" and gone.changes[-1]["was"] == "philosophy binding ended"
