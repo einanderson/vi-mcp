@@ -173,13 +173,13 @@ def _tables() -> bool:
     from . import memory as g
     try:
         with g.lock:
-            g.db().execute("CREATE TABLE IF NOT EXISTS logik_gewicht (hash TEXT PRIMARY KEY, regel TEXT NOT NULL, ja REAL NOT NULL, "
-                           "nein REAL NOT NULL, zeit TEXT NOT NULL)")
+            g.db().execute("CREATE TABLE IF NOT EXISTS logic_weight (hash TEXT PRIMARY KEY, rule TEXT NOT NULL, yes REAL NOT NULL, "
+                           "no REAL NOT NULL, ts TEXT NOT NULL)")
             # 0.63.0: every rated conclusion itself (the weights above are only counters) — training data for clingo-object (dataset.py)
-            g.db().execute("CREATE TABLE IF NOT EXISTS logik_bewertung (zeit TEXT NOT NULL, programm_hash TEXT NOT NULL, schluss TEXT NOT NULL, "
-                           "richtig INTEGER NOT NULL, instanz TEXT)")
-            g.db().execute("CREATE TABLE IF NOT EXISTS logik_frage (zeit TEXT NOT NULL, instanz TEXT, frage TEXT NOT NULL, programm TEXT NOT NULL, "
-                           "programm_hash TEXT NOT NULL, zustand TEXT, antworten INTEGER, runden INTEGER)")
+            g.db().execute("CREATE TABLE IF NOT EXISTS logic_rating (ts TEXT NOT NULL, program_hash TEXT NOT NULL, conclusion TEXT NOT NULL, "
+                           "correct INTEGER NOT NULL, instance TEXT)")
+            g.db().execute("CREATE TABLE IF NOT EXISTS logic_question (ts TEXT NOT NULL, instance TEXT, question TEXT NOT NULL, program TEXT NOT NULL, "
+                           "program_hash TEXT NOT NULL, state TEXT, answers INTEGER, rounds INTEGER)")
             g.db().commit()
         return True
     except Exception:  # no memory open (pure use of the module): every rule is unmeasured
@@ -192,7 +192,7 @@ def counts(h: str) -> tuple[float, float]:
     if not _tables():
         return 0.0, 0.0
     with g.lock:
-        r = g.db().execute("SELECT ja, nein FROM logik_gewicht WHERE hash = ?", (h,)).fetchone()
+        r = g.db().execute("SELECT yes, no FROM logic_weight WHERE hash = ?", (h,)).fetchone()
     return (float(r[0]), float(r[1])) if r else (0.0, 0.0)
 
 
@@ -218,7 +218,7 @@ def _weighted(program: str, stmts: list[dict]) -> tuple[str, dict[int, float]]:
 
 
 def object_data(filters: list[str], viewer: str | None, edges: bool = True) -> dict:
-    """0.63.0 clingo-objekt, like DLV-DB's #import: the objects of each filter as the asking instance may see them — fields, hashtags, and
+    """0.63.0 clingo-object, like DLV-DB's #import: the objects of each filter as the asking instance may see them — fields, hashtags, and
     the edges from them — plus the objects one edge away (so linked(O, B) can read B). Never quarantine or archive; what is cut, not
     visible or excluded is counted. The one data form for the server (facts) and the Python package clingo-object (action objects)."""
     from datetime import datetime, timezone
@@ -237,8 +237,8 @@ def object_data(filters: list[str], viewer: str | None, edges: bool = True) -> d
         with g.lock:
             for k in range(0, len(ids), 500):
                 part = ids[k:k + 500]
-                out += g.db().execute("SELECT id, art, modus, sicht, instanz, idx, text, zeit, wichtigkeit, bestaetigt, widerlegt, zugriffe "
-                                      f"FROM objekt WHERE id IN ({','.join('?' * len(part))})", part).fetchall()
+                out += g.db().execute("SELECT id, kind, mode, visibility, instance, idx, text, ts, importance, confirmed, refuted, accesses "
+                                      f"FROM object WHERE id IN ({','.join('?' * len(part))})", part).fetchall()
         return out
 
     def select(table_sql: str, ids: list[str]) -> list[tuple]:
@@ -267,7 +267,7 @@ def object_data(filters: list[str], viewer: str | None, edges: bool = True) -> d
     ok = {r[0] for r in rows}
     # 0.63.0: edges (and the objects one edge away) only for a program that follows them — on production 499,234 edges, and every
     # object one edge away counts against MAX_OBJECTS
-    edges = [e for e in select("SELECT a, b, grund FROM kante WHERE a IN ({ph})", sorted(ok))] if edges else []
+    edges = [e for e in select("SELECT a, b, reason FROM edge WHERE a IN ({ph})", sorted(ok))] if edges else []
     hop = sorted({b for _a, b, _w in edges if b not in ok})
     room = MAX_OBJECTS - len(ok)
     cut += max(0, len(hop) - room)
@@ -282,7 +282,7 @@ def object_data(filters: list[str], viewer: str | None, edges: bool = True) -> d
             ok.add(r[0])
             via_edge += 1
     tags: dict[str, dict[str, list[str]]] = {}
-    for oid, t in select("SELECT objekt_id, tag FROM tag WHERE objekt_id IN ({ph})", sorted(ok)):
+    for oid, t in select("SELECT object_id, tag FROM tag WHERE object_id IN ({ph})", sorted(ok)):
         if ":" in t:
             kind, val = t.split(":", 1)
             tags.setdefault(oid, {}).setdefault(kind, []).append(val)
@@ -562,7 +562,7 @@ def rated_conclusions(prog_hash: str) -> list[tuple[str, bool]]:
     if not _tables():
         return []
     with g.lock:
-        rows = g.db().execute("SELECT schluss, richtig FROM logik_bewertung WHERE programm_hash = ? ORDER BY zeit DESC", (prog_hash,)).fetchall()
+        rows = g.db().execute("SELECT conclusion, correct FROM logic_rating WHERE program_hash = ? ORDER BY ts DESC", (prog_hash,)).fetchall()
     return [(r[0], bool(r[1])) for r in rows]
 
 
@@ -588,12 +588,12 @@ def rate(source: str, conclusion: str, correct: bool, viewer: str | None = None)
     with g.lock:
         for nr in credited:
             s = by_nr[nr]
-            row = g.db().execute("SELECT ja, nein FROM logik_gewicht WHERE hash = ?", (s["hash"],)).fetchone()
+            row = g.db().execute("SELECT yes, no FROM logic_weight WHERE hash = ?", (s["hash"],)).fetchone()
             y, n_ = (float(row[0]), float(row[1])) if row else (0.0, 0.0)
             y, n_ = (y + 1, n_) if correct else (y, n_ + 1)
-            g.db().execute("DELETE FROM logik_gewicht WHERE hash = ?", (s["hash"],))
-            g.db().execute("INSERT INTO logik_gewicht (hash, regel, ja, nein, zeit) VALUES (?,?,?,?,?)", (s["hash"], s["asp"], y, n_, now))
-        g.db().execute("INSERT INTO logik_bewertung (zeit, programm_hash, schluss, richtig, instanz) VALUES (?,?,?,?,?)",
+            g.db().execute("DELETE FROM logic_weight WHERE hash = ?", (s["hash"],))
+            g.db().execute("INSERT INTO logic_weight (hash, rule, yes, no, ts) VALUES (?,?,?,?,?)", (s["hash"], s["asp"], y, n_, now))
+        g.db().execute("INSERT INTO logic_rating (ts, program_hash, conclusion, correct, instance) VALUES (?,?,?,?,?)",
                        (now, program_hash(source), q, int(bool(correct)), viewer))
         g.db().commit()
     return {"gutgeschrieben": [{"nr": nr, "regel": by_nr[nr]["text"], **{k: v for k, v in belief(by_nr[nr]).items() if k in ("p", "gewicht", "eigen")}}
@@ -607,7 +607,7 @@ def known_hash(h: str) -> bool:
     if not _tables():
         return False
     with g.lock:
-        return bool(g.db().execute("SELECT 1 FROM logik_gewicht WHERE hash = ?", (h,)).fetchone())
+        return bool(g.db().execute("SELECT 1 FROM logic_weight WHERE hash = ?", (h,)).fetchone())
 
 
 def outgoing(net: str, limit: int = 1000) -> list[dict]:
@@ -620,7 +620,7 @@ def outgoing(net: str, limit: int = 1000) -> list[dict]:
         return []
     company = p2p.is_company(net)
     with g.lock:
-        rows = g.db().execute("SELECT hash, regel, ja, nein FROM logik_gewicht WHERE ja + nein >= ? ORDER BY ja + nein DESC LIMIT ?",
+        rows = g.db().execute("SELECT hash, rule, yes, no FROM logic_weight WHERE yes + no >= ? ORDER BY yes + no DESC LIMIT ?",
                               (MIN_N, limit)).fetchall()
     return [{"ziel": h, "gezeigt": round(y + n_, 2), "ja": round(y, 2), "nein": round(n_, 2), "bestaetigt": 0, "widerlegt": 0}
             for h, text, y, n_ in rows if company or ('"' not in text and not anonymize.categories(text))]
@@ -689,7 +689,7 @@ def _record_question(question: str, r: dict, instance: str) -> None:
         return
     try:
         with g.lock:
-            g.db().execute("INSERT INTO logik_frage (zeit, instanz, frage, programm, programm_hash, zustand, antworten, runden) "
+            g.db().execute("INSERT INTO logic_question (ts, instance, question, program, program_hash, state, answers, rounds) "
                            "VALUES (?,?,?,?,?,?,?,?)", (g.now(), instance, question[:2000], r["program"][:MAX_SOURCE],
                                                         program_hash(r["program"]), r["state"], len(r.get("answer") or []), r["rounds"]))
             g.db().commit()
@@ -703,5 +703,5 @@ def asked_questions() -> list[dict]:
     if not _tables():
         return []
     with g.lock:
-        rows = g.db().execute("SELECT zeit, instanz, frage, programm, programm_hash, zustand FROM logik_frage ORDER BY zeit DESC").fetchall()
+        rows = g.db().execute("SELECT ts, instance, question, program, program_hash, state FROM logic_question ORDER BY ts DESC").fetchall()
     return [{"zeit": z, "instanz": i, "frage": f, "programm": p, "programm_hash": h, "zustand": st} for z, i, f, p, h, st in rows]

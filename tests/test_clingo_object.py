@@ -45,7 +45,7 @@ class Skill(Knowledge):
 def _aged(oid, kind, days, mode="test"):
     o = g.new_object(kind, f"{oid} text", ["thema:oo"], {"quelle": "t"}, reason="T", oid=oid, mode=mode, link=False)
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = ? WHERE id = ?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), oid))
+        g.db().execute("UPDATE object SET ts = ? WHERE id = ?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), oid))
         g.db().commit()
     return o
 
@@ -145,7 +145,7 @@ def test_memory_client_against_a_real_server(srv, tmp_path, monkeypatch):
     g.new_object("erkenntnis", "gate1 in the DMZ", ["host:gate1", "zone:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:gate1", link=False)
     g.new_object("skill", "old skill", ["thema:oo"], {"quelle": "t"}, reason="T", oid="skill:x", mode="test", link=False)
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = ? WHERE id = 'skill:x'", ((datetime.now(timezone.utc) - timedelta(days=60)).isoformat(),))
+        g.db().execute("UPDATE object SET ts = ? WHERE id = 'skill:x'", ((datetime.now(timezone.utc) - timedelta(days=60)).isoformat(),))
         g.db().commit()
     data = mem.objects(["zone:dmz"])
     assert [o["id"] for o in data["objects"]] == ["erkenntnis:gate1"]

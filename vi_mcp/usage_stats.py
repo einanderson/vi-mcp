@@ -46,12 +46,12 @@ def mutating(tool: str, args: dict | None) -> bool:
 
 def _table() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS nutzung (zeit TEXT NOT NULL, instanz TEXT NOT NULL, client TEXT, werkzeug TEXT NOT NULL, "
-                       "ausgang TEXT NOT NULL, ms INTEGER NOT NULL, treffer INTEGER, suchart TEXT)")
-        g.db().execute("CREATE INDEX IF NOT EXISTS nutzung_zeit ON nutzung (zeit)")
+        g.db().execute("CREATE TABLE IF NOT EXISTS usage (ts TEXT NOT NULL, instance TEXT NOT NULL, client TEXT, tool TEXT NOT NULL, "
+                       "outcome TEXT NOT NULL, ms INTEGER NOT NULL, hits INTEGER, search_kind TEXT)")
+        g.db().execute("CREATE INDEX IF NOT EXISTS usage_ts ON usage (ts)")
         # 0.62.0: why a search found nothing — unbekannt (a word the memory does not know) or verfehlt (known words, not together)
-        if "leer_grund" not in {r[1] for r in g.db().execute("PRAGMA table_info(nutzung)")}:
-            g.db().execute("ALTER TABLE nutzung ADD COLUMN leer_grund TEXT")
+        if "empty_reason" not in {r[1] for r in g.db().execute("PRAGMA table_info(usage)")}:
+            g.db().execute("ALTER TABLE usage ADD COLUMN empty_reason TEXT")
         g.db().commit()
 
 
@@ -83,7 +83,7 @@ def record(instance: str, client: str | None, tool_parts: str, outbox: str, ms: 
         if n == 0:  # 0.62.0: the answer says why (vocabulary.empty_reason)
             empty = "unbekannt" if "unknown words:" in (text or "") else "verfehlt" if "known words, but" in (text or "") else None
         with g.lock:
-            g.db().execute("INSERT INTO nutzung (zeit, instanz, client, werkzeug, ausgang, ms, treffer, suchart, leer_grund) VALUES (?,?,?,?,?,?,?,?,?)",
+            g.db().execute("INSERT INTO usage (ts, instance, client, tool, outcome, ms, hits, search_kind, empty_reason) VALUES (?,?,?,?,?,?,?,?,?)",
                            (g.now(), instance, client, tool_parts, outbox, int(ms), n, kind, empty))
             g.db().commit()
     except Exception:  # noqa: BLE001
@@ -94,7 +94,7 @@ def cleanup() -> int:
     _table()
     bound = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).isoformat(timespec="seconds")
     with g.lock:
-        n = g.db().execute("DELETE FROM nutzung WHERE zeit < ?", (bound,)).rowcount
+        n = g.db().execute("DELETE FROM usage WHERE ts < ?", (bound,)).rowcount
         g.db().commit()
     return n
 
@@ -113,23 +113,23 @@ def data(days: float = 7) -> dict:
     since = _since(days)
     db = g.db()
     with g.lock:
-        calls = db.execute("SELECT zeit, instanz, client, werkzeug, ausgang, ms, treffer, suchart FROM nutzung WHERE zeit >= ? ORDER BY zeit",
+        calls = db.execute("SELECT ts, instance, client, tool, outcome, ms, hits, search_kind FROM usage WHERE ts >= ? ORDER BY ts",
                              (since,)).fetchall()
-        exps = db.execute("SELECT o.zeit, o.instanz, o.gespraech, o.daten, (SELECT tag FROM tag t WHERE t.objekt_id = o.id AND t.tag LIKE 'tool:%'), "
-                         "(SELECT tag FROM tag t WHERE t.objekt_id = o.id AND t.tag IN ('ok:ja', 'ok:nein')) FROM objekt o "
-                         "WHERE o.art = 'erfahrung' AND o.zeit >= ? ORDER BY o.zeit", (since,)).fetchall()
-        knowledge_new = db.execute("SELECT art, sicht, zugriffe, (SELECT tag FROM tag t WHERE t.objekt_id = o.id AND t.tag LIKE 'quelle_art:%') "
-                                "FROM objekt o WHERE art IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') AND zeit >= ?", (since,)).fetchall()
-        knowledge_total = db.execute("SELECT COUNT(*), SUM(zugriffe > 0) FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
-                                "AND modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchone()
-        top = db.execute("SELECT id, zugriffe, substr(text, 1, 80) FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
-                         "ORDER BY zugriffe DESC LIMIT 5").fetchall()
-        conversations = db.execute("SELECT instanz, COUNT(*) FROM objekt WHERE art = 'gespraech' AND zeit >= ? GROUP BY instanz", (since,)).fetchall()
-        sleeps = db.execute("SELECT daten FROM objekt WHERE art = 'schlaf' AND zeit >= ?", (since,)).fetchall()
-        sem_edges = db.execute("SELECT COUNT(*) FROM kante WHERE grund LIKE 'semantisch%'").fetchone()[0]
-        first_call = db.execute("SELECT MIN(zeit) FROM nutzung").fetchone()[0]
-        projects_of = dict(db.execute("SELECT json_extract(daten, '$.serial'), json_extract(daten, '$.project') FROM objekt "
-                                      "WHERE art = 'gespraech' AND json_extract(daten, '$.project') IS NOT NULL").fetchall())
+        exps = db.execute("SELECT o.ts, o.instance, o.conversation, o.data, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'tool:%'), "
+                         "(SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag IN ('ok:ja', 'ok:nein')) FROM object o "
+                         "WHERE o.kind = 'erfahrung' AND o.ts >= ? ORDER BY o.ts", (since,)).fetchall()
+        knowledge_new = db.execute("SELECT kind, visibility, accesses, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'quelle_art:%') "
+                                "FROM object o WHERE kind IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') AND ts >= ?", (since,)).fetchall()
+        knowledge_total = db.execute("SELECT COUNT(*), SUM(accesses > 0) FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
+                                "AND mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchone()
+        top = db.execute("SELECT id, accesses, substr(text, 1, 80) FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill', 'suche', 'bild') "
+                         "ORDER BY accesses DESC LIMIT 5").fetchall()
+        conversations = db.execute("SELECT instance, COUNT(*) FROM object WHERE kind = 'gespraech' AND ts >= ? GROUP BY instance", (since,)).fetchall()
+        sleeps = db.execute("SELECT data FROM object WHERE kind = 'schlaf' AND ts >= ?", (since,)).fetchall()
+        sem_edges = db.execute("SELECT COUNT(*) FROM edge WHERE reason LIKE 'semantisch%'").fetchone()[0]
+        first_call = db.execute("SELECT MIN(ts) FROM usage").fetchone()[0]
+        projects_of = dict(db.execute("SELECT json_extract(data, '$.serial'), json_extract(data, '$.project') FROM object "
+                                      "WHERE kind = 'gespraech' AND json_extract(data, '$.project') IS NOT NULL").fetchall())
     # 0.35.1: calls recorded before 0.22.0 (f344419) carry the German tool name (vi_erinnere, vi_lerne …). One tool, one name: count
     # them under the English one — otherwise A listed vi_recall and vi_erinnere as two tools and B/E missed the older searches.
     calls = [(z, i, c, api_en.canonical_name(w), *rest) for z, i, c, w, *rest in calls]
@@ -193,8 +193,8 @@ def data(days: float = 7) -> dict:
     search = [(t, a, ms) for _z, _i, _c, w, outputs, ms, t, a in calls if w in ("vi_recall", "vi_drilldown") and outputs == "ok"]
     with g.lock:  # 0.62.0: recorded since 0.62.0; older searches without hits have no reason (named "not recorded")
         empty_reasons = {r or "nicht_erfasst": n for r, n in g.db().execute(
-            "SELECT leer_grund, COUNT(*) FROM nutzung WHERE werkzeug IN ('vi_recall', 'vi_drilldown', 'vi_erinnere') AND ausgang = 'ok' "
-            "AND treffer = 0 AND zeit >= ? GROUP BY leer_grund", (since,)).fetchall()}
+            "SELECT empty_reason, COUNT(*) FROM usage WHERE tool IN ('vi_recall', 'vi_drilldown', 'vi_erinnere') AND outcome = 'ok' "
+            "AND hits = 0 AND ts >= ? GROUP BY empty_reason", (since,)).fetchall()}
     # F Cleanup
     sl = [json.loads(x[0]) for x in sleeps]
     return {
@@ -254,8 +254,8 @@ def network_lines(days: float = 7) -> list[str]:
     ws = wiki.stats(days)
     _table()
     with g.lock:
-        reads = g.db().execute("SELECT COUNT(*) FROM nutzung WHERE werkzeug IN ('vi_page_read', 'vi_page_history') AND zeit >= ?", (_since(days),)).fetchone()[0]
-        writes = g.db().execute("SELECT COUNT(*) FROM nutzung WHERE werkzeug = 'vi_page_write' AND zeit >= ?", (_since(days),)).fetchone()[0]
+        reads = g.db().execute("SELECT COUNT(*) FROM usage WHERE tool IN ('vi_page_read', 'vi_page_history') AND ts >= ?", (_since(days),)).fetchone()[0]
+        writes = g.db().execute("SELECT COUNT(*) FROM usage WHERE tool = 'vi_page_write' AND ts >= ?", (_since(days),)).fetchone()[0]
     wst = ws["je_status"]
     out.append(f"    wiki: {ws['seiten']} page(s) ({ws['geloescht']} deleted), {ws['revisionen']} revisions (own {ws['eigene']}, foreign {ws['fremde']}) from "
                f"{ws['herausgeber']} author(s) · in {days:g} d: {ws['neue_seiten']} new, {ws['geaenderte_seiten']} changed page(s), {reads} reads, {writes} writes · "

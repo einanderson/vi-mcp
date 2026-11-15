@@ -5,8 +5,8 @@ import numpy as np, scipy.sparse as sp
 
 def load_observations(db_path):
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    sql = """SELECT o.id, o.zeit, o.daten, group_concat(t.tag, ' ') FROM objekt o JOIN tag t ON t.objekt_id = o.id
-             WHERE o.art = 'erfahrung' GROUP BY o.id"""
+    sql = """SELECT o.id, o.ts, o.data, group_concat(t.tag, ' ') FROM object o JOIN tag t ON t.object_id = o.id
+             WHERE o.kind = 'erfahrung' GROUP BY o.id"""
     for oid, ts, data, tags in con.execute(sql):
         tags, d = set(tags.split()), json.loads(data)
         ok = "ok:ja" in tags

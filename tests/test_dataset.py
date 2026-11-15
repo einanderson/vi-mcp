@@ -63,7 +63,7 @@ def test_scrubbing_is_audited_and_an_index_can_be_exported_alone(gd, tmp_path, m
     _k("other project", ["thema:deploy"], index="other", data={"klasse": {"fragen": ["How is other deployed?"]}})
     # a credential that slipped past the scrubber at save time (e.g. a pattern added later) — simulated by writing it directly
     with g.lock:
-        g.db().execute("UPDATE objekt SET daten = ? WHERE id = ?", (json.dumps({**o.data, "inhalt": "password=hunter2secret"}), o.id))
+        g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps({**o.data, "inhalt": "password=hunter2secret"}), o.id))
         g.db().commit()
     m = dataset.export(tmp_path / "ds", "proj")
     qa = (tmp_path / "ds" / "qa.jsonl").read_text()

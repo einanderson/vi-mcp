@@ -33,8 +33,8 @@ MIME = ("image/png", "image/jpeg", "image/gif", "image/webp")
 
 def _table() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS bild (sha TEXT PRIMARY KEY, mime TEXT NOT NULL, breite INTEGER NOT NULL, "
-                       "hoehe INTEGER NOT NULL, bytes INTEGER NOT NULL, zeit TEXT NOT NULL, roh BLOB NOT NULL)")
+        g.db().execute("CREATE TABLE IF NOT EXISTS image (sha TEXT PRIMARY KEY, mime TEXT NOT NULL, width INTEGER NOT NULL, "
+                       "height INTEGER NOT NULL, bytes INTEGER NOT NULL, ts TEXT NOT NULL, raw BLOB NOT NULL)")
         g.db().commit()
 
 
@@ -144,11 +144,11 @@ def store(raw: bytes) -> dict:
     sha = hashlib.sha256(raw).hexdigest()
     _table()
     with g.lock:
-        if not g.db().execute("SELECT 1 FROM bild WHERE sha = ?", (sha,)).fetchone():
-            total = g.db().execute("SELECT COALESCE(SUM(bytes), 0) FROM bild").fetchone()[0]
+        if not g.db().execute("SELECT 1 FROM image WHERE sha = ?", (sha,)).fetchone():
+            total = g.db().execute("SELECT COALESCE(SUM(bytes), 0) FROM image").fetchone()[0]
             if total + len(raw) > TOTAL_MAX:
                 raise ValueError(f"image store full: {total} of {TOTAL_MAX} bytes used — nothing was stored")
-            g.db().execute("INSERT INTO bild (sha, mime, breite, hoehe, bytes, zeit, roh) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            g.db().execute("INSERT INTO image (sha, mime, width, height, bytes, ts, raw) VALUES (?, ?, ?, ?, ?, ?, ?)",
                            (sha, mime, w, h, len(raw), g.now(), raw))
             g.db().commit()
     return {"sha": sha, "mime": mime, "breite": w, "hoehe": h, "bytes": len(raw)}
@@ -157,7 +157,7 @@ def store(raw: bytes) -> dict:
 def load(sha: str) -> bytes | None:
     _table()
     with g.lock:
-        r = g.db().execute("SELECT roh FROM bild WHERE sha = ?", (sha or "",)).fetchone()
+        r = g.db().execute("SELECT raw FROM image WHERE sha = ?", (sha or "",)).fetchone()
     return bytes(r[0]) if r else None
 
 
@@ -165,7 +165,7 @@ def stats() -> tuple[int, int]:
     """(number of stored images, raw bytes together)."""
     _table()
     with g.lock:
-        n, b = g.db().execute("SELECT COUNT(*), COALESCE(SUM(bytes), 0) FROM bild").fetchone()
+        n, b = g.db().execute("SELECT COUNT(*), COALESCE(SUM(bytes), 0) FROM image").fetchone()
     return n, b
 
 

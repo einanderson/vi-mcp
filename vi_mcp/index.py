@@ -27,7 +27,7 @@ IMPORT_TAGS = {"herkunft:skills-ordner", "herkunft:p2p", "herkunft:offen", "herk
 
 #: 0.38.1: imports are left out in SQL already — an instance that imported thousands of manual sections today otherwise found only a few
 #: own entries among its 200 newest objects (production, 10.11.2026: 3 of 6 lines)
-_NOT_IMPORTED = ("NOT EXISTS (SELECT 1 FROM tag x WHERE x.objekt_id = o.id AND ("
+_NOT_IMPORTED = ("NOT EXISTS (SELECT 1 FROM tag x WHERE x.object_id = o.id AND ("
                  + " OR ".join(f"x.tag LIKE '{p}%'" for p in IMPORT_PREFIXES)
                  + " OR x.tag IN (" + ", ".join(f"'{t}'" for t in sorted(IMPORT_TAGS)) + ")))")
 
@@ -59,13 +59,13 @@ def _pick(ids: list[str], instance: str, n: int, taken: set[str], imports_ok: bo
 def sections(instance: str) -> dict[str, list]:
     kinds = ",".join("?" * len(KINDS))
     taken: set[str] = set()
-    req = _pick(_ids(f"SELECT o.id FROM objekt o JOIN tag t ON t.objekt_id = o.id AND t.tag = 'thema:vorgabe' "
-                     f"WHERE o.art IN ({kinds}) AND o.modus = 'aktiv' ORDER BY o.zeit DESC LIMIT 60", KINDS), instance, PER_SECTION["vorgaben"], taken,
+    req = _pick(_ids(f"SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'thema:vorgabe' "
+                     f"WHERE o.kind IN ({kinds}) AND o.mode = 'aktiv' ORDER BY o.ts DESC LIMIT 60", KINDS), instance, PER_SECTION["vorgaben"], taken,
                 imports_ok=True)
-    proven = _pick(_ids(f"SELECT o.id FROM objekt o WHERE o.art IN ({kinds}) AND o.modus = 'aktiv' AND (o.bestaetigt > 0 OR o.zugriffe > 0) "
-                        f"AND {_NOT_IMPORTED} ORDER BY o.bestaetigt DESC, o.zugriffe DESC LIMIT 200", KINDS), instance, PER_SECTION["bewaehrt"], taken)
-    here = _pick(_ids(f"SELECT o.id FROM objekt o WHERE o.art IN ({kinds}) AND o.modus = 'aktiv' AND o.instanz = ? AND {_NOT_IMPORTED} "
-                      "ORDER BY o.zeit DESC LIMIT 200", (*KINDS, instance)), instance, PER_SECTION["hier"], taken)
+    proven = _pick(_ids(f"SELECT o.id FROM object o WHERE o.kind IN ({kinds}) AND o.mode = 'aktiv' AND (o.confirmed > 0 OR o.accesses > 0) "
+                        f"AND {_NOT_IMPORTED} ORDER BY o.confirmed DESC, o.accesses DESC LIMIT 200", KINDS), instance, PER_SECTION["bewaehrt"], taken)
+    here = _pick(_ids(f"SELECT o.id FROM object o WHERE o.kind IN ({kinds}) AND o.mode = 'aktiv' AND o.instance = ? AND {_NOT_IMPORTED} "
+                      "ORDER BY o.ts DESC LIMIT 200", (*KINDS, instance)), instance, PER_SECTION["hier"], taken)
     return {"vorgaben": req, "bewaehrt": proven, "hier": here}
 
 

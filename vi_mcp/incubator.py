@@ -45,8 +45,8 @@ def _c(name: str, state: str, value, threshold, note: str = "") -> dict:
 
 
 def _knowledge(index: str | None) -> list[tuple]:
-    sql = ("SELECT id, CAST(json_extract(daten, '$.nuetzlich.n') AS REAL), json_extract(daten, '$.bestaetigt_von'), json_extract(daten, '$.klasse.zustand') "
-           "FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus IN ('aktiv', 'test') AND sicht IN ('geteilt', 'intern')"
+    sql = ("SELECT id, CAST(json_extract(data, '$.nuetzlich.n') AS REAL), json_extract(data, '$.bestaetigt_von'), json_extract(data, '$.klasse.zustand') "
+           "FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND mode IN ('aktiv', 'test') AND visibility IN ('geteilt', 'intern')"
            + (" AND idx = ?" if index else ""))
     with g.lock:
         return g.db().execute(sql, ([index] if index else [])).fetchall()
@@ -64,9 +64,9 @@ def status(index: str | None = None) -> dict:
     out.append(_c("checked", "erfuellt" if n and share >= cfg["min_checked"] else "offen", share, cfg["min_checked"],
                   f"{checked} of {n} rated after being shown or confirmed by an instance"))
     with g.lock:
-        refuted = g.db().execute("SELECT COUNT(*) FROM objekt WHERE modus = 'widerlegt'" + (" AND idx = ?" if index else ""),
+        refuted = g.db().execute("SELECT COUNT(*) FROM object WHERE mode = 'widerlegt'" + (" AND idx = ?" if index else ""),
                                  ([index] if index else [])).fetchone()[0]
-        withdrawn = g.db().execute("SELECT COUNT(*) FROM objekt WHERE modus = 'zurueckgezogen'" + (" AND idx = ?" if index else ""),
+        withdrawn = g.db().execute("SELECT COUNT(*) FROM object WHERE mode = 'zurueckgezogen'" + (" AND idx = ?" if index else ""),
                                    ([index] if index else [])).fetchone()[0]
     out.append(_c("refuted_handled", "erfuellt", refuted, None, f"{refuted} refuted and {withdrawn} withdrawn object(s) marked, not deleted "
                                                              "(informative; withdrawn = taken back by the author, 0.67.0)"))

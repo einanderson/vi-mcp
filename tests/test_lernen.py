@@ -30,7 +30,7 @@ def test_observation_view_and_features(gd):
     action("checkmk_get_host", "web1", True, context=["thema:oom"])
     action("checkmk_get_host", "web2", False)
     with g.lock:
-        rows = g.db().execute("SELECT tool, ok, hinweise_n, ueberraschung, router FROM beobachtung ORDER BY zeit").fetchall()
+        rows = g.db().execute("SELECT tool, ok, hinweise_n, ueberraschung, router FROM beobachtung ORDER BY ts").fetchall()
     assert rows[0][:3] == ("checkmk_get_host", 1, 1) and rows[1][:3] == ("checkmk_get_host", 0, 0) and rows[0][4] == "heuristik"
     b = learning.observations()
     assert len(b) == 2  # one pair (with hint) + one baseline (without)
@@ -95,14 +95,14 @@ def test_router_learns_which_hint_helps(gd):
         v = intuition.before("graylog_search", args, "a")
         intuition.after("graylog_search", args, True, 1, None, "ok", v["vorher_id"], "a")
     with g.lock:  # set "shown" to exactly one hint and then roll the label
-        rows = g.db().execute("SELECT id, daten FROM objekt WHERE art = 'erfahrung'").fetchall()
+        rows = g.db().execute("SELECT id, data FROM object WHERE kind = 'erfahrung'").fetchall()
         for i, (oid, data) in enumerate(rows):
             d = json.loads(data)
             only = [r.id] if i % 2 == 0 else [e.id]
             ok_new = random.random() < (0.9 if only == [r.id] else 0.2)
             d["vorher"]["gezeigt"] = only
-            g.db().execute("UPDATE objekt SET daten = ? WHERE id = ?", (json.dumps(d), oid))
-            g.db().execute("DELETE FROM tag WHERE objekt_id = ? AND tag IN ('ok:ja', 'ok:nein')", (oid,))
+            g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d), oid))
+            g.db().execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('ok:ja', 'ok:nein')", (oid,))
             g.db().execute("INSERT INTO tag VALUES (?, ?)", (oid, "ok:ja" if ok_new else "ok:nein"))
         g.db().commit()
     b = learning.train("Test")
@@ -266,14 +266,14 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
     gone = g.new_object("erkenntnis", "web1 alt", ["host:web1"], {"quelle": "z"}, reason="T", instance="b")
     long_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="milliseconds")
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = ? WHERE id = ?", (long_ago, old.id))
+        g.db().execute("UPDATE object SET ts = ? WHERE id = ?", (long_ago, old.id))
         g.db().commit()
     for i in range(24):
         ok = i % 4 != 0  # 75 % ok
         e = g.new_object("erfahrung", f"checkmk_get_host {i}", ["tool:checkmk_get_host", "ok:ja" if ok else "ok:nein"],
                          {"vorher": {"gezeigt": [old.id, new.id if i % 2 else gone.id]}}, reason="T", instance="a")
     with g.lock:
-        g.db().execute("DELETE FROM objekt WHERE id = ?", (gone.id,))
+        g.db().execute("DELETE FROM object WHERE id = ?", (gone.id,))
         g.db().commit()
     r = metrics.lift_by_age(24)
     assert r["alt"]["n"] == 24 and r["neu"]["n"] == 12 and r["unbekannt"]["n"] == 12  # nothing vanishes silently

@@ -296,11 +296,11 @@ def tag_value(s: str) -> str:
 
 def _held(index: str, repo: str, path: str | None = None) -> list:
     from . import memory as g
-    sql = ("SELECT id FROM objekt WHERE idx = ? AND modus = 'aktiv' AND id IN (SELECT objekt_id FROM tag WHERE tag = ?) "
-           "AND id IN (SELECT objekt_id FROM tag WHERE tag = ?)")
+    sql = ("SELECT id FROM object WHERE idx = ? AND mode = 'aktiv' AND id IN (SELECT object_id FROM tag WHERE tag = ?) "
+           "AND id IN (SELECT object_id FROM tag WHERE tag = ?)")
     par = [index, CODE_TAG, f"repo:{tag_value(repo)}"]
     if path is not None:
-        sql += " AND id IN (SELECT objekt_id FROM tag WHERE tag = ?)"
+        sql += " AND id IN (SELECT object_id FROM tag WHERE tag = ?)"
         par.append(f"datei:{tag_value(path)}")
     with g.lock:
         ids = [r[0] for r in g.db().execute(sql, par)]
@@ -384,14 +384,14 @@ def file_line(index: str, file_path: str) -> tuple[str | None, str | None]:
     from . import memory as g
     fp = str(file_path).replace("\\", "/")
     with g.lock:
-        rows = g.db().execute("SELECT DISTINCT t.tag FROM tag t JOIN objekt o ON o.id = t.objekt_id WHERE o.idx = ? AND o.modus = 'aktiv' "
-                              "AND t.tag LIKE 'datei:%' AND o.id IN (SELECT objekt_id FROM tag WHERE tag = ?)", (index, CODE_TAG)).fetchall()
+        rows = g.db().execute("SELECT DISTINCT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE o.idx = ? AND o.mode = 'aktiv' "
+                              "AND t.tag LIKE 'datei:%' AND o.id IN (SELECT object_id FROM tag WHERE tag = ?)", (index, CODE_TAG)).fetchall()
     paths = [r[0][6:] for r in rows]
     best = max((p for p in paths if fp.endswith("/" + p) or fp == p), key=len, default=None)
     if best is None:
         return None, None
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT o.id FROM objekt o JOIN tag t ON t.objekt_id = o.id WHERE o.idx = ? AND o.modus = 'aktiv' "
+        ids = [r[0] for r in g.db().execute("SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id WHERE o.idx = ? AND o.mode = 'aktiv' "
                                             "AND t.tag = ?", (index, f"datei:{best}"))]
     pieces = sorted((o for o in g.load_many(ids).values() if not _is_fact(o)), key=lambda o: o.data.get("von") or 0)
     names = [str(o.data.get("symbol")) for o in pieces if not str(o.data.get("symbol", "")).startswith("(")]

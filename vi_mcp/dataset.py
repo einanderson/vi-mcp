@@ -56,7 +56,7 @@ def _eval_hold_out() -> tuple[set[str], set[str], set[str]]:
 
 
 def _objects(index: str | None) -> list[g.MemoryObject]:
-    sql = (f"SELECT id FROM objekt WHERE art IN ({','.join('?' * len(KINDS))}) AND modus IN ('aktiv', 'test') AND sicht IN ('geteilt', 'intern')"
+    sql = (f"SELECT id FROM object WHERE kind IN ({','.join('?' * len(KINDS))}) AND mode IN ('aktiv', 'test') AND visibility IN ('geteilt', 'intern')"
            + (" AND idx = ?" if index else ""))
     with g.lock:
         ids = [r[0] for r in g.db().execute(sql, (*KINDS, *([index] if index else [])))]

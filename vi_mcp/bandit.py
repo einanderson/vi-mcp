@@ -45,8 +45,8 @@ def _observations(since: str | None = None):
     from . import scorer
     grades = scorer.grade_details()
     with g.lock:
-        lines = g.db().execute("SELECT o.daten, o.gespraech, (SELECT group_concat(tag, ' ') FROM tag t WHERE t.objekt_id = o.id AND (t.tag LIKE 'tool:%' OR t.tag LIKE 'ok:%')) "
-                                "FROM objekt o WHERE o.art = 'erfahrung' AND o.modus = 'aktiv'" + (" AND o.zeit >= ?" if since else ""), (since,) if since else ()).fetchall()
+        lines = g.db().execute("SELECT o.data, o.conversation, (SELECT group_concat(tag, ' ') FROM tag t WHERE t.object_id = o.id AND (t.tag LIKE 'tool:%' OR t.tag LIKE 'ok:%')) "
+                                "FROM object o WHERE o.kind = 'erfahrung' AND o.mode = 'aktiv'" + (" AND o.ts >= ?" if since else ""), (since,) if since else ()).fetchall()
     for data, serial, tags in lines:
         tags = (tags or "").split()
         d = json.loads(data)
@@ -102,7 +102,7 @@ def recompute() -> dict:
             z[3] += y
             z[4] += p
     with g.lock:
-        old = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE json_extract(daten, '$.nuetzlich') IS NOT NULL")]
+        old = [r[0] for r in g.db().execute("SELECT id FROM object WHERE json_extract(data, '$.nuetzlich') IS NOT NULL")]
         for i in old:
             if i not in sum_total:
                 g.update_data(i, lambda d: d.pop("nuetzlich", None))

@@ -66,7 +66,7 @@ def episode(e: g.MemoryObject) -> list[g.MemoryObject] | None:
     if not tool or not e.conversation:
         return None
     with g.lock:
-        rows = g.db().execute("SELECT id FROM objekt WHERE art = 'erfahrung' AND gespraech = ? AND zeit < ? ORDER BY zeit",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND conversation = ? AND ts < ? ORDER BY ts",
                               (e.conversation, e.ts)).fetchall()
     loaded = g.load_many([r[0] for r in rows])
     before = [loaded[r[0]] for r in rows if r[0] in loaded]
@@ -228,8 +228,8 @@ def from_episodes(since: str) -> dict:
     """Sleep step 4c: every recovery since `since` → solution with content, or counted with the reason it is not one."""
     with g.lock:
         rows = g.db().execute(
-            "SELECT o.id FROM objekt o JOIN tag t ON t.objekt_id = o.id AND t.tag = 'ueberraschung:erholt' "
-            "WHERE o.art = 'erfahrung' AND o.zeit > ? AND o.gespraech IS NOT NULL ORDER BY o.zeit", (since,)).fetchall()
+            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'ueberraschung:erholt' "
+            "WHERE o.kind = 'erfahrung' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     out = {"episoden": 0, "neu": 0, "weiterentwickelt": 0, "mit_web": 0, "ohne_inhalt": 0, "unverwandt": 0, "unspezifisch": 0, "nicht_allgemein": 0,
            "abgelehnt": 0, "fehler": []}
     # several successes after the same first error (a measure in between succeeded too) are one episode: the last success ends it

@@ -189,8 +189,8 @@ def home(base: str, instance: str) -> str:
                     + (f'<p>{e(x["beschreibung"])}</p>' if x.get("beschreibung") else "") + "</div>" for x in rows)
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND sicht <> 'privat' AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "
-            "ORDER BY zeit DESC LIMIT 12")]
+            "SELECT id FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND visibility <> 'privat' AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "
+            "ORDER BY ts DESC LIMIT 12")]
     recent = "".join(_hit(base, o) for o in g.load_many(ids).values() if _visible(o) is None)
     body = (f'<div class="hero"><h1>What does the memory know?</h1><form class="search" action="{e(base)}/suche" method="get" role="search">'
             f'<input name="q" placeholder="e.g. deploy vi-mcp, backup database, host:… thema:…" aria-label="Search" autofocus>'
@@ -308,8 +308,8 @@ def index_page(base: str, instance: str, name: str) -> str | None:
         return None
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE idx = ? AND art IN ('erkenntnis', 'regel', 'skill', 'suche') AND sicht <> 'privat' "
-            "AND modus <> 'quarantaene' ORDER BY zuletzt DESC LIMIT 50", (n,))]
+            "SELECT id FROM object WHERE idx = ? AND kind IN ('erkenntnis', 'regel', 'skill', 'suche') AND visibility <> 'privat' "
+            "AND mode <> 'quarantaene' ORDER BY last_at DESC LIMIT 50", (n,))]
     items = [o for o in g.load_many(ids).values() if _visible(o) is None]
     extra = " ".join(z.strip() for z in index_transfer.lines(n))
     body = (f'<p class="meta"><span class="kind">{e(x["art"])}</span>index</p><h1>{e(n)}</h1>'

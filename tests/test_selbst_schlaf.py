@@ -10,7 +10,7 @@ from vi_mcp import memory as g
 def _age(oid: str, days: float) -> None:
     z = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = ?, zuletzt = ? WHERE id = ?", (z, z, oid))
+        g.db().execute("UPDATE object SET ts = ?, last_at = ? WHERE id = ?", (z, z, oid))
         g.db().commit()
 
 

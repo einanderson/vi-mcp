@@ -28,7 +28,7 @@ def test_router_bandit_and_metrics_see_the_same_label(gd):
     h = g.new_object("erkenntnis", "Restart the agent after the upgrade", ["tool:Bash"], {"quelle": "t"})
     e = g.new_object("erfahrung", "Bash ok", ["tool:Bash", "ok:ja"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h.id]}})
     with g.lock:
-        g.db().execute("UPDATE objekt SET gespraech = ? WHERE id = ?", ("42", e.id))
+        g.db().execute("UPDATE object SET conversation = ? WHERE id = ?", ("42", e.id))
         g.db().commit()
     g.new_object("bewertung", "human grade", ["scorer:mensch"], {"scorer": "mensch", "ziel": "42", "note": 0.0})
     router = [(y, w) for _f, y, o, w in learning.weighted_observations() if o == e.id]

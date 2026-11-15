@@ -255,15 +255,15 @@ def _db_target_not_ready(url: str, raw: dict) -> str | None:
     except Exception as exc:  # noqa: BLE001 — every reason is named
         return f"PostgreSQL not reachable ({type(exc).__name__}: {str(exc).splitlines()[0][:160]})"
     try:
-        has = con.execute("SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'objekt'").fetchone()
-        target = con.execute("SELECT COUNT(*) FROM objekt").fetchone()[0] if has else 0
+        has = con.execute("SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('object', 'objekt')").fetchone()
+        target = con.execute("SELECT COUNT(*) FROM object").fetchone()[0] if has else 0
     finally:
         con.close()
     if not src.exists():
         return None  # a new installation: nothing to move
     s = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
     try:
-        source = s.execute("SELECT COUNT(*) FROM objekt").fetchone()[0]
+        source = s.execute("SELECT COUNT(*) FROM object").fetchone()[0]
     except sqlite3.Error:
         source = 0
     finally:

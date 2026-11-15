@@ -105,9 +105,9 @@ def test_withdrawn_and_refuted_are_two_modes(from_seq, tmp_path):
         kept = g.new_object("erkenntnis", "alt von zwei Familien widerlegt", ["thema:m"], {"quelle": "x"}, reason="T")
     with g.lock:
         con = g.db()
-        con.execute("UPDATE objekt SET modus = 'widerlegt', daten = ? WHERE id = ?",
+        con.execute("UPDATE object SET mode = 'widerlegt', data = ? WHERE id = ?",
                     (json.dumps({"quelle": "x", "widerlegt_von": {"a": 1}, "widerlegungen": [{"instanz": "a", "familie": "a"}]}), old.id))
-        con.execute("UPDATE objekt SET modus = 'widerlegt', daten = ? WHERE id = ?",
+        con.execute("UPDATE object SET mode = 'widerlegt', data = ? WHERE id = ?",
                     (json.dumps({"quelle": "x", "widerlegt_von": {"b": 1, "c": 1},
                                  "widerlegungen": [{"instanz": "b", "familie": "fb"}, {"instanz": "c", "familie": "fc"}]}), kept.id))
         g._migrate(con)
@@ -156,7 +156,7 @@ def test_question_expires(from_seq):
     as_user(from_seq[0], "vi_frage", {"an": "alle", "text": "Kennt jemand Host zz9 im Netz?"})
     old = (datetime.now(timezone.utc) - timedelta(days=questions.EXPIRY_DAYS + 1)).isoformat(timespec="seconds")
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = ? WHERE art = 'frage'", (old,))
+        g.db().execute("UPDATE object SET ts = ? WHERE kind = 'frage'", (old,))
         g.db().commit()
     assert questions.let_expire() == 1
     assert "zustand:abgelaufen" in g.recall("art:frage", viewer=None)[0][1].hashtags
@@ -282,8 +282,8 @@ def test_delete_conversation_tombstone(from_seq):
     assert "2 private objects" in r
     assert g.load(e) is None and g.load(k.id) is not None  # private gone, shared knowledge stays
     with g.lock:
-        assert g.db().execute("SELECT COUNT(*) FROM gespraech_roh WHERE serial = ?", (a.serial,)).fetchone()[0] == 0
-        assert g.db().execute("SELECT COUNT(*) FROM kante WHERE a = ? OR b = ?", (e, e)).fetchone()[0] == 0
+        assert g.db().execute("SELECT COUNT(*) FROM conversation_raw WHERE serial = ?", (a.serial,)).fetchone()[0] == 0
+        assert g.db().execute("SELECT COUNT(*) FROM edge WHERE a = ? OR b = ?", (e, e)).fetchone()[0] == 0
     gs = g.load(f"gespraech:{a.serial}")
     assert gs.data["zustand"] == "geloescht" and gs.data["geloescht"]["objekte"] == 2 and "zustand:geloescht" in gs.hashtags
     assert "geheim" not in gs.text and "Zugangsdaten im Verlauf" in gs.text

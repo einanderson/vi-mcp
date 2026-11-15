@@ -203,7 +203,7 @@ def shadow(limit: int | None = None, chunk: int = 2000, examples: int = 5) -> di
     pkg = ph.load("kollektiv")
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            f"SELECT id FROM objekt WHERE art IN ({','.join('?' * len(KINDS))}) AND modus NOT IN ('archiviert', 'aufgegangen') ORDER BY id",
+            f"SELECT id FROM object WHERE kind IN ({','.join('?' * len(KINDS))}) AND mode NOT IN ('archiviert', 'aufgegangen') ORDER BY id",
             KINDS)]
     ids = ids[:limit] if limit else ids
     pairs: Counter = Counter()

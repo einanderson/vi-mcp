@@ -2,7 +2,7 @@
 
 One server process, many clients. Every MCP session (header `Mcp-Session-Id`, assigned at `initialize`) is a
 conversation with serial number YYYYMMDDNNN: its own context (history of turns), tagged, stored compressed
-(zlib in `gespraech_roh`), full-text searchable via the conversation object.
+(zlib in `conversation_raw`), full-text searchable via the conversation object.
 
 States of a session (exhaustive): `offen` (requests arrive), `beendet` (client sent DELETE),
 `abgelaufen` (longer than `IDLE_S` without a request), `unterbrochen` (server was stopped while it was
@@ -184,11 +184,11 @@ def new_serial() -> str:
     prefix = f"gespraech:{tag}"
     for _ in range(50):
         with g.lock:
-            n = g.db().execute("SELECT max(CAST(substr(id, ?) AS INTEGER)) FROM objekt WHERE art = 'gespraech' AND id LIKE ?",
+            n = g.db().execute("SELECT max(CAST(substr(id, ?) AS INTEGER)) FROM object WHERE kind = 'gespraech' AND id LIKE ?",
                                (len(prefix) + 1, f"{prefix}%")).fetchone()[0] or 0
             serial = f"{tag}{n + 1:03d}"
             try:
-                g.db().execute("INSERT INTO objekt (id, art, zeit, zuletzt) VALUES (?, 'gespraech', ?, ?)",
+                g.db().execute("INSERT INTO object (id, kind, ts, last_at) VALUES (?, 'gespraech', ?, ?)",
                                (f"gespraech:{serial}", g.now(), g.now()))
                 g.db().commit()
                 return serial
@@ -255,7 +255,7 @@ def persist(s: Session, state: str = "offen") -> None:
     g.save(o)
     raw = zlib.compress(json.dumps(turns, ensure_ascii=False).encode())
     with g.lock:
-        g.db().execute("INSERT OR REPLACE INTO gespraech_roh (serial, roh, laenge) VALUES (?,?,?)", (s.serial, raw, len(raw)))
+        g.db().execute("INSERT OR REPLACE INTO conversation_raw (serial, raw, length) VALUES (?,?,?)", (s.serial, raw, len(raw)))
         g.db().commit()
     s.secured_until = len(turns)
 
@@ -307,8 +307,8 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
     if o.data.get("zustand") == "geloescht":
         raise ValueError(f"conversation {serial} is already deleted ({o.data['geloescht']['zeit']})")
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE gespraech = ? AND sicht = 'privat'", (serial,))]
-        g.db().execute("DELETE FROM gespraech_roh WHERE serial = ?", (serial,))
+        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE conversation = ? AND visibility = 'privat'", (serial,))]
+        g.db().execute("DELETE FROM conversation_raw WHERE serial = ?", (serial,))
         g.db().commit()
     from . import archive
     archive.delete_raw(serial)
@@ -326,12 +326,12 @@ def delete_instance_data(instance: str, reason: str) -> dict:
     """Admin (CLI, not via MCP): all private data of an instance — each of its conversations gets a tombstone."""
     with g.lock:
         serials = [r[0][len("gespraech:"):] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE art = 'gespraech' AND instanz = ? AND json_extract(daten, '$.zustand') <> 'geloescht'", (instance,))]
+            "SELECT id FROM object WHERE kind = 'gespraech' AND instance = ? AND json_extract(data, '$.zustand') <> 'geloescht'", (instance,))]
     n = 0
     for s in serials:
         n += delete_conversation(s, instance, reason)["objekte"]
     with g.lock:  # private objects without a conversation (e.g. from tests without a session)
-        rest = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE instanz = ? AND sicht = 'privat'", (instance,))]
+        rest = [r[0] for r in g.db().execute("SELECT id FROM object WHERE instance = ? AND visibility = 'privat'", (instance,))]
     n += g.delete(rest)
     return {"gespraeche": len(serials), "objekte": n}
 

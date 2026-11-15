@@ -635,7 +635,7 @@ def compare(port: int = DEFAULT_PORT, sample: int = 30) -> dict:
     db = config.load().db
     from . import db as dbmod
     c = dbmod.connect_readonly(db)
-    rows = c.execute("SELECT o.text, v.roh, v.dim FROM vektor v JOIN objekt o ON o.id = v.id WHERE length(o.text) > 0 "
+    rows = c.execute("SELECT o.text, v.raw, v.dim FROM vector v JOIN object o ON o.id = v.id WHERE length(o.text) > 0 "
                      "ORDER BY random() LIMIT ?", (sample,)).fetchall()
     c.close()
     if not rows:

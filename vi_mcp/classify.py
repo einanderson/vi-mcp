@@ -185,7 +185,7 @@ def apply(o: g.MemoryObject, lab: dict, who: str = "vi") -> bool:
     g.save(o)
     _queue_table()
     with g.lock:
-        g.db().execute("DELETE FROM klasse_warteschlange WHERE id = ?", (o.id,))
+        g.db().execute("DELETE FROM class_queue WHERE id = ?", (o.id,))
         g.db().commit()
     return True
 
@@ -195,7 +195,7 @@ QUEUE_MAX = 5000
 
 def _queue_table() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS klasse_warteschlange (id TEXT PRIMARY KEY, zeit TEXT NOT NULL)")
+        g.db().execute("CREATE TABLE IF NOT EXISTS class_queue (id TEXT PRIMARY KEY, ts TEXT NOT NULL)")
         g.db().commit()
 
 
@@ -219,9 +219,9 @@ def on_search(objs) -> dict:
                 out["schueler"] += 1
                 continue
             with g.lock:
-                n = g.db().execute("SELECT COUNT(*) FROM klasse_warteschlange").fetchone()[0]
+                n = g.db().execute("SELECT COUNT(*) FROM class_queue").fetchone()[0]
                 if n < QUEUE_MAX:
-                    g.db().execute("INSERT OR IGNORE INTO klasse_warteschlange (id, zeit) VALUES (?, ?)", (o.id, g.now()))
+                    g.db().execute("INSERT OR IGNORE INTO class_queue (id, ts) VALUES (?, ?)", (o.id, g.now()))
                     g.db().commit()
                     out["eingereiht"] += 1
     except Exception:  # noqa: BLE001
@@ -232,7 +232,7 @@ def on_search(objs) -> dict:
 def queued() -> int:
     _queue_table()
     with g.lock:
-        return g.db().execute("SELECT COUNT(*) FROM klasse_warteschlange").fetchone()[0]
+        return g.db().execute("SELECT COUNT(*) FROM class_queue").fetchone()[0]
 
 
 def pending(limit: int = 20) -> list[str]:
@@ -240,13 +240,13 @@ def pending(limit: int = 20) -> list[str]:
     ph = prompt_hash()
     _queue_table()
     with g.lock:
-        q = [r[0] for r in g.db().execute("SELECT id FROM klasse_warteschlange ORDER BY zeit LIMIT ?", (int(limit) * 20,))]
+        q = [r[0] for r in g.db().execute("SELECT id FROM class_queue ORDER BY ts LIMIT ?", (int(limit) * 20,))]
     first = []
     for oid in q:
         o = g.load(oid)
         if o is None or (o.data.get("klasse") or {}).get("version", {}).get("prompt") == ph or o.kind not in KINDS or o.visibility == "privat":
             with g.lock:  # labelled meanwhile, gone or not knowledge: off the queue
-                g.db().execute("DELETE FROM klasse_warteschlange WHERE id = ?", (oid,))
+                g.db().execute("DELETE FROM class_queue WHERE id = ?", (oid,))
                 g.db().commit()
             continue
         first.append(oid)
@@ -257,8 +257,8 @@ def pending(limit: int = 20) -> list[str]:
 def _pending_rest(n: int, ph: str) -> list[str]:
     with g.lock:
         rows = g.db().execute(
-            "SELECT id, json_extract(daten, '$.klasse.version.prompt') FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') "
-            "AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') AND sicht <> 'privat' ORDER BY zeit DESC LIMIT ?",
+            "SELECT id, json_extract(data, '$.klasse.version.prompt') FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') "
+            "AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') AND visibility <> 'privat' ORDER BY ts DESC LIMIT ?",
             (int(n),)).fetchall()
     return [oid for oid, p in rows if p != ph]
 
@@ -334,8 +334,8 @@ def _labelled() -> tuple[list[str], list[str], list[str]]:
     """(ids, answers, memory) of objects the LLM labelled with both variants agreeing — the student learns only from those."""
     with g.lock:
         rows = g.db().execute(
-            "SELECT id, json_extract(daten, '$.klasse.answers'), json_extract(daten, '$.klasse.memory') FROM objekt "
-            "WHERE json_extract(daten, '$.klasse.zustand') = 'einig' AND modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchall()
+            "SELECT id, json_extract(data, '$.klasse.answers'), json_extract(data, '$.klasse.memory') FROM object "
+            "WHERE json_extract(data, '$.klasse.zustand') = 'einig' AND mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert')").fetchall()
     rows = [r for r in rows if r[1] in ANSWERS and r[2] in MEMORY]
     return [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
 
@@ -489,7 +489,7 @@ def set_gold(oid: str, answers: str, memory: str, who: str, human: bool) -> g.Me
 def gold_report() -> dict:
     """The language model's and the student's labels against the people's, and the truth check of the measured weights."""
     with g.lock:
-        rows = g.db().execute("SELECT id FROM objekt WHERE json_extract(daten, '$.gold.answers') IS NOT NULL").fetchall()
+        rows = g.db().execute("SELECT id FROM object WHERE json_extract(data, '$.gold.answers') IS NOT NULL").fetchall()
     llm = {"n": 0, "richtig": 0, "unsure": 0}
     student = {"n": 0, "richtig": 0}
     per: dict[str, list[int]] = {}
@@ -527,8 +527,8 @@ def truth_check(humans: set[str] | None = None) -> dict:
     if not humans:
         return {"zustand": "keine_menschen", "grund": "no instance with human: true in the config"}
     with g.lock:
-        rows = g.db().execute("SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND (json_extract(daten, '$.bestaetigt_von') IS NOT NULL "
-                              "OR json_extract(daten, '$.widerlegt_von') IS NOT NULL)").fetchall()
+        rows = g.db().execute("SELECT id FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND (json_extract(data, '$.bestaetigt_von') IS NOT NULL "
+                              "OR json_extract(data, '$.widerlegt_von') IS NOT NULL)").fetchall()
     conf, ref = [], []
     for (oid,) in rows:
         o = g.load(oid)
@@ -634,20 +634,20 @@ def pairs_pending(limit: int = 20, stale: bool = False, sample: int = 0) -> list
     random N per call (sleep) — the content hash is not in SQL. The export checks every object anyway: stale pairs are never trained."""
     from . import qa_pairs
     ph = qa_pairs.prompt_sha256()
-    live = ("SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', "
-            "'aufgegangen', 'archiviert') AND sicht <> 'privat' AND NOT EXISTS (SELECT 1 FROM tag t WHERE t.objekt_id = objekt.id "
+    live = ("SELECT id FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', "
+            "'aufgegangen', 'archiviert') AND visibility <> 'privat' AND NOT EXISTS (SELECT 1 FROM tag t WHERE t.object_id = object.id "
             "AND t.tag = 'art_wissen:code') ")
     from datetime import datetime, timedelta, timezone
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=PAIRS_RETRY_AFTER_S)).isoformat(timespec="milliseconds")
     with g.lock:
-        rows = g.db().execute(live + "AND (json_extract(daten, '$.qa.version.prompt') IS NULL OR json_extract(daten, '$.qa.version.prompt') <> ? "
-                              "OR (json_extract(daten, '$.qa.state') = 'error' AND json_extract(daten, '$.qa.time') < ?)) ORDER BY zeit DESC LIMIT ?",
+        rows = g.db().execute(live + "AND (json_extract(data, '$.qa.version.prompt') IS NULL OR json_extract(data, '$.qa.version.prompt') <> ? "
+                              "OR (json_extract(data, '$.qa.state') = 'error' AND json_extract(data, '$.qa.time') < ?)) ORDER BY ts DESC LIMIT ?",
                               (ph, cutoff, int(limit))).fetchall()
     out = [r[0] for r in rows]
     if (stale or sample) and len(out) < limit:
-        q = live + "AND json_extract(daten, '$.qa.state') IN ('ok', 'empty') AND json_extract(daten, '$.qa.version.prompt') = ? "
+        q = live + "AND json_extract(data, '$.qa.state') IN ('ok', 'empty') AND json_extract(data, '$.qa.version.prompt') = ? "
         with g.lock:
-            cand = [r[0] for r in (g.db().execute(q + "ORDER BY zeit DESC", (ph,)) if stale else
+            cand = [r[0] for r in (g.db().execute(q + "ORDER BY ts DESC", (ph,)) if stale else
                                    g.db().execute(q + "ORDER BY RANDOM() LIMIT ?", (ph, int(sample))))]
         for oid in cand:
             o = g.load(oid)
@@ -686,10 +686,10 @@ def pairs_report() -> dict:
     from . import qa_pairs
     with g.lock:
         rows = g.db().execute(
-            "SELECT json_extract(daten, '$.qa.state'), json_extract(daten, '$.qa.version.prompt') = ?, COUNT(*), "
-            "COALESCE(SUM(json_array_length(json_extract(daten, '$.qa.pairs'))), 0), SUM(json_extract(daten, '$.qa.probe') IS NOT NULL) "
-            "FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') "
-            "AND sicht <> 'privat' GROUP BY 1, 2", (qa_pairs.prompt_sha256(),)).fetchall()
+            "SELECT json_extract(data, '$.qa.state'), json_extract(data, '$.qa.version.prompt') = ?, COUNT(*), "
+            "COALESCE(SUM(json_array_length(json_extract(data, '$.qa.pairs'))), 0), SUM(json_extract(data, '$.qa.probe') IS NOT NULL) "
+            "FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen', 'aufgegangen', 'archiviert') "
+            "AND visibility <> 'privat' GROUP BY 1, 2", (qa_pairs.prompt_sha256(),)).fetchall()
     out = {"objects": 0, "ok": 0, "empty": 0, "error": 0, "none": 0, "other_prompt": 0, "pairs": 0, "probes": 0}
     for state, current, n, pairs, probes in rows:
         out["objects"] += n

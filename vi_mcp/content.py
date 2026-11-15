@@ -33,9 +33,9 @@ _cache: dict = {"zeit": 0.0}
 def _tables() -> None:
     with g.lock:
         g.db().executescript("""
-            CREATE TABLE IF NOT EXISTS zentrum (tag TEXT PRIMARY KEY, n INTEGER NOT NULL, summe BLOB NOT NULL);
-            CREATE TABLE IF NOT EXISTS inhalt_gruppe (id TEXT PRIMARY KEY, gruppe INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS inhalt_gruppe_name (gruppe INTEGER PRIMARY KEY, name TEXT NOT NULL, n INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS centre (tag TEXT PRIMARY KEY, n INTEGER NOT NULL, sum BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS content_cluster (id TEXT PRIMARY KEY, cluster INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS content_cluster_name (cluster INTEGER PRIMARY KEY, name TEXT NOT NULL, n INTEGER NOT NULL);
         """)
         g.db().commit()
 
@@ -49,7 +49,7 @@ def _tags(ids: list[str]) -> dict[str, list[str]]:
     with g.lock:
         for i in range(0, len(ids), 900):
             part = ids[i:i + 900]
-            for oid, tag in g.db().execute(f"SELECT objekt_id, tag FROM tag WHERE objekt_id IN ({','.join('?' * len(part))})", part):
+            for oid, tag in g.db().execute(f"SELECT object_id, tag FROM tag WHERE object_id IN ({','.join('?' * len(part))})", part):
                 outputs.setdefault(oid, []).append(tag)
     return outputs
 
@@ -88,13 +88,13 @@ def compute() -> dict:
             names = [(c, ", ".join(t for t, _ in per_tool_rate.get(c, Counter()).most_common(3)) or "no hashtags", size[c]) for c in sorted(size)]
             report["gruppen"] = k
     with g.lock:
-        g.db().execute("DELETE FROM zentrum")
-        g.db().executemany("INSERT INTO zentrum (tag, n, summe) VALUES (?,?,?)", centroids)
+        g.db().execute("DELETE FROM centre")
+        g.db().executemany("INSERT INTO centre (tag, n, sum) VALUES (?,?,?)", centroids)
         if groups:
-            g.db().execute("DELETE FROM inhalt_gruppe")
-            g.db().execute("DELETE FROM inhalt_gruppe_name")
-            g.db().executemany("INSERT INTO inhalt_gruppe (id, gruppe) VALUES (?,?)", groups)
-            g.db().executemany("INSERT INTO inhalt_gruppe_name (gruppe, name, n) VALUES (?,?,?)", names)
+            g.db().execute("DELETE FROM content_cluster")
+            g.db().execute("DELETE FROM content_cluster_name")
+            g.db().executemany("INSERT INTO content_cluster (id, cluster) VALUES (?,?)", groups)
+            g.db().executemany("INSERT INTO content_cluster_name (cluster, name, n) VALUES (?,?,?)", names)
         g.db().commit()
     forget_cache()
     return {"zustand": "fertig", **report}
@@ -114,9 +114,9 @@ def _progress() -> dict:
         _tables()
         ids, m = _normalized()
         with g.lock:
-            centroids = {t: (n, vector._unpack(s, len(s) // 4)) for t, n, s in g.db().execute("SELECT tag, n, summe FROM zentrum")}
-            group = dict(g.db().execute("SELECT id, gruppe FROM inhalt_gruppe").fetchall())
-            names = {c: n for c, n in g.db().execute("SELECT gruppe, name FROM inhalt_gruppe_name")}
+            centroids = {t: (n, vector._unpack(s, len(s) // 4)) for t, n, s in g.db().execute("SELECT tag, n, sum FROM centre")}
+            group = dict(g.db().execute("SELECT id, cluster FROM content_cluster").fetchall())
+            names = {c: n for c, n in g.db().execute("SELECT cluster, name FROM content_cluster_name")}
         _cache.update(zeit=time.time(), index={oid: i for i, oid in enumerate(ids)}, m=m, zentren=centroids, gruppe=group, namen=names,
                       tags=_tags(ids) if centroids else {})
         return _cache

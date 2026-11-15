@@ -30,12 +30,12 @@ STATES = ("ausstehend", "frei", "verworfen", "vergessen")
 def _tables() -> None:
     with g.lock:
         g.db().executescript("""
-            CREATE TABLE IF NOT EXISTS beitrag_aus (netz TEXT NOT NULL, id TEXT NOT NULL, art TEXT NOT NULL, faden TEXT, eltern TEXT, instanz TEXT NOT NULL,
-                                                   daten TEXT NOT NULL, zeit TEXT NOT NULL, oid TEXT, PRIMARY KEY (netz, id));
-            CREATE TABLE IF NOT EXISTS beitrag_ein (netz TEXT NOT NULL, id TEXT NOT NULL, art TEXT NOT NULL, faden TEXT, eltern TEXT, pub TEXT NOT NULL,
-                                                   autor TEXT NOT NULL, status TEXT NOT NULL, oid TEXT, netz_id TEXT NOT NULL, loesch_hash TEXT NOT NULL,
-                                                   empfangen TEXT NOT NULL, entschieden TEXT, PRIMARY KEY (netz, id));
-            CREATE INDEX IF NOT EXISTS beitrag_ein_netz_id ON beitrag_ein (netz_id);
+            CREATE TABLE IF NOT EXISTS post_out (net TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, thread TEXT, parent TEXT, instance TEXT NOT NULL,
+                                                   data TEXT NOT NULL, ts TEXT NOT NULL, oid TEXT, PRIMARY KEY (net, id));
+            CREATE TABLE IF NOT EXISTS post_in (net TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, thread TEXT, parent TEXT, pub TEXT NOT NULL,
+                                                   author TEXT NOT NULL, status TEXT NOT NULL, oid TEXT, net_id TEXT NOT NULL, delete_hash TEXT NOT NULL,
+                                                   received TEXT NOT NULL, decided TEXT, PRIMARY KEY (net, id));
+            CREATE INDEX IF NOT EXISTS post_in_net_id ON post_in (net_id);
         """)
         g.db().commit()
 
@@ -82,8 +82,8 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
         raise ValueError(f"unknown network {net!r} — known: {', '.join(p2p.networks())}")
     _tables()
     with g.lock:
-        n = g.db().execute("SELECT COUNT(*) FROM objekt WHERE art = 'frage' AND json_extract(daten, '$.von') = ? AND json_extract(daten, '$.an') LIKE 'netz:%' "
-                           "AND json_extract(daten, '$.zustand') IN ('offen', 'zugestellt')", (instance,)).fetchone()[0]
+        n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'frage' AND json_extract(data, '$.von') = ? AND json_extract(data, '$.an') LIKE 'netz:%' "
+                           "AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (instance,)).fetchone()[0]
     if n >= MAX_OPEN_PER_INSTANCE:
         raise ValueError(f"{n} questions of {instance} to the network are still open (at most {MAX_OPEN_PER_INSTANCE}); they expire after {questions.EXPIRY_DAYS} days")
     content = _post(instance, net, "frage", text, source, [], triggers, None, None, f"beitrag|frage|{instance}|{g.now()}|{text[:40]}")
@@ -92,7 +92,7 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
     o.data["beitrag"] = {"netz": net, "id": pid, "richtung": "aus"}
     g.save(o)
     with g.lock:
-        g.db().execute("INSERT INTO beitrag_aus (netz, id, art, faden, eltern, instanz, daten, zeit, oid) VALUES (?,?,?,?,?,?,?,?,?)",
+        g.db().execute("INSERT INTO post_out (net, id, kind, thread, parent, instance, data, ts, oid) VALUES (?,?,?,?,?,?,?,?,?)",
                        (net, pid, "frage", None, None, instance, json.dumps(content, ensure_ascii=False), g.now(), o.id))
         g.db().commit()
     p2p.nudge_service(net)  # 0.52.0: out now, not at the next round
@@ -108,7 +108,7 @@ def reply(instance: str, question: g.MemoryObject, text: str, evidence: str) -> 
     pid = sha256(content)
     _tables()
     with g.lock:
-        g.db().execute("INSERT INTO beitrag_aus (netz, id, art, faden, eltern, instanz, daten, zeit, oid) VALUES (?,?,?,?,?,?,?,?,?)",
+        g.db().execute("INSERT INTO post_out (net, id, kind, thread, parent, instance, data, ts, oid) VALUES (?,?,?,?,?,?,?,?,?)",
                        (b["netz"], pid, "antwort", content["faden"], b["id"], instance, json.dumps(content, ensure_ascii=False), g.now(), question.id))
         g.db().commit()
     from . import p2p
@@ -119,7 +119,7 @@ def reply(instance: str, question: g.MemoryObject, text: str, evidence: str) -> 
 def outgoing(net: str, limit: int = 500) -> list[dict]:
     _tables()
     with g.lock:
-        return [json.loads(d) for (d,) in g.db().execute("SELECT daten FROM beitrag_aus WHERE netz = ? ORDER BY zeit DESC LIMIT ?", (net, limit))]
+        return [json.loads(d) for (d,) in g.db().execute("SELECT data FROM post_out WHERE net = ? ORDER BY ts DESC LIMIT ?", (net, limit))]
 
 
 def ingest(raw: dict, header: dict, net: str) -> str:
@@ -133,10 +133,10 @@ def ingest(raw: dict, header: dict, net: str) -> str:
     pid = header["sha"]
     _tables()
     with g.lock:
-        if g.db().execute("SELECT 1 FROM beitrag_ein WHERE netz = ? AND id = ?", (net, pid)).fetchone():
+        if g.db().execute("SELECT 1 FROM post_in WHERE net = ? AND id = ?", (net, pid)).fetchone():
             return "bekannt"
-        tomb = g.db().execute("SELECT token_sha FROM p2p_grab WHERE netz_id = ?", (raw["netz_id"],)).fetchone()
-        mine = g.db().execute("SELECT oid FROM beitrag_aus WHERE netz = ? AND id = ? AND art = 'frage'", (net, raw["eltern"])).fetchone() if raw["art"] == "antwort" else None
+        tomb = g.db().execute("SELECT token_sha FROM p2p_tombstone WHERE net_id = ?", (raw["netz_id"],)).fetchone()
+        mine = g.db().execute("SELECT oid FROM post_out WHERE net = ? AND id = ? AND kind = 'frage'", (net, raw["eltern"])).fetchone() if raw["art"] == "antwort" else None
     if tomb and tomb[0] == raw["loesch_hash"]:
         return "bekannt"
     if raw["art"] == "antwort" and not mine:
@@ -162,7 +162,7 @@ def ingest(raw: dict, header: dict, net: str) -> str:
         net_score.link(ish, o.id)
         net_score.add_holder(ish, header["pub"], net, raw["netz_id"], header["seq"])
     with g.lock:
-        g.db().execute("INSERT INTO beitrag_ein (netz, id, art, faden, eltern, pub, autor, status, oid, netz_id, loesch_hash, empfangen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        g.db().execute("INSERT INTO post_in (net, id, kind, thread, parent, pub, author, status, oid, net_id, delete_hash, received) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                        (net, pid, raw["art"], raw["faden"], raw["eltern"], header["pub"], raw["autor"], "ausstehend", o.id, raw["netz_id"], raw["loesch_hash"], g.now()))
         g.db().commit()
     return "neu"
@@ -194,7 +194,7 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
         return
     _tables()
     with g.lock:
-        g.db().execute("UPDATE beitrag_ein SET status = ?, entschieden = ? WHERE netz = ? AND id = ?", ("frei" if accepted else "verworfen", g.now(), b["netz"], b["id"]))
+        g.db().execute("UPDATE post_in SET status = ?, decided = ? WHERE net = ? AND id = ?", ("frei" if accepted else "verworfen", g.now(), b["netz"], b["id"]))
         g.db().commit()
     if not accepted:
         return
@@ -215,11 +215,11 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
 def forget(net_id: str, evidence: str) -> bool:
     _tables()
     with g.lock:
-        z = g.db().execute("SELECT netz, id, loesch_hash, oid FROM beitrag_ein WHERE netz_id = ?", (net_id,)).fetchone()
+        z = g.db().execute("SELECT net, id, delete_hash, oid FROM post_in WHERE net_id = ?", (net_id,)).fetchone()
     if not z or not hmac.compare_digest(z[2], evidence):
         return False
     with g.lock:
-        g.db().execute("UPDATE beitrag_ein SET status = 'vergessen', entschieden = ? WHERE netz = ? AND id = ?", (g.now(), z[0], z[1]))
+        g.db().execute("UPDATE post_in SET status = 'vergessen', decided = ? WHERE net = ? AND id = ?", (g.now(), z[0], z[1]))
         g.db().commit()
     if z[3] and g.load(z[3]):
         g.delete([z[3]])
@@ -231,11 +231,11 @@ def stats(days: float = 7) -> dict:
     _tables()
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     with g.lock:
-        sent = dict(g.db().execute("SELECT art, COUNT(*) FROM beitrag_aus WHERE zeit >= ? GROUP BY art", (since,)).fetchall())
-        recv = dict(g.db().execute("SELECT art, COUNT(*) FROM beitrag_ein WHERE empfangen >= ? GROUP BY art", (since,)).fetchall())
-        waiting = g.db().execute("SELECT COUNT(*) FROM beitrag_ein WHERE status = 'ausstehend'").fetchone()[0]
-        partners = g.db().execute("SELECT COUNT(DISTINCT autor) FROM beitrag_ein WHERE empfangen >= ?", (since,)).fetchone()[0]
-        qs = g.db().execute("SELECT oid, zeit FROM beitrag_aus WHERE art = 'frage' AND zeit >= ?", (since,)).fetchall()
+        sent = dict(g.db().execute("SELECT kind, COUNT(*) FROM post_out WHERE ts >= ? GROUP BY kind", (since,)).fetchall())
+        recv = dict(g.db().execute("SELECT kind, COUNT(*) FROM post_in WHERE received >= ? GROUP BY kind", (since,)).fetchall())
+        waiting = g.db().execute("SELECT COUNT(*) FROM post_in WHERE status = 'ausstehend'").fetchone()[0]
+        partners = g.db().execute("SELECT COUNT(DISTINCT author) FROM post_in WHERE received >= ?", (since,)).fetchone()[0]
+        qs = g.db().execute("SELECT oid, ts FROM post_out WHERE kind = 'frage' AND ts >= ?", (since,)).fetchall()
     answered, firsts, per_q, accepted, expired = 0, [], [], 0, 0
     for oid, t0 in qs:
         q = g.load(oid)

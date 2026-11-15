@@ -609,8 +609,8 @@ def _logic_set(ref: str, instance: str | None):
     o = g.load(ref) if ":" in ref else None
     if o is None:
         with g.lock:
-            rows = g.db().execute("SELECT o.id FROM objekt o JOIN tag t ON t.objekt_id = o.id WHERE t.tag = ? AND o.art = 'regel' "
-                                  "AND o.modus IN ('aktiv', 'test') ORDER BY o.zeit DESC", (f"logik:{ref}",)).fetchall()
+            rows = g.db().execute("SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag = ? AND o.kind = 'regel' "
+                                  "AND o.mode IN ('aktiv', 'test') ORDER BY o.ts DESC", (f"logik:{ref}",)).fetchall()
         o = next((x for x in (g.load(r[0]) for r in rows) if x is not None and g.visible_to(x, instance)), None)
     if o is None or not g.visible_to(o, instance) or "logik" not in o.data:
         raise Rejected(f"no rule set {ref!r} visible to you — vi_recall thema:logik lists the saved ones")
@@ -758,7 +758,7 @@ def _visible(oid: str, instance: str) -> g.MemoryObject:
     o = g.load(oid or "")
     if not o and oid and len(oid) >= 16:  # older outputs showed shortened IDs; a unique prefix is enough
         with g.lock:
-            hits = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE id LIKE ? ESCAPE '\\' LIMIT 2", (oid.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",))]
+            hits = [r[0] for r in g.db().execute("SELECT id FROM object WHERE id LIKE ? ESCAPE '\\' LIMIT 2", (oid.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",))]
         o = g.load(hits[0]) if len(hits) == 1 else None
     if not o or not g.visible_to(o, instance):
         raise Rejected(f"object {oid} unknown")
@@ -946,7 +946,7 @@ def _net_hint() -> str:
     try:
         p2p._tables()
         with g.lock:
-            seen = {r[0] for r in g.db().execute("SELECT netz FROM netz_stand")}
+            seen = {r[0] for r in g.db().execute("SELECT net FROM net_state")}
         nets = {n: d for n, d in p2p.networks().items() if n in seen and p2p.is_on(n)}
     except Exception:  # noqa: BLE001 — a hint must never cost the answer
         return ""
@@ -1304,17 +1304,17 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
     if name == "vi_status":
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
         with g.lock:
-            kinds = dict(g.db().execute("SELECT art, COUNT(*) FROM objekt GROUP BY art").fetchall())
-            n = g.db().execute("SELECT COUNT(*) FROM objekt WHERE art = 'erfahrung' AND zeit >= ?", (since,)).fetchone()[0]
-            outputs = g.db().execute("SELECT COUNT(*) FROM objekt WHERE art = 'erfahrung' AND zeit >= ? AND daten LIKE '%\"aus_gedaechtnis\": true%'",
+            kinds = dict(g.db().execute("SELECT kind, COUNT(*) FROM object GROUP BY kind").fetchall())
+            n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'erfahrung' AND ts >= ?", (since,)).fetchone()[0]
+            outputs = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'erfahrung' AND ts >= ? AND data LIKE '%\"aus_gedaechtnis\": true%'",
                                  (since,)).fetchone()[0]
-            error = g.db().execute("SELECT COUNT(*) FROM tag WHERE tag = 'ok:nein' AND objekt_id IN "
-                                    "(SELECT id FROM objekt WHERE art = 'erfahrung' AND zeit >= ?)", (since,)).fetchone()[0]
-            edges = g.db().execute("SELECT COUNT(*) FROM kante").fetchone()[0]
-            per_inst = g.db().execute("SELECT instanz, COUNT(*) FROM objekt WHERE sicht = 'geteilt' AND art IN "
-                                     "('erkenntnis', 'regel', 'suche', 'reflex', 'bild') GROUP BY instanz ORDER BY 2 DESC").fetchall()
-            open_questions = g.db().execute("SELECT COUNT(*) FROM objekt WHERE art = 'frage' AND "
-                                          "json_extract(daten, '$.zustand') IN ('offen', 'zugestellt')").fetchone()[0]
+            error = g.db().execute("SELECT COUNT(*) FROM tag WHERE tag = 'ok:nein' AND object_id IN "
+                                    "(SELECT id FROM object WHERE kind = 'erfahrung' AND ts >= ?)", (since,)).fetchone()[0]
+            edges = g.db().execute("SELECT COUNT(*) FROM edge").fetchone()[0]
+            per_inst = g.db().execute("SELECT instance, COUNT(*) FROM object WHERE visibility = 'geteilt' AND kind IN "
+                                     "('erkenntnis', 'regel', 'suche', 'reflex', 'bild') GROUP BY instance ORDER BY 2 DESC").fetchall()
+            open_questions = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'frage' AND "
+                                          "json_extract(data, '$.zustand') IN ('offen', 'zugestellt')").fetchone()[0]
         s = session.current()
         open_ = session.open_items()
         ls = loop_progress
@@ -1565,8 +1565,8 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         return _line(o) + (f"\n  counts as feedback on the hint before {e} (learning signal for the router)" if e else "")
     if name == "vi_forget":
         with g.lock:
-            ids = [r[0] for r in g.db().execute("SELECT t.objekt_id FROM tag t JOIN objekt o ON o.id = t.objekt_id "
-                                                "WHERE t.tag = ? AND o.art = 'antwort' AND o.instanz = ?",
+            ids = [r[0] for r in g.db().execute("SELECT t.object_id FROM tag t JOIN object o ON o.id = t.object_id "
+                                                "WHERE t.tag = ? AND o.kind = 'antwort' AND o.instance = ?",
                                                 (f"tool:{args.get('tool')}", instance))]
         g.delete(ids)
         return f"{len(ids)} remembered answer(s) of {args.get('tool')} discarded"
@@ -1602,7 +1602,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             if open_:
                 session.persist(open_)
             with g.lock:
-                row = g.db().execute("SELECT roh FROM gespraech_roh WHERE serial = ?", (args["serial"],)).fetchone()
+                row = g.db().execute("SELECT raw FROM conversation_raw WHERE serial = ?", (args["serial"],)).fetchone()
             o = g.load(f"gespraech:{args['serial']}")
             if not o:
                 raise Rejected(f"conversation {args['serial']} unknown")

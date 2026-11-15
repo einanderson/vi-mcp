@@ -1,6 +1,6 @@
-"""The memory: every entry is an object (table objekt → class MemoryObject, mapping without ORM).
+"""The memory: every entry is an object (table object → class MemoryObject, mapping without ORM).
 
-Fixed fields (id, art, zeit); changeable fields only via methods (tag, confirm, refute, link),
+Fixed fields (id, kind, ts); changeable fields only via methods (tag, confirm, refute, link),
 every change with reason and history. Every object carries hashtags kind:value; recall = filter language
 `kind:value`, `!kind:value`, `(a OR b)`, prefix `kind:value*`, free text (FTS5).
 
@@ -29,7 +29,7 @@ from pathlib import Path
 
 from clingo_object.filters import parse_filter
 
-from . import anonymize
+from . import anonymize, names
 from .log_output import log
 
 KINDS = ("erfahrung", "antwort", "erkenntnis", "regel", "reflex", "gespraech", "suche", "frage", "selbst", "schlaf", "modell", "skill", "bewertung", "bild", "seite",
@@ -129,23 +129,25 @@ def open_db(fpath: Path | str) -> None:
             if f.exists():
                 os.chmod(f, 0o600)
         target, archive_target, archive_schema_ = fpath, fpath.with_name(f"{fpath.stem}-lager.db"), None
+    names.migrate_db(con, names.TABLES, target, "memory")  # 0.67.0: a database of 0.66 or older gets its English names first
+    con.commit()
     con.executescript("""
-        CREATE TABLE IF NOT EXISTS objekt (
-            id TEXT PRIMARY KEY, art TEXT NOT NULL, zeit TEXT NOT NULL, zuletzt TEXT NOT NULL,
-            text TEXT NOT NULL DEFAULT '', daten TEXT NOT NULL DEFAULT '{}', wichtigkeit INTEGER NOT NULL DEFAULT 1,
-            bestaetigt INTEGER NOT NULL DEFAULT 0, widerlegt INTEGER NOT NULL DEFAULT 0, zugriffe INTEGER NOT NULL DEFAULT 0,
-            modus TEXT NOT NULL DEFAULT 'aktiv', aenderungen TEXT NOT NULL DEFAULT '[]', gespraech TEXT,
-            instanz TEXT NOT NULL DEFAULT 'vi', sicht TEXT NOT NULL DEFAULT 'geteilt', idx TEXT NOT NULL DEFAULT 'global');
-        CREATE INDEX IF NOT EXISTS objekt_art_zeit ON objekt(art, zeit);
-        CREATE TABLE IF NOT EXISTS tag (objekt_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (objekt_id, tag));
+        CREATE TABLE IF NOT EXISTS object (
+            id TEXT PRIMARY KEY, kind TEXT NOT NULL, ts TEXT NOT NULL, last_at TEXT NOT NULL,
+            text TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '{}', importance INTEGER NOT NULL DEFAULT 1,
+            confirmed INTEGER NOT NULL DEFAULT 0, refuted INTEGER NOT NULL DEFAULT 0, accesses INTEGER NOT NULL DEFAULT 0,
+            mode TEXT NOT NULL DEFAULT 'aktiv', changes TEXT NOT NULL DEFAULT '[]', conversation TEXT,
+            instance TEXT NOT NULL DEFAULT 'vi', visibility TEXT NOT NULL DEFAULT 'geteilt', idx TEXT NOT NULL DEFAULT 'global');
+        CREATE INDEX IF NOT EXISTS object_kind_ts ON object(kind, ts);
+        CREATE TABLE IF NOT EXISTS tag (object_id TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (object_id, tag));
         CREATE INDEX IF NOT EXISTS tag_tag ON tag(tag);
-        CREATE TABLE IF NOT EXISTS kante (a TEXT NOT NULL, b TEXT NOT NULL, grund TEXT NOT NULL, zeit TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS edge (a TEXT NOT NULL, b TEXT NOT NULL, reason TEXT NOT NULL, ts TEXT NOT NULL,
             PRIMARY KEY (a, b));
-        CREATE TABLE IF NOT EXISTS gespraech_roh (serial TEXT PRIMARY KEY, roh BLOB NOT NULL, laenge INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS conversation_raw (serial TEXT PRIMARY KEY, raw BLOB NOT NULL, length INTEGER NOT NULL);
     """)
     _migrate(con)
     try:
-        con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS objekt_fts USING fts5(id UNINDEXED, text)")
+        con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS object_fts USING fts5(id UNINDEXED, text)")
         fts = True
     except sqlite3.OperationalError as exc:
         fts = False
@@ -165,7 +167,7 @@ def backend() -> str:
 
 
 def refuted_mode(author: str, mode: str, data: dict, latest: str | None = None) -> str:
-    """The mode after a refutation (one definition for refute() and the migration): ≥ 2 foreign families → widerlegt; the author
+    """The mode after a refutation (one definition for refute() and the migration): ≥ 2 foreign families → refuted; the author
     refuted (now or before) → zurueckgezogen; else strittig. Families as in MemoryObject._lines (author and server excluded)."""
     own = (author, SERVER_INSTANCE)
     entries = data.get("widerlegungen") or []
@@ -182,41 +184,41 @@ def refuted_mode(author: str, mode: str, data: dict, latest: str | None = None) 
 def _migrate(con: Any) -> None:
     """0.1.x → 0.2.0: add columns instanz/sicht (author from the hashtag instanz:, visibility from the kind);
     cache hashtag frage:<hash> → cache:<hash> (frage is now a kind)."""
-    columns = {r[1] for r in con.execute("PRAGMA table_info(objekt)")}
-    if "instanz" not in columns:
-        con.execute("ALTER TABLE objekt ADD COLUMN instanz TEXT NOT NULL DEFAULT 'vi'")
-        con.execute("UPDATE objekt SET instanz = COALESCE((SELECT substr(tag, 9) FROM tag WHERE objekt_id = objekt.id "
+    columns = {r[1] for r in con.execute("PRAGMA table_info(object)")}
+    if "instance" not in columns:
+        con.execute("ALTER TABLE object ADD COLUMN instance TEXT NOT NULL DEFAULT 'vi'")
+        con.execute("UPDATE object SET instance = COALESCE((SELECT substr(tag, 9) FROM tag WHERE object_id = object.id "
                     "AND tag LIKE 'instanz:%' LIMIT 1), 'vi')")
         log("migration: column instanz added")
-    if "sicht" not in columns:
-        con.execute("ALTER TABLE objekt ADD COLUMN sicht TEXT NOT NULL DEFAULT 'geteilt'")
+    if "visibility" not in columns:
+        con.execute("ALTER TABLE object ADD COLUMN visibility TEXT NOT NULL DEFAULT 'geteilt'")
         for kind, visibility in VISIBILITY_PER_KIND.items():
-            con.execute("UPDATE objekt SET sicht = ? WHERE art = ?", (visibility, kind))
+            con.execute("UPDATE object SET visibility = ? WHERE kind = ?", (visibility, kind))
         log("migration: column sicht added")
     n = con.execute("UPDATE tag SET tag = 'cache:' || substr(tag, 7) WHERE tag LIKE 'frage:%'").rowcount
     if n:
         log(f"migration: {n} cache hashtags frage: → cache:")
-    con.execute("CREATE INDEX IF NOT EXISTS objekt_instanz ON objekt(instanz, sicht)")
+    con.execute("CREATE INDEX IF NOT EXISTS object_instance ON object(instance, visibility)")
     if "idx" not in columns:  # 0.61.0: the index of an object (vi_mcp/indexes.py); everything before is global
-        con.execute("ALTER TABLE objekt ADD COLUMN idx TEXT NOT NULL DEFAULT 'global'")
+        con.execute("ALTER TABLE object ADD COLUMN idx TEXT NOT NULL DEFAULT 'global'")
         log("migration: column idx added (every object in index global)")
-    con.execute("CREATE INDEX IF NOT EXISTS objekt_idx ON objekt(idx, art)")
+    con.execute("CREATE INDEX IF NOT EXISTS object_idx ON object(idx, kind)")
     # 0.61.0: the indexes themselves — name as primary key, with kind, description and tags (the user: "jeden Index auch Tags und
     # Beschreibung mitgeben, wenn sie in einer Tabelle stehen"). objekt.idx refers to it; an added column cannot become a real foreign key
     # in SQLite without rebuilding the table, so the reference is kept by the code (indexes.ensure) and checked by a test.
-    con.execute("CREATE TABLE IF NOT EXISTS vi_index (name TEXT PRIMARY KEY, art TEXT NOT NULL DEFAULT 'projekt', "
-                "beschreibung TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', erstellt TEXT NOT NULL, "
-                "quelle TEXT NOT NULL DEFAULT 'automatisch')")
-    con.execute("INSERT OR IGNORE INTO vi_index (name, art, beschreibung, erstellt, quelle) VALUES "
+    con.execute("CREATE TABLE IF NOT EXISTS vi_index (name TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'projekt', "
+                "description TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]', created TEXT NOT NULL, "
+                "source TEXT NOT NULL DEFAULT 'automatisch')")
+    con.execute("INSERT OR IGNORE INTO vi_index (name, kind, description, created, source) VALUES "
                 "('global', 'global', 'shared knowledge of all projects', ?, 'system')", (now(),))
-    con.execute("INSERT OR IGNORE INTO vi_index (name, erstellt) SELECT DISTINCT idx, ? FROM objekt WHERE idx <> 'global'", (now(),))
+    con.execute("INSERT OR IGNORE INTO vi_index (name, created) SELECT DISTINCT idx, ? FROM object WHERE idx <> 'global'", (now(),))
     # 0.37.0: an image is its own kind (bild); 0.35.x stored it as an insight with medium:bild. The id stays (edges, history, hints
     # refer to it); kind, art: hashtag and the now redundant medium:bild change.
-    old = [r[0] for r in con.execute("SELECT id FROM objekt WHERE art = 'erkenntnis' AND json_extract(daten, '$.bild') IS NOT NULL")]
+    old = [r[0] for r in con.execute("SELECT id FROM object WHERE kind = 'erkenntnis' AND json_extract(data, '$.bild') IS NOT NULL")]
     for oid in old:
-        con.execute("UPDATE objekt SET art = 'bild' WHERE id = ?", (oid,))
-        con.execute("DELETE FROM tag WHERE objekt_id = ? AND tag IN ('art:erkenntnis', 'medium:bild')", (oid,))
-        con.execute("INSERT OR IGNORE INTO tag (objekt_id, tag) VALUES (?, 'art:bild')", (oid,))
+        con.execute("UPDATE object SET kind = 'bild' WHERE id = ?", (oid,))
+        con.execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('art:erkenntnis', 'medium:bild')", (oid,))
+        con.execute("INSERT OR IGNORE INTO tag (object_id, tag) VALUES (?, 'art:bild')", (oid,))
     if old:
         log(f"migration: {len(old)} image(s) from kind erkenntnis to kind bild (ids kept)")
     # 0.67.0: widerlegt split in two — an object its author refuted, without two foreign families, was withdrawn, not refuted; so
@@ -224,7 +226,7 @@ def _migrate(con: Any) -> None:
     # A quarantine discard (p2p.discard: a reviewer rejects foreign knowledge) keeps widerlegt.
     # Idempotent (only widerlegt rows are read); the history names the migration.
     moved = 0
-    for oid, author, raw, hist in con.execute("SELECT id, instanz, daten, aenderungen FROM objekt WHERE modus = 'widerlegt'").fetchall():
+    for oid, author, raw, hist in con.execute("SELECT id, instance, data, changes FROM object WHERE mode = 'widerlegt'").fetchall():
         try:
             data = json.loads(raw or "{}")
         except ValueError:
@@ -234,7 +236,7 @@ def _migrate(con: Any) -> None:
             continue
         changes = json.loads(hist or "[]") + [{"zeit": now(), "wer": "vi", "was": "zurueckgezogen",
                                               "grund": "0.67.0: refuted only by its author — a withdrawal, not a refutation (kollektiv P13)"}]
-        con.execute("UPDATE objekt SET modus = 'zurueckgezogen', aenderungen = ? WHERE id = ?", (json.dumps(changes, ensure_ascii=False), oid))
+        con.execute("UPDATE object SET mode = 'zurueckgezogen', changes = ? WHERE id = ?", (json.dumps(changes, ensure_ascii=False), oid))
         moved += 1
     if moved:
         log(f"migration: {moved} object(s) widerlegt → zurueckgezogen (refuted only by their author)")
@@ -247,19 +249,19 @@ def _migrate(con: Any) -> None:
     # flat view of observations (docs/TRAINING.md 4a): one source of truth (objekt/tag/daten), only read differently
     con.execute("DROP VIEW IF EXISTS beobachtung")
     con.execute("""CREATE VIEW beobachtung AS
-        SELECT o.id AS erfahrung_id, o.zeit, o.instanz,
-               (SELECT substr(tag, 6) FROM tag WHERE objekt_id = o.id AND tag LIKE 'tool:%') AS tool,
-               CASE WHEN EXISTS (SELECT 1 FROM tag WHERE objekt_id = o.id AND tag = 'ok:ja') THEN 1
-                    WHEN EXISTS (SELECT 1 FROM tag WHERE objekt_id = o.id AND tag = 'ok:nein') THEN 0 END AS ok,
-               json_array_length(COALESCE(json_extract(o.daten, '$.vorher.gezeigt'), json_extract(o.daten, '$.vorher.gefunden'), '[]')) AS hinweise_n,
-               json_extract(o.daten, '$.ueberraschung.stufe') AS ueberraschung,
-               json_extract(o.daten, '$.vorher.router') AS router,
-               json_extract(o.daten, '$.vorher.exploration') AS exploration,
-               json_extract(o.daten, '$.vorher.reize') AS reize_json,
-               json_extract(o.daten, '$.vorher.gezeigt') AS gezeigt_json,
-               json_extract(o.daten, '$.vorher.kandidaten') AS kandidaten_json,
-               json_extract(o.daten, '$.vorher.aus_gedaechtnis') AS aus_gedaechtnis
-        FROM objekt o WHERE o.art = 'erfahrung'""")
+        SELECT o.id AS erfahrung_id, o.ts, o.instance,
+               (SELECT substr(tag, 6) FROM tag WHERE object_id = o.id AND tag LIKE 'tool:%') AS tool,
+               CASE WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:ja') THEN 1
+                    WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:nein') THEN 0 END AS ok,
+               json_array_length(COALESCE(json_extract(o.data, '$.vorher.gezeigt'), json_extract(o.data, '$.vorher.gefunden'), '[]')) AS hinweise_n,
+               json_extract(o.data, '$.ueberraschung.stufe') AS ueberraschung,
+               json_extract(o.data, '$.vorher.router') AS router,
+               json_extract(o.data, '$.vorher.exploration') AS exploration,
+               json_extract(o.data, '$.vorher.reize') AS reize_json,
+               json_extract(o.data, '$.vorher.gezeigt') AS gezeigt_json,
+               json_extract(o.data, '$.vorher.kandidaten') AS kandidaten_json,
+               json_extract(o.data, '$.vorher.aus_gedaechtnis') AS aus_gedaechtnis
+        FROM object o WHERE o.kind = 'erfahrung'""")
     con.commit()
 
 
@@ -395,8 +397,8 @@ class MemoryObject:
         with lock:
             for a, b in ((self.id, other_id), (other_id, self.id)):
                 # evidence (grund "Beleg…") weighs more than an automatic edge and replaces it; never the other way round
-                db().execute("INSERT INTO kante (a, b, grund, zeit) VALUES (?,?,?,?) ON CONFLICT (a, b) DO UPDATE SET grund = excluded.grund, "
-                             "zeit = excluded.zeit WHERE excluded.grund LIKE 'Beleg%' AND kante.grund NOT LIKE 'Beleg%'", (a, b, reason[:200], now()))
+                db().execute("INSERT INTO edge (a, b, reason, ts) VALUES (?,?,?,?) ON CONFLICT (a, b) DO UPDATE SET reason = excluded.reason, "
+                             "ts = excluded.ts WHERE excluded.reason LIKE 'Beleg%' AND edge.reason NOT LIKE 'Beleg%'", (a, b, reason[:200], now()))
             db().commit()
 
     def access(self) -> None:
@@ -404,20 +406,19 @@ class MemoryObject:
         no lost counter, even if another thread reads the same object at the same time."""
         self.last_at = now()
         with lock:
-            db().execute("UPDATE objekt SET zugriffe = zugriffe + 1, zuletzt = ? WHERE id = ?", (self.last_at, self.id))
+            db().execute("UPDATE object SET accesses = accesses + 1, last_at = ? WHERE id = ?", (self.last_at, self.id))
             db().commit()
-            self.accesses = db().execute("SELECT zugriffe FROM objekt WHERE id = ?", (self.id,)).fetchone()[0]
+            self.accesses = db().execute("SELECT accesses FROM object WHERE id = ?", (self.id,)).fetchone()[0]
 
     def edges(self) -> list[tuple[str, str]]:
         with lock:
-            return db().execute("SELECT b, grund FROM kante WHERE a = ?", (self.id,)).fetchall()
+            return db().execute("SELECT b, reason FROM edge WHERE a = ?", (self.id,)).fetchall()
 
 
-#: Database columns of table objekt (stored format, stays German) and the MemoryObject field each one fills, in the same order
-COLUMNS = ("id", "art", "zeit", "zuletzt", "text", "daten", "wichtigkeit", "bestaetigt", "widerlegt", "zugriffe",
-           "modus", "aenderungen", "gespraech", "instanz", "sicht", "idx")
+#: MemoryObject fields = database columns of table object, in the same order (0.67.0: one name for both; up to 0.66 the columns were German)
 FIELDS = ("id", "kind", "ts", "last_at", "text", "data", "importance", "confirmed", "refuted", "accesses",
           "mode", "changes", "conversation", "instance", "visibility", "idx")
+COLUMNS = FIELDS
 
 
 def _fields_from_row(row) -> dict:
@@ -430,13 +431,13 @@ def _fields_from_row(row) -> dict:
 def _object_from_row(row) -> MemoryObject:
     o = MemoryObject(**_fields_from_row(row))
     with lock:
-        o.hashtags = [r[0] for r in db().execute("SELECT tag FROM tag WHERE objekt_id = ? ORDER BY tag", (o.id,))]
+        o.hashtags = [r[0] for r in db().execute("SELECT tag FROM tag WHERE object_id = ? ORDER BY tag", (o.id,))]
     return o
 
 
 def load(oid: str) -> MemoryObject | None:
     with lock:
-        row = db().execute(f"SELECT {', '.join(COLUMNS)} FROM objekt WHERE id = ?", (oid,)).fetchone()
+        row = db().execute(f"SELECT {', '.join(COLUMNS)} FROM object WHERE id = ?", (oid,)).fetchone()
         return _object_from_row(row) if row else None
 
 
@@ -483,9 +484,9 @@ def load_many(oids: list[str]) -> dict[str, MemoryObject]:
             part = oids[i:i + 900]
             markers = ",".join("?" * len(part))
             tags: dict[str, list[str]] = {}
-            for oid, tag in db().execute(f"SELECT objekt_id, tag FROM tag WHERE objekt_id IN ({markers}) ORDER BY tag", part):
+            for oid, tag in db().execute(f"SELECT object_id, tag FROM tag WHERE object_id IN ({markers}) ORDER BY tag", part):
                 tags.setdefault(oid, []).append(tag)
-            for row in db().execute(f"SELECT {', '.join(COLUMNS)} FROM objekt WHERE id IN ({markers})", part):
+            for row in db().execute(f"SELECT {', '.join(COLUMNS)} FROM object WHERE id IN ({markers})", part):
                 d = _fields_from_row(row)
                 outputs[d["id"]] = MemoryObject(**d, hashtags=tags.get(d["id"], []))
     return outputs
@@ -499,19 +500,19 @@ def save(o: MemoryObject, *, commit: bool = True) -> MemoryObject:
     tags = sorted(set(o.hashtags) | {f"art:{o.kind}", f"instanz:{o.instance}"})
     if o.idx not in _known_indexes:  # 0.61.0: every index an object refers to has its row (the primary key of vi_index)
         with lock:
-            db().execute("INSERT OR IGNORE INTO vi_index (name, art, erstellt) VALUES (?, ?, ?)",
+            db().execute("INSERT OR IGNORE INTO vi_index (name, kind, created) VALUES (?, ?, ?)",
                          (o.idx, "global" if o.idx == "global" else "projekt", now()))
         _known_indexes.add(o.idx)
     with lock:
-        db().execute(f"INSERT OR REPLACE INTO objekt ({', '.join(COLUMNS)}) VALUES ({', '.join('?' * len(COLUMNS))})",
+        db().execute(f"INSERT OR REPLACE INTO object ({', '.join(COLUMNS)}) VALUES ({', '.join('?' * len(COLUMNS))})",
                      (o.id, o.kind, o.ts, o.last_at, o.text, _data_json(o), o.importance,
                       o.confirmed, o.refuted, o.accesses, o.mode, json.dumps(o.changes, ensure_ascii=False), o.conversation,
                       o.instance, o.visibility, o.idx))
-        db().execute("DELETE FROM tag WHERE objekt_id = ?", (o.id,))
-        db().executemany("INSERT OR IGNORE INTO tag (objekt_id, tag) VALUES (?, ?)", [(o.id, t) for t in tags])
+        db().execute("DELETE FROM tag WHERE object_id = ?", (o.id,))
+        db().executemany("INSERT OR IGNORE INTO tag (object_id, tag) VALUES (?, ?)", [(o.id, t) for t in tags])
         if fts:
-            db().execute("DELETE FROM objekt_fts WHERE id = ?", (o.id,))
-            db().execute("INSERT INTO objekt_fts (id, text) VALUES (?, ?)", (o.id, (o.text + "\n" + str(o.data.get("inhalt") or "")
+            db().execute("DELETE FROM object_fts WHERE id = ?", (o.id,))
+            db().execute("INSERT INTO object_fts (id, text) VALUES (?, ?)", (o.id, (o.text + "\n" + str(o.data.get("inhalt") or "")
                                                                                 + "".join("\n" + r.get("begriff", "") for r in o.data.get("regionen") or []))[:300000]))
         if commit:
             db().commit()
@@ -527,12 +528,12 @@ def update_data(oid: str, change) -> int:
     """Change the JSON field daten of one object in place: change(dict) edits it. Read and write under the lock, so counters do not get
     lost (one process writes the memory). Portable instead of SQLite's json_set/json_remove (0.50.0). Returns 1 if the object exists."""
     with lock:
-        row = db().execute("SELECT daten FROM objekt WHERE id = ?", (oid,)).fetchone()
+        row = db().execute("SELECT data FROM object WHERE id = ?", (oid,)).fetchone()
         if row is None:
             return 0
         d = json.loads(row[0] or "{}")
         change(d)
-        return db().execute("UPDATE objekt SET daten = ? WHERE id = ?", (json.dumps(d, ensure_ascii=False), oid)).rowcount
+        return db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d, ensure_ascii=False), oid)).rowcount
 
 
 def delete(oids: list[str]) -> int:
@@ -541,11 +542,11 @@ def delete(oids: list[str]) -> int:
     archive.delete(oids)
     with lock:
         for a in oids:
-            db().execute("DELETE FROM objekt WHERE id = ?", (a,))
-            db().execute("DELETE FROM tag WHERE objekt_id = ?", (a,))
-            db().execute("DELETE FROM kante WHERE a = ? OR b = ?", (a, a))
+            db().execute("DELETE FROM object WHERE id = ?", (a,))
+            db().execute("DELETE FROM tag WHERE object_id = ?", (a,))
+            db().execute("DELETE FROM edge WHERE a = ? OR b = ?", (a, a))
             if fts:
-                db().execute("DELETE FROM objekt_fts WHERE id = ?", (a,))
+                db().execute("DELETE FROM object_fts WHERE id = ?", (a,))
         db().commit()
     return len(oids)
 
@@ -600,8 +601,8 @@ KEY_HISTORY_MAX = 200
 
 def find_by_key(instance: str, key: str) -> MemoryObject | None:
     with lock:
-        r = db().execute(f"SELECT id FROM objekt WHERE instanz = ? AND art = 'erkenntnis' AND modus IN ({','.join('?' * len(KEY_MODES))}) "
-                         "AND json_extract(daten, '$.key') = ? ORDER BY zeit LIMIT 1", (instance, *KEY_MODES, key)).fetchone()
+        r = db().execute(f"SELECT id FROM object WHERE instance = ? AND kind = 'erkenntnis' AND mode IN ({','.join('?' * len(KEY_MODES))}) "
+                         "AND json_extract(data, '$.key') = ? ORDER BY ts LIMIT 1", (instance, *KEY_MODES, key)).fetchone()
     return load(r[0]) if r else None
 
 
@@ -664,8 +665,8 @@ def merge_by_key(instance: str, key_of, who: str, reason: str, apply: bool = Fal
     The oldest keeps its id and gets the newest text; all earlier states go into its history; the others get mode MERGED
     with a reference (data.merged_into) and drop out of searches — nothing is deleted. apply=False only counts."""
     with lock:
-        rows = db().execute(f"SELECT id, text FROM objekt WHERE instanz = ? AND art = 'erkenntnis' AND modus IN ({','.join('?' * len(KEY_MODES))}) "
-                            "ORDER BY zeit, id", (instance, *KEY_MODES)).fetchall()
+        rows = db().execute(f"SELECT id, text FROM object WHERE instance = ? AND kind = 'erkenntnis' AND mode IN ({','.join('?' * len(KEY_MODES))}) "
+                            "ORDER BY ts, id", (instance, *KEY_MODES)).fetchall()
     groups: dict[str, list[str]] = {}
     for oid, text in rows:
         k = key_of(text)
@@ -711,8 +712,8 @@ def link_similar(o: MemoryObject, at_least: int = 2, limit: int = 5) -> None:
         return
     with lock:
         rows = db().execute(
-            f"SELECT objekt_id, COUNT(*) n FROM tag WHERE tag IN ({','.join('?' * len(content))}) AND objekt_id <> ? "
-            f"GROUP BY objekt_id HAVING COUNT(*) >= ? ORDER BY n DESC LIMIT ?", (*content, o.id, at_least, limit)).fetchall()
+            f"SELECT object_id, COUNT(*) n FROM tag WHERE tag IN ({','.join('?' * len(content))}) AND object_id <> ? "
+            f"GROUP BY object_id HAVING COUNT(*) >= ? ORDER BY n DESC LIMIT ?", (*content, o.id, at_least, limit)).fetchall()
     for oid, n in rows:
         o.link(oid, f"{n} shared hashtags")
 
@@ -758,27 +759,27 @@ search_index: contextvars.ContextVar[str | None] = contextvars.ContextVar("such_
 
 def _filter_sql(groups: list, remove: list, viewer: str | None) -> tuple[str, list]:
     """SQL for mode, visibility and hashtag conditions (without free text) — one source for recall() and ids_for_filter()."""
-    sql, par = f"SELECT id FROM objekt WHERE modus NOT IN {GONE_SQL}", []
+    sql, par = f"SELECT id FROM object WHERE mode NOT IN {GONE_SQL}", []
     if search_index.get():
         sql += " AND idx = ?"
         par.append(search_index.get())
     if not any("modus:quarantaene" in grp for grp in groups):
-        sql += " AND modus <> 'quarantaene'"  # only via vi_quarantine
+        sql += " AND mode <> 'quarantaene'"  # only via vi_quarantine
     if not any("modus:aufgegangen" in grp for grp in groups):
-        sql += " AND modus <> 'aufgegangen'"  # merged skills only on request (reference is in the object)
+        sql += " AND mode <> 'aufgegangen'"  # merged skills only on request (reference is in the object)
     if not any("modus:archiviert" in grp for grp in groups):
-        sql += " AND modus <> 'archiviert'"  # archived objects only on explicit request
+        sql += " AND mode <> 'archiviert'"  # archived objects only on explicit request
     if viewer is not None:
-        sql += " AND (sicht = 'geteilt' OR instanz = ?" + (" OR sicht = 'intern')" if viewer != OPEN_INSTANCE else ")")
+        sql += " AND (visibility = 'geteilt' OR instance = ?" + (" OR visibility = 'intern')" if viewer != OPEN_INSTANCE else ")")
         par.append(viewer)
     for g in groups:
         parts = [_tag_condition(t) for t in g]
-        sql += " AND id IN (SELECT objekt_id FROM tag WHERE " + " OR ".join(b for b, _ in parts) + ")"
+        sql += " AND id IN (SELECT object_id FROM tag WHERE " + " OR ".join(b for b, _ in parts) + ")"
         for _, p in parts:
             par += list(p)
     for t in remove:
         b, p = _tag_condition(t)
-        sql += f" AND id NOT IN (SELECT objekt_id FROM tag WHERE {b})"
+        sql += f" AND id NOT IN (SELECT object_id FROM tag WHERE {b})"
         par += list(p)
     return sql, par
 
@@ -836,12 +837,12 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
                 def _fts(q: str) -> dict[str, float]:
                     if backend() == "postgres":  # 0.50.0: tsvector ('simple': no stemming, like FTS5 unicode61); ts_rank instead of bm25
                         return {oid: float(rank) for oid, rank in db().execute(
-                            f"SELECT id, ts_rank(tsv, q) AS r FROM objekt_fts, websearch_to_tsquery('simple', ?) q WHERE tsv @@ q AND id IN ({sql}) "
+                            f"SELECT id, ts_rank(tsv, q) AS r FROM object_fts, websearch_to_tsquery('simple', ?) q WHERE tsv @@ q AND id IN ({sql}) "
                             "ORDER BY r DESC LIMIT 500", (q, *par))}
                     # search-top4 (15.11.2026): the full-text index first, then the visibility filter on its hits only. Matching inside
                     # "id IN (all visible ids)" took 1,826 ms on a 500,310-object copy; MATCH alone 80 ms plus the filter on 2,000 ids
                     # 10 ms. When invisible or filtered rows exhaust the pool, the exact query runs — the ranking is the same either way.
-                    pool = db().execute("SELECT id, rank FROM objekt_fts WHERE objekt_fts MATCH ? ORDER BY rank LIMIT ?", (q, FTS_POOL)).fetchall()
+                    pool = db().execute("SELECT id, rank FROM object_fts WHERE object_fts MATCH ? ORDER BY rank LIMIT ?", (q, FTS_POOL)).fetchall()
                     if pool:
                         visible = set()
                         ids = [r[0] for r in pool]
@@ -854,7 +855,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
                     else:
                         return {}
                     return {oid: -float(rank) for oid, rank in db().execute(
-                        f"SELECT id, rank FROM objekt_fts WHERE objekt_fts MATCH ? AND id IN ({sql}) ORDER BY rank LIMIT 500", (q, *par))}
+                        f"SELECT id, rank FROM object_fts WHERE object_fts MATCH ? AND id IN ({sql}) ORDER BY rank LIMIT 500", (q, *par))}
                 word_hits = _fts(" ".join(terms))
                 if or_fallback and len(terms) > 1 and len(word_hits) < limit:
                     or_hits = _fts((" or " if backend() == "postgres" else " OR ").join(terms))
@@ -875,7 +876,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
             matching = [r[0] for r in db().execute(sql, par)]
             ids = sorted(matching, key=lambda i: -word_hits.get(i, 0.0))[:max(400, int(limit))]
         else:
-            ids = [r[0] for r in db().execute(sql + f" ORDER BY zuletzt DESC LIMIT {max(400, int(limit))}", par)]
+            ids = [r[0] for r in db().execute(sql + f" ORDER BY last_at DESC LIMIT {max(400, int(limit))}", par)]
     word_search.set(search_kind)
     now_dt = datetime.now(timezone.utc)
     rated = []

@@ -174,8 +174,8 @@ def sample_targets(n: int, exclude: set[str], seed: int) -> list[g.MemoryObject]
     """A stratified sample of shared knowledge (insights, rules, skills): each stratum in proportion to its size, at least 3 each."""
     import random
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE art IN ('erkenntnis', 'regel', 'skill') AND modus = 'aktiv' "
-                                            "AND length(text) >= 40 AND id NOT IN (SELECT objekt_id FROM tag WHERE tag = 'art_wissen:code')")]
+        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind IN ('erkenntnis', 'regel', 'skill') AND mode = 'aktiv' "
+                                            "AND length(text) >= 40 AND id NOT IN (SELECT object_id FROM tag WHERE tag = 'art_wissen:code')")]
         # 0.61.0: imported code is left out — thousands of pieces would swamp the question set the search is judged by
     objs = [o for o in g.load_many([i for i in ids if i not in exclude]).values()]
     by: dict[str, list] = {}
@@ -281,9 +281,9 @@ CLICK_WINDOW_S = 600
 
 def _log_table() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS suche_log (zeit TEXT NOT NULL, instanz TEXT NOT NULL, gespraech TEXT, anfrage TEXT NOT NULL, "
-                       "suchart TEXT, treffer TEXT NOT NULL, geoeffnet TEXT)")
-        g.db().execute("CREATE INDEX IF NOT EXISTS suche_log_zeit ON suche_log (zeit)")
+        g.db().execute("CREATE TABLE IF NOT EXISTS search_log (ts TEXT NOT NULL, instance TEXT NOT NULL, conversation TEXT, query TEXT NOT NULL, "
+                       "search_kind TEXT, hits TEXT NOT NULL, opened TEXT)")
+        g.db().execute("CREATE INDEX IF NOT EXISTS search_log_ts ON search_log (ts)")
         g.db().commit()
 
 
@@ -292,7 +292,7 @@ def log_search(instance: str, conversation: str | None, query: str, kind: str | 
     Kept USAGE retention days (usage_stats.RETENTION_DAYS) — the data for learning a ranker from what agents open (Joachims 2017)."""
     _log_table()
     with g.lock:
-        g.db().execute("INSERT INTO suche_log (zeit, instanz, gespraech, anfrage, suchart, treffer) VALUES (?, ?, ?, ?, ?, ?)",
+        g.db().execute("INSERT INTO search_log (ts, instance, conversation, query, search_kind, hits) VALUES (?, ?, ?, ?, ?, ?)",
                        (g.now(), instance, conversation, query[:500], kind, json.dumps(ids[:50])))
         g.db().commit()
 
@@ -303,13 +303,13 @@ def log_open(instance: str, oid: str) -> None:
     _log_table()
     since = (datetime.now(timezone.utc) - timedelta(seconds=CLICK_WINDOW_S)).isoformat(timespec="milliseconds")
     with g.lock:
-        rows = g.db().execute("SELECT rowid, treffer, geoeffnet FROM suche_log WHERE instanz = ? AND zeit >= ? ORDER BY zeit DESC LIMIT 5",
+        rows = g.db().execute("SELECT rowid, hits, opened FROM search_log WHERE instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 5",
                               (instance, since)).fetchall()
         for rowid, hits, opened in rows:
             if oid in json.loads(hits):
                 o = json.loads(opened) if opened else []
                 if oid not in o:
-                    g.db().execute("UPDATE suche_log SET geoeffnet = ? WHERE rowid = ?", (json.dumps(o + [oid]), rowid))
+                    g.db().execute("UPDATE search_log SET opened = ? WHERE rowid = ?", (json.dumps(o + [oid]), rowid))
                     g.db().commit()
                 return
 
@@ -320,7 +320,7 @@ def click_stats(days: float = 7) -> dict:
     _log_table()
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
     with g.lock:
-        rows = g.db().execute("SELECT treffer, geoeffnet FROM suche_log WHERE zeit >= ?", (since,)).fetchall()
+        rows = g.db().execute("SELECT hits, opened FROM search_log WHERE ts >= ?", (since,)).fetchall()
     by_rank: dict[int, int] = {}
     with_click = 0
     for hits, opened in rows:
@@ -339,6 +339,6 @@ def cleanup_log() -> int:
     _log_table()
     bound = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).isoformat(timespec="seconds")
     with g.lock:
-        n = g.db().execute("DELETE FROM suche_log WHERE zeit < ?", (bound,)).rowcount
+        n = g.db().execute("DELETE FROM search_log WHERE ts < ?", (bound,)).rowcount
         g.db().commit()
     return n

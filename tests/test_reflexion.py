@@ -17,7 +17,7 @@ def _exp(tool, host, ok, error=None, days=0):
     if days:
         z = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="milliseconds")
         with g.lock:
-            g.db().execute("UPDATE objekt SET zeit = ?, zuletzt = ? WHERE id = ?", (z, z, oid))
+            g.db().execute("UPDATE object SET ts = ?, last_at = ? WHERE id = ?", (z, z, oid))
             g.db().commit()
     return oid
 

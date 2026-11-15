@@ -185,15 +185,15 @@ def from_recovery(since: str) -> dict:
     damaged: set[str] = set()
     with g.lock:
         recovered = g.db().execute(
-            "SELECT o.id FROM objekt o JOIN tag t ON t.objekt_id = o.id AND t.tag = 'ueberraschung:erholt' "
-            "WHERE o.art = 'erfahrung' AND o.zeit > ? AND o.gespraech IS NOT NULL ORDER BY o.zeit", (since,)).fetchall()
+            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'ueberraschung:erholt' "
+            "WHERE o.kind = 'erfahrung' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     for (eid,) in recovered:
         e = g.load(eid)
         tool = next((t[5:] for t in e.hashtags if t.startswith("tool:")), None)
         if not tool or not e.conversation:
             continue
         with g.lock:
-            rows = g.db().execute("SELECT id FROM objekt WHERE art = 'erfahrung' AND gespraech = ? AND zeit < ? ORDER BY zeit", (e.conversation, e.ts)).fetchall()
+            rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND conversation = ? AND ts < ? ORDER BY ts", (e.conversation, e.ts)).fetchall()
         episode = [g.load(r[0]) for r in rows]
         error_idx = [i for i, x in enumerate(episode) if x and f"tool:{tool}" in x.hashtags and "ok:nein" in x.hashtags]
         if not error_idx:

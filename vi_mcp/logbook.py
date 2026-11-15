@@ -276,23 +276,25 @@ class Logbook:
                 os.umask(old_umask_value)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA busy_timeout=30000")
+        from . import names
+        names.migrate_db(self.db, names.LOGBOOK_TABLES, fpath, "logbook")  # 0.67.0: a logbook of 0.66 or older gets its English names first
         self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS eintrag (pub TEXT NOT NULL, seq INTEGER NOT NULL, hash TEXT NOT NULL, typ TEXT NOT NULL, sha TEXT NOT NULL, netz_id TEXT, loesch_hash TEXT, zeit TEXT NOT NULL, kopf TEXT NOT NULL, PRIMARY KEY (pub, seq));
-            CREATE INDEX IF NOT EXISTS eintrag_netz ON eintrag (netz_id);
-            CREATE INDEX IF NOT EXISTS eintrag_typ ON eintrag (typ);
-            CREATE TABLE IF NOT EXISTS inhalt (sha TEXT PRIMARY KEY, daten TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS grab (netz_id TEXT PRIMARY KEY, token_sha TEXT NOT NULL, zeit TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS gabelung (pub TEXT PRIMARY KEY, seq INTEGER NOT NULL, zeit TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS verstoss (pub TEXT PRIMARY KEY, n INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS stand (pub TEXT PRIMARY KEY, seq INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS peer (adresse TEXT PRIMARY KEY, quelle TEXT NOT NULL, zuletzt REAL, fehler INTEGER NOT NULL DEFAULT 0, naechster REAL NOT NULL DEFAULT 0);
-            CREATE TABLE IF NOT EXISTS beitritt (nonce_sha TEXT PRIMARY KEY, ablauf REAL NOT NULL, benutzt TEXT);
-            CREATE TABLE IF NOT EXISTS segment (sha256 TEXT PRIMARY KEY, pub TEXT NOT NULL, von INTEGER NOT NULL, bis INTEGER NOT NULL, torrent TEXT NOT NULL, port INTEGER NOT NULL, datei TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS entry (pub TEXT NOT NULL, seq INTEGER NOT NULL, hash TEXT NOT NULL, type TEXT NOT NULL, sha TEXT NOT NULL, net_id TEXT, delete_hash TEXT, ts TEXT NOT NULL, header TEXT NOT NULL, PRIMARY KEY (pub, seq));
+            CREATE INDEX IF NOT EXISTS entry_net ON entry (net_id);
+            CREATE INDEX IF NOT EXISTS entry_type ON entry (type);
+            CREATE TABLE IF NOT EXISTS content (sha TEXT PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS tombstone (net_id TEXT PRIMARY KEY, token_sha TEXT NOT NULL, ts TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS fork (pub TEXT PRIMARY KEY, seq INTEGER NOT NULL, ts TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS violation (pub TEXT PRIMARY KEY, n INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS state (pub TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS peer (address TEXT PRIMARY KEY, source TEXT NOT NULL, last_at REAL, failures INTEGER NOT NULL DEFAULT 0, next_at REAL NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS joining (nonce_sha TEXT PRIMARY KEY, expiry REAL NOT NULL, used TEXT);
+            CREATE TABLE IF NOT EXISTS segment (sha256 TEXT PRIMARY KEY, pub TEXT NOT NULL, first_seq INTEGER NOT NULL, last_seq INTEGER NOT NULL, torrent TEXT NOT NULL, port INTEGER NOT NULL, file TEXT NOT NULL);
         """)
         cols = [r[1] for r in self.db.execute("PRAGMA table_info(peer)")]
-        for col, typ in (("pin", "TEXT"), ("version", "TEXT"), ("version_zeit", "REAL"), ("fehlt_hier", "INTEGER"), ("fehlt_dort", "INTEGER"),
+        for col, typ in (("pin", "TEXT"), ("version", "TEXT"), ("version_ts", "REAL"), ("missing_here", "INTEGER"), ("missing_there", "INTEGER"),
                          ("paused_until", "REAL"), ("pause_reason", "TEXT"), ("last_error", "TEXT")):
-            if col not in cols:  # 0.39.0: version and backlog per peer; 0.66.1: pause with reason (English names: the coming rename)
+            if col not in cols:  # 0.39.0: version and backlog per peer; 0.66.1: pause with reason
                 self.db.execute(f"ALTER TABLE peer ADD COLUMN {col} {typ}")
         #: 0.66.1: addresses refused on the way in (start list, logbook, exchange): address → (source, reason), shown by vi_net_status
         self.rejected_addresses: dict[str, tuple[str, str]] = {}
@@ -307,13 +309,13 @@ class Logbook:
         self.free_bits = free_bits
         self.blocked: set[str] = set(blocked or ())  # keys this server does not accept, relay or answer (local, never for others)
         self.quota_of = quota_of  # pub → entries per day; None = MAX_PER_DAY for everyone
-        self.db.execute("CREATE TABLE IF NOT EXISTS identitaet (pub TEXT PRIMARY KEY, bits INTEGER NOT NULL, zeit TEXT NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS identity (pub TEXT PRIMARY KEY, bits INTEGER NOT NULL, ts TEXT NOT NULL)")
         self._members: set[str] | None = None
 
     # ---- own entries ----
 
     def _header_of(self, pub: str) -> tuple[int, str | None]:
-        z = self.db.execute("SELECT seq, hash FROM eintrag WHERE pub = ? ORDER BY seq DESC LIMIT 1", (pub,)).fetchone()
+        z = self.db.execute("SELECT seq, hash FROM entry WHERE pub = ? ORDER BY seq DESC LIMIT 1", (pub,)).fetchone()
         return (z[0], z[1]) if z else (0, None)
 
     def attach(self, type_: str, content: dict, net_id: str | None = None, delete_hash: str | None = None) -> dict:
@@ -335,15 +337,15 @@ class Logbook:
         return header
 
     def _insert(self, header: dict, content) -> None:
-        self.db.execute("INSERT INTO eintrag (pub, seq, hash, typ, sha, netz_id, loesch_hash, zeit, kopf) VALUES (?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT INTO entry (pub, seq, hash, type, sha, net_id, delete_hash, ts, header) VALUES (?,?,?,?,?,?,?,?,?)",
                         (header["pub"], header["seq"], entry_hash(header), header["typ"], header["sha"], header.get("netz_id"), header.get("loesch_hash"), header["zeit"], json.dumps(header, sort_keys=True)))
         if content is not None:
-            self.db.execute("INSERT OR IGNORE INTO inhalt (sha, daten) VALUES (?,?)", (header["sha"], json.dumps(content, ensure_ascii=False, sort_keys=True)))
+            self.db.execute("INSERT OR IGNORE INTO content (sha, data) VALUES (?,?)", (header["sha"], json.dumps(content, ensure_ascii=False, sort_keys=True)))
 
     def _apply_effects(self, header: dict, content) -> None:
         """What an entry causes, no matter where it came from."""
         if header["typ"] == "identitaet":
-            self.db.execute("INSERT OR IGNORE INTO identitaet (pub, bits, zeit) VALUES (?,?,?)", (header["pub"], content["bits"], header["zeit"]))
+            self.db.execute("INSERT OR IGNORE INTO identity (pub, bits, ts) VALUES (?,?,?)", (header["pub"], content["bits"], header["zeit"]))
             self._members = None
         elif header["typ"] in ("einladung", "ausschluss"):
             self._members = None
@@ -358,15 +360,15 @@ class Logbook:
         """Delete the content if the proof matches; remember a tombstone. Returns (pub, seq) of the deleted entries."""
         evidence = hashlib.sha256(token.encode()).hexdigest()
         with self.lock:
-            lines = self.db.execute("SELECT pub, seq, sha, loesch_hash FROM eintrag WHERE netz_id = ? AND typ IN ('objekt', 'seite', 'beitrag')", (net_id,)).fetchall()
+            lines = self.db.execute("SELECT pub, seq, sha, delete_hash FROM entry WHERE net_id = ? AND type IN ('objekt', 'seite', 'beitrag')", (net_id,)).fetchall()
             if lines and not any(hmac.compare_digest(z[3], evidence) for z in lines):
                 return []  # wrong proof
             remove = []
             for pub, seq, sha, l in lines:
                 if hmac.compare_digest(l, evidence):
-                    self.db.execute("DELETE FROM inhalt WHERE sha = ?", (sha,))
+                    self.db.execute("DELETE FROM content WHERE sha = ?", (sha,))
                     remove.append((pub, seq))
-            self.db.execute("INSERT OR IGNORE INTO grab (netz_id, token_sha, zeit) VALUES (?,?,?)", (net_id, evidence, time.strftime("%Y-%m-%d", time.gmtime())))
+            self.db.execute("INSERT OR IGNORE INTO tombstone (net_id, token_sha, ts) VALUES (?,?,?)", (net_id, evidence, time.strftime("%Y-%m-%d", time.gmtime())))
             for pub, seq in remove:
                 self.discard_segments(pub, seq)
         return remove
@@ -378,11 +380,11 @@ class Logbook:
             if self._members is not None:
                 return set(self._members)
             if self.free_bits is not None:  # free network: whoever proved the work, minus what this server blocks
-                self._members = {r[0] for r in self.db.execute("SELECT pub FROM identitaet WHERE bits >= ?", (self.free_bits,))} - self.blocked
+                self._members = {r[0] for r in self.db.execute("SELECT pub FROM identity WHERE bits >= ?", (self.free_bits,))} - self.blocked
                 return set(self._members)
             edges: dict[str, set[str]] = {}
             outputs = []
-            for pub, type_, data in self.db.execute("SELECT e.pub, e.typ, i.daten FROM eintrag e JOIN inhalt i ON i.sha = e.sha WHERE e.typ IN ('einladung', 'ausschluss') ORDER BY e.pub, e.seq"):
+            for pub, type_, data in self.db.execute("SELECT e.pub, e.type, i.data FROM entry e JOIN content i ON i.sha = e.sha WHERE e.type IN ('einladung', 'ausschluss') ORDER BY e.pub, e.seq"):
                 target = json.loads(data)["pub"]
                 if type_ == "einladung":
                     edges.setdefault(pub, set()).add(target)
@@ -406,19 +408,19 @@ class Logbook:
 
     def headers(self) -> dict[str, int]:
         with self.lock:
-            return dict(self.db.execute("SELECT pub, MAX(seq) FROM eintrag GROUP BY pub").fetchall())
+            return dict(self.db.execute("SELECT pub, MAX(seq) FROM entry GROUP BY pub").fetchall())
 
     def read(self, pub: str, from_seq: int, count: int = 500) -> list[dict]:
         with self.lock:
-            lines = self.db.execute("SELECT e.kopf, i.daten FROM eintrag e LEFT JOIN inhalt i ON i.sha = e.sha WHERE e.pub = ? AND e.seq > ? ORDER BY e.seq LIMIT ?", (pub, from_seq, min(count, 2000))).fetchall()
+            lines = self.db.execute("SELECT e.header, i.data FROM entry e LEFT JOIN content i ON i.sha = e.sha WHERE e.pub = ? AND e.seq > ? ORDER BY e.seq LIMIT ?", (pub, from_seq, min(count, 2000))).fetchall()
         return [{"kopf": json.loads(k), "inhalt": json.loads(d) if d else None} for k, d in lines]
 
     def _violation(self, pub: str) -> None:
-        self.db.execute("INSERT INTO verstoss (pub, n) VALUES (?, 1) ON CONFLICT(pub) DO UPDATE SET n = verstoss.n + 1", (pub,))
+        self.db.execute("INSERT INTO violation (pub, n) VALUES (?, 1) ON CONFLICT(pub) DO UPDATE SET n = violation.n + 1", (pub,))
 
     def _object_content(self, header: dict, content):
         """The content of an object to store, or None (forgotten, missing, or violating the rules)."""
-        tombstone = self.db.execute("SELECT token_sha FROM grab WHERE netz_id = ?", (header["netz_id"],)).fetchone()
+        tombstone = self.db.execute("SELECT token_sha FROM tombstone WHERE net_id = ?", (header["netz_id"],)).fetchone()
         if tombstone and hmac.compare_digest(tombstone[0], header["loesch_hash"]):
             return None
         if content is None:
@@ -450,7 +452,7 @@ class Logbook:
             if pub in stopped:
                 continue
             with self.lock:
-                if self.db.execute("SELECT 1 FROM gabelung WHERE pub = ?", (pub,)).fetchone():
+                if self.db.execute("SELECT 1 FROM fork WHERE pub = ?", (pub,)).fetchone():
                     stop(pub, "fork known")
                     continue
                 if pub in self.blocked:
@@ -463,22 +465,22 @@ class Logbook:
                 if not signature_valid(header):
                     stop(pub, "signature invalid")
                     continue
-                present = self.db.execute("SELECT hash FROM eintrag WHERE pub = ? AND seq = ?", (pub, header["seq"])).fetchone()
+                present = self.db.execute("SELECT hash FROM entry WHERE pub = ? AND seq = ?", (pub, header["seq"])).fetchone()
                 if present:
                     if present[0] != entry_hash(header):
-                        self.db.execute("INSERT OR REPLACE INTO gabelung (pub, seq, zeit) VALUES (?,?,?)", (pub, header["seq"], header["zeit"]))
+                        self.db.execute("INSERT OR REPLACE INTO fork (pub, seq, ts) VALUES (?,?,?)", (pub, header["seq"], header["zeit"]))
                         stop(pub, f"fork at number {header['seq']}")
                         continue
                     report["bekannt"] += 1
-                    if header["typ"] in FORGETTABLE and content is not None and not self.db.execute("SELECT 1 FROM inhalt WHERE sha = ?", (header["sha"],)).fetchone():
+                    if header["typ"] in FORGETTABLE and content is not None and not self.db.execute("SELECT 1 FROM content WHERE sha = ?", (header["sha"],)).fetchone():
                         if (good := self._object_content(header, content)) is not None:
-                            self.db.execute("INSERT OR IGNORE INTO inhalt (sha, daten) VALUES (?,?)", (header["sha"], json.dumps(good, ensure_ascii=False, sort_keys=True)))
+                            self.db.execute("INSERT OR IGNORE INTO content (sha, data) VALUES (?,?)", (header["sha"], json.dumps(good, ensure_ascii=False, sort_keys=True)))
                     continue
                 seq, prev_hash = self._header_of(pub)
                 if header["seq"] != seq + 1 or header["vor"] != prev_hash:
                     stop(pub, f"chain broken at number {header['seq']}")
                     continue
-                if self.db.execute("SELECT COUNT(*) FROM eintrag WHERE pub = ? AND zeit = ?", (pub, header["zeit"])).fetchone()[0] >= (self.quota_of(pub) if self.quota_of else MAX_PER_DAY):
+                if self.db.execute("SELECT COUNT(*) FROM entry WHERE pub = ? AND ts = ?", (pub, header["zeit"])).fetchone()[0] >= (self.quota_of(pub) if self.quota_of else MAX_PER_DAY):
                     stop(pub, "daily quota exhausted")
                     continue
                 if header["typ"] in FORGETTABLE:
@@ -509,41 +511,41 @@ class Logbook:
 
     def new_since_checkpoint(self, pub: str, count: int = 200) -> list[dict]:
         with self.lock:
-            z = self.db.execute("SELECT seq FROM stand WHERE pub = ?", (pub,)).fetchone()
+            z = self.db.execute("SELECT seq FROM state WHERE pub = ?", (pub,)).fetchone()
         return self.read(pub, z[0] if z else 0, count)
 
     def set_checkpoint(self, pub: str, seq: int) -> None:
         with self.lock:
-            self.db.execute("INSERT INTO stand (pub, seq) VALUES (?,?) ON CONFLICT(pub) DO UPDATE SET seq = excluded.seq", (pub, seq))
+            self.db.execute("INSERT INTO state (pub, seq) VALUES (?,?) ON CONFLICT(pub) DO UPDATE SET seq = excluded.seq", (pub, seq))
 
     def own_objects(self) -> set[tuple[str, str]]:
         with self.lock:
-            return set(self.db.execute("SELECT netz_id, sha FROM eintrag WHERE pub = ? AND typ = 'objekt'", (self.pub,)).fetchall())
+            return set(self.db.execute("SELECT net_id, sha FROM entry WHERE pub = ? AND type = 'objekt'", (self.pub,)).fetchall())
 
     def own_shas(self, type_: str) -> set[str]:
         with self.lock:
-            return {r[0] for r in self.db.execute("SELECT sha FROM eintrag WHERE pub = ? AND typ = ?", (self.pub, type_))}
+            return {r[0] for r in self.db.execute("SELECT sha FROM entry WHERE pub = ? AND type = ?", (self.pub, type_))}
 
     def own_ratings(self) -> dict[str, tuple[str, str, dict]]:
         """content hash → (sha of the last own rating, its date, its data)."""
         with self.lock:
-            lines = self.db.execute("SELECT e.sha, e.zeit, i.daten FROM eintrag e JOIN inhalt i ON i.sha = e.sha WHERE e.pub = ? AND e.typ = 'bewertung' ORDER BY e.seq",
+            lines = self.db.execute("SELECT e.sha, e.ts, i.data FROM entry e JOIN content i ON i.sha = e.sha WHERE e.pub = ? AND e.type = 'bewertung' ORDER BY e.seq",
                                     (self.pub,)).fetchall()
         return {(d := json.loads(raw))["ziel"]: (sha, z, d) for sha, z, raw in lines}
 
     def count_own(self, type_: str, day: str | None = None) -> int:
         with self.lock:
             if day:
-                return self.db.execute("SELECT COUNT(*) FROM eintrag WHERE pub = ? AND typ = ? AND zeit = ?", (self.pub, type_, day)).fetchone()[0]
-            return self.db.execute("SELECT COUNT(*) FROM eintrag WHERE pub = ? AND typ = ?", (self.pub, type_)).fetchone()[0]
+                return self.db.execute("SELECT COUNT(*) FROM entry WHERE pub = ? AND type = ? AND ts = ?", (self.pub, type_, day)).fetchone()[0]
+            return self.db.execute("SELECT COUNT(*) FROM entry WHERE pub = ? AND type = ?", (self.pub, type_)).fetchone()[0]
 
     def own_revocations(self) -> set[str]:
         with self.lock:
-            return {r[0] for r in self.db.execute("SELECT netz_id FROM eintrag WHERE pub = ? AND typ = 'widerruf'", (self.pub,))}
+            return {r[0] for r in self.db.execute("SELECT net_id FROM entry WHERE pub = ? AND type = 'widerruf'", (self.pub,))}
 
     def last_own_address(self) -> dict | None:
         with self.lock:
-            z = self.db.execute("SELECT i.daten FROM eintrag e JOIN inhalt i ON i.sha = e.sha WHERE e.pub = ? AND e.typ = 'adresse' ORDER BY e.seq DESC LIMIT 1", (self.pub,)).fetchone()
+            z = self.db.execute("SELECT i.data FROM entry e JOIN content i ON i.sha = e.sha WHERE e.pub = ? AND e.type = 'adresse' ORDER BY e.seq DESC LIMIT 1", (self.pub,)).fetchone()
         return json.loads(z[0]) if z else None
 
     # ---- Peers ----
@@ -559,9 +561,9 @@ class Logbook:
         if a in self.removed:
             return "removed on this server (vi_net_peer_remove)"
         with self.lock:
-            self.db.execute("INSERT OR IGNORE INTO peer (adresse, quelle) VALUES (?,?)", (a, source))
+            self.db.execute("INSERT OR IGNORE INTO peer (address, source) VALUES (?,?)", (a, source))
             if pin:
-                self.db.execute("UPDATE peer SET pin = ? WHERE adresse = ?", (pin, a))
+                self.db.execute("UPDATE peer SET pin = ? WHERE address = ?", (pin, a))
         return None
 
     def peer_forget(self, address: str) -> bool:
@@ -569,17 +571,17 @@ class Logbook:
         a = str(address or "").strip().rstrip("/")
         self.rejected_addresses.pop(a, None)
         with self.lock:
-            return self.db.execute("DELETE FROM peer WHERE adresse = ?", (a,)).rowcount > 0
+            return self.db.execute("DELETE FROM peer WHERE address = ?", (a,)).rowcount > 0
 
     def pin(self, address: str) -> str | None:
         with self.lock:
-            z = self.db.execute("SELECT pin FROM peer WHERE adresse = ?", (address.rstrip("/"),)).fetchone()
+            z = self.db.execute("SELECT pin FROM peer WHERE address = ?", (address.rstrip("/"),)).fetchone()
         return z[0] if z else None
 
     def peers(self) -> list[dict]:
         with self.lock:
-            lines = self.db.execute("SELECT adresse, quelle, pin, zuletzt, fehler, naechster, version, fehlt_hier, fehlt_dort, paused_until, pause_reason, "
-                                    "last_error FROM peer ORDER BY adresse").fetchall()
+            lines = self.db.execute("SELECT address, source, pin, last_at, failures, next_at, version, missing_here, missing_there, paused_until, pause_reason, "
+                                    "last_error FROM peer ORDER BY address").fetchall()
         now = time.time()
         out = []
         for a, q, p, z, f, n, v, fh, fd, pu, pr, le in lines:
@@ -592,7 +594,7 @@ class Logbook:
 
     def create_join(self, nonce: str, valid_s: float) -> None:
         with self.lock:
-            self.db.execute("INSERT INTO beitritt (nonce_sha, ablauf) VALUES (?,?)", (hashlib.sha256(nonce.encode()).hexdigest(), time.time() + valid_s))
+            self.db.execute("INSERT INTO joining (nonce_sha, expiry) VALUES (?,?)", (hashlib.sha256(nonce.encode()).hexdigest(), time.time() + valid_s))
 
     def redeem_join(self, nonce: str, pub: str) -> str | None:
         """Reason for rejection or None. On success this server invites the new key."""
@@ -601,11 +603,11 @@ class Logbook:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
-                z = self.db.execute("SELECT ablauf, benutzt FROM beitritt WHERE nonce_sha = ?", (hashlib.sha256(nonce.encode()).hexdigest(),)).fetchone()
+                z = self.db.execute("SELECT expiry, used FROM joining WHERE nonce_sha = ?", (hashlib.sha256(nonce.encode()).hexdigest(),)).fetchone()
                 if not z or z[1] or z[0] < time.time():
                     self.db.execute("ROLLBACK")
                     return "join code invalid, expired or already used"
-                self.db.execute("UPDATE beitritt SET benutzt = ? WHERE nonce_sha = ?", (pub, hashlib.sha256(nonce.encode()).hexdigest()))
+                self.db.execute("UPDATE joining SET used = ? WHERE nonce_sha = ?", (pub, hashlib.sha256(nonce.encode()).hexdigest()))
                 self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")
@@ -618,7 +620,7 @@ class Logbook:
         """Free network: make entry 1 the identity proof. Returns the seconds of work, None if it existed. Refuses if the logbook already has
         other entries (peers would reject them all, since they come before the proof)."""
         with self.lock:
-            if self.db.execute("SELECT 1 FROM identitaet WHERE pub = ?", (self.pub,)).fetchone():
+            if self.db.execute("SELECT 1 FROM identity WHERE pub = ?", (self.pub,)).fetchone():
                 return None
             if self._header_of(self.pub)[0]:
                 raise ValueError("this logbook already has entries: a free network needs the identity as entry 1 — set up a new network (own --network name)")
@@ -630,7 +632,7 @@ class Logbook:
     def public_peers(self, limit: int = 50) -> list[str]:
         """0.45.0: addresses this server reached in the last 7 days — for the peer exchange."""
         with self.lock:
-            return [r[0] for r in self.db.execute("SELECT adresse FROM peer WHERE fehler = 0 AND zuletzt >= ? ORDER BY zuletzt DESC LIMIT ?",
+            return [r[0] for r in self.db.execute("SELECT address FROM peer WHERE failures = 0 AND last_at >= ? ORDER BY last_at DESC LIMIT ?",
                                                   (time.time() - 7 * 86400, limit))]
 
     def peer_count(self) -> int:
@@ -639,7 +641,7 @@ class Logbook:
 
     def choose_peers(self, n: int, excluding: str | None = None) -> list[str]:
         with self.lock:
-            all_ = [r[0] for r in self.db.execute("SELECT adresse FROM peer WHERE naechster <= ?", (time.time(),))
+            all_ = [r[0] for r in self.db.execute("SELECT address FROM peer WHERE next_at <= ?", (time.time(),))
                     if r[0] != excluding and r[0] not in self.blocked and r[0] not in self.removed and not address_problem(r[0])]  # 0.66.1
         random.shuffle(all_)
         return all_[:n]
@@ -648,14 +650,14 @@ class Logbook:
         """0.39.0: what a peer reported at the last reconciliation (version from /netz/gesund, backlog in entries both ways)."""
         with self.lock:
             if version is not None:
-                self.db.execute("UPDATE peer SET version = ?, version_zeit = ? WHERE adresse = ?", (str(version)[:20], time.time(), address))
+                self.db.execute("UPDATE peer SET version = ?, version_ts = ? WHERE address = ?", (str(version)[:20], time.time(), address))
             if missing_here is not None:
-                self.db.execute("UPDATE peer SET fehlt_hier = ?, fehlt_dort = ? WHERE adresse = ?", (missing_here, missing_there, address))
+                self.db.execute("UPDATE peer SET missing_here = ?, missing_there = ? WHERE address = ?", (missing_here, missing_there, address))
 
     def peers_below(self, minimum: str, days: float = 7) -> list[str]:
         """Peers seen in the last `days` whose reported version is older than `minimum` or unknown. Guards a new entry type."""
         with self.lock:
-            lines = self.db.execute("SELECT adresse, version FROM peer WHERE zuletzt >= ?", (time.time() - days * 86400,)).fetchall()
+            lines = self.db.execute("SELECT address, version FROM peer WHERE last_at >= ?", (time.time() - days * 86400,)).fetchall()
         return sorted(a for a, v in lines if not v or version_tuple(v) < version_tuple(minimum))
 
     def peer_result(self, address: str, ok: bool, error: str | None = None) -> None:
@@ -665,57 +667,57 @@ class Logbook:
         now = time.time()
         with self.lock:
             if ok:
-                self.db.execute("UPDATE peer SET zuletzt = ?, fehler = 0, naechster = 0, paused_until = NULL, pause_reason = NULL, last_error = NULL "
-                                "WHERE adresse = ?", (now, address))
+                self.db.execute("UPDATE peer SET last_at = ?, failures = 0, next_at = 0, paused_until = NULL, pause_reason = NULL, last_error = NULL "
+                                "WHERE address = ?", (now, address))
                 return
-            row = self.db.execute("SELECT fehler FROM peer WHERE adresse = ?", (address,)).fetchone()
+            row = self.db.execute("SELECT failures FROM peer WHERE address = ?", (address,)).fetchone()
             errors = int(row[0] or 0) if row else 0  # backoff 30 s · 2^errors, at most an hour (computed here: portable SQL)
             err = (error or "unknown error")[:160]
             if errors + 1 >= PEER_PAUSE_AFTER:
                 until = now + PEER_PAUSE_S
-                self.db.execute("UPDATE peer SET fehler = fehler + 1, naechster = ?, paused_until = ?, pause_reason = ?, last_error = ? WHERE adresse = ?",
+                self.db.execute("UPDATE peer SET failures = failures + 1, next_at = ?, paused_until = ?, pause_reason = ?, last_error = ? WHERE address = ?",
                                 (until, until, f"{errors + 1} failed attempts in a row, last: {err}", err, address))
             else:
-                self.db.execute("UPDATE peer SET fehler = fehler + 1, naechster = ?, last_error = ? WHERE adresse = ?",
+                self.db.execute("UPDATE peer SET failures = failures + 1, next_at = ?, last_error = ? WHERE address = ?",
                                 (now + min(3600, 30 * (1 << min(errors, 7))), err, address))
 
     # ---- Segments: transport cache for torrent, without evidential value of their own ----
 
     def remember_segment(self, sha: str, pub: str, from_: int, until: int, torrent: bytes, port: int, file: str) -> None:
         with self.lock:
-            self.db.execute("INSERT OR REPLACE INTO segment (sha256, pub, von, bis, torrent, port, datei) VALUES (?,?,?,?,?,?,?)", (sha, pub, from_, until, base64.b64encode(torrent).decode(), port, file))
+            self.db.execute("INSERT OR REPLACE INTO segment (sha256, pub, first_seq, last_seq, torrent, port, file) VALUES (?,?,?,?,?,?,?)", (sha, pub, from_, until, base64.b64encode(torrent).decode(), port, file))
 
     def segments(self, pub: str) -> list[dict]:
         with self.lock:
-            z = self.db.execute("SELECT sha256, von, bis, torrent, port FROM segment WHERE pub = ? ORDER BY von", (pub,)).fetchall()
+            z = self.db.execute("SELECT sha256, first_seq, last_seq, torrent, port FROM segment WHERE pub = ? ORDER BY first_seq", (pub,)).fetchall()
         return [{"sha256": a, "von": b, "bis": c, "torrent": d, "port": e} for a, b, c, d, e in z]
 
     def segments_local(self) -> list[tuple[str, str, str]]:
         with self.lock:
-            return self.db.execute("SELECT sha256, torrent, datei FROM segment").fetchall()
+            return self.db.execute("SELECT sha256, torrent, file FROM segment").fetchall()
 
     def last_segment_until(self, pub: str) -> int:
         with self.lock:
-            return self.db.execute("SELECT COALESCE(MAX(bis), 0) FROM segment WHERE pub = ?", (pub,)).fetchone()[0]
+            return self.db.execute("SELECT COALESCE(MAX(last_seq), 0) FROM segment WHERE pub = ?", (pub,)).fetchone()[0]
 
     def discard_segments(self, pub: str, seq: int) -> None:
         """A segment with forgotten content must not be distributed further. The file drops out at the next reconciliation of the swarm list."""
         with self.lock:
-            for (d,) in self.db.execute("SELECT datei FROM segment WHERE pub = ? AND von <= ? AND bis >= ?", (pub, seq, seq)).fetchall():
+            for (d,) in self.db.execute("SELECT file FROM segment WHERE pub = ? AND first_seq <= ? AND last_seq >= ?", (pub, seq, seq)).fetchall():
                 try:
                     Path(d).unlink(missing_ok=True)
                 except OSError:
                     pass
-            self.db.execute("DELETE FROM segment WHERE pub = ? AND von <= ? AND bis >= ?", (pub, seq, seq))
+            self.db.execute("DELETE FROM segment WHERE pub = ? AND first_seq <= ? AND last_seq >= ?", (pub, seq, seq))
 
     def status(self) -> dict:
         with self.lock:
-            d = {"eintraege": self.db.execute("SELECT COUNT(*) FROM eintrag").fetchone()[0], "inhalte": self.db.execute("SELECT COUNT(*) FROM inhalt").fetchone()[0],
-                 "grabsteine": self.db.execute("SELECT COUNT(*) FROM grab").fetchone()[0], "gabelungen": self.db.execute("SELECT COUNT(*) FROM gabelung").fetchone()[0],
-                 "verstoesse": self.db.execute("SELECT COALESCE(SUM(n), 0) FROM verstoss").fetchone()[0], "segmente": self.db.execute("SELECT COUNT(*) FROM segment").fetchone()[0],
-                 "peers": self.db.execute("SELECT COUNT(*) FROM peer").fetchone()[0], "peers_erreichbar": self.db.execute("SELECT COUNT(*) FROM peer WHERE fehler = 0 AND zuletzt IS NOT NULL").fetchone()[0],
-                 "unbekannte_typen": self.db.execute("SELECT COUNT(*) FROM eintrag WHERE typ NOT IN (%s)" % ",".join("?" * len(TYPE_NAMES)), TYPE_NAMES).fetchone()[0]}
-        d["identitaeten"] = self.db.execute("SELECT COUNT(*) FROM identitaet").fetchone()[0]
+            d = {"eintraege": self.db.execute("SELECT COUNT(*) FROM entry").fetchone()[0], "inhalte": self.db.execute("SELECT COUNT(*) FROM content").fetchone()[0],
+                 "grabsteine": self.db.execute("SELECT COUNT(*) FROM tombstone").fetchone()[0], "gabelungen": self.db.execute("SELECT COUNT(*) FROM fork").fetchone()[0],
+                 "verstoesse": self.db.execute("SELECT COALESCE(SUM(n), 0) FROM violation").fetchone()[0], "segmente": self.db.execute("SELECT COUNT(*) FROM segment").fetchone()[0],
+                 "peers": self.db.execute("SELECT COUNT(*) FROM peer").fetchone()[0], "peers_erreichbar": self.db.execute("SELECT COUNT(*) FROM peer WHERE failures = 0 AND last_at IS NOT NULL").fetchone()[0],
+                 "unbekannte_typen": self.db.execute("SELECT COUNT(*) FROM entry WHERE type NOT IN (%s)" % ",".join("?" * len(TYPE_NAMES)), TYPE_NAMES).fetchone()[0]}
+        d["identitaeten"] = self.db.execute("SELECT COUNT(*) FROM identity").fetchone()[0]
         return {**d, "mitglieder": len(self.members()), "gesperrt": len(self.blocked)}
 
     def close(self) -> None:

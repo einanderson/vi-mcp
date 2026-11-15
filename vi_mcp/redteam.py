@@ -122,7 +122,7 @@ def _plant(way: str, text: str, tags: list[str]) -> tuple[str | None, str]:
         except tools.Rejected as e:
             return None, f"refused: {e}"[:80]
         with g.lock:
-            r = g.db().execute("SELECT id FROM objekt WHERE text = ? ORDER BY zeit DESC LIMIT 1", (text,)).fetchone()
+            r = g.db().execute("SELECT id FROM object WHERE text = ? ORDER BY ts DESC LIMIT 1", (text,)).fetchone()
         return (r[0] if r else None), out[:80]
     nid = hashlib.sha256(text.encode()).hexdigest()[:32]
     raw = {"art": "erkenntnis", "text": text, "hashtags": tags, "quelle": "redteam import", "wichtigkeit": 3, "zeit": g.now()[:10],

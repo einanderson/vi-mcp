@@ -462,7 +462,7 @@ def _last_shown(instance: str, hint_id: str) -> tuple[str, str, dict, str] | Non
         return ts, tool, acc, "open action, not reported yet"
     since = (datetime.now(timezone.utc) - timedelta(days=WHY_DAYS)).isoformat(timespec="milliseconds")
     with g.lock:
-        rows = g.db().execute("SELECT id FROM objekt WHERE art = 'erfahrung' AND instanz = ? AND zeit >= ? AND daten LIKE ? ORDER BY zeit DESC LIMIT 50",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? AND data LIKE ? ORDER BY ts DESC LIMIT 50",
                               (instance, since, f"%{hint_id}%")).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
@@ -517,7 +517,7 @@ def opened(instance: str, hint_id: str) -> str | None:
     """0.49.0: the AI opened a shown hint with vi_object — a weak signal of use, kept apart from feedback (not a training label)."""
     since = (datetime.now(timezone.utc) - timedelta(minutes=FEEDBACK_MIN)).isoformat(timespec="milliseconds")
     with g.lock:
-        rows = g.db().execute("SELECT id FROM objekt WHERE art = 'erfahrung' AND instanz = ? AND zeit >= ? ORDER BY zeit DESC LIMIT 200",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 200",
                               (instance, since)).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
@@ -537,10 +537,10 @@ def feedback(instance: str, hint_id: str, value: int, before_id: str | None = No
     since = (datetime.now(timezone.utc) - timedelta(minutes=FEEDBACK_MIN)).isoformat(timespec="milliseconds")
     with g.lock:
         if before_id:
-            rows = g.db().execute("SELECT id FROM objekt WHERE art = 'erfahrung' AND instanz = ? AND zeit >= ? AND json_extract(daten, '$.vorher.id') = ?",
+            rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? AND json_extract(data, '$.vorher.id') = ?",
                                   (instance, since, before_id)).fetchall()
         else:
-            rows = g.db().execute("SELECT id FROM objekt WHERE art = 'erfahrung' AND instanz = ? AND zeit >= ? ORDER BY zeit DESC LIMIT 200",
+            rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 200",
                                   (instance, since)).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
@@ -624,7 +624,7 @@ def adopted(o: g.MemoryObject) -> list[str]:
         return []
     here = json.dumps(o.data.get("args") or {}, ensure_ascii=False)
     with g.lock:
-        rows = g.db().execute("SELECT id FROM objekt WHERE art = 'erfahrung' AND gespraech = ? AND zeit < ? ORDER BY zeit DESC LIMIT ?",
+        rows = g.db().execute("SELECT id FROM object WHERE kind = 'erfahrung' AND conversation = ? AND ts < ? ORDER BY ts DESC LIMIT ?",
                               (o.conversation, o.ts, ADOPT_WINDOW)).fetchall()
     found = []
     for (eid,) in rows:
@@ -674,8 +674,8 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
     since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
     with g.lock:
         if not ok and error_sig:
-            n = g.db().execute("SELECT COUNT(*) FROM objekt o JOIN tag t1 ON t1.objekt_id = o.id AND t1.tag = ? "
-                               "JOIN tag t2 ON t2.objekt_id = o.id AND t2.tag = ? WHERE o.art = 'erfahrung' AND o.zeit >= ?",
+            n = g.db().execute("SELECT COUNT(*) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? "
+                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = ? WHERE o.kind = 'erfahrung' AND o.ts >= ?",
                                (f"tool:{tool}", f"fehler:{error_sig}", since)).fetchone()[0]
             if n == 0:
                 return "neu", "first error of this kind in 24 h"
@@ -683,8 +683,8 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
                 return "wiederholt", f"same error #{n + 1} in 24 h"
             return "chronisch", f"same error #{n + 1} in 24 h — known, no longer surprising"
         if ok:
-            n = g.db().execute("SELECT COUNT(*) FROM objekt o JOIN tag t1 ON t1.objekt_id = o.id AND t1.tag = ? "
-                               "JOIN tag t2 ON t2.objekt_id = o.id AND t2.tag = 'ok:nein' WHERE o.art = 'erfahrung' AND o.zeit >= ?",
+            n = g.db().execute("SELECT COUNT(*) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? "
+                               "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = 'ok:nein' WHERE o.kind = 'erfahrung' AND o.ts >= ?",
                                (f"tool:{tool}", since)).fetchone()[0]
             if n:
                 return "erholt", f"success after {n} error(s) of the same tool in 24 h"
@@ -721,8 +721,8 @@ def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: 
         fh = _question(tool, args)
         with g.lock:
             # replace only the own remembered answer — the cache is private per instance
-            old = [r[0] for r in g.db().execute("SELECT t.objekt_id FROM tag t JOIN objekt o ON o.id = t.objekt_id "
-                                                "WHERE t.tag = ? AND o.instanz = ?", (f"cache:{fh}", o.instance))]
+            old = [r[0] for r in g.db().execute("SELECT t.object_id FROM tag t JOIN object o ON o.id = t.object_id "
+                                                "WHERE t.tag = ? AND o.instance = ?", (f"cache:{fh}", o.instance))]
         g.delete(old)
         g.new_object("antwort", text, [f"tool:{tool}", f"cache:{fh}"], {"ergebnis": result, "args": args},
                        importance=0, reason="answer remembered", instance=instance)

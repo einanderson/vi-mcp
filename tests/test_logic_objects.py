@@ -136,7 +136,7 @@ def _aged(oid, kind, days, mode="test"):
     from datetime import datetime, timedelta, timezone
     o = g.new_object(kind, f"{oid} text", ["thema:oo"], {"quelle": "t"}, reason="T", oid=oid, mode=mode, link=False)
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = ? WHERE id = ?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), oid))
+        g.db().execute("UPDATE object SET ts = ? WHERE id = ?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), oid))
         g.db().commit()
     return o
 

@@ -227,10 +227,10 @@ TM = "tm(M) <= in_module(F, M) & test(F)\n"
 
 def questions(t: Repo, head12: str) -> list[dict]:
     return [
-        {"id": "Q01", "q": "Which functions write table objekt?", "truth": t.writers("objekt"),
-         "rules": 'ans(F) <= writes_table(F, "objekt")', "search": "INSERT INTO objekt"},
-        {"id": "Q02", "q": "Which functions write table kante?", "truth": t.writers("kante"),
-         "rules": 'ans(F) <= writes_table(F, "kante")', "search": "INSERT INTO kante"},
+        {"id": "Q01", "q": "Which functions write table object?", "truth": t.writers("object"),
+         "rules": 'ans(F) <= writes_table(F, "object")', "search": "INSERT INTO object"},
+        {"id": "Q02", "q": "Which functions write table edge?", "truth": t.writers("edge"),
+         "rules": 'ans(F) <= writes_table(F, "edge")', "search": "INSERT INTO edge"},
         {"id": "Q03", "q": "Which functions write table tag?", "truth": t.writers("tag"),
          "rules": 'ans(F) <= writes_table(F, "tag")', "search": "INSERT INTO tag"},
         {"id": "Q04", "q": "What calls memory.save?", "truth": t.callers("vi_mcp.memory.save"),

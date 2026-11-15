@@ -64,7 +64,7 @@ def test_a_changed_file_is_refused_before_anything_is_stored(two, tmp_path):
     with pytest.raises(ValueError, match="signature invalid"):
         it.import_file(tmp_path / "bad.json", "proj-b")
     with g.lock:
-        assert g.db().execute("SELECT COUNT(*) FROM objekt WHERE idx = 'proj-b'").fetchone()[0] == 0
+        assert g.db().execute("SELECT COUNT(*) FROM object WHERE idx = 'proj-b'").fetchone()[0] == 0
     two("a")
     with pytest.raises(ValueError, match="comes from this server"):
         it.import_file(tmp_path / "proj.json", "proj2")
@@ -78,7 +78,7 @@ def test_import_quarantines_internal_and_books_the_origin_measurement_once(two, 
     r = it.import_file(tmp_path / "proj.json", "proj-b", in_background=False)
     assert (r["neu"], r["dedupliziert"], r["bewertungen"], r["abgelehnt"]) == (1, 0, 1, 0)
     with g.lock:
-        oid = g.db().execute("SELECT id FROM objekt WHERE idx = 'proj-b' AND art = 'erkenntnis'").fetchone()[0]
+        oid = g.db().execute("SELECT id FROM object WHERE idx = 'proj-b' AND kind = 'erkenntnis'").fetchone()[0]
     o = g.load(oid)
     assert o.mode == "quarantaene" and o.visibility == "intern" and o.data["herkunft"]["netz"] == p2p.FILE_NET
     reg = indexes.registry()["proj-b"]
@@ -86,7 +86,7 @@ def test_import_quarantines_internal_and_books_the_origin_measurement_once(two, 
     again = it.import_file(tmp_path / "proj.json", "proj-b", in_background=False)
     assert (again["neu"], again["dedupliziert"]) == (0, 1)
     with g.lock:
-        assert g.db().execute("SELECT COUNT(*) FROM objekt WHERE idx = 'proj-b' AND art = 'erkenntnis'").fetchone()[0] == 1
+        assert g.db().execute("SELECT COUNT(*) FROM object WHERE idx = 'proj-b' AND kind = 'erkenntnis'").fetchone()[0] == 1
     # the exporter wrote it: a holder, so its own measurement does not count in the network score
     s = net_score.score(net_score.hash_of(oid), o)
     assert s["halter"] == 1 and s["selbstbewertungen_ignoriert"] == 1
@@ -98,7 +98,7 @@ def test_the_way_back_compares_both_places_and_moves_the_priority(two, tmp_path)
     two("b")
     it.import_file(tmp_path / "a.json", "proj-b", in_background=False)
     with g.lock:
-        oid_b = g.db().execute("SELECT id FROM objekt WHERE idx = 'proj-b' AND art = 'erkenntnis'").fetchone()[0]
+        oid_b = g.db().execute("SELECT id FROM object WHERE idx = 'proj-b' AND kind = 'erkenntnis'").fetchone()[0]
     o = g.load(oid_b)
     o.mode = "aktiv"  # what the reviewer's release does
     g.save(o)
@@ -150,7 +150,7 @@ def test_the_way_back_finds_own_contents_that_share_a_generic_text(two, tmp_path
     two("b")
     it.import_file(tmp_path / "a.json", "proj-b", in_background=False)
     with g.lock:
-        for (oid,) in g.db().execute("SELECT id FROM objekt WHERE idx = 'proj-b' AND art = 'erkenntnis'").fetchall():
+        for (oid,) in g.db().execute("SELECT id FROM object WHERE idx = 'proj-b' AND kind = 'erkenntnis'").fetchall():
             o = g.load(oid)
             o.mode = "aktiv"
             g.save(o)

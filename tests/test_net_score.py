@@ -171,7 +171,7 @@ def test_imports_from_before_040_get_their_hash(two):
     p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
     oid = g.recall("modus:quarantaene", viewer=None)[0][1].id
     with g.lock:
-        g.db().executescript("DROP TABLE p2p_inhalt; DROP TABLE p2p_halter; DROP TABLE p2p_bewertung;")
+        g.db().executescript("DROP TABLE p2p_content; DROP TABLE p2p_holder; DROP TABLE p2p_rating;")
     assert net_score.find(net_score.content_hash(GOOD)) == oid  # rebuilt from what the import kept
     assert net_score.holders(net_score.content_hash(GOOD)) == [_pub(k1)]
 
@@ -195,7 +195,7 @@ def test_a_repeated_rating_is_published_only_when_it_says_something_new(net):
 
     def yesterday():
         with a.log.lock:
-            a.log.db.execute("UPDATE eintrag SET zeit = '2000-01-01' WHERE typ = 'bewertung'")
+            a.log.db.execute("UPDATE entry SET ts = '2000-01-01' WHERE type = 'bewertung'")
             a.log.db.commit()
     yesterday()
     assert a._ratings([_rating(ish, ja=41, nein=10)]) == 0  # 2 % more observations, estimate moved < 0.02: nothing new

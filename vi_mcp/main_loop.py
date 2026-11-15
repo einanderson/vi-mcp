@@ -26,12 +26,12 @@ def step() -> int:
     bound = (datetime.now(timezone.utc) - timedelta(seconds=intuition.TTL_MAX)).isoformat(timespec="seconds")
     since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
     with g.lock:
-        old = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE art = 'antwort' AND zeit < ?", (bound,))]
+        old = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind = 'antwort' AND ts < ?", (bound,))]
         g.delete(old)
         rows = g.db().execute(
-            "SELECT t1.tag, t2.tag, COUNT(*), COUNT(DISTINCT o.instanz), group_concat(DISTINCT o.instanz) "
-            "FROM objekt o JOIN tag t1 ON t1.objekt_id = o.id AND t1.tag LIKE 'tool:%' "
-            "JOIN tag t2 ON t2.objekt_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.art = 'erfahrung' AND o.zeit >= ? "
+            "SELECT t1.tag, t2.tag, COUNT(*), COUNT(DISTINCT o.instance), group_concat(DISTINCT o.instance) "
+            "FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag LIKE 'tool:%' "
+            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.kind = 'erfahrung' AND o.ts >= ? "
             "GROUP BY t1.tag, t2.tag HAVING COUNT(*) >= ?", (since, ERROR_RULE_MIN)).fetchall()
         for tool_tag, error_tag, n, n_inst, instances in rows:
             rid = f"regel:{g.hash_value(tool_tag, error_tag, 'wiederholter-fehler')}"

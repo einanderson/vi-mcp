@@ -64,7 +64,7 @@ def test_order_is_off_by_default_and_lifts_labelled_hits_at_most_lift_places_whe
 def test_since_other_acts_and_evidence(gd):
     plain, how = _seed()
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = '2025-01-01T00:00:00+00:00', zuletzt = '2025-01-01T00:00:00+00:00' WHERE id = ?", (plain.id,))
+        g.db().execute("UPDATE object SET ts = '2025-01-01T00:00:00+00:00', last_at = '2025-01-01T00:00:00+00:00' WHERE id = ?", (plain.id,))
         g.db().commit()
     out = tools.call_tool("vi_recall", {"filter": "ask.what deploy since:30d", "semantic": False, "reinforce": False}, "a", False)
     assert plain.id not in out and how.id in out and "1 older hit(s) left out" in out

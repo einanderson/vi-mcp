@@ -95,7 +95,7 @@ def test_compare_reports_same_and_different_vectors(gd, monkeypatch):
     v = np.random.default_rng(1).normal(size=es.MODEL_DIM).astype(np.float32)
     vector._table()
     with g.lock:
-        g.db().execute("INSERT INTO vektor (id, dim, modell, zeit, roh) VALUES (?,?,?,?,?)", (o.id, len(v), "bge-m3", g.now(), v.tobytes()))
+        g.db().execute("INSERT INTO vector (id, dim, model, ts, raw) VALUES (?,?,?,?,?)", (o.id, len(v), "bge-m3", g.now(), v.tobytes()))
         g.db().commit()
     monkeypatch.setattr(es.config, "load", lambda: type("K", (), {"db": g.fpath_active})())
     monkeypatch.setattr(es, "probe", lambda port, texts, timeout_s=120: [list(v * 2.0)])  # same direction

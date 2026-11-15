@@ -31,13 +31,13 @@ MAX_OWN_IN_OUTBOX = 500
 def _tables() -> None:
     with g.lock:
         g.db().executescript("""
-            CREATE TABLE IF NOT EXISTS seite_rev (netz TEXT NOT NULL, rev TEXT NOT NULL, seite TEXT NOT NULL, eltern TEXT NOT NULL, pub TEXT, instanz TEXT,
-                                                 seq INTEGER, status TEXT NOT NULL, daten TEXT, netz_id TEXT NOT NULL, loesch_hash TEXT NOT NULL,
-                                                 empfangen TEXT NOT NULL, geprueft TEXT, entschieden TEXT, eigen INTEGER NOT NULL DEFAULT 0, oid TEXT,
-                                                 PRIMARY KEY (netz, rev));
-            CREATE INDEX IF NOT EXISTS seite_rev_seite ON seite_rev (netz, seite);
-            CREATE INDEX IF NOT EXISTS seite_rev_netz_id ON seite_rev (netz_id);
-            CREATE TABLE IF NOT EXISTS seite_eigen (rev TEXT PRIMARY KEY, netz TEXT NOT NULL, instanz TEXT NOT NULL, schluessel TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS page_rev (net TEXT NOT NULL, rev TEXT NOT NULL, page TEXT NOT NULL, parents TEXT NOT NULL, pub TEXT, instance TEXT,
+                                                 seq INTEGER, status TEXT NOT NULL, data TEXT, net_id TEXT NOT NULL, delete_hash TEXT NOT NULL,
+                                                 received TEXT NOT NULL, reviewed TEXT, decided TEXT, own INTEGER NOT NULL DEFAULT 0, oid TEXT,
+                                                 PRIMARY KEY (net, rev));
+            CREATE INDEX IF NOT EXISTS page_rev_page ON page_rev (net, page);
+            CREATE INDEX IF NOT EXISTS page_rev_net_id ON page_rev (net_id);
+            CREATE TABLE IF NOT EXISTS page_own (rev TEXT PRIMARY KEY, net TEXT NOT NULL, instance TEXT NOT NULL, key TEXT NOT NULL);
         """)
         g.db().commit()
 
@@ -49,7 +49,7 @@ def page_id(net: str, slug: str) -> str:
 def _revs(net: str, slug: str) -> tuple[dict[str, wm.Rev], set[str], list[dict]]:
     _tables()
     with g.lock:
-        lines = g.db().execute("SELECT rev, eltern, pub, instanz, status, daten, empfangen, entschieden, eigen FROM seite_rev WHERE netz = ? AND seite = ? ORDER BY empfangen",
+        lines = g.db().execute("SELECT rev, parents, pub, instance, status, data, received, decided, own FROM page_rev WHERE net = ? AND page = ? ORDER BY received",
                                (net, slug)).fetchall()
     revs, accepted, meta = {}, set(), []
     for rev, parents, pub, inst, status, data, recv, decided, own in lines:
@@ -116,10 +116,10 @@ def write(instance: str, net: str, slug: str, text: str, base_rev: str | None, t
                 raise ValueError(f"page revision refused for the open network: {name} contains {', '.join(hits)} — write it without, or use a company network")
     rev = sha256(content)
     with g.lock:
-        g.db().execute("INSERT OR IGNORE INTO seite_rev (netz, rev, seite, eltern, pub, instanz, seq, status, daten, netz_id, loesch_hash, empfangen, entschieden, eigen) "
+        g.db().execute("INSERT OR IGNORE INTO page_rev (net, rev, page, parents, pub, instance, seq, status, data, net_id, delete_hash, received, decided, own) "
                        "VALUES (?,?,?,?,NULL,?,NULL,'frei',?,?,?,?,?,1)",
                        (net, rev, slug, json.dumps(content["eltern"]), instance, json.dumps(content, ensure_ascii=False), net_id, content["loesch_hash"], g.now(), g.now()))
-        g.db().execute("INSERT OR IGNORE INTO seite_eigen (rev, netz, instanz, schluessel) VALUES (?,?,?,?)", (rev, net, instance, key))
+        g.db().execute("INSERT OR IGNORE INTO page_own (rev, net, instance, key) VALUES (?,?,?,?)", (rev, net, instance, key))
         g.db().commit()
     new_view = materialize(net, slug)
     from . import p2p
@@ -133,7 +133,7 @@ def outgoing(net: str) -> list[dict]:
     """Own revisions for the network service; it writes only those it has not written yet (by checksum)."""
     _tables()
     with g.lock:
-        lines = g.db().execute("SELECT daten FROM seite_rev WHERE netz = ? AND eigen = 1 AND status = 'frei' AND daten IS NOT NULL ORDER BY empfangen DESC LIMIT ?",
+        lines = g.db().execute("SELECT data FROM page_rev WHERE net = ? AND own = 1 AND status = 'frei' AND data IS NOT NULL ORDER BY received DESC LIMIT ?",
                                (net, MAX_OWN_IN_OUTBOX)).fetchall()
     return [json.loads(d) for (d,) in lines]
 
@@ -158,9 +158,9 @@ def ingest(raw: dict, header: dict, net: str) -> str:
         return "checksum does not match"
     _tables()
     with g.lock:
-        if g.db().execute("SELECT 1 FROM seite_rev WHERE netz = ? AND rev = ?", (net, rev)).fetchone():
+        if g.db().execute("SELECT 1 FROM page_rev WHERE net = ? AND rev = ?", (net, rev)).fetchone():
             return "bekannt"
-        tomb = g.db().execute("SELECT token_sha FROM p2p_grab WHERE netz_id = ?", (raw["netz_id"],)).fetchone()
+        tomb = g.db().execute("SELECT token_sha FROM p2p_tombstone WHERE net_id = ?", (raw["netz_id"],)).fetchone()
     if tomb and tomb[0] == raw["loesch_hash"]:
         return "bekannt"  # revoked before it arrived: stays away
     slug, name = raw["seite"], pseudonym(header["pub"])
@@ -174,7 +174,7 @@ def ingest(raw: dict, header: dict, net: str) -> str:
     g.new_object("seite", data["fremd_text"], tags, data, who=f"import@{name}", reason=f"wiki revision from {name}", oid=oid, mode="quarantaene",
                  instance=f"p2p-{name}", visibility="intern" if p2p.is_company(net) else None)
     with g.lock:
-        g.db().execute("INSERT INTO seite_rev (netz, rev, seite, eltern, pub, instanz, seq, status, daten, netz_id, loesch_hash, empfangen, eigen, oid) "
+        g.db().execute("INSERT INTO page_rev (net, rev, page, parents, pub, instance, seq, status, data, net_id, delete_hash, received, own, oid) "
                        "VALUES (?,?,?,?,?,NULL,?,'ausstehend',?,?,?,?,0,?)",
                        (net, rev, slug, json.dumps(raw["eltern"]), header["pub"], header["seq"], json.dumps(raw, ensure_ascii=False), raw["netz_id"], raw["loesch_hash"], g.now(), oid))
         g.db().commit()
@@ -189,7 +189,7 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
         return
     _tables()
     with g.lock:
-        g.db().execute("UPDATE seite_rev SET status = ?, entschieden = ?, geprueft = COALESCE(geprueft, ?) WHERE netz = ? AND rev = ?",
+        g.db().execute("UPDATE page_rev SET status = ?, decided = ?, reviewed = COALESCE(reviewed, ?) WHERE net = ? AND rev = ?",
                        ("frei" if accepted else "verworfen", g.now(), g.now(), w["netz"], w["rev"]))
         g.db().commit()
     if accepted:  # the revision lives on in the page; the quarantine object is merged into it
@@ -205,7 +205,7 @@ def reviewed(o: g.MemoryObject) -> None:
     w = o.data.get("wiki") or {}
     if w:
         with g.lock:
-            g.db().execute("UPDATE seite_rev SET geprueft = COALESCE(geprueft, ?) WHERE netz = ? AND rev = ?", (g.now(), w["netz"], w["rev"]))
+            g.db().execute("UPDATE page_rev SET reviewed = COALESCE(reviewed, ?) WHERE net = ? AND rev = ?", (g.now(), w["netz"], w["rev"]))
             g.db().commit()
 
 
@@ -214,12 +214,12 @@ def forget(net_id: str, evidence: str) -> bool:
     import hmac
     _tables()
     with g.lock:
-        z = g.db().execute("SELECT netz, rev, seite, loesch_hash, oid FROM seite_rev WHERE netz_id = ?", (net_id,)).fetchone()
+        z = g.db().execute("SELECT net, rev, page, delete_hash, oid FROM page_rev WHERE net_id = ?", (net_id,)).fetchone()
     if not z or not hmac.compare_digest(z[3], evidence):
         return False
     net, rev, slug, _lh, oid = z
     with g.lock:
-        g.db().execute("UPDATE seite_rev SET status = 'vergessen', daten = NULL, entschieden = ? WHERE netz = ? AND rev = ?", (g.now(), net, rev))
+        g.db().execute("UPDATE page_rev SET status = 'vergessen', data = NULL, decided = ? WHERE net = ? AND rev = ?", (g.now(), net, rev))
         g.db().commit()
     if oid and g.load(oid):
         g.delete([oid])
@@ -274,8 +274,8 @@ def revoke(instance: str, net: str, rev: str, reason: str) -> dict:
         raise ValueError("reason is required")
     _tables()
     with g.lock:
-        z = g.db().execute("SELECT e.rev, e.instanz, e.schluessel, r.seite FROM seite_eigen e JOIN seite_rev r ON r.rev = e.rev AND r.netz = e.netz "
-                           "WHERE e.netz = ? AND e.rev LIKE ?", (net, rev + "%")).fetchall()
+        z = g.db().execute("SELECT e.rev, e.instance, e.key, r.page FROM page_own e JOIN page_rev r ON r.rev = e.rev AND r.net = e.net "
+                           "WHERE e.net = ? AND e.rev LIKE ?", (net, rev + "%")).fetchall()
     if len(z) != 1:
         raise ValueError(f"no own revision {rev} in network {net}" if not z else f"revision prefix {rev} is ambiguous")
     full, inst, key, slug = z[0]
@@ -283,9 +283,9 @@ def revoke(instance: str, net: str, rev: str, reason: str) -> dict:
         raise ValueError(f"revision {full[:16]} was written by instance {inst}; only the author revokes")
     net_id, token = p2p._object_token(p2p._token(instance), key, net)
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS seite_widerruf (rev TEXT PRIMARY KEY, netz TEXT NOT NULL, netz_id TEXT NOT NULL, token TEXT NOT NULL, zeit TEXT NOT NULL, grund TEXT NOT NULL)")
-        g.db().execute("INSERT OR IGNORE INTO seite_widerruf (rev, netz, netz_id, token, zeit, grund) VALUES (?,?,?,?,?,?)", (full, net, net_id, token, g.now(), reason[:300]))
-        g.db().execute("UPDATE seite_rev SET status = 'vergessen', daten = NULL, entschieden = ? WHERE netz = ? AND rev = ?", (g.now(), net, full))
+        g.db().execute("CREATE TABLE IF NOT EXISTS page_revocation (rev TEXT PRIMARY KEY, net TEXT NOT NULL, net_id TEXT NOT NULL, token TEXT NOT NULL, ts TEXT NOT NULL, reason TEXT NOT NULL)")
+        g.db().execute("INSERT OR IGNORE INTO page_revocation (rev, net, net_id, token, ts, reason) VALUES (?,?,?,?,?,?)", (full, net, net_id, token, g.now(), reason[:300]))
+        g.db().execute("UPDATE page_rev SET status = 'vergessen', data = NULL, decided = ? WHERE net = ? AND rev = ?", (g.now(), net, full))
         g.db().commit()
     materialize(net, slug)
     return {"rev": full, "seite": slug}
@@ -293,8 +293,8 @@ def revoke(instance: str, net: str, rev: str, reason: str) -> dict:
 
 def revocations(net: str) -> list[dict]:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS seite_widerruf (rev TEXT PRIMARY KEY, netz TEXT NOT NULL, netz_id TEXT NOT NULL, token TEXT NOT NULL, zeit TEXT NOT NULL, grund TEXT NOT NULL)")
-        return [{"netz_id": a, "token": b} for a, b in g.db().execute("SELECT netz_id, token FROM seite_widerruf WHERE netz = ? ORDER BY zeit", (net,))]
+        g.db().execute("CREATE TABLE IF NOT EXISTS page_revocation (rev TEXT PRIMARY KEY, net TEXT NOT NULL, net_id TEXT NOT NULL, token TEXT NOT NULL, ts TEXT NOT NULL, reason TEXT NOT NULL)")
+        return [{"netz_id": a, "token": b} for a, b in g.db().execute("SELECT net_id, token FROM page_revocation WHERE net = ? ORDER BY ts", (net,))]
 
 
 def history(net: str, slug: str) -> list[dict]:
@@ -305,8 +305,8 @@ def pages(net: str | None = None) -> list[tuple[str, str]]:
     _tables()
     with g.lock:
         if net:
-            return g.db().execute("SELECT DISTINCT netz, seite FROM seite_rev WHERE netz = ? ORDER BY seite", (net,)).fetchall()
-        return g.db().execute("SELECT DISTINCT netz, seite FROM seite_rev ORDER BY netz, seite").fetchall()
+            return g.db().execute("SELECT DISTINCT net, page FROM page_rev WHERE net = ? ORDER BY page", (net,)).fetchall()
+        return g.db().execute("SELECT DISTINCT net, page FROM page_rev ORDER BY net, page").fetchall()
 
 
 def stats(days: float = 7) -> dict:
@@ -315,15 +315,15 @@ def stats(days: float = 7) -> dict:
     _tables()
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     with g.lock:
-        by_state = dict(g.db().execute("SELECT status, COUNT(*) FROM seite_rev GROUP BY status").fetchall())
-        own = g.db().execute("SELECT COUNT(*) FROM seite_rev WHERE eigen = 1").fetchone()[0]
-        foreign_released = g.db().execute("SELECT COUNT(*) FROM seite_rev WHERE eigen = 0 AND status = 'frei'").fetchone()[0]
-        total = g.db().execute("SELECT COUNT(*) FROM seite_rev").fetchone()[0]
-        publishers = g.db().execute("SELECT COUNT(DISTINCT COALESCE(pub, instanz)) FROM seite_rev").fetchone()[0]
-        new_pages = g.db().execute("SELECT COUNT(*) FROM (SELECT netz, seite, MIN(empfangen) m FROM seite_rev GROUP BY netz, seite) WHERE m >= ?", (since,)).fetchone()[0]
-        changed = g.db().execute("SELECT COUNT(DISTINCT netz || '|' || seite) FROM seite_rev WHERE empfangen >= ?", (since,)).fetchone()[0]
-        waits = g.db().execute("SELECT empfangen, entschieden FROM seite_rev WHERE eigen = 0 AND status = 'frei' AND entschieden >= ?", (since,)).fetchall()
-        auto = g.db().execute("SELECT COUNT(*) FROM objekt WHERE art = 'seite' AND id LIKE 'seite:rev-%' AND aenderungen LIKE '%automatic%'").fetchone()[0]
+        by_state = dict(g.db().execute("SELECT status, COUNT(*) FROM page_rev GROUP BY status").fetchall())
+        own = g.db().execute("SELECT COUNT(*) FROM page_rev WHERE own = 1").fetchone()[0]
+        foreign_released = g.db().execute("SELECT COUNT(*) FROM page_rev WHERE own = 0 AND status = 'frei'").fetchone()[0]
+        total = g.db().execute("SELECT COUNT(*) FROM page_rev").fetchone()[0]
+        publishers = g.db().execute("SELECT COUNT(DISTINCT COALESCE(pub, instance)) FROM page_rev").fetchone()[0]
+        new_pages = g.db().execute("SELECT COUNT(*) FROM (SELECT net, page, MIN(received) m FROM page_rev GROUP BY net, page) WHERE m >= ?", (since,)).fetchone()[0]
+        changed = g.db().execute("SELECT COUNT(DISTINCT net || '|' || page) FROM page_rev WHERE received >= ?", (since,)).fetchone()[0]
+        waits = g.db().execute("SELECT received, decided FROM page_rev WHERE own = 0 AND status = 'frei' AND decided >= ?", (since,)).fetchall()
+        auto = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'seite' AND id LIKE 'seite:rev-%' AND changes LIKE '%automatic%'").fetchone()[0]
     hours = sorted((datetime.fromisoformat(b.replace("Z", "+00:00")) - datetime.fromisoformat(a.replace("Z", "+00:00"))).total_seconds() / 3600 for a, b in waits)
 
     def q(p):

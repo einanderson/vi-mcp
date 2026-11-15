@@ -18,7 +18,7 @@ from pathlib import Path
 from . import db as dbmod
 
 #: FTS5 keeps its index in shadow tables; PostgreSQL builds its own (tsvector) from the copied rows
-_SHADOW = re.compile(r"^objekt_fts_(data|idx|content|docsize|config)$|^sqlite_")
+_SHADOW = re.compile(r"^(object|objekt)_fts_(data|idx|content|docsize|config)$|^sqlite_")  # objekt_fts: a file of 0.66 or older
 BATCH = 1000
 
 
@@ -101,10 +101,11 @@ def status() -> str:
     if dbmod.is_url(k.db):
         con = dbmod.connect(k.db)
         try:
-            n = con.execute("SELECT COUNT(*) FROM objekt").fetchone()[0] if con.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'objekt'").fetchone() else 0
+            table = next((t for t in ("object", "objekt") if con.execute(  # objekt: a schema of 0.66 or older, renamed when the server opens it
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?", (t,)).fetchone()), None)
+            n = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] if table else 0
             version = con.execute("SHOW server_version").fetchone()[0]
-            return f"database: PostgreSQL {version} · {dbmod.redact(k.db)} · schema {con.schema} · {n} objects"
+            return f"database: PostgreSQL {version} · {dbmod.redact(k.db)} · schema {con.schema} · {n} objects" + _names_lines(con, table)
         finally:
             con.close()
     p = Path(k.db)
@@ -112,10 +113,24 @@ def status() -> str:
         return f"database: SQLite {p} (not created yet)"
     con = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
     try:
-        n = con.execute("SELECT COUNT(*) FROM objekt").fetchone()[0]
+        table = next((t for t in ("object", "objekt") if con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (t,)).fetchone()), None)
+        n = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] if table else 0
+        return f"database: SQLite {p} · {p.stat().st_size // 1024} KiB · {n} objects" + _names_lines(con, table)
     finally:
         con.close()
-    return f"database: SQLite {p} · {p.stat().st_size // 1024} KiB · {n} objects"
+
+
+def _names_lines(con, table: str | None) -> str:
+    """0.67.0: whether the stored names are English yet, and what the migration changed (counts per class, backup copy)."""
+    from . import names
+    if table == "objekt":
+        return "\nstored names: German (0.66 or older) — the server renames them to English when it next opens the database, after a backup copy"
+    rows = names.report(con)
+    if not rows:
+        return "\nstored names: English (created by 0.67.0 or later, nothing to migrate)"
+    backup = next((b for *_x, b in rows if b), None)
+    return (f"\nstored names: English — migrated {rows[0][3]} (step {rows[0][0]}): " + ", ".join(f"{n} {cls}" for _s, cls, n, _t, _b in rows)
+            + (f"\nbackup copy before the migration: {backup}" if backup else ""))
 
 
 USAGE = """usage: vi-mcp db status

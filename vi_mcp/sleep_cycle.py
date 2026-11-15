@@ -83,7 +83,7 @@ def _new_since(since: str) -> bool:
     """Is there anything new to consolidate? A catch-up without new experiences would only load the language model (and an empty
     memory, e.g. a fresh installation, has nothing to sleep over)."""
     with g.lock:
-        return bool(g.db().execute("SELECT 1 FROM objekt WHERE art = 'erfahrung' AND zeit > ? LIMIT 1", (since,)).fetchone())
+        return bool(g.db().execute("SELECT 1 FROM object WHERE kind = 'erfahrung' AND ts > ? LIMIT 1", (since,)).fetchone())
 
 
 def last() -> g.MemoryObject | None:
@@ -109,7 +109,7 @@ def due(now: datetime | None = None) -> str | None:
     if l and datetime.fromisoformat(l.ts) > now - timedelta(minutes=MIN_GAP_MIN):
         return None  # too soon after the last sleep; importance keeps accumulating
     with g.lock:
-        sum_total = g.db().execute("SELECT COALESCE(SUM(wichtigkeit), 0) FROM objekt WHERE art = 'erfahrung' AND zeit > ?", (since,)).fetchone()[0]
+        sum_total = g.db().execute("SELECT COALESCE(SUM(importance), 0) FROM object WHERE kind = 'erfahrung' AND ts > ?", (since,)).fetchone()[0]
     if sum_total >= THRESHOLD:
         if cfg["workstation"] and not quiet:
             return None  # a workstation: wait for a quiet moment instead of sleeping while someone works
@@ -233,9 +233,9 @@ def _triage(new_items: list[g.MemoryObject], report: dict) -> int:
     since7 = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
     with g.lock:
         frequent_hosts = {r[0] for r in g.db().execute(
-            "SELECT t.tag FROM tag t JOIN objekt o ON o.id = t.objekt_id WHERE t.tag LIKE 'host:%' AND o.zeit >= ? GROUP BY t.tag HAVING COUNT(*) >= 3", (since7,))}
+            "SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'host:%' AND o.ts >= ? GROUP BY t.tag HAVING COUNT(*) >= 3", (since7,))}
         triggers_active = {r[0] for r in g.db().execute(
-            "SELECT t.tag FROM tag t JOIN objekt o ON o.id = t.objekt_id WHERE o.art IN ('suche', 'regel') AND o.modus IN ('aktiv', 'test') "
+            "SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE o.kind IN ('suche', 'regel') AND o.mode IN ('aktiv', 'test') "
             "AND (t.tag LIKE 'host:%' OR t.tag LIKE 'tool:%' OR t.tag LIKE 'skill:%')")}
     rated = []
     for o in new_items:
@@ -259,8 +259,8 @@ def _replay(report: dict) -> int:
         ids = {o.id for o in new_items}
         with g.lock:  # interleaved: add older experiences with the same hashtags so the new is read against the old
             old_umask_value = [r[0] for r in g.db().execute(
-                "SELECT o.id FROM objekt o JOIN tag t1 ON t1.objekt_id = o.id AND t1.tag = ? JOIN tag t2 ON t2.objekt_id = o.id AND t2.tag = ? "
-                "WHERE o.art = 'erfahrung' AND o.modus = 'aktiv' AND o.zeit <= ? ORDER BY o.zeit DESC LIMIT ?", (*key, report["seit"], REPLAY_OLD))]
+                "SELECT o.id FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? JOIN tag t2 ON t2.object_id = o.id AND t2.tag = ? "
+                "WHERE o.kind = 'erfahrung' AND o.mode = 'aktiv' AND o.ts <= ? ORDER BY o.ts DESC LIMIT ?", (*key, report["seit"], REPLAY_OLD))]
         for a in old_umask_value:
             if a not in ids:
                 o = g.load(a)
@@ -412,15 +412,15 @@ def _self_actual() -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=PERIOD_IN_DAYS)).isoformat(timespec="seconds")
     with g.lock:
         comp = g.db().execute(
-            "SELECT t.tag, COUNT(*), SUM(CASE WHEN EXISTS (SELECT 1 FROM tag x WHERE x.objekt_id = o.id AND x.tag = 'ok:ja') THEN 1 ELSE 0 END) "
-            "FROM objekt o JOIN tag t ON t.objekt_id = o.id AND t.tag LIKE 'skill:%' WHERE o.art = 'erfahrung' AND o.zeit >= ? "
+            "SELECT t.tag, COUNT(*), SUM(CASE WHEN EXISTS (SELECT 1 FROM tag x WHERE x.object_id = o.id AND x.tag = 'ok:ja') THEN 1 ELSE 0 END) "
+            "FROM object o JOIN tag t ON t.object_id = o.id AND t.tag LIKE 'skill:%' WHERE o.kind = 'erfahrung' AND o.ts >= ? "
             "GROUP BY t.tag ORDER BY 2 DESC LIMIT 12", (since,)).fetchall()
         weak = g.db().execute(
-            "SELECT t1.tag, t2.tag, COUNT(*), MIN(o.zeit), MAX(o.zeit) FROM objekt o JOIN tag t1 ON t1.objekt_id = o.id AND t1.tag LIKE 'tool:%' "
-            "JOIN tag t2 ON t2.objekt_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.art = 'erfahrung' AND o.zeit >= ? "
+            "SELECT t1.tag, t2.tag, COUNT(*), MIN(o.ts), MAX(o.ts) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag LIKE 'tool:%' "
+            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.kind = 'erfahrung' AND o.ts >= ? "
             "GROUP BY t1.tag, t2.tag HAVING COUNT(*) >= 3 ORDER BY 3 DESC LIMIT 8", (since,)).fetchall()
         relations = g.db().execute(
-            "SELECT instanz, COUNT(*), MAX(zeit) FROM objekt WHERE art = 'gespraech' AND instanz <> 'vi' GROUP BY instanz ORDER BY 2 DESC").fetchall()
+            "SELECT instance, COUNT(*), MAX(ts) FROM object WHERE kind = 'gespraech' AND instance <> 'vi' GROUP BY instance ORDER BY 2 DESC").fetchall()
     actual = {"zeitraum": f"{PERIOD_IN_DAYS} d", "berechnet": g.now(),
            "kompetenz": [{"bereich": b, "erfahrungen": n, "erfolgsquote": round(ok / n, 2), "zeitraum": f"{PERIOD_IN_DAYS} d"} for b, n, ok in comp],
            # 0.63.0: first and last time — 184 errors in one hour that ended are no ongoing weakness (found on production, 13.11.2026)

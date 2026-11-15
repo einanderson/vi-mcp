@@ -96,7 +96,7 @@ def registry() -> dict[str, dict]:
     import json
     from . import memory as g
     with g.lock:
-        rows = g.db().execute("SELECT name, art, beschreibung, tags, erstellt, quelle FROM vi_index").fetchall()
+        rows = g.db().execute("SELECT name, kind, description, tags, created, source FROM vi_index").fetchall()
     return {r[0]: {"art": r[1], "beschreibung": r[2], "tags": json.loads(r[3] or "[]"), "erstellt": r[4], "quelle": r[5]} for r in rows}
 
 
@@ -118,14 +118,14 @@ def describe(name: str, description: str | None = None, tags: list[str] | None =
         if bad:
             raise ValueError(f"tags: a-z, 0-9, ':', '.', '-', '_' only — {', '.join(bad[:3])}")
     with g.lock:
-        g.db().execute("INSERT OR IGNORE INTO vi_index (name, art, erstellt, quelle) VALUES (?, ?, ?, 'beschrieben')",
+        g.db().execute("INSERT OR IGNORE INTO vi_index (name, kind, created, source) VALUES (?, ?, ?, 'beschrieben')",
                        (n, kind or "projekt", g.now()))
         if description is not None:
-            g.db().execute("UPDATE vi_index SET beschreibung = ? WHERE name = ?", (description.strip()[:2000], n))
+            g.db().execute("UPDATE vi_index SET description = ? WHERE name = ?", (description.strip()[:2000], n))
         if clean is not None:
             g.db().execute("UPDATE vi_index SET tags = ? WHERE name = ?", (json.dumps(clean), n))
         if kind is not None:
-            g.db().execute("UPDATE vi_index SET art = ? WHERE name = ?", (kind, n))
+            g.db().execute("UPDATE vi_index SET kind = ? WHERE name = ?", (kind, n))
         g.db().commit()
     g._known_indexes.add(n)
     r = registry()[n]
@@ -136,12 +136,12 @@ def summary() -> list[dict]:
     from . import learning
     from . import memory as g
     with g.lock:
-        rows = g.db().execute("SELECT idx, art, COUNT(*) FROM objekt WHERE modus NOT IN ('widerlegt', 'zurueckgezogen', 'aufgegangen') GROUP BY idx, art").fetchall()
+        rows = g.db().execute("SELECT idx, kind, COUNT(*) FROM object WHERE mode NOT IN ('widerlegt', 'zurueckgezogen', 'aufgegangen') GROUP BY idx, kind").fetchall()
     reg = registry()
     per: dict[str, dict] = {name: {"index": name, "objekte": 0, "erfahrungen": 0, "wissen": 0, "code": 0} for name in reg}
     with g.lock:
-        code = dict(g.db().execute("SELECT o.idx, COUNT(*) FROM objekt o JOIN tag t ON t.objekt_id = o.id WHERE t.tag = 'art_wissen:code' "
-                                   "AND o.modus = 'aktiv' GROUP BY o.idx").fetchall())
+        code = dict(g.db().execute("SELECT o.idx, COUNT(*) FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag = 'art_wissen:code' "
+                                   "AND o.mode = 'aktiv' GROUP BY o.idx").fetchall())
     for idx, art, n in rows:
         e = per.setdefault(idx, {"index": idx, "objekte": 0, "erfahrungen": 0, "wissen": 0, "code": 0})
         e["objekte"] += n
@@ -198,10 +198,10 @@ def rename(old: str, new: str, who: str, reason: str) -> str:
     if not (reason or "").strip():
         raise ValueError("a reason is required")
     with g.lock:
-        n = g.db().execute("UPDATE objekt SET idx = ? WHERE idx = ? AND id <> ?", (b, a, learning.model_id(a))).rowcount
+        n = g.db().execute("UPDATE object SET idx = ? WHERE idx = ? AND id <> ?", (b, a, learning.model_id(a))).rowcount
         # the row of vi_index: renamed if b is new (description and tags go along), dropped if a was merged into an existing b
         if g.db().execute("SELECT 1 FROM vi_index WHERE name = ?", (b,)).fetchone():
-            if g.db().execute("SELECT COUNT(*) FROM objekt WHERE idx = ?", (a,)).fetchone()[0] == 0:
+            if g.db().execute("SELECT COUNT(*) FROM object WHERE idx = ?", (a,)).fetchone()[0] == 0:
                 g.db().execute("DELETE FROM vi_index WHERE name = ?", (a,))
         else:
             g.db().execute("UPDATE vi_index SET name = ? WHERE name = ?", (b, a))
@@ -222,10 +222,10 @@ def backfill(apply: bool = False) -> dict:
     cfg = _config()
     with g.lock:
         projects = {s: p for s, p in g.db().execute(
-            "SELECT json_extract(daten, '$.serial'), json_extract(daten, '$.project') FROM objekt WHERE art = 'gespraech' "
-            "AND json_extract(daten, '$.project') IS NOT NULL").fetchall() if s}
-        rows = g.db().execute("SELECT id, gespraech, art FROM objekt WHERE idx = 'global' AND gespraech IS NOT NULL "
-                              "AND art IN ('erfahrung', 'erkenntnis', 'bild')").fetchall()
+            "SELECT json_extract(data, '$.serial'), json_extract(data, '$.project') FROM object WHERE kind = 'gespraech' "
+            "AND json_extract(data, '$.project') IS NOT NULL").fetchall() if s}
+        rows = g.db().execute("SELECT id, conversation, kind FROM object WHERE idx = 'global' AND conversation IS NOT NULL "
+                              "AND kind IN ('erfahrung', 'erkenntnis', 'bild')").fetchall()
     per: dict[str, dict[str, int]] = {}
     moves: list[tuple[str, str]] = []
     for oid, serial, art in rows:
@@ -239,7 +239,7 @@ def backfill(apply: bool = False) -> dict:
     if apply and moves:
         with g.lock:
             for i in range(0, len(moves), 500):
-                g.db().executemany("UPDATE objekt SET idx = ? WHERE id = ?", moves[i:i + 500])
+                g.db().executemany("UPDATE object SET idx = ? WHERE id = ?", moves[i:i + 500])
             g.db().commit()
     return {"angewendet": bool(apply), "objekte": len(moves), "je_index": dict(sorted(per.items(), key=lambda kv: -sum(kv[1].values())))}
 

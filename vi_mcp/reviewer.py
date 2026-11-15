@@ -79,8 +79,8 @@ def _candidates(o: g.MemoryObject) -> list[dict]:
         return []
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            f"SELECT t.objekt_id FROM tag t JOIN objekt x ON x.id = t.objekt_id WHERE t.tag IN ({','.join('?' * len(content))}) AND x.modus NOT IN ('quarantaene', 'archiviert') "
-            "AND x.art IN ('erkenntnis', 'regel') GROUP BY t.objekt_id HAVING COUNT(*) >= 2 LIMIT 5", content)]
+            f"SELECT t.object_id FROM tag t JOIN object x ON x.id = t.object_id WHERE t.tag IN ({','.join('?' * len(content))}) AND x.mode NOT IN ('quarantaene', 'archiviert') "
+            "AND x.kind IN ('erkenntnis', 'regel') GROUP BY t.object_id HAVING COUNT(*) >= 2 LIMIT 5", content)]
     return [{"id": i, "text": g.load(i).text[:200]} for i in ids]
 
 

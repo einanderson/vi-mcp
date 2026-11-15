@@ -74,7 +74,7 @@ def test_net_token_cli_shows_id_exports_0600_and_recalls_without_printing_the_to
         assert exp.stat().st_mode & 0o777 == 0o600
     assert main._cli(["net-token", "nobody"]) == 1
     g.open_db(db)
-    assert g.db().execute("SELECT COUNT(*) FROM netz_widerruf WHERE oid = ?", (o.id,)).fetchone()[0] == 1
+    assert g.db().execute("SELECT COUNT(*) FROM net_revocation WHERE oid = ?", (o.id,)).fetchone()[0] == 1
     g.close_db()
 
 
@@ -111,7 +111,7 @@ def test_logbook_refuses_invalid_peers_and_service_reports_existing_ones(net, tm
     a = net.build(seed, [pub], start=["https://new/vi-p2p/wiki", "https://ok.example/vi-p2p/wiki"])
     assert {p["adresse"] for p in a.log.peers()} == {"https://ok.example/vi-p2p/wiki"}  # the start word is not remembered
     with a.log.lock:  # an entry from an older version, before addresses were checked
-        a.log.db.execute("INSERT INTO peer (adresse, quelle) VALUES (?,?)", ("https://old/vi-p2p/wiki", "start"))
+        a.log.db.execute("INSERT INTO peer (address, source) VALUES (?,?)", ("https://old/vi-p2p/wiki", "start"))
     assert "https://old/vi-p2p/wiki" not in a.log.choose_peers(10)  # never contacted
     snap = {p["adresse"]: p for p in a.snapshot()["peers"]}
     assert snap["https://old/vi-p2p/wiki"]["state"] == "invalid" and "not a host name" in snap["https://old/vi-p2p/wiki"]["reason"]
@@ -151,7 +151,7 @@ def test_peer_removal_by_tool_reaches_the_service_and_stays_removed(gd, net, mon
     seed, pub = net.key_()
     a = net.build(seed, [pub])
     with a.log.lock:
-        a.log.db.execute("INSERT INTO peer (adresse, quelle) VALUES (?,?)", ("https://old/vi-p2p/wiki", "start"))
+        a.log.db.execute("INSERT INTO peer (address, source) VALUES (?,?)", ("https://old/vi-p2p/wiki", "start"))
     a.mcp.outbox = lambda state=None: {"objekte": [], "widerrufe": [], "removed_peers": reply["removed_peers"]}
     a.outbox()
     assert "https://old/vi-p2p/wiki" not in {p["adresse"] for p in a.log.peers()}
@@ -169,7 +169,7 @@ def test_peers_remove_cli_drops_it_from_the_table_and_the_start_list(tmp_path, m
     (tmp_path / "p2p" / "wiki.json").write_text(json.dumps(conf))
     log = lb.Logbook(conf["db"], seed, [pub])
     with log.lock:
-        log.db.execute("INSERT INTO peer (adresse, quelle) VALUES (?,?)", ("https://new/vi-p2p/wiki", "start"))
+        log.db.execute("INSERT INTO peer (address, source) VALUES (?,?)", ("https://new/vi-p2p/wiki", "start"))
     log.close() if hasattr(log, "close") else None
     monkeypatch.setattr(net_cli, "_service", lambda *a, **k: None)
     assert net_cli.main(["--network", "wiki", "peers", "remove", "https://new/vi-p2p/wiki"]) == 0
@@ -192,7 +192,7 @@ def test_status_names_why_a_network_has_no_snapshot(gd, monkeypatch):
     st = p2p.status()["netze"]
     assert st["wiki"]["stand"]["version"] == "0.66.0" and "stale" not in st["wiki"]["stand"]
     with g.lock:
-        g.db().execute("UPDATE netz_stand SET zeit = ? WHERE netz = 'wiki'", ("2026-11-01T10:00:00+00:00",))
+        g.db().execute("UPDATE net_state SET ts = ? WHERE net = 'wiki'", ("2026-11-01T10:00:00+00:00",))
         g.db().commit()
     st = p2p.status()["netze"]["wiki"]["stand"]
     assert "2026-11-01T10:00" in st["stale"] and "vi-p2p" in st["stale"]

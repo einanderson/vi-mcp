@@ -71,7 +71,7 @@ def test_import_is_incremental_internal_and_archives_what_is_gone(gd, repo):
     assert sorted(o.data.get("name") or o.data.get("modul") for o in facts) == ["pkg.msi", "pkg.msi.Compound.read", "pkg.msi.decode_name"]
     held = [o for o in held if not ci._is_fact(o)]
     assert len(held) == 4 and all(o.visibility == "intern" and o.idx == "toolbox" and "art_wissen:code" in o.hashtags for o in held)
-    assert not g.db().execute("SELECT 1 FROM kante WHERE a IN (%s)" % ",".join("?" * len(held)), [o.id for o in held]).fetchone()  # no links
+    assert not g.db().execute("SELECT 1 FROM edge WHERE a IN (%s)" % ",".join("?" * len(held)), [o.id for o in held]).fetchone()  # no links
     assert ci.run(repo, "toolbox", _call)["geaendert"] == 0  # nothing changed: nothing sent
     (repo / "pkg" / "msi.py").write_text(PY.replace("return name\n\n\nclass", "return name.upper()\n\n\nclass").replace(
         "class Compound:", "class Archive:"))

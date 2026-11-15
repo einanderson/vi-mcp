@@ -40,7 +40,7 @@ def test_usage_stats_count_calls_rules_and_searches(gd):
 def test_cleanup_deletes_old_entries(gd):
     usage_stats.record("a", None, "vi_status", "ok", 1)
     with g.lock:
-        g.db().execute("UPDATE nutzung SET zeit = '2020-01-01T00:00:00+00:00'")
+        g.db().execute("UPDATE usage SET ts = '2020-01-01T00:00:00+00:00'")
     assert usage_stats.cleanup() == 1
 
 

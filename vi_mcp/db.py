@@ -14,7 +14,7 @@ fetchall, rowcount). `connect()` returns a plain `sqlite3.Connection` for a file
 | `group_concat(x, sep)` | `string_agg(x, sep)` |
 | `INTEGER`, `REAL`, `BLOB` | `BIGINT`, `DOUBLE PRECISION`, `BYTEA` |
 | `json_extract`, `json_array_length`, `instr` | SQL functions of the same name in the schema (installed on connect) |
-| FTS5 table `objekt_fts` | table with a generated `tsvector` column and a GIN index (search: `memory.recall`) |
+| FTS5 table `object_fts` | table with a generated `tsvector` column and a GIN index (search: `memory.recall`) |
 | `PRAGMA table_info(t)` | `information_schema.columns` |
 | other `PRAGMA` (journal, checkpoint, busy timeout) | no-op |
 | `sqlite_master … type = 'table' AND name = ` | `information_schema.tables` |

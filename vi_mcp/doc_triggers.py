@@ -34,18 +34,18 @@ _WORD = re.compile(r"[a-zäöüß0-9][a-zäöüß0-9._-]*[a-zäöüß0-9]|[a-zä
 
 
 def _doc_ids_sql() -> str:
-    return f"SELECT objekt_id FROM tag WHERE tag IN ({','.join('?' * len(DOC_TAGS))})"
+    return f"SELECT object_id FROM tag WHERE tag IN ({','.join('?' * len(DOC_TAGS))})"
 
 
 def vocabulary() -> tuple[dict[str, str], set[str]]:
     """(name → host: value, thema words). Names: full host names and unambiguous first labels that contain a digit."""
     with g.lock:
         hosts = [r[0][5:].lower() for r in g.db().execute(
-            f"SELECT DISTINCT t.tag FROM tag t JOIN objekt o ON o.id = t.objekt_id WHERE t.tag LIKE 'host:%' "
-            f"AND o.art IN ('erfahrung', 'erkenntnis', 'regel', 'skill') AND o.id NOT IN ({_doc_ids_sql()})", DOC_TAGS)]
+            f"SELECT DISTINCT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'host:%' "
+            f"AND o.kind IN ('erfahrung', 'erkenntnis', 'regel', 'skill') AND o.id NOT IN ({_doc_ids_sql()})", DOC_TAGS)]
         themen = {r[0][6:].lower() for r in g.db().execute(
-            f"SELECT t.tag FROM tag t JOIN objekt o ON o.id = t.objekt_id WHERE t.tag LIKE 'thema:%' "
-            f"AND o.art IN ('erkenntnis', 'regel', 'skill') AND o.id NOT IN ({_doc_ids_sql()}) "
+            f"SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'thema:%' "
+            f"AND o.kind IN ('erkenntnis', 'regel', 'skill') AND o.id NOT IN ({_doc_ids_sql()}) "
             f"GROUP BY t.tag HAVING COUNT(DISTINCT o.id) >= ?", (*DOC_TAGS, THEMA_MIN))}
     names: dict[str, str] = {}
     short: dict[str, set[str]] = {}
@@ -75,13 +75,13 @@ def run(batch: int = BATCH) -> dict:
     names, themen = vocabulary()
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            f"SELECT id FROM objekt WHERE id IN ({_doc_ids_sql()}) AND modus NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
-            "AND COALESCE(CAST(json_extract(daten, '$.derived_triggers.version') AS REAL), 0) < ? ORDER BY zeit LIMIT ?", (*DOC_TAGS, VERSION, batch))]
+            f"SELECT id FROM object WHERE id IN ({_doc_ids_sql()}) AND mode NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
+            "AND COALESCE(CAST(json_extract(data, '$.derived_triggers.version') AS REAL), 0) < ? ORDER BY ts LIMIT ?", (*DOC_TAGS, VERSION, batch))]
     too_common_h: set[str] = set()
     too_common_t: set[str] = set()
     if ids:  # document frequency over all documentation: what fits too much of it is no specific trigger
         with g.lock:
-            rows = g.db().execute(f"SELECT text, json_extract(daten, '$.inhalt') FROM objekt WHERE id IN ({_doc_ids_sql()})", DOC_TAGS).fetchall()
+            rows = g.db().execute(f"SELECT text, json_extract(data, '$.inhalt') FROM object WHERE id IN ({_doc_ids_sql()})", DOC_TAGS).fetchall()
         hdf: dict[str, int] = {}
         tdf: dict[str, int] = {}
         for text, content in rows:
@@ -120,5 +120,5 @@ def run(batch: int = BATCH) -> dict:
 def _remaining() -> int:
     with g.lock:
         return g.db().execute(
-            f"SELECT COUNT(*) FROM objekt WHERE id IN ({_doc_ids_sql()}) AND modus NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
-            "AND COALESCE(CAST(json_extract(daten, '$.derived_triggers.version') AS REAL), 0) < ?", (*DOC_TAGS, VERSION)).fetchone()[0]
+            f"SELECT COUNT(*) FROM object WHERE id IN ({_doc_ids_sql()}) AND mode NOT IN ('aufgegangen', 'widerlegt', 'zurueckgezogen') "
+            "AND COALESCE(CAST(json_extract(data, '$.derived_triggers.version') AS REAL), 0) < ?", (*DOC_TAGS, VERSION)).fetchone()[0]

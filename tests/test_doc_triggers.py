@@ -34,10 +34,10 @@ def test_no_new_edges_and_at_most_one_doc_hint(gd):
     _known()
     docs = [_doc(f"Confluence IT: MariaDB Seite {i}", "db0137 tmpdir") for i in range(3)]
     with g.lock:
-        before = g.db().execute("SELECT COUNT(*) FROM kante").fetchone()[0]
+        before = g.db().execute("SELECT COUNT(*) FROM edge").fetchone()[0]
     doc_triggers.run()
     with g.lock:
-        assert g.db().execute("SELECT COUNT(*) FROM kante").fetchone()[0] == before
+        assert g.db().execute("SELECT COUNT(*) FROM edge").fetchone()[0] == before
     s = session.begin("a", "t")
     with session.on_behalf(s):
         v = intuition.before("Bash", {"command": "mysql -h db0137.example.org"}, "a", False)

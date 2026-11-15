@@ -96,7 +96,7 @@ def export(index: str, fpath: str | Path) -> dict:
     if not idx:
         raise ValueError("an index name is required")
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE idx = ? ORDER BY zeit", (idx,))]
+        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE idx = ? ORDER BY ts", (idx,))]
     entries, skipped = [], Counter()
     for oid in ids:
         o = g.load(oid)
@@ -213,7 +213,7 @@ def import_file(fpath: str | Path, as_index: str, in_background: bool = True) ->
     except ValueError as ex:
         report["gruende"][f"index description not taken: {ex}"[:120]] += 1
     with g.lock:
-        g.db().execute("UPDATE vi_index SET quelle = ? WHERE name = ? AND (quelle IS NULL OR quelle IN ('beschrieben', 'automatisch'))",
+        g.db().execute("UPDATE vi_index SET source = ? WHERE name = ? AND (source IS NULL OR source IN ('beschrieben', 'automatisch'))",
                        (f"import {lb.pseudonym(pub)} {str(doc.get('zeit'))[:10]}", idx))
         g.db().commit()
     report["gruende"] = dict(report["gruende"].most_common(20))
@@ -257,8 +257,8 @@ def compare(index: str, apply: bool = True, who: str = "vi") -> dict:
         raise ValueError("an index name is required")
     net_score._tables()
     with g.lock:
-        rows = g.db().execute("SELECT o.id, i.inhalt_sha FROM objekt o JOIN p2p_inhalt i ON i.oid = o.id WHERE o.idx = ? "
-                              "AND EXISTS (SELECT 1 FROM p2p_bewertung b WHERE b.inhalt_sha = i.inhalt_sha AND b.netz = ?)", (idx, p2p.FILE_NET)).fetchall()
+        rows = g.db().execute("SELECT o.id, i.content_sha FROM object o JOIN p2p_content i ON i.oid = o.id WHERE o.idx = ? "
+                              "AND EXISTS (SELECT 1 FROM p2p_rating b WHERE b.content_sha = i.content_sha AND b.net = ?)", (idx, p2p.FILE_NET)).fetchall()
     counts = {c: 0 for c in CLASSES}
     examples: dict[str, list[str]] = {c: [] for c in CLASSES}
     switched_off = switched_on = 0
@@ -269,7 +269,7 @@ def compare(index: str, apply: bool = True, who: str = "vi") -> dict:
         m = net_score.own_measurement(o)
         mine = (m["ja"] + m["bestaetigt"], m["nein"] + m["widerlegt"])
         with g.lock:
-            foreign = g.db().execute("SELECT pub, ja, nein, bestaetigt, widerlegt FROM p2p_bewertung WHERE inhalt_sha = ? AND netz = ?",
+            foreign = g.db().execute("SELECT pub, yes, no, confirmed, refuted FROM p2p_rating WHERE content_sha = ? AND net = ?",
                                      (ish, p2p.FILE_NET)).fetchall()
         author = (o.data.get("herkunft") or {}).get("pubkey") if str(o.instance or "").startswith("p2p-") else None
         verdict_here = None  # for an import: is its author's measurement good where ours is bad?
@@ -307,8 +307,8 @@ def _compared_indexes() -> list[str]:
     from . import p2p, net_score
     net_score._tables()
     with g.lock:
-        return sorted(r[0] for r in g.db().execute("SELECT DISTINCT o.idx FROM objekt o JOIN p2p_inhalt i ON i.oid = o.id "
-                                                    "JOIN p2p_bewertung b ON b.inhalt_sha = i.inhalt_sha WHERE b.netz = ?", (p2p.FILE_NET,)))
+        return sorted(r[0] for r in g.db().execute("SELECT DISTINCT o.idx FROM object o JOIN p2p_content i ON i.oid = o.id "
+                                                    "JOIN p2p_rating b ON b.content_sha = i.content_sha WHERE b.net = ?", (p2p.FILE_NET,)))
 
 
 def stats_line() -> str:
@@ -331,8 +331,8 @@ def lines(index: str) -> list[str]:
     """For vi_indexes and the CLI: imports from files and the comparison classes of one index (without changing anything)."""
     from . import p2p
     with g.lock:
-        n = g.db().execute("SELECT COUNT(*) FROM objekt WHERE idx = ? AND json_extract(daten, '$.herkunft.netz') = ?", (index, p2p.FILE_NET)).fetchone()[0]
-        off = g.db().execute("SELECT COUNT(*) FROM objekt WHERE idx = ? AND json_extract(daten, '$.vorrang_aus') IS NOT NULL", (index,)).fetchone()[0]
+        n = g.db().execute("SELECT COUNT(*) FROM object WHERE idx = ? AND json_extract(data, '$.herkunft.netz') = ?", (index, p2p.FILE_NET)).fetchone()[0]
+        off = g.db().execute("SELECT COUNT(*) FROM object WHERE idx = ? AND json_extract(data, '$.vorrang_aus') IS NOT NULL", (index,)).fetchone()[0]
     r = compare(index, apply=False)
     if not n and not r["inhalte"]:
         return []

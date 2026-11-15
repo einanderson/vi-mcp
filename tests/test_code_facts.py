@@ -30,13 +30,13 @@ STORE = textwrap.dedent('''\
     def save(row):
         """Writes under the lock."""
         with g.lock:
-            g.conn().execute("INSERT INTO objekt (id) VALUES (?) ON CONFLICT(id) DO UPDATE SET id = excluded.id", (row,))
+            g.conn().execute("INSERT INTO object (id) VALUES (?) ON CONFLICT(id) DO UPDATE SET id = excluded.id", (row,))
             commit()
         return json.dumps(row)
 
 
     def wipe(row):
-        g.conn().execute("DELETE FROM objekt WHERE id = ?", (row,))
+        g.conn().execute("DELETE FROM object WHERE id = ?", (row,))
         if not row:
             raise Broken("empty")
         raise ValueError("never")
@@ -101,10 +101,10 @@ def test_structure_of_one_file():
     assert st["modul"] == "pkg.store" and st["importiert"] == ["json", "pkg.db"]
     assert st["importiert_spaet"] == ["pkg.late"]  # inside a function: no import-time edge
     save = _fn(st, "pkg.store.save")
-    assert save["schreibt"] == ["objekt"] and save["schreibt_ungesperrt"] == []  # DO UPDATE SET names no table
+    assert save["schreibt"] == ["object"] and save["schreibt_ungesperrt"] == []  # DO UPDATE SET names no table
     assert "pkg.db.conn" in save["ruft"] and "pkg.db.commit" in save["ruft_gesperrt"]
     wipe = _fn(st, "pkg.store.wipe")
-    assert wipe["schreibt_ungesperrt"] == ["objekt"] and wipe["wirft"] == ["ValueError", "pkg.store.Broken"]
+    assert wipe["schreibt_ungesperrt"] == ["object"] and wipe["wirft"] == ["ValueError", "pkg.store.Broken"]
     put = _fn(st, "pkg.store.Store.put")
     assert {"pkg.late.touch", "pkg.store.Store.get", "pkg.store.save"} <= set(put["ruft"])  # late import, self, module function
     assert _fn(st, "pkg.store.helper")["koerper"] and _fn(st, "pkg.store.Store.get")["koerper"] is None  # a one-liner is no duplicate
@@ -198,7 +198,7 @@ def test_fact_objects_are_code_never_hints_vectors_or_training(gd, repo):
     line, _p = ci.file_line("shop", str(repo / "pkg" / "store.py"))
     assert "None" not in line and "save" in line  # the file line names pieces, not fact objects
     with g.lock:
-        rows = g.db().execute("SELECT o.id FROM objekt o WHERE o.id NOT IN (SELECT objekt_id FROM tag WHERE tag IN (?,?,?))",
+        rows = g.db().execute("SELECT o.id FROM object o WHERE o.id NOT IN (SELECT object_id FROM tag WHERE tag IN (?,?,?))",
                               cf.FACT_TAGS).fetchall()
     assert len(rows) < len(ci._held("shop", "shop"))
 
@@ -237,7 +237,7 @@ def test_the_repository_holds_its_own_architecture_rules():
         ("no_import_cycle", "locked_writes", "english_tools"), "ok")
     assert ("locked_writes", "vi_mcp.memory._migrate") in {(q, x) for q, x, _w in rep["excused"]}
     loose = "\n".join(x for x in pc.PROFILE_VI_MCP.splitlines() if "_migrate" not in x)
-    assert ("locked_writes", "vi_mcp.memory._migrate", "objekt") in cf.report(cf.evaluate(st, "vi-mcp", loose))["findings"]
+    assert ("locked_writes", "vi_mcp.memory._migrate", "object") in cf.report(cf.evaluate(st, "vi-mcp", loose))["findings"]
     dangling = cf.report(cf.evaluate(st, "vi-mcp", pc.PROFILE_VI_MCP, 'const_value("vi_mcp.api_en.TOOL_ALIASES", "vi_nowhere")'))
     assert ("english_tools", "vi_nowhere", "vi_mcp.api_en.TOOL_ALIASES") in dangling["findings"]
 
@@ -246,7 +246,7 @@ def test_the_package_runs_in_the_vi_over_stored_facts(gd, repo):
     pytest.importorskip("clingo")
     from clingo_object import philosophy_code as pc
     ci.run(repo, "shop", _call)
-    prof = 'guarded("objekt")\nalias_of("pkg.store.ALIASES", "pkg.store.REGISTRY")\n'
+    prof = 'guarded("object")\nalias_of("pkg.store.ALIASES", "pkg.store.REGISTRY")\n'
     r = logic._run(cf.bridge("shop") + prof + pc.SEED)  # the raw models: check() cuts its list of conclusions for display
     atoms = set.intersection(*[set(m) for m in r["models"]])
     assert 'finding(locked_writes,"pkg.store.wipe")' in atoms and 'status(locked_writes,violated)' in atoms
@@ -265,6 +265,6 @@ def test_training_pairs_come_from_the_facts_and_pass_the_one_definition():
     doc = cf.training_document(wipe, "pkg/store.py")
     assert all(qa.check(p, doc) is None for p in every)  # each pair is grounded in the function's own facts
     text = " ".join(p["answer"] for p in every)
-    assert "objekt outside a lock" in text and "pkg.store.Broken" in text and "pkg.db.conn" in text
+    assert "object outside a lock" in text and "pkg.store.Broken" in text and "pkg.db.conn" in text
     assert r["probe"] not in r["pairs"]  # the probe is never trained
     assert cf.training_pairs(wipe, "pkg/store.py", "erkenntnis:code-x") == r  # reproducible: the probe depends on the id only

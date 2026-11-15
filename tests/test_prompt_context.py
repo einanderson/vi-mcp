@@ -110,7 +110,7 @@ def test_prompt_is_masked_and_not_stored(h):
     _k("ssh to the build host hangs at the password prompt without -i", ["tool:ssh"])
     h.process({"hook_event_name": "UserPromptSubmit", "session_id": "cc-8", "cwd": "/tmp", "prompt": "ssh build host hangs password=geheim123"})
     with g.lock:
-        dump = json.dumps([list(r) for r in g.db().execute("SELECT * FROM objekt")]) + json.dumps([list(r) for r in g.db().execute("SELECT * FROM nutzung")])
+        dump = json.dumps([list(r) for r in g.db().execute("SELECT * FROM object")]) + json.dumps([list(r) for r in g.db().execute("SELECT * FROM usage")])
     assert "geheim123" not in dump and "ssh build host hangs" not in dump
 
 

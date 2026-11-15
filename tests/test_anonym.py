@@ -35,7 +35,7 @@ def test_machine_worlds_stay_private_and_training_publication_scrubs_again(gd, t
     o = g.load(published["id"])
     o.data["machine_example"]["execution"]["input_objects"][0]["text"] = "password=hunter2secret"
     with g.lock:
-        g.db().execute("UPDATE objekt SET daten = ? WHERE id = ?", (json.dumps(o.data), o.id))
+        g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(o.data), o.id))
         g.db().commit()
     built = dataset.build()
     assert "hunter2secret" not in json.dumps(built) and built["scrubbed"].get("machine")
@@ -155,7 +155,7 @@ def test_right_to_be_forgotten_end_to_end(publisher):
     assert r["quarantaene"] == 2
     nid, _ = p2p._object_token(tok, one.id)
     with g.lock:
-        oid = g.db().execute("SELECT oid FROM p2p_netz WHERE netz_id = ?", (nid,)).fetchone()[0]
+        oid = g.db().execute("SELECT oid FROM p2p_net WHERE net_id = ?", (nid,)).fetchone()[0]
     assert g.load(oid)
     assert p2p.net_forget("a", tok, [one.id], "Daten waren falsch") == {"zurueckgerufen": 1, "unbekannt": []}
     n = p2p.outbox()
@@ -163,8 +163,8 @@ def test_right_to_be_forgotten_end_to_end(publisher):
     assert _revocations(publisher)["vergessen"] == 1
     assert g.load(oid) is None and g.load(one.id)  # gone at the receiver, stays with the author
     with g.lock:
-        assert g.db().execute("SELECT 1 FROM p2p_grab WHERE netz_id = ?", (nid,)).fetchone()
-        assert not g.db().execute("SELECT 1 FROM objekt_fts WHERE id = ?", (oid,)).fetchone()
+        assert g.db().execute("SELECT 1 FROM p2p_tombstone WHERE net_id = ?", (nid,)).fetchone()
+        assert not g.db().execute("SELECT 1 FROM object_fts WHERE id = ?", (oid,)).fetchone()
     r = p2p.inbox(_bundle(publisher, a["objekte"]), in_background=False)
     assert r["quarantaene"] == 0 and r["bekannt"] == 2  # the old version brings nothing back
 
@@ -185,7 +185,7 @@ def test_foreign_token_deletes_nothing(publisher):
     nid, _ = p2p._object_token(tok, o.id)
     r = p2p.inbox(_bundle(publisher, [{"ziel": nid, "token": "geraten"}], type_="widerruf"), in_background=False)
     with g.lock:
-        assert r["vergessen"] == 0 and g.db().execute("SELECT COUNT(*) FROM p2p_netz WHERE netz_id = ?", (nid,)).fetchone()[0] == 1
+        assert r["vergessen"] == 0 and g.db().execute("SELECT COUNT(*) FROM p2p_net WHERE net_id = ?", (nid,)).fetchone()[0] == 1
 
 
 def test_new_version_replaces_the_old(publisher):

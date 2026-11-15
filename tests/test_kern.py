@@ -82,7 +82,7 @@ def test_serials_unique_in_parallel(gd):
 def test_serial_above_999(gd):
     tag = session.new_serial()[:8]
     with g.lock:
-        g.db().execute("INSERT INTO objekt (id, art, zeit, zuletzt) VALUES (?, 'gespraech', '', '')", (f"gespraech:{tag}999",))
+        g.db().execute("INSERT INTO object (id, kind, ts, last_at) VALUES (?, 'gespraech', '', '')", (f"gespraech:{tag}999",))
         g.db().commit()
     assert session.new_serial() == f"{tag}1000"
     assert session.new_serial() == f"{tag}1001"

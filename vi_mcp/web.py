@@ -174,8 +174,8 @@ def _threads(net: str) -> list[dict]:
     from . import forum
     forum._tables()
     with g.lock:
-        sent = g.db().execute("SELECT id, daten, zeit, oid FROM beitrag_aus WHERE netz = ? AND art = 'frage' ORDER BY zeit DESC", (net,)).fetchall()
-        recv = g.db().execute("SELECT id, autor, empfangen, oid FROM beitrag_ein WHERE netz = ? AND art = 'frage' AND status = 'frei' ORDER BY empfangen DESC", (net,)).fetchall()
+        sent = g.db().execute("SELECT id, data, ts, oid FROM post_out WHERE net = ? AND kind = 'frage' ORDER BY ts DESC", (net,)).fetchall()
+        recv = g.db().execute("SELECT id, author, received, oid FROM post_in WHERE net = ? AND kind = 'frage' AND status = 'frei' ORDER BY received DESC", (net,)).fetchall()
     out = []
     for pid, data, t, oid in sent:
         c = json.loads(data)
@@ -206,7 +206,7 @@ def _answers(pid: str, net: str, q: g.MemoryObject | None, own: bool) -> list[di
                         "accepted": ao.confirmed > 0, "score": s})
         return out
     with g.lock:
-        sent = g.db().execute("SELECT daten, zeit FROM beitrag_aus WHERE netz = ? AND art = 'antwort' AND eltern = ? ORDER BY zeit", (net, pid)).fetchall()
+        sent = g.db().execute("SELECT data, ts FROM post_out WHERE net = ? AND kind = 'antwort' AND parent = ? ORDER BY ts", (net, pid)).fetchall()
     return [{"author": (c := json.loads(d))["autor"], "text": c["text"], "evidence": c["inhalt"], "time": t, "accepted": False, "score": None} for d, t in sent]
 
 
@@ -404,8 +404,8 @@ def forum_thread(base: str, net: str, tid: str) -> str | None:
         return None
     from . import forum
     with g.lock:
-        oid = (g.db().execute("SELECT oid FROM beitrag_aus WHERE netz = ? AND id = ?", (net, t["id"])).fetchone()
-               or g.db().execute("SELECT oid FROM beitrag_ein WHERE netz = ? AND id = ?", (net, t["id"])).fetchone())
+        oid = (g.db().execute("SELECT oid FROM post_out WHERE net = ? AND id = ?", (net, t["id"])).fetchone()
+               or g.db().execute("SELECT oid FROM post_in WHERE net = ? AND id = ?", (net, t["id"])).fetchone())
     q = g.load(oid[0]) if oid else None
     answers = _answers(t["id"], net, q, own=t["here"])
     forum  # noqa: B018 — tables exist (created by _threads)

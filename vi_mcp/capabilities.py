@@ -42,8 +42,8 @@ def _manual_names(doc: str, prefix: str) -> set[str]:
     prefix, e.g. jira and jira-servicedesk) — never as a source of names: manual prose names REST endpoints, old names and fragments
     (0.53.2 listed proxmox_vms_list, jira_acme_, prompt_tokens …; checked against the real tool list by a Claude Code session)."""
     with g.lock:  # every section of the skill's manual (herkunft:skills-ordner), not vendor documentation
-        ids = [r[0] for r in g.db().execute("SELECT t1.objekt_id FROM tag t1 WHERE t1.tag = ? AND NOT EXISTS (SELECT 1 FROM tag t2 "
-                                            "WHERE t2.objekt_id = t1.objekt_id AND t2.tag = ?) LIMIT 400", (f"doku:{doc}", EXTERNAL_TAG))]
+        ids = [r[0] for r in g.db().execute("SELECT t1.object_id FROM tag t1 WHERE t1.tag = ? AND NOT EXISTS (SELECT 1 FROM tag t2 "
+                                            "WHERE t2.object_id = t1.object_id AND t2.tag = ?) LIMIT 400", (f"doku:{doc}", EXTERNAL_TAG))]
     pattern = re.compile(rf"\b({re.escape(prefix)}_[a-z0-9_]{{2,60}})\b")
     names: set[str] = set()
     for o in g.load_many(ids).values():
@@ -56,7 +56,7 @@ def _manual_names(doc: str, prefix: str) -> set[str]:
 def _tables() -> None:
     with g.lock:
         g.db().executescript("""
-            CREATE TABLE IF NOT EXISTS werkzeug_register (server TEXT NOT NULL, name TEXT NOT NULL, zeit TEXT NOT NULL, instanz TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS tool_register (server TEXT NOT NULL, name TEXT NOT NULL, ts TEXT NOT NULL, instance TEXT NOT NULL,
                                                           PRIMARY KEY (server, name));
         """)
         g.db().commit()
@@ -75,9 +75,9 @@ def register(server: str, names: list[str], instance: str) -> dict:
         raise ValueError("tools: the names from the server's tools/list")
     _tables()
     with g.lock:
-        before = {r[0] for r in g.db().execute("SELECT name FROM werkzeug_register WHERE server = ?", (server,))}
-        g.db().execute("DELETE FROM werkzeug_register WHERE server = ?", (server,))
-        g.db().executemany("INSERT INTO werkzeug_register (server, name, zeit, instanz) VALUES (?,?,?,?)", [(server, n, g.now(), instance) for n in clean])
+        before = {r[0] for r in g.db().execute("SELECT name FROM tool_register WHERE server = ?", (server,))}
+        g.db().execute("DELETE FROM tool_register WHERE server = ?", (server,))
+        g.db().executemany("INSERT INTO tool_register (server, name, ts, instance) VALUES (?,?,?,?)", [(server, n, g.now(), instance) for n in clean])
         g.db().commit()
     _cache.clear()
     return {"server": server, "tools": len(clean), "new": sorted(set(clean) - before), "gone": sorted(before - set(clean))}
@@ -89,7 +89,7 @@ def _real_tools(prefix: str) -> list[str]:
     with g.lock:  # substr, not LIKE: "_" is a wildcard in LIKE, and the same SQL runs on PostgreSQL
         used = g.db().execute("SELECT tag, COUNT(*) FROM tag WHERE substr(tag, 1, ?) = ? GROUP BY tag",
                               (len(prefix) + 6, f"tool:{prefix}_")).fetchall()
-        registered = [r[0] for r in g.db().execute("SELECT DISTINCT name FROM werkzeug_register WHERE substr(name, 1, ?) = ?",
+        registered = [r[0] for r in g.db().execute("SELECT DISTINCT name FROM tool_register WHERE substr(name, 1, ?) = ?",
                                                     (len(prefix) + 1, f"{prefix}_"))]
     counts = {t[5:]: n for t, n in used}
     for n in registered:
@@ -117,8 +117,8 @@ def table(instance: str | None) -> list[dict]:
     rows: dict[str, dict] = {}
     with g.lock:
         ids = list(dict.fromkeys(r[0] for r in g.db().execute(  # DISTINCT with ORDER BY needs the sort column selected (PostgreSQL)
-            "SELECT DISTINCT o.id, o.zeit FROM objekt o JOIN tag t ON t.objekt_id = o.id WHERE t.tag IN (?, ?) AND o.modus IN ('aktiv', 'test') "
-            "ORDER BY o.zeit DESC", OVERVIEW_TAGS)))
+            "SELECT DISTINCT o.id, o.ts FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag IN (?, ?) AND o.mode IN ('aktiv', 'test') "
+            "ORDER BY o.ts DESC", OVERVIEW_TAGS)))
     objs = g.load_many(ids)
     for oid in ids:
         o = objs.get(oid)

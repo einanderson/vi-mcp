@@ -44,8 +44,8 @@ def _span(s: dict) -> str:
 
 def _table() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS selbst_version (version INTEGER PRIMARY KEY, zeit TEXT NOT NULL, wer TEXT NOT NULL, "
-                       "bereich TEXT NOT NULL, satz TEXT NOT NULL, grund TEXT NOT NULL, belege TEXT NOT NULL, vorschlag TEXT)")
+        g.db().execute("CREATE TABLE IF NOT EXISTS self_version (version INTEGER PRIMARY KEY, ts TEXT NOT NULL, who TEXT NOT NULL, "
+                       "area TEXT NOT NULL, sentence TEXT NOT NULL, reason TEXT NOT NULL, evidence TEXT NOT NULL, proposal TEXT)")
         g.db().commit()
 
 
@@ -62,7 +62,7 @@ def core() -> g.MemoryObject:
     with g.lock:
         for area, sentences in DEFAULT_TARGET.items():
             for s in sentences:
-                g.db().execute("INSERT INTO selbst_version (zeit, wer, bereich, satz, grund, belege) VALUES (?,?,?,?,?,?)",
+                g.db().execute("INSERT INTO self_version (ts, who, area, sentence, reason, evidence) VALUES (?,?,?,?,?,?)",
                                (g.now(), "vi", area, s["satz"], "version 1: project rules", s["quelle"]))
         g.db().commit()
     o.data["erzaehlung"] = narrative(o)
@@ -138,7 +138,7 @@ def adopt(v: g.MemoryObject, instance: str, trusted: bool, reason: str) -> g.Mem
     k.data["version"] = k.data.get("version", 1) + 1
     k.text = f"Self of the VI (version {k.data['version']})"
     with g.lock:
-        g.db().execute("INSERT INTO selbst_version (zeit, wer, bereich, satz, grund, belege, vorschlag) VALUES (?,?,?,?,?,?,?)",
+        g.db().execute("INSERT INTO self_version (ts, who, area, sentence, reason, evidence, proposal) VALUES (?,?,?,?,?,?,?)",
                        (g.now(), f"ki@{instance}", v.data["bereich"], v.data["satz"],
                         f"{v.data['grund']} // confirmation: {reason.strip()[:300]}" + (f" // replaces: {old}" if old else ""),
                         json.dumps(v.data["belege"]), v.id))
@@ -165,7 +165,7 @@ def set_actual(actual: dict, reason: str) -> g.MemoryObject:
 def versions(limit: int = 20) -> list[tuple]:
     _table()
     with g.lock:
-        return g.db().execute("SELECT version, zeit, wer, bereich, satz, grund FROM selbst_version ORDER BY version DESC LIMIT ?", (limit,)).fetchall()
+        return g.db().execute("SELECT version, ts, who, area, sentence, reason FROM self_version ORDER BY version DESC LIMIT ?", (limit,)).fetchall()
 
 
 def hint() -> str:

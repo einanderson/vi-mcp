@@ -91,6 +91,7 @@ it is the way back.
 ```bash
 sudo vi-mcp configure --set 'db=postgresql://vi-mcp@/vi-mcp?host=/var/run/postgresql'    # restarts the service
 vi-mcp db status        # database: PostgreSQL 16.x · postgresql://vi-mcp@/vi-mcp?… · schema public · N objects
+                        # stored names: English — migrated … (0.67.0, see "Migration to English names")
 ```
 
 `configure` refuses the switch while the PostgreSQL database holds fewer objects than the SQLite file (it names both counts), so the
@@ -563,6 +564,28 @@ sqlite3 ~/.local/share/vi-mcp/vi.db ".backup '/path/vi-$(date +%F).db'"
 
 On shutdown (SIGTERM) the server writes the WAL back (`wal_checkpoint(TRUNCATE)`) and saves open
 conversations as `unterbrochen` (interrupted).
+
+### Migration to English names (0.67.0)
+
+The first start of 0.67.0 on a database of 0.66 or older renames the stored names in place (`vi_mcp/names.py`). Before it changes
+anything it makes a copy, once per database:
+
+| Database | Copy |
+|---|---|
+| SQLite memory, archive, network logbook | `<file>.pre-0.67.0.db` next to the file, mode 0600 |
+| PostgreSQL schema | schema `<schema>_pre_0_67_0` with a copy of every table |
+
+The disk must hold one more copy of the file; otherwise the server refuses to start with the reason and changes nothing. An existing copy
+is kept. The log names the copy and the counts per class; `vi-mcp db status` shows them again:
+
+```
+stored names: English — migrated 2026-11-15T19:03:59+00:00 (step 0.67.0): 167 columns, 37 tables
+backup copy before the migration: /var/lib/vi-mcp/vi.db.pre-0.67.0.db
+```
+
+Measured on a copy of a production database (46,279 objects, 625 MB, SQLite, 15.11.2026): 3.4 s for copy and rename, no row lost,
+no German table or column left; the second start found nothing to do (0.13 s). Delete the copy once the server has run well with the
+new names.
 
 ## Uninstalling
 

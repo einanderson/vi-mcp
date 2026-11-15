@@ -42,7 +42,7 @@ def test_free_text_searches_are_graded_and_reported(gd, grader):
     assert out["beurteilt"] == 1 and out["fehler"] == 0 and len(sent) == 1
     assert secret.text not in sent[0]  # private knowledge never goes to the model
     with g.lock:
-        rows = g.db().execute("SELECT objekt_id, note, grund FROM relevanz_urteil ORDER BY rang").fetchall()
+        rows = g.db().execute("SELECT object_id, grade, reason FROM relevance_judgment ORDER BY rank").fetchall()
     got = {oid: (note, why) for oid, note, why in rows}
     assert got[a.id] == (3, None) and got[b.id] == (1, None) and got[secret.id] == (None, "private or gone: not sent")
     r = relevance.report()
@@ -90,7 +90,7 @@ def test_grades_are_split_by_search_kind_with_and_without_the_reranker(gd):
     rows = [("s1", "hybrid", 1, 0), ("s1", "hybrid", 2, 0), ("s2", "hybrid+rerank", 1, 3), ("s2", "hybrid+rerank", 2, 1)]
     with g.lock:
         for s, kind, rank, grade in rows:
-            g.db().execute("INSERT INTO relevanz_urteil (suche, zeit, suche_zeit, anfrage, suchart, objekt_id, rang, note, version, grund) "
+            g.db().execute("INSERT INTO relevance_judgment (search, ts, search_ts, query, search_kind, object_id, rank, grade, version, reason) "
                            "VALUES (?,?,?,?,?,?,?,?,?,?)", (s, g.now(), g.now(), "q", kind, f"erkenntnis:{s}{rank}", rank, grade, "v", None))
         g.db().commit()
     r = relevance.report(1)

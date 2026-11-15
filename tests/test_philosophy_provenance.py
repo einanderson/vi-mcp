@@ -122,7 +122,7 @@ def test_shadow_compares_and_changes_nothing(gd, capsys):
 
     def digest():
         with g.lock:
-            return hashlib.sha256(repr(g.db().execute("SELECT id, modus, daten, bestaetigt, widerlegt, zuletzt FROM objekt ORDER BY id").fetchall())
+            return hashlib.sha256(repr(g.db().execute("SELECT id, mode, data, confirmed, refuted, last_at FROM object ORDER BY id").fetchall())
                                   .encode()).hexdigest()
     before = digest()
     r = pv.shadow()

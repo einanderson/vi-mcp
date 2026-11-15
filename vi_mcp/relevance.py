@@ -51,9 +51,9 @@ def _schema(k: int) -> dict:
 
 def _table() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS relevanz_urteil (suche TEXT NOT NULL, zeit TEXT NOT NULL, suche_zeit TEXT NOT NULL, "
-                       "anfrage TEXT NOT NULL, suchart TEXT, objekt_id TEXT NOT NULL, rang INTEGER NOT NULL, note INTEGER, version TEXT NOT NULL, "
-                       "grund TEXT, PRIMARY KEY (suche, rang))")
+        g.db().execute("CREATE TABLE IF NOT EXISTS relevance_judgment (search TEXT NOT NULL, ts TEXT NOT NULL, search_ts TEXT NOT NULL, "
+                       "query TEXT NOT NULL, search_kind TEXT, object_id TEXT NOT NULL, rank INTEGER NOT NULL, grade INTEGER, version TEXT NOT NULL, "
+                       "reason TEXT, PRIMARY KEY (search, rank))")
         g.db().commit()
 
 
@@ -107,9 +107,9 @@ def pending(limit: int, days: float = 7) -> list[tuple]:
     _table()
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
     with g.lock:
-        rows = g.db().execute("SELECT zeit, instanz, anfrage, suchart, treffer FROM suche_log WHERE zeit >= ? ORDER BY zeit DESC LIMIT 2000",
+        rows = g.db().execute("SELECT ts, instance, query, search_kind, hits FROM search_log WHERE ts >= ? ORDER BY ts DESC LIMIT 2000",
                               (since,)).fetchall()
-        done = {r[0] for r in g.db().execute("SELECT DISTINCT suche FROM relevanz_urteil")}
+        done = {r[0] for r in g.db().execute("SELECT DISTINCT search FROM relevance_judgment")}
     out = []
     for when, inst, q, kind, hits in rows:
         if search_key(when, inst, q) in done or not json.loads(hits) or not has_free_text(q):
@@ -142,13 +142,13 @@ def run(limit: int = 3, who: str = "sleep") -> dict:
             if grades is None:
                 out["fehler"] += 1
                 out["gruende"][why] = out["gruende"].get(why, 0) + 1
-                g.db().execute("INSERT INTO relevanz_urteil (suche, zeit, suche_zeit, anfrage, suchart, objekt_id, rang, note, version, grund) "
+                g.db().execute("INSERT INTO relevance_judgment (search, ts, search_ts, query, search_kind, object_id, rank, grade, version, reason) "
                                "VALUES (?,?,?,?,?,?,?,?,?,?)", (key, now, when, q[:500], kind, "-", 0, None, version, why))
             else:
                 for rank, oid in enumerate(ids[:MAX_HITS], 1):
                     o = next((x for x in objs if x.id == oid), None)
                     grade = grades.get(objs.index(o) + 1) if o is not None else None
-                    g.db().execute("INSERT INTO relevanz_urteil (suche, zeit, suche_zeit, anfrage, suchart, objekt_id, rang, note, version, grund) "
+                    g.db().execute("INSERT INTO relevance_judgment (search, ts, search_ts, query, search_kind, object_id, rank, grade, version, reason) "
                                    "VALUES (?,?,?,?,?,?,?,?,?,?)", (key, now, when, q[:500], kind, oid, rank, grade, version,
                                                                    None if o is not None else "private or gone: not sent"))
                 out["beurteilt"] += 1
@@ -171,7 +171,7 @@ def report(days: float = 7) -> dict:
     _table()
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
     with g.lock:
-        rows = g.db().execute("SELECT suche, suchart, rang, note, grund FROM relevanz_urteil WHERE suche_zeit >= ? ORDER BY suche, rang",
+        rows = g.db().execute("SELECT search, search_kind, rank, grade, reason FROM relevance_judgment WHERE search_ts >= ? ORDER BY search, rank",
                               (since,)).fetchall()
     by: dict[str, dict] = {}
     for key, kind, rank, grade, why in rows:

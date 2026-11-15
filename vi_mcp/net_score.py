@@ -38,16 +38,16 @@ _WS = re.compile(r"\s+")
 
 def _tables() -> None:
     with g.lock:
-        new = not g.db().execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'p2p_inhalt'").fetchone()
+        new = not g.db().execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'p2p_content'").fetchone()
         g.db().executescript("""
-            CREATE TABLE IF NOT EXISTS p2p_inhalt (inhalt_sha TEXT PRIMARY KEY, oid TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS p2p_inhalt_oid ON p2p_inhalt (oid);
-            CREATE TABLE IF NOT EXISTS p2p_halter (inhalt_sha TEXT NOT NULL, pub TEXT NOT NULL, netz TEXT NOT NULL, netz_id TEXT NOT NULL, seq INTEGER NOT NULL,
-                                                  zeit TEXT NOT NULL, PRIMARY KEY (inhalt_sha, pub));
-            CREATE INDEX IF NOT EXISTS p2p_halter_netz_id ON p2p_halter (netz_id);
-            CREATE TABLE IF NOT EXISTS p2p_bewertung (inhalt_sha TEXT NOT NULL, pub TEXT NOT NULL, netz TEXT NOT NULL, seq INTEGER NOT NULL, gezeigt REAL NOT NULL,
-                                                     ja REAL NOT NULL, nein REAL NOT NULL, bestaetigt REAL NOT NULL, widerlegt REAL NOT NULL, zeit TEXT NOT NULL,
-                                                     PRIMARY KEY (inhalt_sha, pub));
+            CREATE TABLE IF NOT EXISTS p2p_content (content_sha TEXT PRIMARY KEY, oid TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS p2p_content_oid ON p2p_content (oid);
+            CREATE TABLE IF NOT EXISTS p2p_holder (content_sha TEXT NOT NULL, pub TEXT NOT NULL, net TEXT NOT NULL, net_id TEXT NOT NULL, seq INTEGER NOT NULL,
+                                                  ts TEXT NOT NULL, PRIMARY KEY (content_sha, pub));
+            CREATE INDEX IF NOT EXISTS p2p_holder_net_id ON p2p_holder (net_id);
+            CREATE TABLE IF NOT EXISTS p2p_rating (content_sha TEXT NOT NULL, pub TEXT NOT NULL, net TEXT NOT NULL, seq INTEGER NOT NULL, shown REAL NOT NULL,
+                                                     yes REAL NOT NULL, no REAL NOT NULL, confirmed REAL NOT NULL, refuted REAL NOT NULL, ts TEXT NOT NULL,
+                                                     PRIMARY KEY (content_sha, pub));
         """)
         g.db().commit()
     if new:
@@ -59,7 +59,7 @@ def _backfill() -> None:
     Searches and skills were renamed on import, their hash cannot be rebuilt — they are counted, not guessed."""
     from .log_output import log
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT id FROM objekt WHERE json_extract(daten, '$.herkunft.pubkey') IS NOT NULL")]
+        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE json_extract(data, '$.herkunft.pubkey') IS NOT NULL")]
     done = skipped = 0
     for oid in ids:
         o = g.load(oid)
@@ -69,8 +69,8 @@ def _backfill() -> None:
             continue
         ish = content_hash({"art": o.kind, "text": o.data["fremd_text"], "inhalt": o.data.get("inhalt"), "hashtags": o.data.get("fremd_hashtags") or []})
         with g.lock:
-            g.db().execute("INSERT OR IGNORE INTO p2p_inhalt (inhalt_sha, oid) VALUES (?,?)", (ish, oid))
-            g.db().execute("INSERT OR IGNORE INTO p2p_halter (inhalt_sha, pub, netz, netz_id, seq, zeit) VALUES (?,?,?,?,?,?)",
+            g.db().execute("INSERT OR IGNORE INTO p2p_content (content_sha, oid) VALUES (?,?)", (ish, oid))
+            g.db().execute("INSERT OR IGNORE INTO p2p_holder (content_sha, pub, net, net_id, seq, ts) VALUES (?,?,?,?,?,?)",
                            (ish, h["pubkey"], h.get("netz") or "standard", h.get("netz_id") or "", int(h.get("seq") or 0), g.now()))
         done += 1
     with g.lock:
@@ -113,7 +113,7 @@ def find(ish: str) -> str | None:
     """Object id this memory holds for a content hash, or None."""
     _tables()
     with g.lock:
-        z = g.db().execute("SELECT oid FROM p2p_inhalt WHERE inhalt_sha = ?", (ish,)).fetchone()
+        z = g.db().execute("SELECT oid FROM p2p_content WHERE content_sha = ?", (ish,)).fetchone()
     if z and g.load(z[0]):
         return z[0]
     return None
@@ -124,11 +124,11 @@ def find_local(raw: dict, ish: str) -> str | None:
     0.62.0: the content narrows the candidates, and up to 500 with the same text are checked (was 20 by text alone: a generic heading such
     as "What is missing" shared by many objects hid the matching one — found on the way back of an index file, 40 of 180 contents were
     stored a second time)."""
-    where = ("FROM objekt WHERE art = ? AND text = ? AND (instanz IS NULL OR instanz NOT LIKE 'p2p-%') "
-             "AND modus NOT IN ('widerlegt', 'zurueckgezogen', 'quarantaene')")
+    where = ("FROM object WHERE kind = ? AND text = ? AND (instance IS NULL OR instance NOT LIKE 'p2p-%') "
+             "AND mode NOT IN ('widerlegt', 'zurueckgezogen', 'quarantaene')")
     par = (raw.get("art"), str(raw.get("text") or "").strip())
     with g.lock:
-        ids = [r[0] for r in g.db().execute(f"SELECT id {where} AND json_extract(daten, '$.inhalt') IS ? LIMIT 20", (*par, raw.get("inhalt")))]
+        ids = [r[0] for r in g.db().execute(f"SELECT id {where} AND json_extract(data, '$.inhalt') IS ? LIMIT 20", (*par, raw.get("inhalt")))]
         ids += [r[0] for r in g.db().execute(f"SELECT id {where} LIMIT 500", par) if r[0] not in ids]
     for oid in ids:
         o = g.load(oid)
@@ -140,7 +140,7 @@ def find_local(raw: dict, ish: str) -> str | None:
 def link(ish: str, oid: str) -> None:
     _tables()
     with g.lock:
-        g.db().execute("INSERT OR REPLACE INTO p2p_inhalt (inhalt_sha, oid) VALUES (?,?)", (ish, oid))
+        g.db().execute("INSERT OR REPLACE INTO p2p_content (content_sha, oid) VALUES (?,?)", (ish, oid))
         g.db().commit()
 
 
@@ -148,7 +148,7 @@ def add_holder(ish: str, pub: str, net: str, net_id: str, seq: int) -> bool:
     """True if this publisher was not yet a holder of this content."""
     _tables()
     with g.lock:
-        n = g.db().execute("INSERT OR IGNORE INTO p2p_halter (inhalt_sha, pub, netz, netz_id, seq, zeit) VALUES (?,?,?,?,?,?)",
+        n = g.db().execute("INSERT OR IGNORE INTO p2p_holder (content_sha, pub, net, net_id, seq, ts) VALUES (?,?,?,?,?,?)",
                            (ish, pub, net, net_id, seq, g.now())).rowcount
         g.db().commit()
     return bool(n)
@@ -157,20 +157,20 @@ def add_holder(ish: str, pub: str, net: str, net_id: str, seq: int) -> bool:
 def is_holder(ish: str, pub: str) -> bool:
     _tables()
     with g.lock:
-        return bool(g.db().execute("SELECT 1 FROM p2p_halter WHERE inhalt_sha = ? AND pub = ?", (ish, pub)).fetchone())
+        return bool(g.db().execute("SELECT 1 FROM p2p_holder WHERE content_sha = ? AND pub = ?", (ish, pub)).fetchone())
 
 
 def drop_holder(net_id: str) -> tuple[str | None, int]:
     """Remove the holder line of this netz_id. Returns (content hash, holders left)."""
     _tables()
     with g.lock:
-        z = g.db().execute("SELECT inhalt_sha FROM p2p_halter WHERE netz_id = ?", (net_id,)).fetchone()
+        z = g.db().execute("SELECT content_sha FROM p2p_holder WHERE net_id = ?", (net_id,)).fetchone()
         if not z:
             return None, 0
-        g.db().execute("DELETE FROM p2p_halter WHERE netz_id = ?", (net_id,))
-        left = g.db().execute("SELECT COUNT(*) FROM p2p_halter WHERE inhalt_sha = ?", (z[0],)).fetchone()[0]
+        g.db().execute("DELETE FROM p2p_holder WHERE net_id = ?", (net_id,))
+        left = g.db().execute("SELECT COUNT(*) FROM p2p_holder WHERE content_sha = ?", (z[0],)).fetchone()[0]
         if not left:
-            g.db().execute("DELETE FROM p2p_inhalt WHERE inhalt_sha = ?", (z[0],))
+            g.db().execute("DELETE FROM p2p_content WHERE content_sha = ?", (z[0],))
         g.db().commit()
     return z[0], left
 
@@ -178,13 +178,13 @@ def drop_holder(net_id: str) -> tuple[str | None, int]:
 def holders(ish: str) -> list[str]:
     _tables()
     with g.lock:
-        return [r[0] for r in g.db().execute("SELECT pub FROM p2p_halter WHERE inhalt_sha = ? ORDER BY zeit", (ish,))]
+        return [r[0] for r in g.db().execute("SELECT pub FROM p2p_holder WHERE content_sha = ? ORDER BY ts", (ish,))]
 
 
 def hash_of(oid: str) -> str | None:
     _tables()
     with g.lock:
-        z = g.db().execute("SELECT inhalt_sha FROM p2p_inhalt WHERE oid = ?", (oid,)).fetchone()
+        z = g.db().execute("SELECT content_sha FROM p2p_content WHERE oid = ?", (oid,)).fetchone()
     return z[0] if z else None
 
 
@@ -203,9 +203,9 @@ def outgoing(net: str, limit: int = 2000) -> list[dict]:
     _tables()
     out = []
     with g.lock:
-        lines = g.db().execute("SELECT i.inhalt_sha, i.oid FROM p2p_inhalt i JOIN objekt o ON o.id = i.oid "
-                               "WHERE json_extract(o.daten, '$.herkunft.netz') IS ? OR (? = 'standard' AND json_extract(o.daten, '$.herkunft') IS NOT NULL "
-                               "AND json_extract(o.daten, '$.herkunft.netz') IS NULL)", (net, net)).fetchall()
+        lines = g.db().execute("SELECT i.content_sha, i.oid FROM p2p_content i JOIN object o ON o.id = i.oid "
+                               "WHERE json_extract(o.data, '$.herkunft.netz') IS ? OR (? = 'standard' AND json_extract(o.data, '$.herkunft') IS NOT NULL "
+                               "AND json_extract(o.data, '$.herkunft.netz') IS NULL)", (net, net)).fetchall()
     for ish, oid in lines:
         o = g.load(oid)
         if not o or o.mode == "quarantaene":
@@ -224,10 +224,10 @@ def receive(c: dict, pub: str, net: str, seq: int) -> bool:
         return False
     _tables()
     with g.lock:
-        old = g.db().execute("SELECT seq FROM p2p_bewertung WHERE inhalt_sha = ? AND pub = ?", (c["ziel"], pub)).fetchone()
+        old = g.db().execute("SELECT seq FROM p2p_rating WHERE content_sha = ? AND pub = ?", (c["ziel"], pub)).fetchone()
         if old and old[0] >= seq:
             return True
-        g.db().execute("INSERT OR REPLACE INTO p2p_bewertung (inhalt_sha, pub, netz, seq, gezeigt, ja, nein, bestaetigt, widerlegt, zeit) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        g.db().execute("INSERT OR REPLACE INTO p2p_rating (content_sha, pub, net, seq, shown, yes, no, confirmed, refuted, ts) VALUES (?,?,?,?,?,?,?,?,?,?)",
                        (c["ziel"], pub, net, seq, *(float(c[k]) for k in RATING_FIELDS), g.now()))
         g.db().commit()
     return True
@@ -248,7 +248,7 @@ def score(ish: str, local: g.MemoryObject | None = None) -> dict:
     from .logbook import pseudonym
     _tables()
     with g.lock:
-        ratings = g.db().execute("SELECT pub, ja, nein, bestaetigt, widerlegt, netz FROM p2p_bewertung WHERE inhalt_sha = ?", (ish,)).fetchall()
+        ratings = g.db().execute("SELECT pub, yes, no, confirmed, refuted, net FROM p2p_rating WHERE content_sha = ?", (ish,)).fetchall()
     held_by = set(holders(ish))
     value = p2p.publisher_value()
     rows, self_rated = [], 0
@@ -307,10 +307,10 @@ def stats() -> dict:
     """For vi_stats section W."""
     _tables()
     with g.lock:
-        contents = g.db().execute("SELECT COUNT(*) FROM p2p_inhalt").fetchone()[0]
-        per = [r[0] for r in g.db().execute("SELECT COUNT(*) FROM p2p_halter GROUP BY inhalt_sha")]
-        rated = [r[0] for r in g.db().execute("SELECT DISTINCT inhalt_sha FROM p2p_bewertung")]
-        received = g.db().execute("SELECT COUNT(*) FROM p2p_bewertung").fetchone()[0]
+        contents = g.db().execute("SELECT COUNT(*) FROM p2p_content").fetchone()[0]
+        per = [r[0] for r in g.db().execute("SELECT COUNT(*) FROM p2p_holder GROUP BY content_sha")]
+        rated = [r[0] for r in g.db().execute("SELECT DISTINCT content_sha FROM p2p_rating")]
+        received = g.db().execute("SELECT COUNT(*) FROM p2p_rating").fetchone()[0]
     dist = {"1": 0, "2": 0, "3+": 0}
     for n in per:
         dist["1" if n == 1 else "2" if n == 2 else "3+"] += 1

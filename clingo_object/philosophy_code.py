@@ -160,10 +160,10 @@ PACKAGE = {
 #: The profile of this repository: which table needs the lock, which constant is an alias table, and the excused findings — each
 #: with its reason. Input facts, not rules (intension and extension kept apart).
 PROFILE_VI_MCP = """\
-guarded("objekt")
+guarded("object")
 alias_of("vi_mcp.api_en.TOOL_ALIASES", "vi_mcp.tools.TOOLS")
 exempt(locked_writes, "vi_mcp.memory._migrate", "runs on the new connection inside open_db before the connection is shared")
-exempt(locked_writes, "scripts.measure_code_facts.questions", "a question catalogue: 'INSERT INTO objekt' is the text of a search query, nothing is written")
+exempt(locked_writes, "scripts.measure_code_facts.questions", "a question catalogue: 'INSERT INTO object' is the text of a search query, nothing is written")
 exempt(no_duplicates, "clingo_object.filters.is_condition", "clingo_object never imports vi_mcp (AGENTS.md), so it keeps its own copy")
 exempt(no_duplicates, "vi_mcp.memory._is_condition", "the server side of the copy in clingo_object.filters (which never imports vi_mcp)")
 """

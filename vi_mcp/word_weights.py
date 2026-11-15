@@ -35,11 +35,11 @@ def word_hash(word: str, qtype: str) -> str:
 
 def _tables() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS vil_gewicht (wort TEXT NOT NULL, frageart TEXT NOT NULL, ja REAL NOT NULL, nein REAL NOT NULL, "
-                       "n REAL NOT NULL, hash TEXT NOT NULL, zeit TEXT NOT NULL, PRIMARY KEY (wort, frageart))")
-        g.db().execute("CREATE INDEX IF NOT EXISTS vil_gewicht_hash ON vil_gewicht (hash)")
-        g.db().execute("CREATE TABLE IF NOT EXISTS vil_gewicht_netz (hash TEXT NOT NULL, pub TEXT NOT NULL, netz TEXT NOT NULL, seq INTEGER NOT NULL, "
-                       "ja REAL NOT NULL, nein REAL NOT NULL, zeit TEXT NOT NULL, PRIMARY KEY (hash, pub))")
+        g.db().execute("CREATE TABLE IF NOT EXISTS vil_weight (word TEXT NOT NULL, question_kind TEXT NOT NULL, yes REAL NOT NULL, no REAL NOT NULL, "
+                       "n REAL NOT NULL, hash TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (word, question_kind))")
+        g.db().execute("CREATE INDEX IF NOT EXISTS vil_weight_hash ON vil_weight (hash)")
+        g.db().execute("CREATE TABLE IF NOT EXISTS vil_weight_net (hash TEXT NOT NULL, pub TEXT NOT NULL, net TEXT NOT NULL, seq INTEGER NOT NULL, "
+                       "yes REAL NOT NULL, no REAL NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (hash, pub))")
         g.db().commit()
 
 
@@ -47,19 +47,19 @@ def compute() -> dict:
     """Sleep step 8g: every word's own weight, overall (`any`) and per question type, from the hint counters of the knowledge carrying it."""
     _tables()
     cond = " OR ".join(f"t.tag LIKE '{k}%'" for k in KINDS)
-    base = ("FROM tag t JOIN objekt o ON o.id = t.objekt_id {join} WHERE o.art IN ('erkenntnis', 'regel', 'skill') AND o.modus IN ('aktiv', 'test') "
-            f"AND o.sicht <> 'privat' AND ({cond}) GROUP BY t.tag{{group}}")
-    sums = ("SUM(COALESCE(CAST(json_extract(o.daten, '$.nuetzlich.ja') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.daten, '$.nuetzlich.nein') AS REAL), 0)), "
-            "SUM(COALESCE(CAST(json_extract(o.daten, '$.nuetzlich.n') AS REAL), 0))")
+    base = ("FROM tag t JOIN object o ON o.id = t.object_id {join} WHERE o.kind IN ('erkenntnis', 'regel', 'skill') AND o.mode IN ('aktiv', 'test') "
+            f"AND o.visibility <> 'privat' AND ({cond}) GROUP BY t.tag{{group}}")
+    sums = ("SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.ja') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.nein') AS REAL), 0)), "
+            "SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.n') AS REAL), 0))")
     with g.lock:
         rows = [(w, "any", y, n_, c) for w, y, n_, c in g.db().execute(f"SELECT t.tag, {sums} " + base.format(join="", group=""))]
         rows += list(g.db().execute(f"SELECT t.tag, substr(a.tag, 9), {sums} "
-                                    + base.format(join="JOIN tag a ON a.objekt_id = o.id AND a.tag LIKE 'answers:%' AND a.tag <> 'answers:unsure'",
+                                    + base.format(join="JOIN tag a ON a.object_id = o.id AND a.tag LIKE 'answers:%' AND a.tag <> 'answers:unsure'",
                                                   group=", substr(a.tag, 9)")))
         now = g.now()
-        g.db().execute("DELETE FROM vil_gewicht")
+        g.db().execute("DELETE FROM vil_weight")
         for w, q, y, n_, c in rows:
-            g.db().execute("INSERT INTO vil_gewicht (wort, frageart, ja, nein, n, hash, zeit) VALUES (?,?,?,?,?,?,?)",
+            g.db().execute("INSERT INTO vil_weight (word, question_kind, yes, no, n, hash, ts) VALUES (?,?,?,?,?,?,?)",
                            (w, q, float(y or 0), float(n_ or 0), float(c or 0), word_hash(w, q), now))
         g.db().commit()
     return {"woerter": len({r[0] for r in rows}), "zeilen": len(rows), "gemessen": sum(1 for r in rows if (r[2] or 0) + (r[3] or 0) >= MIN_N)}
@@ -69,7 +69,7 @@ def own(word: str, qtype: str = "any") -> tuple[float, float]:
     """(yes, no) of this memory for a word and question type."""
     _tables()
     with g.lock:
-        r = g.db().execute("SELECT ja, nein FROM vil_gewicht WHERE wort = ? AND frageart = ?", (word, qtype)).fetchone()
+        r = g.db().execute("SELECT yes, no FROM vil_weight WHERE word = ? AND question_kind = ?", (word, qtype)).fetchone()
     return (float(r[0]), float(r[1])) if r else (0.0, 0.0)
 
 
@@ -79,7 +79,7 @@ def outgoing(net: str, limit: int = 2000) -> list[dict]:
     _tables()
     company = p2p.is_company(net)
     with g.lock:
-        rows = g.db().execute("SELECT wort, hash, ja, nein, n FROM vil_gewicht WHERE ja + nein >= ? ORDER BY ja + nein DESC", (MIN_N,)).fetchall()
+        rows = g.db().execute("SELECT word, hash, yes, no, n FROM vil_weight WHERE yes + no >= ? ORDER BY yes + no DESC", (MIN_N,)).fetchall()
     out = []
     for w, h, y, n_, c in rows:
         if not company and (not w.startswith(OPEN_KINDS) or anonymize.categories(w)):
@@ -93,7 +93,7 @@ def outgoing(net: str, limit: int = 2000) -> list[dict]:
 def known_hash(h: str) -> bool:
     _tables()
     with g.lock:
-        if g.db().execute("SELECT 1 FROM vil_gewicht WHERE hash = ? LIMIT 1", (h,)).fetchone():
+        if g.db().execute("SELECT 1 FROM vil_weight WHERE hash = ? LIMIT 1", (h,)).fetchone():
             return True
     from . import logic  # 0.62.0: rule weights travel on the same channel
     return logic.known_hash(h)
@@ -103,10 +103,10 @@ def receive(c: dict, pub: str, net: str, seq: int) -> bool:
     """A word weight from another server (a rating whose target is one of our word hashes); the latest per rater counts."""
     _tables()
     with g.lock:
-        old = g.db().execute("SELECT seq FROM vil_gewicht_netz WHERE hash = ? AND pub = ?", (c["ziel"], pub)).fetchone()
+        old = g.db().execute("SELECT seq FROM vil_weight_net WHERE hash = ? AND pub = ?", (c["ziel"], pub)).fetchone()
         if old and old[0] >= seq:
             return True
-        g.db().execute("INSERT OR REPLACE INTO vil_gewicht_netz (hash, pub, netz, seq, ja, nein, zeit) VALUES (?,?,?,?,?,?,?)",
+        g.db().execute("INSERT OR REPLACE INTO vil_weight_net (hash, pub, net, seq, yes, no, ts) VALUES (?,?,?,?,?,?,?)",
                        (c["ziel"], pub, net, seq, float(c["ja"]) + float(c["bestaetigt"]), float(c["nein"]) + float(c["widerlegt"]), g.now()))
         g.db().commit()
     return True
@@ -127,7 +127,7 @@ def combine(y: float, n_: float, h: str) -> dict:
     from .logbook import pseudonym
     _tables()
     with g.lock:
-        foreign = g.db().execute("SELECT pub, ja, nein FROM vil_gewicht_netz WHERE hash = ?", (h,)).fetchall()
+        foreign = g.db().execute("SELECT pub, yes, no FROM vil_weight_net WHERE hash = ?", (h,)).fetchall()
     value = p2p.publisher_value() if foreign else {}
     yes = no = 0.0
     for wgt, a, b in [(1.0, y, n_)] + [(value.get(pseudonym(p), {}).get("mittel", 0.5), a, b) for p, a, b in foreign]:

@@ -220,7 +220,7 @@ def test_server_stores_training_pairs_with_a_probe_and_the_export_uses_them(vi, 
     rep = classify.pairs_report()
     assert rep["ok"] == 12 and rep["error"] == 1 and rep["pairs"] == 12 and rep["probes"] == 12
     # changed knowledge: its pairs are stale — not exported, renewed by --stale
-    ids = [x[0] for x in g.db().execute("SELECT id FROM objekt WHERE art = 'erkenntnis' AND json_extract(daten, '$.qa.state') = 'ok'")]
+    ids = [x[0] for x in g.db().execute("SELECT id FROM object WHERE kind = 'erkenntnis' AND json_extract(data, '$.qa.state') = 'ok'")]
     changed = g.load(ids[0])
     changed.data["inhalt"] = "step one, step two, step three"
     g.save(changed)
@@ -303,7 +303,7 @@ def test_codex_review_findings_on_stored_pairs_are_fixed(vi, monkeypatch):
     k = dict(o.data["klasse"])
     k["fragen"] = [res["probe"]["question"]]
     raw = {**o.data, "klasse": k, "quelle": "https://wiki.example/nginx?password=hunter2secret"}
-    g.db().execute("UPDATE objekt SET daten = ? WHERE id = ?", (json.dumps(raw), o.id))  # as if stored before scrubbing existed
+    g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(raw), o.id))  # as if stored before scrubbing existed
     g.db().commit()
     # lost update: the object changes while the model is asked — the result made from the old text is not stored
     cur = g.load(o.id)

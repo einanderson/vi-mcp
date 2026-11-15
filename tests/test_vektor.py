@@ -84,7 +84,7 @@ def test_catch_up_names_the_real_remainder(gd, monkeypatch):
 def test_semantic_search_checks_all_vectors_not_only_newest(fake):
     """0.19.2: candidates were the 200 most recently used objects — older docs were never compared (measured against the AIKB)."""
     old = g.new_object("erkenntnis", "Proxy-Doku: Verbindung über den Proxy", ["doku:x"], {"quelle": "alt"}, reason="T")
-    g.db().execute("UPDATE objekt SET zuletzt = '2020-01-01T00:00:00+00:00', zeit = '2020-01-01T00:00:00+00:00' WHERE id = ?", (old.id,))
+    g.db().execute("UPDATE object SET last_at = '2020-01-01T00:00:00+00:00', ts = '2020-01-01T00:00:00+00:00' WHERE id = ?", (old.id,))
     for i in range(260):
         g.new_object("erkenntnis", f"Disk voll auf web{i}", [f"host:web{i}"], {"quelle": "neu"}, reason="T")
     vector.catch_up(max_s=600)

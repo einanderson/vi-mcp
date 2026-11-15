@@ -63,7 +63,7 @@ def _born(hid: str, cache: dict | None) -> str | None:
     if cache is not None and hid in cache:
         return cache[hid]
     with g.lock:
-        r = g.db().execute("SELECT zeit FROM objekt WHERE id = ?", (hid,)).fetchone()
+        r = g.db().execute("SELECT ts FROM object WHERE id = ?", (hid,)).fetchone()
     if cache is not None:
         cache[hid] = r[0] if r else None
     return r[0] if r else None
@@ -103,14 +103,14 @@ def weighted_observations(since: str | None = None, index: str | None = None, ip
     outputs = []
     cond, par = "", []
     if since:
-        cond, par = cond + " AND zeit >= ?", par + [since]
+        cond, par = cond + " AND ts >= ?", par + [since]
     if index:
         cond, par = cond + " AND idx = ?", par + [index]
     with g.lock:
-        rows = g.db().execute("SELECT id, zeit, daten, gespraech FROM objekt WHERE art = 'erfahrung' AND modus = 'aktiv'" + cond + " ORDER BY zeit",
+        rows = g.db().execute("SELECT id, ts, data, conversation FROM object WHERE kind = 'erfahrung' AND mode = 'aktiv'" + cond + " ORDER BY ts",
                               tuple(par)).fetchall()
-        labeled = {r[0] for r in g.db().execute("SELECT DISTINCT objekt_id FROM tag WHERE tag IN ('ok:ja', 'ok:nein')")}
-        ok_yes = {r[0] for r in g.db().execute("SELECT objekt_id FROM tag WHERE tag = 'ok:ja'")}
+        labeled = {r[0] for r in g.db().execute("SELECT DISTINCT object_id FROM tag WHERE tag IN ('ok:ja', 'ok:nein')")}
+        ok_yes = {r[0] for r in g.db().execute("SELECT object_id FROM tag WHERE tag = 'ok:ja'")}
     from . import scorer
     grades = scorer.grade_details()
     born: dict = {}
@@ -283,7 +283,7 @@ def _save_index(index: str, report: dict, weights: dict, intercept: float, mode:
 def train_indexes(reason: str = "sleep", at_most: int = 5) -> list[dict]:
     """Every index with enough experiences, the largest first, at most `at_most` per run."""
     with g.lock:
-        rows = g.db().execute("SELECT idx, COUNT(*) FROM objekt WHERE art = 'erfahrung' AND modus = 'aktiv' AND idx <> 'global' "
+        rows = g.db().execute("SELECT idx, COUNT(*) FROM object WHERE kind = 'erfahrung' AND mode = 'aktiv' AND idx <> 'global' "
                               "GROUP BY idx ORDER BY COUNT(*) DESC").fetchall()
     return [train_index(i, reason) for i, n in [r for r in rows if r[1] >= MIN_INDEX_OBS][:at_most]]
 
@@ -529,7 +529,7 @@ def _holdout_size(y: list[int], groups: list[str] | None = None) -> int:
 
 def _feedbacks() -> list:
     with g.lock:
-        return g.db().execute("SELECT daten FROM objekt WHERE art = 'erfahrung' AND daten LIKE '%\"rueckmeldung\"%'").fetchall()
+        return g.db().execute("SELECT data FROM object WHERE kind = 'erfahrung' AND data LIKE '%\"rueckmeldung\"%'").fetchall()
 
 
 def _base(m: dict) -> dict:
@@ -645,7 +645,7 @@ def _times(oids: list[str]) -> dict[str, str]:
     with g.lock:
         for i in range(0, len(oids), 500):
             part = oids[i:i + 500]
-            out.update({r[0]: r[1] for r in g.db().execute(f"SELECT id, zeit FROM objekt WHERE id IN ({','.join('?' * len(part))})", part)})
+            out.update({r[0]: r[1] for r in g.db().execute(f"SELECT id, ts FROM object WHERE id IN ({','.join('?' * len(part))})", part)})
     return out
 
 

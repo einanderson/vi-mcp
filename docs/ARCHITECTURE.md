@@ -59,10 +59,14 @@ access goes through one process, a later switch is a change in `memory.py`, not 
 
 ## Data model
 
-> **Stored formats keep their German names** — table and column names (`objekt`, `art`, `zeit`, `daten`, `sicht`, …), JSON keys in
-> object data (`quelle`, `inhalt`, …), hashtag kinds and values (`thema:`, `modus:aktiv`, `ok:ja`, `herkunft:offen`, …), stored enum
-> values (`geteilt`, `intern`, `privat`, …), object kinds (`erkenntnis`, `erfahrung`, `regel`, …) and the P2P wire format — so existing
-> databases and peers keep working. The configuration files are English since 0.51.0 (keys and network kinds `free`/`open`/`company`); the
+> **Stored names become English in 0.67.0, migrated in place.** `vi_mcp/names.py` is the one table of every renamed stored name.
+> Done: table, column and index names (`object`, `kind`, `ts`, `data`, `visibility`, …; the archive and every network logbook too). A
+> database of 0.66 or older is renamed when it is opened, after a backup copy (SQLite `<file>.pre-0.67.0.db`, PostgreSQL schema
+> `<schema>_pre_0_67_0`); the counts per class go into the table `name_migration`, the log and `vi-mcp db status`. Still German until
+> the next steps of the same migration: JSON keys in object data (`quelle`, `inhalt`, …), hashtag kinds and values (`thema:`,
+> `modus:aktiv`, `ok:ja`, …), stored enum values (`geteilt`, `intern`, `privat`, …) and object kinds (`erkenntnis`, `erfahrung`, …).
+> The P2P wire format (signed logbook entries, content hashes) stays German for good: every signature and hash of the network depends
+> on it, so it is translated at the network boundary. The configuration files are English since 0.51.0 (keys and network kinds `free`/`open`/`company`); the
 > German keys of older files are still read (`config.normalize`, `net_service.english_file`) and rewritten in English at package install. The MCP interface (tool names, parameters, enum values) is English since
 > 0.22.0; the German names are accepted as aliases and English enum values are translated to the stored German values (`api_en.py`).
 

@@ -16,7 +16,7 @@ _n = iter(range(10_000))
 def _age(oid, days):
     z = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="milliseconds")
     with g.lock:
-        g.db().execute("UPDATE objekt SET zeit = ?, zuletzt = ? WHERE id = ?", (z, z, oid))
+        g.db().execute("UPDATE object SET ts = ?, last_at = ? WHERE id = ?", (z, z, oid))
         g.db().commit()
 
 
@@ -110,7 +110,7 @@ def test_private_stays_private_and_delete_works_in_archive(gd):
     r = archive.cleanup()
     assert r["rohverlaeufe"] == 1 and g.load(e).mode == "archiviert"
     with g.lock:
-        assert g.db().execute("SELECT COUNT(*) FROM gespraech_roh WHERE serial = ?", (a.serial,)).fetchone()[0] == 0
+        assert g.db().execute("SELECT COUNT(*) FROM conversation_raw WHERE serial = ?", (a.serial,)).fetchone()[0] == 0
     assert "t_x" in tools.call_tool("vi_gespraech", {"serial": a.serial}, "a", True)  # log comes from the archive
     with session.on_behalf(b), pytest.raises(tools.Rejected, match="unknown"):
         tools.call_tool("vi_lager", {"id": e}, "b", True)
@@ -144,7 +144,7 @@ def test_condense_and_status(gd):
 def test_crash_between_files_loses_nothing(gd):
     k = _knowledge("überlebt den Absturz", ["thema:a"])
     with g.lock:
-        archive.db().execute("INSERT INTO objekt (id, art, instanz, sicht, eingelagert, modus_vorher, grund, roh) VALUES (?,?,?,?,?,?,?,?)",
+        archive.db().execute("INSERT INTO object (id, kind, instance, visibility, archived, mode_before, reason, raw) VALUES (?,?,?,?,?,?,?,?)",
                            (k.id, k.kind, k.instance, k.visibility, g.now(), "aktiv", "Absturztest", zlib.compress(json.dumps({"text": "alt", "daten": {}, "hashtags": []}).encode())))
         archive.db().commit()
     assert g.load(k.id).mode == "aktiv"  # source unchanged

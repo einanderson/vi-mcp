@@ -122,9 +122,9 @@ def deliver(instance: str | None, conversation: str | None = None) -> list[str]:
     hints = []
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE art = 'frage' AND json_extract(daten, '$.zustand') IN ('offen', 'zugestellt', 'beantwortet') "
-            "AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "  # 0.43.0: a question from the network only after review
-            "AND (json_extract(daten, '$.an') IN (?, 'alle') OR json_extract(daten, '$.von') = ?) ORDER BY zeit", (instance, instance))]
+            "SELECT id FROM object WHERE kind = 'frage' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt', 'beantwortet') "
+            "AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "  # 0.43.0: a question from the network only after review
+            "AND (json_extract(data, '$.an') IN (?, 'alle') OR json_extract(data, '$.von') = ?) ORDER BY ts", (instance, instance))]
         for oid in ids:
             o = g.load(oid)
             d = o.data
@@ -192,10 +192,10 @@ def listing(instance: str, conversation: str | None = None) -> tuple[list[g.Memo
     the instance's other conversations are to me, and my own are those this conversation asked (and questions asked without one)."""
     with g.lock:
         to_me = [r[0] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE art = 'frage' AND json_extract(daten, '$.zustand') IN ('offen', 'zugestellt') AND modus NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "
-            "AND json_extract(daten, '$.an') IN (?, 'alle') ORDER BY zeit DESC LIMIT 200", (instance,))]
+            "SELECT id FROM object WHERE kind = 'frage' AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt') AND mode NOT IN ('quarantaene', 'widerlegt', 'zurueckgezogen') "
+            "AND json_extract(data, '$.an') IN (?, 'alle') ORDER BY ts DESC LIMIT 200", (instance,))]
         mine = [r[0] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE art = 'frage' AND json_extract(daten, '$.von') = ? ORDER BY zeit DESC LIMIT 200", (instance,))]
+            "SELECT id FROM object WHERE kind = 'frage' AND json_extract(data, '$.von') = ? ORDER BY ts DESC LIMIT 200", (instance,))]
 
     def to_this(d: dict) -> bool:
         if d.get("an_gespraech") and d["an_gespraech"] != conversation:
@@ -215,7 +215,7 @@ def let_expire() -> int:
     bound = (datetime.now(timezone.utc) - timedelta(days=EXPIRY_DAYS)).isoformat(timespec="seconds")
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM objekt WHERE art = 'frage' AND zeit < ? AND json_extract(daten, '$.zustand') IN ('offen', 'zugestellt')", (bound,))]
+            "SELECT id FROM object WHERE kind = 'frage' AND ts < ? AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (bound,))]
         for oid in ids:
             o = g.load(oid)
             _set_state(o, "abgelaufen")

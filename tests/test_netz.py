@@ -231,7 +231,7 @@ def test_peers_find_each_other_via_logbook(net):
     a.log.attach("einladung", {"pub": d_pub})
     d = net.build(sd, a.k.founders, mode="peer", start=[a.k.address])
     d.run_round()
-    assert b.k.address in [r[0] for r in d.log.db.execute("SELECT adresse FROM peer WHERE quelle = 'logbuch'")]
+    assert b.k.address in [r[0] for r in d.log.db.execute("SELECT address FROM peer WHERE source = 'logbuch'")]
 
 
 def test_nudge_wakes_the_neighbors(net):
@@ -271,7 +271,7 @@ def test_peer_outage_and_fallback(net):
     a, b, c = _three(net)
     b.log.peer_remember("http://127.0.0.1:1", "start")
     b.reconcile("http://127.0.0.1:1")
-    z = b.log.db.execute("SELECT fehler, naechster FROM peer WHERE adresse = 'http://127.0.0.1:1'").fetchone()
+    z = b.log.db.execute("SELECT failures, next_at FROM peer WHERE address = 'http://127.0.0.1:1'").fetchone()
     assert z[0] == 1 and z[1] > time.time()
     assert "http://127.0.0.1:1" not in b.log.choose_peers(10)
 

@@ -49,7 +49,7 @@ def test_an_old_database_gets_the_column(tmp_path):
     g.open_db(p)
     try:
         assert g.load("erkenntnis:old").idx == "global"
-        assert g.db().execute("SELECT name FROM sqlite_master WHERE type='index' AND name='objekt_idx'").fetchone()
+        assert g.db().execute("SELECT name FROM sqlite_master WHERE type='index' AND name='object_idx'").fetchone()
     finally:
         g.close_db()
 
@@ -198,7 +198,7 @@ def test_the_index_table_has_a_row_for_every_index_with_description_and_tags(gd)
     reg = indexes.registry()
     assert reg["global"]["art"] == "global" and reg["cue-print"]["art"] == "projekt"
     with g.lock:
-        orphans = g.db().execute("SELECT DISTINCT idx FROM objekt WHERE idx NOT IN (SELECT name FROM vi_index)").fetchall()
+        orphans = g.db().execute("SELECT DISTINCT idx FROM object WHERE idx NOT IN (SELECT name FROM vi_index)").fetchall()
     assert orphans == []  # every index an object refers to has its row
     out = tools.call_tool("vi_indexes", {"index": "ansible", "description": "Ansible roles and playbooks", "tags": ["Team:IT", "ansible"],
                                          "kind": "spezial"}, "a", False)

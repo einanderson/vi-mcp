@@ -47,11 +47,11 @@ embed_fn = None
 
 def _table() -> None:
     with g.lock:
-        g.db().execute("CREATE TABLE IF NOT EXISTS vektor (id TEXT PRIMARY KEY, dim INTEGER NOT NULL, modell TEXT NOT NULL, "
-                       "zeit TEXT NOT NULL, roh BLOB NOT NULL)")
-        # 0.20.0: verglichen = 1 once the vector's proximity edges are computed (a newly embedded vector starts at 0)
-        if "verglichen" not in {r[1] for r in g.db().execute("PRAGMA table_info(vektor)")}:
-            g.db().execute("ALTER TABLE vektor ADD COLUMN verglichen INTEGER NOT NULL DEFAULT 0")
+        g.db().execute("CREATE TABLE IF NOT EXISTS vector (id TEXT PRIMARY KEY, dim INTEGER NOT NULL, model TEXT NOT NULL, "
+                       "ts TEXT NOT NULL, raw BLOB NOT NULL)")
+        # 0.20.0: compared = 1 once the vector's proximity edges are computed (a newly embedded vector starts at 0)
+        if "compared" not in {r[1] for r in g.db().execute("PRAGMA table_info(vector)")}:
+            g.db().execute("ALTER TABLE vector ADD COLUMN compared INTEGER NOT NULL DEFAULT 0")
         g.db().commit()
 
 
@@ -108,7 +108,7 @@ def _matrix(vs: dict[str, np.ndarray]) -> tuple[list[str], np.ndarray]:
 def save(oid: str, v, model: str) -> None:
     _table()
     with g.lock:
-        g.db().execute("INSERT OR REPLACE INTO vektor (id, dim, modell, zeit, roh) VALUES (?,?,?,?,?)", (oid, len(v), model, g.now(), _pack(v)))
+        g.db().execute("INSERT OR REPLACE INTO vector (id, dim, model, ts, raw) VALUES (?,?,?,?,?)", (oid, len(v), model, g.now(), _pack(v)))
         g.db().commit()
     _invalidate()
 
@@ -117,7 +117,7 @@ def remove_entry(oid: str) -> None:
     """Archived objects need no vector; after restoring, sleep adds it again."""
     _table()
     with g.lock:
-        g.db().execute("DELETE FROM vektor WHERE id = ?", (oid,))
+        g.db().execute("DELETE FROM vector WHERE id = ?", (oid,))
         g.db().commit()
     _invalidate()
 
@@ -125,14 +125,14 @@ def remove_entry(oid: str) -> None:
 def load(oid: str) -> np.ndarray | None:
     _table()
     with g.lock:
-        row = g.db().execute("SELECT dim, roh FROM vektor WHERE id = ?", (oid,)).fetchone()
+        row = g.db().execute("SELECT dim, raw FROM vector WHERE id = ?", (oid,)).fetchone()
     return _unpack(row[1], row[0]) if row else None
 
 
 def all_() -> dict[str, np.ndarray]:
     _table()
     with g.lock:
-        rows = g.db().execute("SELECT v.id, v.dim, v.roh FROM vektor v JOIN objekt o ON o.id = v.id WHERE o.modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene')").fetchall()
+        rows = g.db().execute("SELECT v.id, v.dim, v.raw FROM vector v JOIN object o ON o.id = v.id WHERE o.mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene')").fetchall()
     return {oid: _unpack(raw, dim) for oid, dim, raw in rows}
 
 
@@ -154,11 +154,11 @@ def catch_up(max_s: float | None = None) -> dict:
     _table()
     with g.lock:
         missing = g.db().execute(
-            f"SELECT o.id, o.text FROM objekt o LEFT JOIN vektor v ON v.id = o.id WHERE v.id IS NULL AND o.art IN ({','.join('?' * len(VECTOR_KINDS))}) "
-            "AND o.modus NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene') AND length(o.text) > 0 "
+            f"SELECT o.id, o.text FROM object o LEFT JOIN vector v ON v.id = o.id WHERE v.id IS NULL AND o.kind IN ({','.join('?' * len(VECTOR_KINDS))}) "
+            "AND o.mode NOT IN ('widerlegt', 'zurueckgezogen', 'archiviert', 'quarantaene') AND length(o.text) > 0 "
             # code structure facts: generated one-line summaries, found by hashtag and clingo — embedding them would only add near
             # duplicates (and proximity edges between them)
-            f"AND o.id NOT IN (SELECT objekt_id FROM tag WHERE tag IN ({','.join('?' * len(FACT_TAGS))})) ORDER BY o.zeit DESC",
+            f"AND o.id NOT IN (SELECT object_id FROM tag WHERE tag IN ({','.join('?' * len(FACT_TAGS))})) ORDER BY o.ts DESC",
             (*VECTOR_KINDS, *FACT_TAGS)).fetchall()
     n, error, end, paused = 0, None, time.monotonic() + (CATCHUP_MAX_S if max_s is None else max_s), 0.0
     model = (config or {}).get("model") or "embed"
@@ -191,7 +191,7 @@ def proximity_edges() -> dict:
     _table()
     ids, m = _matrix(all_())
     with g.lock:
-        new_ids = {r[0] for r in g.db().execute("SELECT id FROM vektor WHERE verglichen = 0")}
+        new_ids = {r[0] for r in g.db().execute("SELECT id FROM vector WHERE compared = 0")}
     pos = {oid: i for i, oid in enumerate(ids)}
     new = sorted(pos[o] for o in new_ids if o in pos)
     is_new = np.zeros(len(ids), dtype=bool)
@@ -210,7 +210,7 @@ def proximity_edges() -> dict:
             if not a or not b:
                 continue
             with g.lock:
-                already = g.db().execute("SELECT 1 FROM kante WHERE a = ? AND b = ?", (a.id, b.id)).fetchone()
+                already = g.db().execute("SELECT 1 FROM edge WHERE a = ? AND b = ?", (a.id, b.id)).fetchone()
             if not already:
                 a.link(b.id, f"semantisch ähnlich (cos {c:.2f})")  # label parsed: LIKE 'semantisch%', ORDER BY grund
                 edges += 1
@@ -222,7 +222,7 @@ def proximity_edges() -> dict:
                         g.save(o)
                 duplicates += 1
     with g.lock:
-        g.db().executemany("UPDATE vektor SET verglichen = 1 WHERE id = ?", [(ids[i],) for i in new])
+        g.db().executemany("UPDATE vector SET compared = 1 WHERE id = ?", [(ids[i],) for i in new])
         g.db().commit()
     return {"kanten_neu": edges, "dubletten_moeglich": duplicates, "vektoren": len(ids), "neu_verglichen": len(new), "gekappt": cap()}
 
@@ -235,15 +235,15 @@ def cap(per_object: int | None = None) -> int:
     n = per_object or PROXIMITY_MAX
     with g.lock:
         db = g.db()
-        if not db.execute("SELECT 1 FROM kante WHERE grund LIKE 'semantisch%' GROUP BY a HAVING COUNT(*) > ? LIMIT 1", (n,)).fetchone():
+        if not db.execute("SELECT 1 FROM edge WHERE reason LIKE 'semantisch%' GROUP BY a HAVING COUNT(*) > ? LIMIT 1", (n,)).fetchone():
             return 0  # already limited
         db.execute("DROP TABLE IF EXISTS temp.behalte")
-        db.execute("CREATE TEMP TABLE behalte AS SELECT a, b FROM (SELECT a, b, ROW_NUMBER() OVER (PARTITION BY a ORDER BY grund DESC, b) r "
-                   "FROM kante WHERE grund LIKE 'semantisch%') WHERE r <= ?", (n,))
+        db.execute("CREATE TEMP TABLE behalte AS SELECT a, b FROM (SELECT a, b, ROW_NUMBER() OVER (PARTITION BY a ORDER BY reason DESC, b) r "
+                   "FROM edge WHERE reason LIKE 'semantisch%') WHERE r <= ?", (n,))
         db.execute("CREATE INDEX temp.behalte_ab ON behalte (a, b)")
-        deleted = db.execute("DELETE FROM kante WHERE grund LIKE 'semantisch%' AND NOT ("
-                               "EXISTS (SELECT 1 FROM behalte k WHERE k.a = kante.a AND k.b = kante.b) AND "
-                               "EXISTS (SELECT 1 FROM behalte k WHERE k.a = kante.b AND k.b = kante.a))").rowcount
+        deleted = db.execute("DELETE FROM edge WHERE reason LIKE 'semantisch%' AND NOT ("
+                               "EXISTS (SELECT 1 FROM behalte k WHERE k.a = edge.a AND k.b = edge.b) AND "
+                               "EXISTS (SELECT 1 FROM behalte k WHERE k.a = edge.b AND k.b = edge.a))").rowcount
         db.execute("DROP TABLE temp.behalte")
         db.commit()
     if deleted:
@@ -261,7 +261,7 @@ _cache: dict = {"sig": None, "ids": [], "pos": {}, "m": np.zeros((0, 0), dtype=n
 def _signature() -> tuple:
     _table()
     with g.lock:
-        return tuple(g.db().execute("SELECT COUNT(*), MAX(zeit) FROM vektor").fetchone())
+        return tuple(g.db().execute("SELECT COUNT(*), MAX(ts) FROM vector").fetchone())
 
 
 def matrix() -> tuple[list[str], dict[str, int], np.ndarray]:
@@ -269,7 +269,7 @@ def matrix() -> tuple[list[str], dict[str, int], np.ndarray]:
     sig = _signature()
     if _cache["sig"] != sig:
         with g.lock:
-            rows = g.db().execute("SELECT id, dim, roh FROM vektor").fetchall()
+            rows = g.db().execute("SELECT id, dim, raw FROM vector").fetchall()
         ids, m = _matrix({oid: _unpack(raw, dim) for oid, dim, raw in rows})
         _cache.update(sig=sig, ids=ids, pos={oid: i for i, oid in enumerate(ids)}, m=m)
     return _cache["ids"], _cache["pos"], _cache["m"]

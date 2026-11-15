@@ -1169,8 +1169,9 @@ First line of each module's docstring.
 | `machine_host` | Trusted inference/client host for VI instances and coherent checkpoints. Talks to the memory only through MCP. |
 | `machine_runtime` | Declarative instance state and device reservation protocol. No external device runs in the memory server. |
 | `main_loop` | The loop — exactly one, because there is exactly one server process. |
-| `memory` | The memory: every entry is an object (table objekt → class MemoryObject, mapping without ORM). |
+| `memory` | The memory: every entry is an object (table object → class MemoryObject, mapping without ORM). |
 | `metrics` | Observation points — how to tell whether the VI is useful. |
+| `names` | Stored names: German (up to 0.66.x) → English (0.67.0). The one table of every renamed stored name. |
 | `net_cli` | vi-mcp net … — choose a mode, invitations, status. State lives in the logbook; the service runs as its own user. |
 | `net_score` | 0.40.0: the same information on several servers, verifiable by hash — deduplicated, and a network score per content. |
 | `net_service` | vi-p2p — the network service. Own process, own database, no access to the memory except via the MCP tool pair for outbox and inbox. |

@@ -44,7 +44,7 @@ def kinds(viewer: str | None = "aktuell", limit: int = 60) -> list[tuple[str, in
     vis, par = _visible(viewer)
     with g.lock:
         rows = g.db().execute(
-            f"SELECT substr(tag, 1, instr(tag, ':') - 1) AS k, COUNT(DISTINCT tag), COUNT(*) FROM tag WHERE objekt_id IN ({vis}) "
+            f"SELECT substr(tag, 1, instr(tag, ':') - 1) AS k, COUNT(DISTINCT tag), COUNT(*) FROM tag WHERE object_id IN ({vis}) "
             "GROUP BY substr(tag, 1, instr(tag, ':') - 1) ORDER BY COUNT(*) DESC", par).fetchall()
     return [(k, int(nv), int(no)) for k, nv, no in rows if k and _shown(k + ":")][:limit]
 
@@ -57,7 +57,7 @@ def values(kind: str, prefix: str = "", viewer: str | None = "aktuell", limit: i
         return []
     vis, par = _visible(viewer)
     with g.lock:
-        rows = g.db().execute(f"SELECT tag, COUNT(*) FROM tag WHERE tag LIKE ? ESCAPE '\\' AND objekt_id IN ({vis}) "
+        rows = g.db().execute(f"SELECT tag, COUNT(*) FROM tag WHERE tag LIKE ? ESCAPE '\\' AND object_id IN ({vis}) "
                               "GROUP BY tag ORDER BY COUNT(*) DESC, tag LIMIT ?", (_like(f"{kind}:{prefix}"), *par, int(limit))).fetchall()
     return [(t, int(n)) for t, n in rows]
 
@@ -73,7 +73,7 @@ def complete(text: str, viewer: str | None = "aktuell", limit: int = 20) -> list
     if t:
         vis, par = _visible(viewer)
         with g.lock:
-            rows = g.db().execute(f"SELECT tag, COUNT(*) FROM tag WHERE substr(tag, instr(tag, ':') + 1) LIKE ? ESCAPE '\\' AND objekt_id IN ({vis}) "
+            rows = g.db().execute(f"SELECT tag, COUNT(*) FROM tag WHERE substr(tag, instr(tag, ':') + 1) LIKE ? ESCAPE '\\' AND object_id IN ({vis}) "
                                   "GROUP BY tag ORDER BY COUNT(*) DESC LIMIT ?", (_like(t), *par, int(limit) * 3)).fetchall()
         out += [(tag, int(n)) for tag, n in rows if _shown(tag)]
     return out[:limit]
@@ -92,7 +92,7 @@ def unknown_terms(filter_text: str, viewer: str | None = "aktuell") -> list[tupl
     out = []
     for term in dict.fromkeys(_terms(filter_text)):
         with g.lock:
-            known = g.db().execute(f"SELECT 1 FROM tag WHERE tag = ? AND objekt_id IN ({vis}) LIMIT 1", (term, *par)).fetchone()
+            known = g.db().execute(f"SELECT 1 FROM tag WHERE tag = ? AND object_id IN ({vis}) LIMIT 1", (term, *par)).fetchone()
         if known:
             continue
         kind, _, val = term.partition(":")
@@ -103,7 +103,7 @@ def unknown_terms(filter_text: str, viewer: str | None = "aktuell") -> list[tupl
             # "not in memory" without a suggestion and concluded there were no Confluence pages; 12,994 objects carry
             # `quelle_art:confluence`. Only what the viewer may see, most used first.
             with g.lock:
-                rows = g.db().execute(f"SELECT tag, COUNT(*) FROM tag WHERE tag LIKE ? AND objekt_id IN ({vis}) GROUP BY tag ORDER BY COUNT(*) DESC LIMIT 20",
+                rows = g.db().execute(f"SELECT tag, COUNT(*) FROM tag WHERE tag LIKE ? AND object_id IN ({vis}) GROUP BY tag ORDER BY COUNT(*) DESC LIMIT 20",
                                       ("%:" + val, *par)).fetchall()
             sug += [t for t, _n in rows if t.partition(":")[2] == val and t != term and t not in sug][:3 - len(sug)]
         out.append((term, sug))

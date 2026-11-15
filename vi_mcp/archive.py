@@ -61,10 +61,13 @@ def db():
                 os.umask(old_umask_value)
             os.chmod(g.archive_path, 0o600)
         _fpath = g.archive_path
+        from . import names
+        names.migrate_db(_con, {"objekt": "object", "gespraech_roh": "conversation_raw"}, g.archive_path, "archive")  # 0.67.0: English names
+        _con.commit()
         _con.executescript("""
-            CREATE TABLE IF NOT EXISTS objekt (id TEXT PRIMARY KEY, art TEXT NOT NULL, instanz TEXT NOT NULL, sicht TEXT NOT NULL,
-                eingelagert TEXT NOT NULL, modus_vorher TEXT NOT NULL, grund TEXT NOT NULL, roh BLOB NOT NULL);
-            CREATE TABLE IF NOT EXISTS gespraech_roh (serial TEXT PRIMARY KEY, eingelagert TEXT NOT NULL, roh BLOB NOT NULL, laenge INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS object (id TEXT PRIMARY KEY, kind TEXT NOT NULL, instance TEXT NOT NULL, visibility TEXT NOT NULL,
+                archived TEXT NOT NULL, mode_before TEXT NOT NULL, reason TEXT NOT NULL, raw BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS conversation_raw (serial TEXT PRIMARY KEY, archived TEXT NOT NULL, raw BLOB NOT NULL, length INTEGER NOT NULL);
         """)
         _con.commit()
     return _con
@@ -85,7 +88,7 @@ def store_in_archive(o: g.MemoryObject, reason: str) -> None:
     from . import vector
     raw = zlib.compress(json.dumps({"text": o.text, "daten": o.data, "hashtags": o.hashtags}, ensure_ascii=False).encode())
     with g.lock:
-        db().execute("INSERT OR REPLACE INTO objekt (id, art, instanz, sicht, eingelagert, modus_vorher, grund, roh) VALUES (?,?,?,?,?,?,?,?)",
+        db().execute("INSERT OR REPLACE INTO object (id, kind, instance, visibility, archived, mode_before, reason, raw) VALUES (?,?,?,?,?,?,?,?)",
                      (o.id, o.kind, o.instance, o.visibility, g.now(), o.mode, reason[:300], raw))
         db().commit()
     o.data = {"lager": True, "eingelagert": g.now(), "grund": reason[:300], "bytes": len(raw)}
@@ -99,7 +102,7 @@ def store_in_archive(o: g.MemoryObject, reason: str) -> None:
 
 def content(oid: str) -> dict | None:
     with g.lock:
-        row = db().execute("SELECT art, instanz, sicht, eingelagert, modus_vorher, grund, roh FROM objekt WHERE id = ?", (oid,)).fetchone()
+        row = db().execute("SELECT kind, instance, visibility, archived, mode_before, reason, raw FROM object WHERE id = ?", (oid,)).fetchone()
     if not row:
         return None
     return {"art": row[0], "instanz": row[1], "sicht": row[2], "eingelagert": row[3], "modus_vorher": row[4], "grund": row[5],
@@ -118,7 +121,7 @@ def retrieve(oid: str, who: str, reason: str) -> g.MemoryObject:
     o.change(who, "restored from the long-term archive", reason)
     g.save(o)
     with g.lock:
-        db().execute("DELETE FROM objekt WHERE id = ?", (oid,))
+        db().execute("DELETE FROM object WHERE id = ?", (oid,))
         db().commit()
     return o
 
@@ -128,19 +131,19 @@ def delete(oids: list[str]) -> None:
     if g.archive_path is None or not oids:
         return
     with g.lock:
-        db().executemany("DELETE FROM objekt WHERE id = ?", [(o,) for o in oids])
+        db().executemany("DELETE FROM object WHERE id = ?", [(o,) for o in oids])
         db().commit()
 
 
 def delete_raw(serial: str) -> None:
     with g.lock:
-        db().execute("DELETE FROM gespraech_roh WHERE serial = ?", (serial,))
+        db().execute("DELETE FROM conversation_raw WHERE serial = ?", (serial,))
         db().commit()
 
 
 def raw(serial: str) -> bytes | None:
     with g.lock:
-        row = db().execute("SELECT roh FROM gespraech_roh WHERE serial = ?", (serial,)).fetchone()
+        row = db().execute("SELECT raw FROM conversation_raw WHERE serial = ?", (serial,)).fetchone()
     return row[0] if row else None
 
 
@@ -154,16 +157,16 @@ def _unused() -> list[tuple[str, str]]:
     with g.lock:
         for kind in ("erfahrung", "schlaf"):
             bound = _bound(DAYS[kind])
-            sql = "SELECT id FROM objekt o WHERE art = ? AND modus <> 'archiviert' AND zeit < ?"
+            sql = "SELECT id FROM object o WHERE kind = ? AND mode <> 'archiviert' AND ts < ?"
             if kind == "erfahrung":
-                sql += f" AND zugriffe = 0 AND NOT EXISTS (SELECT 1 FROM kante k WHERE k.a = o.id AND k.grund LIKE 'Beleg%' AND ({evidence}))"
+                sql += f" AND accesses = 0 AND NOT EXISTS (SELECT 1 FROM edge k WHERE k.a = o.id AND k.reason LIKE 'Beleg%' AND ({evidence}))"
             outputs += [(r[0], f"housekeeping: {kind}, older than {DAYS[kind]} days, not used") for r in g.db().execute(sql, (kind, bound))]
         for kind in KNOWLEDGE:
             bound = _bound(DAYS[kind])
             outputs += [(r[0], f"housekeeping: {kind}, {DAYS[kind]} days neither recalled, changed nor shown") for r in g.db().execute(
-                "SELECT id FROM objekt o WHERE art = ? AND modus NOT IN ('archiviert', 'quarantaene') AND zuletzt < ? "
-                "AND COALESCE(json_extract(daten, '$.zuletzt_gezeigt'), '') < ? "
-                "AND NOT EXISTS (SELECT 1 FROM kante k WHERE k.a = o.id AND k.b LIKE 'selbst:%')", (kind, bound, bound))]
+                "SELECT id FROM object o WHERE kind = ? AND mode NOT IN ('archiviert', 'quarantaene') AND last_at < ? "
+                "AND COALESCE(json_extract(data, '$.zuletzt_gezeigt'), '') < ? "
+                "AND NOT EXISTS (SELECT 1 FROM edge k WHERE k.a = o.id AND k.b LIKE 'selbst:%')", (kind, bound, bound))]
     return outputs
 
 
@@ -172,16 +175,16 @@ def _raw_histories() -> int:
     open_ = {s.serial for s in session.open_items()}
     bound = _bound(DAYS_RAW)
     with g.lock:
-        lines = g.db().execute("SELECT r.serial, r.roh, r.laenge FROM gespraech_roh r JOIN objekt o ON o.id = 'gespraech:' || r.serial "
-                                "WHERE o.zuletzt < ?", (bound,)).fetchall()
+        lines = g.db().execute("SELECT r.serial, r.raw, r.length FROM conversation_raw r JOIN object o ON o.id = 'gespraech:' || r.serial "
+                                "WHERE o.last_at < ?", (bound,)).fetchall()
     n = 0
     for serial, content_raw, length in lines:
         if serial in open_:
             continue
         with g.lock:
-            db().execute("INSERT OR REPLACE INTO gespraech_roh (serial, eingelagert, roh, laenge) VALUES (?,?,?,?)", (serial, g.now(), content_raw, length))
+            db().execute("INSERT OR REPLACE INTO conversation_raw (serial, archived, raw, length) VALUES (?,?,?,?)", (serial, g.now(), content_raw, length))
             db().commit()
-            g.db().execute("DELETE FROM gespraech_roh WHERE serial = ?", (serial,))
+            g.db().execute("DELETE FROM conversation_raw WHERE serial = ?", (serial,))
             g.db().commit()
         n += 1
     return n
@@ -228,8 +231,8 @@ def hint(triggers: list[str]) -> list[str]:
 
 def progress() -> dict:
     with g.lock:
-        n = db().execute("SELECT COUNT(*) FROM objekt").fetchone()[0]
-        r = db().execute("SELECT COUNT(*) FROM gespraech_roh").fetchone()[0]
+        n = db().execute("SELECT COUNT(*) FROM object").fetchone()[0]
+        r = db().execute("SELECT COUNT(*) FROM conversation_raw").fetchone()[0]
     if g.backend() == "postgres":
         size_of = "SELECT COALESCE(SUM(pg_total_relation_size(c.oid)), 0) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relkind = 'r'"
         with g.lock:

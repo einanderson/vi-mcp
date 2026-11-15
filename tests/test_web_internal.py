@@ -74,15 +74,15 @@ def test_search_shows_shared_and_internal_never_private_or_quarantine_and_counts
     g.new_object("erkenntnis", "deploy vi-mcp: my private note", ["thema:deploy"], {"quelle": "t"}, visibility="privat", instance="alice")
     g.new_object("erkenntnis", "deploy vi-mcp: imported, not reviewed", ["thema:deploy"], {"quelle": "t"}, mode="quarantaene", visibility="intern")
     with g.lock:
-        before = g.db().execute("SELECT zugriffe FROM objekt WHERE id = ?", (a.id,)).fetchone()[0]
+        before = g.db().execute("SELECT accesses FROM object WHERE id = ?", (a.id,)).fetchone()[0]
     code, _t, body, _h = req(k, "/intern/suche?q=deploy+vi-mcp", cookie=cookie)
     html = body.decode()
     assert code == 200 and a.text in html and b.text in html and html.count('class="hit"') == 2
     assert "my private note" not in html and "not reviewed" not in html
     assert "1 not shown (private)" in html  # alice's own private note is found by the search, not shown, and counted
     with g.lock:
-        assert g.db().execute("SELECT zugriffe FROM objekt WHERE id = ?", (a.id,)).fetchone()[0] == before  # reading reinforces nothing
-        row = g.db().execute("SELECT instanz, treffer FROM nutzung WHERE werkzeug = 'web_search'").fetchone()
+        assert g.db().execute("SELECT accesses FROM object WHERE id = ?", (a.id,)).fetchone()[0] == before  # reading reinforces nothing
+        row = g.db().execute("SELECT instance, hits FROM usage WHERE tool = 'web_search'").fetchone()
     assert row == ("alice", 2)
 
 
