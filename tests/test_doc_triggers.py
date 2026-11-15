@@ -5,13 +5,13 @@ from vi_mcp import memory as g
 
 def _known():
     # outside the documentation: experiences name hosts, learned knowledge names topics (≥ THEMA_MIN objects)
-    g.new_object("experience", "Bash on db0137", ["tool:Bash", "host:db0137.example.org", "thema:for"], {"args": {}}, instance="a")
+    g.new_object("experience", "Bash on db0137", ["tool:Bash", "host:db0137.example.org", "topic:for"], {"args": {}}, instance="a")
     for i in range(doc_triggers.THEMA_MIN):
-        g.new_object("insight", f"mariadb tmpdir lesson {i}", ["thema:mariadb", "host:web7.example.org"], {"quelle": "x"}, instance="a")
+        g.new_object("insight", f"mariadb tmpdir lesson {i}", ["topic:mariadb", "host:web7.example.org"], {"quelle": "x"}, instance="a")
 
 
-def _doc(text, content, tag="art_wissen:firmendoku"):
-    return g.new_object("insight", text, [tag, "space:002it", "quelle_art:confluence"], {"quelle": "wiki", "inhalt": content},
+def _doc(text, content, tag="knowledge_kind:firmendoku"):
+    return g.new_object("insight", text, [tag, "space:002it", "source_kind:confluence"], {"quelle": "wiki", "inhalt": content},
                         instance="m", visibility="internal")
 
 
@@ -21,11 +21,11 @@ def test_known_hosts_and_topics_become_triggers(gd):
     other = _doc("Confluence IT: Drucker im 3. Stock", "Nichts Technisches hier.")
     r = doc_triggers.run()
     o = g.load(d.id)
-    assert {"host:db0137.example.org", "host:web7.example.org", "thema:mariadb"} <= set(o.hashtags)  # short name db0137 resolved
+    assert {"host:db0137.example.org", "host:web7.example.org", "topic:mariadb"} <= set(o.hashtags)  # short name db0137 resolved
     assert "host:newhost99.example.org" not in o.hashtags  # unknown host: not guessed
-    assert "thema:for" not in o.hashtags  # experiences are no topic source
+    assert "topic:for" not in o.hashtags  # experiences are no topic source
     assert o.data["derived_triggers"]["version"] == doc_triggers.VERSION and any("derived triggers" in c["was"] for c in o.changes)
-    assert g.load(other.id).data["derived_triggers"] == {"version": doc_triggers.VERSION, "host": [], "thema": []}
+    assert g.load(other.id).data["derived_triggers"] == {"version": doc_triggers.VERSION, "host": [], "topic": []}
     assert r["geprueft"] == 2 and r["mit_host"] == 1 and r["offen"] == 0
     assert doc_triggers.run()["geprueft"] == 0  # idempotent
 
@@ -70,9 +70,9 @@ def test_imported_docs_only_via_exploration_manuals_regularly(gd, monkeypatch):
     monkeypatch.setattr(random, "random", lambda: 0.99)  # no exploration in this action
     _known()
     company = _doc("Confluence IT: db0137 Wartung", "db0137 wird freitags gewartet")
-    company.hashtags = company.hashtags + ["thema:mysql"]
+    company.hashtags = company.hashtags + ["topic:mysql"]
     g.save(company)
-    manual = g.new_object("insight", "Handbuch mysql: Verbindung zu db0137", ["art_wissen:handbuch", "thema:mysql"], {"quelle": "skills"}, instance="m")
+    manual = g.new_object("insight", "Handbuch mysql: Verbindung zu db0137", ["knowledge_kind:handbuch", "topic:mysql"], {"quelle": "skills"}, instance="m")
     s = session.begin("a", "t")
     with session.on_behalf(s):
         v = intuition.before("Bash", {"command": "mysql -h db0137.example.org"}, "a", False)

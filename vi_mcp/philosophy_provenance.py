@@ -26,7 +26,7 @@ The mapping, input by input (memory.Objekt.confirm/refute, vil.evidence_of):
 - derives_from(O, R)  an origin that is a memory object whose own source names another object: obj:<id> derives from obj:<that id>,
                       followed along the chain.
 - machine_made(O)     an origin a model produced with no source: the server's own instance (automatic, i:vi) without a cited source, or
-                      an object written by the sleep's language model (herkunft:schlaf-llm) whose source is no URL.
+                      an object written by the sleep's language model (origin:schlaf-llm) whose source is no URL.
 - evidence_kind(R, K) a cited URL → document. An origin that is an object → vil.evidence_of mapped: documented → document,
                       hearsay → hearsay, inferred → hearsay, measured → none, unknown → none.
                       inferred → hearsay, not document: an inferred object is a language model's conclusion from other material —
@@ -35,7 +35,7 @@ The mapping, input by input (memory.Objekt.confirm/refute, vil.evidence_of):
                       measures usefulness as a hint, not the statement; one word, two meanings, so it is not carried over.
 - source(S, pos, R, web)  the object's own URL source (P7). There is no verification record in the memory, so no verified(R, S):
                       such a source counts nothing and gives the duty to verify it.
-- foreign(S)          imported from a network (instance p2p-…, herkunft:p2p); unreviewed(S): in quarantine.
+- foreign(S)          imported from a network (instance p2p-…, origin:p2p); unreviewed(S): in quarantine.
 - untestable, testable_by, extraordinary: never filled — the memory holds no such judgement.
 """
 from __future__ import annotations
@@ -121,7 +121,7 @@ def facts_for(o: g.MemoryObject, load=g.load) -> tuple[list[str], dict]:
     if url:
         out.append(f"source({s}, pos, {_q('url:' + url.group(0)[:300])}, web)")
         info["source_unverified"] += 1
-    if str(o.instance or "").startswith("p2p-") or "herkunft:p2p" in o.hashtags:
+    if str(o.instance or "").startswith("p2p-") or "origin:p2p" in o.hashtags:
         out.append(f"foreign({s})")
         info["foreign"] += 1
     return out, dict(info)
@@ -143,7 +143,7 @@ def _object_origin(org: str, load, info: Counter, seen: set) -> list[str]:
         out.append(f"evidence_kind({_q(org)}, {kind})")
         info[f"kind_{kind}"] += 1
     src = str(o.data.get("quelle") or "")
-    if "herkunft:schlaf-llm" in o.hashtags and not URL.search(src):
+    if "origin:schlaf-llm" in o.hashtags and not URL.search(src):
         out.append(f"machine_made({_q(org)})")
         info["machine_made"] += 1
     ref = OBJ_REF.search(src)

@@ -97,7 +97,7 @@ def test_company_service_relays_internal_names(net):
     a = net.build(sa, [a_pub], kind="firma", net="firma")
     a.log.attach("einladung", {"pub": b_pub})
     b = net.build(sb, [a_pub], start=[a.k.address], kind="firma", net="firma")
-    o = {**mem_object(1), "text": "Backup of db01.corp.internal runs at 02:00 via borg", "hashtags": ["host:db01", "thema:backup"]}
+    o = {**mem_object(1), "text": "Backup of db01.corp.internal runs at 02:00 via borg", "hashtags": ["host:db01", "topic:backup"]}
     a.mcp.mem_objects.append(o)
     a.run_round()
     b.run_round()
@@ -133,9 +133,9 @@ def test_networks_and_their_kind(nets):
 
 
 def test_company_network_carries_internal_knowledge_unanonymised(nets):
-    internal = _proven("Backup of db01.corp.internal runs nightly via borg to the NAS", ["thema:backup", "host:db01"], "intern")
-    shared = _proven("Borg needs the passphrase in BORG_PASSCOMMAND for unattended runs", ["thema:backup"], "geteilt")
-    private = _proven("My own private notes on the backup schedule here", ["thema:backup"], "privat")
+    internal = _proven("Backup of db01.corp.internal runs nightly via borg to the NAS", ["topic:backup", "host:db01"], "intern")
+    shared = _proven("Borg needs the passphrase in BORG_PASSCOMMAND for unattended runs", ["topic:backup"], "geteilt")
+    private = _proven("My own private notes on the backup schedule here", ["topic:backup"], "privat")
     company = {o["text"]: o for o in p2p.outbox("firma")["objekte"]}
     open_ = {o["text"]: o for o in p2p.outbox("standard")["objekte"]}
     assert internal.text in company and "host:db01" in company[internal.text]["hashtags"]  # unchanged, host tag kept
@@ -147,18 +147,18 @@ def test_company_network_carries_internal_knowledge_unanonymised(nets):
 
 def test_company_import_becomes_internal_and_never_reexported(nets, monkeypatch):
     k, _pk = _key()
-    o = {**GOOD, "text": "db01.corp.internal loses the NFS mount after kernel updates", "hashtags": ["host:db01", "thema:nfs"]}
+    o = {**GOOD, "text": "db01.corp.internal loses the NFS mount after kernel updates", "hashtags": ["host:db01", "topic:nfs"]}
     assert p2p.inbox(_bundle(k, [o]), in_background=False)["abgelehnt"] == 1  # standard network: internals rejected
     r = p2p.inbox(_bundle(k, [o]), in_background=False, net="firma")
     assert r["quarantaene"] == 1
-    imp = g.recall("modus:quarantine", viewer=None)[0][1]
-    assert imp.visibility == "internal" and "netz:firma" in imp.hashtags and imp.data["herkunft"]["netz"] == "firma"
+    imp = g.recall("mode:quarantine", viewer=None)[0][1]
+    assert imp.visibility == "internal" and "net:firma" in imp.hashtags and imp.data["herkunft"]["netz"] == "firma"
     assert all(x["text"] != o["text"] for x in p2p.outbox("standard")["objekte"] + p2p.outbox("firma")["objekte"])
 
 
 def test_publisher_cannot_claim_a_network():
-    b = checks.check({**GOOD, "hashtags": GOOD["hashtags"] + ["netz:firma"]})
-    assert "netz:firma" not in b.mem_object["hashtags"]
+    b = checks.check({**GOOD, "hashtags": GOOD["hashtags"] + ["net:firma"]})
+    assert "net:firma" not in b.mem_object["hashtags"]
 
 
 def test_tools_take_the_network_from_the_instance(nets):

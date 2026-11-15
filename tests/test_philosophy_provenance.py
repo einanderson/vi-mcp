@@ -12,7 +12,7 @@ from vi_mcp import memory as g  # noqa: E402
 from vi_mcp import philosophy_provenance as pv  # noqa: E402
 
 
-def _obj(text="Port 8080 serves the admin UI", quelle="https://docs.example.org/admin", instance="a", tags=("thema:t",)):
+def _obj(text="Port 8080 serves the admin UI", quelle="https://docs.example.org/admin", instance="a", tags=("topic:t",)):
     return g.new_object("insight", text, list(tags), {"quelle": quelle}, reason="T", instance=instance)
 
 
@@ -70,7 +70,7 @@ def test_a_withdrawal_by_the_author_is_not_a_refutation_but_two_foreign_families
 
 def test_model_made_and_copied_origins_add_nothing(gd):
     base = _obj("Backups run at 02:00", quelle="https://ops.example/backup")
-    llm = _obj("Backups run nightly", quelle=f"derived from {base.id}", instance=g.SERVER_INSTANCE, tags=("herkunft:schlaf-llm",))
+    llm = _obj("Backups run nightly", quelle=f"derived from {base.id}", instance=g.SERVER_INSTANCE, tags=("origin:schlaf-llm",))
     o = _obj("The nightly backup starts at 02:00", quelle="https://ops.example/runbook")
     o = g.load(o.id).confirm("ki@vi", "sleep", instance=g.SERVER_INSTANCE, family="vi")  # automatic, no source: model-made
     o = g.load(o.id).confirm("ki@x", "agrees", instance="x", family="gpt", source=llm.id)  # cites a model-made object
@@ -82,8 +82,8 @@ def test_model_made_and_copied_origins_add_nothing(gd):
 
 
 def test_hearsay_alone_is_held_back_with_its_reason(gd):
-    p1 = _obj("Rumour A", quelle="", instance="p2p-n1", tags=("herkunft:p2p",))
-    p2 = _obj("Rumour B", quelle="", instance="p2p-n2", tags=("herkunft:p2p",))
+    p1 = _obj("Rumour A", quelle="", instance="p2p-n1", tags=("origin:p2p",))
+    p2 = _obj("Rumour B", quelle="", instance="p2p-n2", tags=("origin:p2p",))
     o = _obj("The datacenter moves in May", quelle="")
     o = g.load(o.id).confirm("ki@x", "heard", instance="x", family="gpt", source=p1.id)
     o = g.load(o.id).confirm("ki@y", "heard", instance="y", family="qwen", source=p2.id)

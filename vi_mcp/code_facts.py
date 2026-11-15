@@ -8,16 +8,16 @@ Design choice — the facts are hashtags of memory objects, read by the existing
 vi__tag), not a second fact store. Reason: one data model (objects with hashtags, owning instance, visibility, index, archive with
 tombstones) and one import path; a fact table of its own would need its own visibility, incremental sync and deletion rules, and
 clingo-object would need a second syntax to read it. One fact object per function/method (`code:funktion`), per module
-(`code:modul`) and per literal module constant (`code:konstante`), next to the text pieces and with the same `art_wissen:code`, so
+(`code:modul`) and per literal module constant (`code:konstante`), next to the text pieces and with the same `knowledge_kind:code`, so
 everything that keeps code out of hints, training data and network exports keeps the facts out too. Per-object facts are only
 LOCAL facts of one file (what this function calls); relations across files (tested_by, import cycles) are derived by rules — so an
 incremental sync of one changed file never has to touch another file's objects.
 
 Facts per object (hashtag kinds, German as all stored formats):
-  code:funktion  funktion:<module.qualname> modul: datei: ruft:<callee> ruft_gesperrt:<callee> schreibt:<table>
-                 schreibt_ungesperrt:<table> wirft:<exception> test:ja koerper:<hash> geaendert_in:<commit12>
-  code:modul     modul: datei: importiert:<module> (at import time) importiert_spaet:<module> (inside a function)
-  code:konstante konstante:<module.NAME> modul: datei: schluessel:<key> wert:<value>
+  code:funktion  function:<module.qualname> module: file: calls:<callee> calls_locked:<callee> writes:<table>
+                 writes_unlocked:<table> raises:<exception> test:ja body:<hash> changed_in:<commit12>
+  code:modul     module: file: imports:<module> (at import time) imports_late:<module> (inside a function)
+  code:konstante constant:<module.NAME> module: file: key:<key> value:<value>
 
 Stated limits (each is a class of miss, counted where it can be): calls are resolved through imports, module-level definitions and
 self/cls; a call on a local object (o.change()) is not resolved and only counted (`unaufgeloest`); SQL is found in string constants
@@ -302,25 +302,25 @@ def objects(st: dict, path: str) -> list[tuple[str, str, list[str], dict]]:
     from .code_import import tag_value as tv
     mod = st["modul"]
     out = []
-    head = [f"modul:{tv(mod)}"]
+    head = [f"module:{tv(mod)}"]
     out.append(("#modul", f"{path} — module {mod}: imports {len(st['importiert'])} at import time",
-                ["code:modul"] + head + [f"importiert:{tv(m)}" for m in st["importiert"]]
-                + [f"importiert_spaet:{tv(m)}" for m in st["importiert_spaet"]],
+                ["code:modul"] + head + [f"imports:{tv(m)}" for m in st["importiert"]]
+                + [f"imports_late:{tv(m)}" for m in st["importiert_spaet"]],
                 {"modul": mod, "importiert": st["importiert"], "importiert_spaet": st["importiert_spaet"]}))
     for f in st["funktionen"]:
-        tags = ["code:funktion", f"funktion:{tv(f['name'])}"] + head
-        tags += [f"ruft:{tv(x)}" for x in f["ruft"]] + [f"ruft_gesperrt:{tv(x)}" for x in f["ruft_gesperrt"]]
-        tags += [f"schreibt:{tv(x)}" for x in f["schreibt"]] + [f"schreibt_ungesperrt:{tv(x)}" for x in f["schreibt_ungesperrt"]]
-        tags += [f"wirft:{tv(x)}" for x in f["wirft"]] + (["test:ja"] if f["test"] else [])
-        tags += [f"koerper:{f['koerper']}"] if f.get("koerper") else []
-        tags += [f"geaendert_in:{c}" for c in f.get("geaendert_in") or []]
+        tags = ["code:funktion", f"function:{tv(f['name'])}"] + head
+        tags += [f"calls:{tv(x)}" for x in f["ruft"]] + [f"calls_locked:{tv(x)}" for x in f["ruft_gesperrt"]]
+        tags += [f"writes:{tv(x)}" for x in f["schreibt"]] + [f"writes_unlocked:{tv(x)}" for x in f["schreibt_ungesperrt"]]
+        tags += [f"raises:{tv(x)}" for x in f["wirft"]] + (["test:ja"] if f["test"] else [])
+        tags += [f"body:{f['koerper']}"] if f.get("koerper") else []
+        tags += [f"changed_in:{c}" for c in f.get("geaendert_in") or []]
         text = (f"{path}:{f['symbol']} — calls {len(f['ruft'])}" + (f", writes {', '.join(f['schreibt'])}" if f["schreibt"] else "")
                 + (f", raises {', '.join(x.rsplit('.', 1)[-1] for x in f['wirft'])}" if f["wirft"] else ""))
-        out.append((f"#funktion:{f['symbol']}", text[:300], tags, {k: v for k, v in f.items() if k != "symbol"}))  # data.symbol = a piece
+        out.append((f"#function:{f['symbol']}", text[:300], tags, {k: v for k, v in f.items() if k != "symbol"}))  # data.symbol = a piece
     for c in st["konstanten"]:
-        tags = ["code:konstante", f"konstante:{tv(c['name'])}"] + head
-        tags += [f"schluessel:{tv(x)}" for x in c["schluessel"]] + [f"wert:{tv(x)}" for x in c["wert"]]
-        out.append((f"#konstante:{c['name']}", f"{path} — constant {c['name']}: {len(c['schluessel'])} keys, {len(c['wert'])} values",
+        tags = ["code:konstante", f"constant:{tv(c['name'])}"] + head
+        tags += [f"key:{tv(x)}" for x in c["schluessel"]] + [f"value:{tv(x)}" for x in c["wert"]]
+        out.append((f"#constant:{c['name']}", f"{path} — constant {c['name']}: {len(c['schluessel'])} keys, {len(c['wert'])} values",
                     tags, dict(c)))
     return out
 
@@ -331,7 +331,7 @@ def bridge(repo: str) -> str:
     """clingo-object rules that read the fact objects of one repository (any index the asking instance may see) as the input
     predicates of the `code` philosophy package. The seed itself never reads objects — its worlds are plain facts."""
     r = repo.replace('"', "")
-    sel = f'art_wissen:code repo:{r}'
+    sel = f'knowledge_kind:code repo:{r}'
     return f"""\
 snapshot(R) <= (O in objects("{sel} code:modul")) & (O.repo == R)
 module(M) <= (O in objects("{sel} code:modul")) & (O.modul == M)

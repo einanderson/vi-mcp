@@ -30,7 +30,7 @@ def site(gd, monkeypatch):
     for net, vis, mode, text in (("welt", None, "test", "Borg compact frees space only after prune"), ("firma", "intern", "test", "Firma borg import internal"),
                                  ("welt", None, "quarantaene", "Borg quarantined claim not yet reviewed")):
         name = lb.pseudonym(pk)
-        g.new_object("insight", text, ["tool:borg", "herkunft:p2p", f"herausgeber:{name}", f"netz:{net}"],
+        g.new_object("insight", text, ["tool:borg", "origin:p2p", f"publisher:{name}", f"net:{net}"],
                      {"quelle": "other server", "herkunft": {"herausgeber": name, "pubkey": pk, "netz": net, "netz_id": hashlib.md5(text.encode()).hexdigest()},
                       "pruefung": {"regeln": [], "pruefer": None}}, instance=f"p2p-{name}", mode=mode, visibility=vis,
                      oid=f"erkenntnis:p2p-{name}-{hashlib.md5(text.encode()).hexdigest()[:16]}")

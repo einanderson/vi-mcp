@@ -1,16 +1,16 @@
-"""Triggers for documentation (0.26.0): imported documentation gets host: and thema: hashtags so it can appear before matching actions.
+"""Triggers for documentation (0.26.0): imported documentation gets host: and topic: hashtags so it can appear before matching actions.
 
-Imported documentation (Confluence company docs, vendor docs, manuals) carried only administrative hashtags (space:, seite:, bereich:).
-Hints before an action are found through triggers (tool:, host:, thema:), so documentation hardly ever appeared unasked — measured
+Imported documentation (Confluence company docs, vendor docs, manuals) carried only administrative hashtags (space:, seite:, area:).
+Hints before an action are found through triggers (tool:, host:, topic:), so documentation hardly ever appeared unasked — measured
 10.11.2026: 73 of 12,994 Confluence objects ever recalled. This sleep step adds triggers, conservatively:
 
 - host: only hosts the memory already knows from outside the documentation (host: hashtags of experiences, insights, rules, skills), found
   in text or content as the full name or as a first label with a digit (e.g. db0137 for db0137.example.org). No new hosts are guessed.
-- thema: only topics that learned knowledge already uses (insights, rules, skills outside the documentation, at least THEMA_MIN objects),
+- topic: only topics that learned knowledge already uses (insights, rules, skills outside the documentation, at least THEMA_MIN objects),
   found as a whole word in the object's text (title line) — not in the body, which mentions far too much. Experiences are not a source:
-  their thema: values come from shell words (thema:for, thema:from).
+  their topic: values come from shell words (topic:for, topic:from).
 - Links are removed first (the wiki's own host name is in every page link). A host found in more than HOST_DF_MAX, a topic in more than
-  THEMA_DF_MAX of all documentation says nothing specific and is skipped (measured: thema:lanao would have hit every Stibo page).
+  THEMA_DF_MAX of all documentation says nothing specific and is skipped (measured: topic:lanao would have hit every Stibo page).
 - At most HOST_MAX / THEMA_MAX per object; recorded in data.derived_triggers and in the change history. No edges are created
   (edge explosion of 09.11.2026: 2.49 M edges).
 """
@@ -21,7 +21,7 @@ import re
 from . import memory as g
 
 VERSION = 1
-DOC_TAGS = ("art_wissen:firmendoku", "art_wissen:doku-extern", "art_wissen:handbuch")
+DOC_TAGS = ("knowledge_kind:firmendoku", "knowledge_kind:doku-extern", "knowledge_kind:handbuch")
 HOST_MAX, THEMA_MAX = 5, 5
 THEMA_MIN = 3
 BATCH = 3000
@@ -44,7 +44,7 @@ def vocabulary() -> tuple[dict[str, str], set[str]]:
             f"SELECT DISTINCT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'host:%' "
             f"AND o.kind IN ('experience', 'insight', 'rule', 'skill') AND o.id NOT IN ({_doc_ids_sql()})", DOC_TAGS)]
         themen = {r[0][6:].lower() for r in g.db().execute(
-            f"SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'thema:%' "
+            f"SELECT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'topic:%' "
             f"AND o.kind IN ('insight', 'rule', 'skill') AND o.id NOT IN ({_doc_ids_sql()}) "
             f"GROUP BY t.tag HAVING COUNT(DISTINCT o.id) >= ?", (*DOC_TAGS, THEMA_MIN))}
     names: dict[str, str] = {}
@@ -103,9 +103,9 @@ def run(batch: int = BATCH) -> dict:
             continue
         report["geprueft"] += 1
         hosts, topics = derive(o.text, str(o.data.get("inhalt") or ""), names, themen)
-        new = [f"host:{h}" for h in hosts] + [f"thema:{t}" for t in topics]
+        new = [f"host:{h}" for h in hosts] + [f"topic:{t}" for t in topics]
         new = [t for t in new if t not in o.hashtags and g.TAG.match(t)]
-        o.data["derived_triggers"] = {"version": VERSION, "host": hosts, "thema": topics}
+        o.data["derived_triggers"] = {"version": VERSION, "host": hosts, "topic": topics}
         if new:
             report["mit_host"] += bool(hosts)
             report["mit_thema"] += bool(topics)

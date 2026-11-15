@@ -14,7 +14,7 @@ Notation:
   (H != "gate1"), (N > 3), (H == "web1")                 comparisons inside a body, in parentheses (& binds tighter than <)
   soft(head <= body)  soft(head <= body, 0.9)  soft(fact)
                                                         a rule with a weight (the optional number is the prior belief)
-Objects of the VI memory (0.63.0, clingo-objekt): (O in objects("art:skill host:web*")) binds O to the objects of a filter;
+Objects of the VI memory (0.63.0, clingo-objekt): (O in objects("kind:skill host:web*")) binds O to the objects of a filter;
 (O.host == H) reads a hashtag, (O.kind == "skill") a field, numbers compare: (O.age > 90); linked(O, B) follows an edge;
 propose(tag(O, "kind", "value")) / propose(link(A, B, "reason")) as a head proposes a change that a person decides.
 Built in (the deontic square, SEP "Deontic Logic"): obligatory/forbidden/permitted; obligatory(A) and forbidden(A) together is a named
@@ -83,6 +83,9 @@ OBJ_FIELDS = {"kind": "kind", "mode": "mode", "visibility": "visibility", "insta
 #: in 0.67.0), so a program written against the German names (O.kind == "erkenntnis") still means the same objects. clingo_object never
 #: imports vi_mcp; without the server the table is empty and values are taken as written.
 FIELD_VALUE_ALIASES: dict[str, dict[str, str]] = {}
+#: hashtag kind → current kind (O.thema → topic:), and per current kind the value aliases (O.art == "erkenntnis" → kind:insight)
+TAG_KIND_ALIASES: dict[str, str] = {}
+TAG_VALUE_ALIASES: dict[str, dict[str, str]] = {}
 
 _DIALECT = ("objects", "linked", "propose")
 
@@ -169,7 +172,7 @@ def _atom(n) -> str:
     if n.func.id in ("never", "soft"):
         raise LogicError(f"line {n.lineno}: {n.func.id}(…) is a statement of its own, not a term")
     if n.func.id == "objects":
-        raise LogicError(f"line {n.lineno}: objects(\"filter\") binds a variable: (O in objects(\"art:skill\")) — in parentheses")
+        raise LogicError(f"line {n.lineno}: objects(\"filter\") binds a variable: (O in objects(\"kind:skill\")) — in parentheses")
     if n.func.id in ("linked", "propose"):
         raise LogicError(f"line {n.lineno}: {n.func.id}(…) is a word of the object dialect — linked(O, B) only in a body, "
                          "propose(tag(…)) / propose(link(…)) only as a head")
@@ -207,7 +210,10 @@ def _attribute(a: ast.Attribute, other, op: str = "=") -> str:
     if a.attr in OBJ_FIELDS:
         pred = f'vi__obj({var},"{a.attr}",'
     elif re.fullmatch(r"[a-z][a-z0-9_]{0,30}", a.attr):
-        pred = f'vi__tag({var},"{a.attr}",'
+        kind = TAG_KIND_ALIASES.get(a.attr, a.attr)
+        if kind in TAG_VALUE_ALIASES and isinstance(other, ast.Constant) and isinstance(other.value, str):
+            val = _term(ast.Constant(TAG_VALUE_ALIASES[kind].get(other.value, other.value)))
+        pred = f'vi__tag({var},"{kind}",'
     else:
         raise LogicError(f"line {a.lineno}: {a.attr!r} is no hashtag kind (lower case, digits, _)")
     if op == "=":
@@ -576,7 +582,7 @@ def lines(r: dict) -> list[str]:
         out.append(f"  not every answer set was seen (limit {MAX_MODELS} or {TIMEOUT_S} s) — what 'follows' holds in the ones seen")
     if r["nur_in_einigen"]:
         out.append(f"  {r['nur_in_einigen']} atoms hold only in some answer sets (undetermined)")
-    out += [f"  note: {n}" for n in r["hinweise"]]
+    out += [f"  grade: {n}" for n in r["hinweise"]]
     return out
 
 

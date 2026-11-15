@@ -14,8 +14,8 @@
 
 Each method becomes one flat rule of the notation — the server runs no Python, it receives the compiled rule. The membership filter
 holds exactly the kinds whose objects resolve to that definition, so overriding needs no negation:
-    stale(Self) <= (Self in objects("art:insight")) & (Self.mode == "test") & (Self.age > 90)
-    stale(Self) <= (Self in objects("art:skill")) & (Self.mode == "test") & (Self.age > 30)
+    stale(Self) <= (Self in objects("kind:insight")) & (Self.mode == "test") & (Self.age > 90)
+    stale(Self) <= (Self in objects("kind:skill")) & (Self.mode == "test") & (Self.age > 30)
 Dispatch is Python's method resolution order: an object of kind k answers with the method of the most specific class of kind k that
 defines it. Parameters after self become variables: def blocks(self, H) → blocks(Self, H).
 """
@@ -69,6 +69,6 @@ def compile_class(cls, universe: list[type] | None = None) -> list[Rule]:
         if not isinstance(body, Literal):
             raise ExprError(f"{cls.__name__}.{name} returns {type(body).__name__} — a method returns a condition built from fields, & and ~")
         filt = kinds[0] if len(kinds) == 1 else None
-        member = self_.where(f"art:{filt}" if filt else "(" + " OR ".join(f"art:{k}" for k in kinds) + ")")
+        member = self_.where(f"kind:{filt}" if filt else "(" + " OR ".join(f"kind:{k}" for k in kinds) + ")")
         rules.append(Rule(Atom(name, (self_,) + tuple(args)), Conj([member]) & body))
     return rules

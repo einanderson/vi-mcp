@@ -22,8 +22,8 @@ import hashlib
 
 from . import memory as g
 
-KINDS = ("host:", "tool:", "thema:", "fehler:", "skill:", "art_wissen:", "answers:", "memory:")
-OPEN_KINDS = ("tool:", "thema:", "fehler:", "skill:", "art_wissen:", "answers:", "memory:")
+KINDS = ("host:", "tool:", "topic:", "error:", "skill:", "knowledge_kind:", "answers:", "memory:")
+OPEN_KINDS = ("tool:", "topic:", "error:", "skill:", "knowledge_kind:", "answers:", "memory:")
 MIN_N = 5
 CAP = 20
 VERSION = "vil-word-v1"

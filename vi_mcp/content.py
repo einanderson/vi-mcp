@@ -1,10 +1,10 @@
 """Content as a feature — the router weights hints not only by situation but also by meaning.
 
 Nothing is embedded live (that costs about 1 s per text). Instead, sleep precomputes two things:
-  Centroids     per trigger hashtag (tool:, skill:, host:, thema:) the mean of the vectors of all knowledge objects with this hashtag.
+  Centroids     per trigger hashtag (tool:, skill:, host:, topic:) the mean of the vectors of all knowledge objects with this hashtag.
                 Feature `naehe` = cosine between the hint and the mean of the centroids of the current triggers.
                 The hint itself is subtracted so that it does not confirm itself.
-  Groups        K-means over the vectors of the knowledge objects. Feature `inhalt:<n>`: the model learns weights per meaning group,
+  Groups        K-means over the vectors of the knowledge objects. Feature `content:<n>`: the model learns weights per meaning group,
                 a new hint inherits them before it has experience of its own. Each group is named after its most frequent hashtags.
 Both are recomputed at night; the model is trained afterwards in the same night, so the group numbers match the weights.
 """
@@ -20,7 +20,7 @@ import numpy as np
 from . import memory as g
 from . import vector
 
-TRIGGER_KINDS = ("tool:", "skill:", "host:", "thema:")
+TRIGGER_KINDS = ("tool:", "skill:", "host:", "topic:")
 MIN_CENTROID = 3
 MIN_GROUP_OBJECTS = 20
 GROUPS_MAX = 40

@@ -15,7 +15,7 @@ from vi_mcp import net_service as nd  # noqa: E402
 
 
 def mem_object(i, token=None):
-    return {"art": "erkenntnis", "text": f"Wissen Nummer {'abcdefghijklmnop'[i % 16]}{i} über den Eingang des Dienstes", "hashtags": ["thema:eingang"], "quelle": "Messung vom 2.11.",
+    return {"art": "erkenntnis", "text": f"Wissen Nummer {'abcdefghijklmnop'[i % 16]}{i} über den Eingang des Dienstes", "hashtags": ["topic:eingang"], "quelle": "Messung vom 2.11.",
             "wichtigkeit": 1, "zeit": "2026-11-08", "netz_id": hashlib.md5(str(i).encode()).hexdigest(), "loesch_hash": hashlib.sha256((token or f"t{i}").encode()).hexdigest()}
 
 

@@ -128,7 +128,7 @@ def render_text(text: str) -> str:
 
 def _imports(net: str, words: list[str] | None = None, limit: int = PAGE_SIZE) -> list[g.MemoryObject]:
     """Released imports of a public network (not quarantine), knowledge kinds, no forum answers (those belong to their thread)."""
-    filt = " ".join(words) + " herkunft:p2p" if words else "herkunft:p2p"
+    filt = " ".join(words) + " origin:p2p" if words else "origin:p2p"
     hits = g.recall(filt, limit=limit * 4, kinds=KNOWLEDGE_KINDS, viewer=None, or_fallback=bool(words))
     out = []
     for _s, o, _g in hits:
@@ -426,7 +426,7 @@ def knowledge_index(base: str, net: str) -> str:
     imp = _imports(net, limit=PAGE_SIZE * 2)
     own = _own(net)[:PAGE_SIZE * 2]
     items = [f'<li><span class="kind">{e(o.kind)}</span><h3><a href="{e(base)}/eintrag/{e(o.id)}">{e(o.text[:200])}</a></h3>'
-             f'<p class="meta">from {e((o.data.get("herkunft") or {}).get("herausgeber", "?"))} · {e(" ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("herausgeber:", "pruefer:", "netz:")))[:120])}</p></li>' for o in imp]
+             f'<p class="meta">from {e((o.data.get("herkunft") or {}).get("herausgeber", "?"))} · {e(" ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("publisher:", "reviewer:", "net:")))[:120])}</p></li>' for o in imp]
     items += [f'<li><span class="kind">{e(f["art"])}</span><h3><a href="{e(base)}/eigen/{e(net)}/{e(f["netz_id"])}">{e(f["text"][:200])}</a></h3>'
               f'<p class="meta">from this server · {e(" ".join(f["hashtags"])[:120])}</p></li>' for f in own]
     return _page(base, f"Knowledge · {net}", f'<h1>Knowledge of {e(net)}</h1><p class="muted">{len(imp)} item(s) from other servers (reviewed), '
@@ -437,10 +437,10 @@ def knowledge_item(base: str, oid: str) -> str | None:
     from . import net_score
     o = g.load(oid)
     h = (o.data.get("herkunft") or {}) if o else {}
-    if (not o or "herkunft:p2p" not in o.hashtags or o.kind not in KNOWLEDGE_KINDS or o.mode not in ("active", "test") or o.visibility != "shared"
+    if (not o or "origin:p2p" not in o.hashtags or o.kind not in KNOWLEDGE_KINDS or o.mode not in ("active", "test") or o.visibility != "shared"
             or (h.get("netz") or "standard") not in public_nets() or o.id.startswith("erkenntnis:post-")):
         return None
-    tags = " ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("herausgeber:", "pruefer:", "netz:")))
+    tags = " ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("publisher:", "reviewer:", "net:")))
     nl = net_score.line(o)
     body = (f'<p class="meta"><a href="{e(base)}/wissen/{e(h.get("netz") or "standard")}">Knowledge of {e(h.get("netz") or "standard")}</a></p>'
             f'<h1>{e(o.text)}</h1><p class="meta">{e(o.kind)} from {e(h.get("herausgeber", "?"))} · {e(tags)}' + (f" · {e(nl)}" if nl else "") + "</p>"

@@ -15,15 +15,15 @@ def _k(text, tags, instance="anna", **kw):
 
 
 def test_sections_requirements_proven_and_own(gd):
-    req = _k("The user requires: deploys only after explicit approval", ["thema:vorgabe", "thema:deploy"], instance="bert")
-    proven = _k("ssh to the build host only with the key file", ["thema:ssh"], instance="bert")
+    req = _k("The user requires: deploys only after explicit approval", ["topic:vorgabe", "topic:deploy"], instance="bert")
+    proven = _k("ssh to the build host only with the key file", ["topic:ssh"], instance="bert")
     proven.confirm("ki@carl", "worked", "carl", family="gpt")
-    own = _k("Port 8765 is the default of the VI server", ["thema:port"])
-    imported = _k("Manual section: how to install NetBox", ["art_wissen:handbuch"])
+    own = _k("Port 8765 is the default of the VI server", ["topic:port"])
+    imported = _k("Manual section: how to install NetBox", ["knowledge_kind:handbuch"])
     imported.confirm("ki@carl", "x", "carl", family="gpt")
-    refuted = _k("A wrong statement learned by anna", ["thema:x"])
+    refuted = _k("A wrong statement learned by anna", ["topic:x"])
     refuted.refute("ki@anna", "wrong", "anna")
-    private = g.new_object("insight", "private note of bert only", ["thema:y"], {"quelle": "q"}, instance="bert", visibility="private")
+    private = g.new_object("insight", "private note of bert only", ["topic:y"], {"quelle": "q"}, instance="bert", visibility="private")
     s = index.sections("anna")
     assert [o.id for o in s["vorgaben"]] == [req.id]
     assert proven.id in [o.id for o in s["bewaehrt"]] and imported.id not in [o.id for o in s["bewaehrt"]]
@@ -36,14 +36,14 @@ def test_sections_requirements_proven_and_own(gd):
 
 
 def test_internal_only_with_a_token(gd):
-    o = _k("Internal requirement: tickets go to the IMIT queue", ["thema:vorgabe"], visibility="internal")
+    o = _k("Internal requirement: tickets go to the IMIT queue", ["topic:vorgabe"], visibility="internal")
     assert o.id in index.text("anna")
     assert o.id not in index.text(config.OPEN)
 
 
 def test_bounded_and_the_cut_is_named(gd, monkeypatch):
     for i in range(30):
-        _k(f"Requirement number {i}: " + "x" * 200, ["thema:vorgabe"])
+        _k(f"Requirement number {i}: " + "x" * 200, ["topic:vorgabe"])
     monkeypatch.setattr(index, "MAX_CHARS", 600)
     t = index.text("anna")
     assert len(t) <= 600 + 80 and t.endswith("(index cut at its size limit — vi_recall finds the rest)")
@@ -57,7 +57,7 @@ def test_empty_memory_sends_no_index(gd):
 def test_images_are_marked(gd):
     from vi_mcp import images
     from test_images import png
-    o = g.new_object("image", "Screenshot of the setup dialog", ["thema:vorgabe"], {"quelle": "q", "bild": images.store(png())}, instance="anna")
+    o = g.new_object("image", "Screenshot of the setup dialog", ["topic:vorgabe"], {"quelle": "q", "bild": images.store(png())}, instance="anna")
     assert f"- [{o.id}] image: Screenshot of the setup dialog" in index.text("anna")
 
 
@@ -79,7 +79,7 @@ def srv(tmp_path, monkeypatch):
 
 def test_initialize_carries_the_index_after_the_rules(srv):
     port, tok = srv
-    o = _k("The user decided: images are their own memory kind", ["thema:vorgabe"])
+    o = _k("The user decided: images are their own memory kind", ["topic:vorgabe"])
     _, _, a = request(port, "POST", {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"clientInfo": {"name": "t"}}}, tok)
     ins = a["result"]["instructions"]
     assert "[Index] Memory index for instance anna" in ins and o.id in ins
@@ -88,7 +88,7 @@ def test_initialize_carries_the_index_after_the_rules(srv):
 
 def test_many_new_imports_do_not_crowd_out_own_entries(gd):
     """0.38.1: production had 3 of 6 lines — the 200 newest objects were nearly all imports, filtered only afterwards."""
-    own = [_k(f"Own finding number {i} about the deploy", ["thema:deploy"]) for i in range(6)]
+    own = [_k(f"Own finding number {i} about the deploy", ["topic:deploy"]) for i in range(6)]
     for i in range(250):
-        _k(f"Imported manual section {i}", ["quelle_art:stibodx"])
+        _k(f"Imported manual section {i}", ["source_kind:stibodx"])
     assert {o.id for o in index.sections("anna")["hier"]} == {o.id for o in own}

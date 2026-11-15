@@ -38,7 +38,7 @@ def test_self_proposal_needs_evidence_and_foreign_trusted_instance(gd):
     a, b, c = session.begin("a", "t"), session.begin("b", "t"), session.begin("c", "t")
     evidence_list = []
     for i in range(3):
-        o = g.new_object("insight", f"Beleg {i} für Vorsicht bei Nachtarbeit", ["thema:nacht"], {"quelle": "x"}, reason="T")
+        o = g.new_object("insight", f"Beleg {i} für Vorsicht bei Nachtarbeit", ["topic:nacht"], {"quelle": "x"}, reason="T")
         evidence_list.append(o.id)
     with session.on_behalf(a):
         with pytest.raises(tools.Rejected, match="at least 3 pieces of evidence"):
@@ -74,13 +74,13 @@ def test_self_in_initialize_and_repetition(gd):
 
 
 def test_decay_power_law(gd):
-    o = g.new_object("insight", "alt aber wichtig", ["thema:v"], {"quelle": "x"}, reason="T")
-    assert g.recall("thema:v", viewer=None)[0][2]["aktualitaet"] == 1.0
+    o = g.new_object("insight", "alt aber wichtig", ["topic:v"], {"quelle": "x"}, reason="T")
+    assert g.recall("topic:v", viewer=None)[0][2]["aktualitaet"] == 1.0
     _age(o.id, 30)
-    a30 = g.recall("thema:v", viewer=None)[0][2]["aktualitaet"]
+    a30 = g.recall("topic:v", viewer=None)[0][2]["aktualitaet"]
     assert 0.12 < a30 < 0.16  # (1+720)^-0.3 ≈ 0.139; exponential would be 0.03
     _age(o.id, 365)
-    assert g.recall("thema:v", viewer=None)[0][2]["aktualitaet"] > 0.06
+    assert g.recall("topic:v", viewer=None)[0][2]["aktualitaet"] > 0.06
 
 
 def test_sleep_abstraction_schema_conflict_and_report(gd):
@@ -90,8 +90,8 @@ def test_sleep_abstraction_schema_conflict_and_report(gd):
     assert sleep_cycle.due(datetime(2026, 11, 9, 3, 5, tzinfo=timezone.utc)) == "nightly run 03:00 UTC (no sleep in 24 h)"
     assert sleep_cycle.due(datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)) is None  # importance 0, not night
     b = sleep_cycle.run("Test")
-    assert b.kind == "sleep" and "zustand:fertig" in b.hashtags and b.data["schritte"]["4_abstraktion"] == 1
-    e = [o for _, o, _g in g.recall("herkunft:schlaf", viewer=None)][0]
+    assert b.kind == "sleep" and "state:fertig" in b.hashtags and b.data["schritte"]["4_abstraktion"] == 1
+    e = [o for _, o, _g in g.recall("origin:schlaf", viewer=None)][0]
     assert e.mode == "test" and e.data["ausgang"] == "gut" and "web5" in e.text and len(e.edges()) == 4
     assert b.text.startswith("Sleep finished") and sleep_cycle.last().id == b.id
     # second run, same cluster with the opposite outcome → conflict, no silent change
@@ -100,7 +100,7 @@ def test_sleep_abstraction_schema_conflict_and_report(gd):
     b2 = sleep_cycle.run("Test 2")
     assert b2.data["schritte"]["3_schema"]["konflikte"] == 1 and b2.data["schritte"]["4_abstraktion"] == 0
     e = g.load(e.id)
-    assert "konflikt:offen" in e.hashtags and e.mode == "test" and e.data["konflikte"][0]["ausgang"] == "schlecht"
+    assert "conflict:offen" in e.hashtags and e.mode == "test" and e.data["konflikte"][0]["ausgang"] == "schlecht"
     # a sleep confirmation does not count as a foreign instance
     assert e.foreign_confirmations() == 0
     assert "Sleep finished" in tools.call_tool("vi_status", {}, "a", True)
@@ -135,14 +135,14 @@ def test_sleep_at_most_every_two_hours(gd):
         g.new_object("experience", f"Handlung {i}", ["tool:x"], {}, importance=3, reason="T")
     now = datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)
     assert sleep_cycle.due(now) is not None  # 90 ≥ 80, never slept yet
-    g.new_object("sleep", "Schlaf fertig", ["zustand:fertig"], {}, reason="T")
+    g.new_object("sleep", "Schlaf fertig", ["state:fertig"], {}, reason="T")
     assert sleep_cycle.due(now) is None  # just slept
 
 
 def test_self_proposal_can_replace_a_sentence(gd):
     """0.25.0: a confirmed proposal with replaces swaps the sentence instead of adding a contradicting second one."""
     a, c = session.begin("a", "t"), session.begin("c", "t")
-    evidence_list = [g.new_object("insight", f"user decision {i}: all output in English", ["thema:sprache"], {"quelle": "x"}, reason="T").id
+    evidence_list = [g.new_object("insight", f"user decision {i}: all output in English", ["topic:sprache"], {"quelle": "x"}, reason="T").id
                      for i in range(3)]
     _age(evidence_list[0], 2)
     old = self_model.core().data["soll"]["style"][0]["satz"]

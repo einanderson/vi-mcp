@@ -28,7 +28,7 @@ def test_prompt_words():
 
 
 def test_follow_up_question_finds_the_memory(gd):
-    k = _k("ssh to the build host hangs at the password prompt without -i; use the key file", ["tool:ssh", "thema:ssh"])
+    k = _k("ssh to the build host hangs at the password prompt without -i; use the key file", ["tool:ssh", "topic:ssh"])
     _k("Borg restore needs the repository key", ["tool:borg"])
     r = intuition.prompt_hints("und warum hängt ssh am build host?", "a")
     assert r["ids"] == [k.id] and "vi_object" in r["hinweise"][0]
@@ -49,7 +49,7 @@ def test_a_host_name_alone_is_enough_and_compounds_are_split(gd):
 def test_most_shared_words_first_and_host_only_noise_dropped(gd):
     """0.44.1, measured on production: notes that shared only the host name ranked before the one that answered the question."""
     noise = [_k(f"ssh to buildhost07 note number {i} about the login banner", ["host:buildhost07"]) for i in range(3)]
-    k = _k("buildhost07 kills large models with exit 137: mlock OOM, use load-mode mmap", ["host:buildhost07", "fehler:exit-137"])
+    k = _k("buildhost07 kills large models with exit 137: mlock OOM, use load-mode mmap", ["host:buildhost07", "error:exit-137"])
     r = intuition.prompt_hints("Und warum stirbt das große Modell auf buildhost07 mit Exit 137?", "a")
     assert r["ids"][0] == k.id and not set(r["ids"]) & {n.id for n in noise}
     assert set(intuition.prompt_hints("Was läuft auf buildhost07?", "a")["ids"]) <= {k.id, *[n.id for n in noise]}  # host alone still finds
@@ -178,8 +178,8 @@ def test_first_prompt_of_a_session_carries_the_skill_table_once(h):
     """0.53.0: which skills exist — once per session, with its first question; without overview objects nothing."""
     from vi_mcp import capabilities
     capabilities._cache.clear()  # cached per instance for 10 minutes; an earlier test of this module cached an empty table
-    g.new_object("insight", "Vollständige Doku zu gitlab-api: vi_erinnere doku:gitlab-api. Verbindet sich mit GitLab.",
-                 ["art-wissen:ueberblick", "doku:gitlab-api", "skill:gitlab"], {"quelle": "skills folder"}, instance="alice")
+    g.new_object("insight", "Vollständige Doku zu gitlab-api: vi_erinnere docs:gitlab-api. Verbindet sich mit GitLab.",
+                 ["art-wissen:ueberblick", "docs:gitlab-api", "skill:gitlab"], {"quelle": "skills folder"}, instance="alice")
     ev = {"hook_event_name": "UserPromptSubmit", "session_id": "cc-skills", "cwd": "/tmp", "prompt": "wo liegt das Repo der Web-Komponente?"}
     ctx = h.process(ev)["hookSpecificOutput"]["additionalContext"]
     assert ctx.startswith("[Skills] 1 skill manuals") and "gitlab-api" in ctx

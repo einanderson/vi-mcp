@@ -141,7 +141,7 @@ def summary() -> list[dict]:
     reg = registry()
     per: dict[str, dict] = {name: {"index": name, "objekte": 0, "erfahrungen": 0, "wissen": 0, "code": 0} for name in reg}
     with g.lock:
-        code = dict(g.db().execute("SELECT o.idx, COUNT(*) FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag = 'art_wissen:code' "
+        code = dict(g.db().execute("SELECT o.idx, COUNT(*) FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag = 'knowledge_kind:code' "
                                    "AND o.mode = 'active' GROUP BY o.idx").fetchall())
     for idx, art, n in rows:
         e = per.setdefault(idx, {"index": idx, "objekte": 0, "erfahrungen": 0, "wissen": 0, "code": 0})

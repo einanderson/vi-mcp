@@ -1,7 +1,7 @@
 """Learning — the router learns from the hint lift instead of us setting its weights (docs/TRAINING.md 4a/4b).
 
 Observation = a reported action with label `ok` (0/1); features = triggers of the action (tool, skill, host, thema,
-time of day) × shown hints (`hinweis:<id>`, `hinweisart:<art>`, `hinweis_n`). From this a **logistic regression**
+time of day) × shown hints (`hint:<id>`, `hint_kind:<art>`, `hinweis_n`). From this a **logistic regression**
 learns P(ok | triggers, hint) — the weight per feature is directly readable (sufficient reason). The router then orders
 candidates by expected **lift** = P(ok | triggers, hint) − P(ok | triggers) instead of recency + importance.
 
@@ -49,12 +49,12 @@ UTILITY_SE = 2.0
 #: 0.32.0 (generality problem of reliabilism): "advantage over the base rate" depends on the reference class. The gate must hold for
 #: each of them — the tool alone, and tool plus host — so that no single arbitrary choice decides.
 REFERENCE_CLASSES = ("tool", "tool+host")
-TRIGGER_KINDS = ("tool:", "skill:", "host:", "thema:", "fehler:")  # 0.56.0: fehler: — which solution helps which error
+TRIGGER_KINDS = ("tool:", "skill:", "host:", "topic:", "error:")  # 0.56.0: fehler: — which solution helps which error
 
 
 def action_features(triggers: list[str], ts: str) -> dict:
     m = {t: 1.0 for t in triggers if t.startswith(TRIGGER_KINDS)}
-    m[f"stunde:{ts[11:13]}"] = 1.0
+    m[f"hour:{ts[11:13]}"] = 1.0
     return m
 
 
@@ -70,7 +70,7 @@ def _born(hid: str, cache: dict | None) -> str | None:
 
 
 def hint_features(hid: str, triggers: list[str] | None = None, ts: str | None = None, born: dict | None = None) -> dict:
-    m = {f"hinweis:{hid}": 1.0, f"hinweisart:{hid.split(':')[0]}": 1.0}
+    m = {f"hint:{hid}": 1.0, f"hint_kind:{hid.split(':')[0]}": 1.0}
     # 0.30.0: was the hint new when it was shown (≤ metrics.NEW_DAYS)? Its weight answers the cold-start question directly, and the
     # router can make up for it. Same threshold as the observation point metrics.lift_by_age — one definition of "new".
     if ts and (b := _born(hid, born)):
@@ -81,7 +81,7 @@ def hint_features(hid: str, triggers: list[str] | None = None, ts: str | None = 
     if CONTENT:
         from . import content
         if (c := content.group(hid)) is not None:
-            m[f"inhalt:{c}"] = 1.0
+            m[f"content:{c}"] = 1.0
         if triggers and (n := content.proximity(hid, [r for r in triggers if r.startswith(TRIGGER_KINDS)])) is not None:
             m["naehe"] = n
     return m
@@ -124,7 +124,7 @@ def weighted_observations(since: str | None = None, index: str | None = None, ip
         y, w, _src = scorer.label(d, oid in ok_yes, serial, grades)
         base = action_features(v.get("reize", []), ts)
         shown = [h for h in v.get("gezeigt", v.get("gefunden", [])) if not h.startswith("antwort:")]
-        base[f"hinweis_n:{min(4, len(shown))}"] = 1.0
+        base[f"hint_n:{min(4, len(shown))}"] = 1.0
         offer = v.get("angebot") or {}
         if not shown:
             outputs.append((base, y, oid, w))
@@ -164,18 +164,18 @@ def why(m: g.MemoryObject, hint_id: str, triggers: list[str], ts: str | None = N
     features carry it. Situation features cancel out in the lift; the hint's own features and hinweis_n decide.
     0.30.0: hinweis_n is the same for every candidate — it moves every lift alike and never changes the order. It is reported apart
     ("same_for_all"), and "distinguishing" holds only what sets this hint apart from the other candidates (measured 10.11.2026: a hint
-    with +3 points measured usefulness showed "lift −14", mostly from hinweis_n:1 −0.35, which says nothing about this hint)."""
+    with +3 points measured usefulness showed "lift −14", mostly from hint_n:1 −0.35, which says nothing about this hint)."""
     ts = ts or g.now()
     base = action_features(triggers, ts)
     hint = hint_features(hint_id, triggers, ts)
-    p0 = prediction(m, {**base, "hinweis_n:0": 1.0})
-    p1 = prediction(m, {**base, "hinweis_n:1": 1.0, **hint})
+    p0 = prediction(m, {**base, "hint_n:0": 1.0})
+    p1 = prediction(m, {**base, "hint_n:1": 1.0, **hint})
     w = m.data["gewichte"]
     own = contributions(m, hint)
     return {"p_without": p0, "p_with": p1, "lift": p1 - p0, "intercept": m.data["achsenabschnitt"],
-            "hint": contributions(m, {"hinweis_n:1": 1.0, **hint}), "distinguishing": own,
+            "hint": contributions(m, {"hint_n:1": 1.0, **hint}), "distinguishing": own,
             "distinguishing_sum": sum(c for _, c in own),
-            "same_for_all": w.get("hinweis_n:1", 0.0) - w.get("hinweis_n:0", 0.0),
+            "same_for_all": w.get("hint_n:1", 0.0) - w.get("hint_n:0", 0.0),
             "hint_unknown": [k for k in hint if k not in w], "situation": contributions(m, base)}
 
 
@@ -183,8 +183,8 @@ def ranking(m: g.MemoryObject, triggers: list[str], candidates: list[str], ts: s
     """Candidates by expected lift (descending). Unknown hints have lift 0 (only their kind counts)."""
     ts = ts or g.now()
     base = action_features(triggers, ts)
-    with_hint = {**base, "hinweis_n:1": 1.0}
-    p0 = prediction(m, {**base, "hinweis_n:0": 1.0})
+    with_hint = {**base, "hint_n:1": 1.0}
+    p0 = prediction(m, {**base, "hint_n:0": 1.0})
     born: dict = {}
     return sorted(((h, prediction(m, {**with_hint, **hint_features(h, triggers, ts, born)}) - p0) for h in candidates), key=lambda x: -x[1])
 
@@ -439,7 +439,7 @@ def _ref_rates(train_obs: list) -> dict:
     from . import bandit
     counts: dict[tuple[str, str], list[int]] = {}
     for f, y, _o in train_obs:
-        if "hinweis_n:0" not in f:
+        if "hint_n:0" not in f:
             continue
         key = (next((k[5:] for k in f if k.startswith("tool:")), "?"), next((k for k in f if k.startswith("host:")), "—"))
         c = counts.setdefault(key, [0, 0])
@@ -474,7 +474,7 @@ def utility(weights: dict, intercept: float, holdout: list, train_obs: list | No
     rates = _ref_rates(train_obs or [])
     scored = []  # (lift, y, tool, host)
     for f, y, _o in holdout:
-        if not any(k.startswith("hinweis:") for k in f):
+        if not any(k.startswith("hint:") for k in f):
             continue
         tool = next((k[5:] for k in f if k.startswith("tool:")), "?")
         host = next((k for k in f if k.startswith("host:")), "—")
@@ -500,8 +500,8 @@ def inseparable(obs: list) -> dict:
     shown_in: dict[str, set] = {}
     for f, _y, oid in obs:
         for k in f:
-            if k.startswith("hinweis:"):
-                shown_in.setdefault(k[8:], set()).add(oid)
+            if k.startswith("hint:"):
+                shown_in.setdefault(k.split(":", 1)[1], set()).add(oid)
     groups: dict[frozenset, list[str]] = {}
     for h, oids in shown_in.items():
         if len(oids) >= MIN_PER_FEATURE:
@@ -534,7 +534,7 @@ def _feedbacks() -> list:
 
 def _base(m: dict) -> dict:
     """Only the situation of the action (without hints) — as vi_before knows it before showing anything."""
-    return {**{k: v for k, v in m.items() if k.startswith(TRIGGER_KINDS + ("stunde:",))}, "hinweis_n:0": 1.0}
+    return {**{k: v for k, v in m.items() if k.startswith(TRIGGER_KINDS + ("hour:",))}, "hint_n:0": 1.0}
 
 
 def _per_experience(obs: list) -> list[tuple[dict, int]]:
@@ -802,7 +802,7 @@ def explanation(limit: int = 12) -> str:
     if w:
         z.append("  strongest weights (positive = raises P(ok)):")
         from . import content
-        z += [f"    {k:50} {v:+.3f}" + (f"  ({content.group_name(int(k[7:]))})" if k.startswith("inhalt:") and k[7:].isdigit() else "")
+        z += [f"    {k:50} {v:+.3f}" + (f"  ({content.group_name(int(k[len('content:'):]))})" if k.startswith("content:") and k[len("content:"):].isdigit() else "")
               + ("  (semantic proximity hint ↔ situation, 0–1)" if k == "naehe" else "") for k, v in w]
     w = d.get("warnung") or {}
     z.append("  Warning before risky actions: " + (f"active — threshold P ≤ {w['schwelle']}, in the holdout {w['scheiterten']} of "

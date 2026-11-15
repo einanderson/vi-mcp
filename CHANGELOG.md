@@ -126,7 +126,7 @@ Linked from [README.md](README.md).
 ### What has changed in the stored names (0.67.0: German → English, migrated in place)
 
 The user, 15.11.2026: "die deutschen wörter aus memory müssen auch ins englische übersetzt werden. Ohne das der bestehende datesatz
-unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert werden". Steps 1 and 2 of the migration are done:
+unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert werden". Steps 1, 2 and 3a of the migration are done:
 
 - **Tables, columns and indexes are English.** 37 tables of the memory (`objekt` → `object`, `kante` → `edge`, `netz_stand` →
   `net_state`, …), 8 of a network logbook (`eintrag` → `entry`, `grab` → `tombstone`, …), the archive's two. The columns of `object` are
@@ -142,6 +142,14 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
   and sources, the outcome, empty-search reason, search kind and tool name of the usage statistics (a German alias a client called is
   recorded under the English tool name), the review states of wiki revisions and forum posts, the areas of the self model (also as keys
   in its data). Same migration, same backup, counts per column.
+- **Step 3a: hashtag kinds are English.** `thema:` → `topic:`, `fehler:` → `error:`, `art:` → `kind:`, `modus:` → `mode:`,
+  `herkunft:` → `origin:`, `art_wissen:` → `knowledge_kind:`, … (88 kinds, `vi_mcp/names.py` `TAG_KINDS`; `fehler:`/`error:` and
+  `muster:`/`pattern:` become one kind each). Also the hashtags an object keeps in its data: the triggers of skills, questions and
+  experiences, a saved search's filter, the kinds of `derived_triggers`; the content centres and index tags. A German kind that still
+  comes in (tool input, search filter, `MemoryObject.tag`, a logic program's `O.thema`, a model's reflection, an import) is read as the
+  English one. The values of hashtags other than `kind:`/`mode:` (`state:offen`, `ok:ja`, …) follow in step 3b.
+- **Reserved and location hashtags are refused in both languages.** The fixed import rules knew only the German forms: a peer could have
+  set `net:firma`, `mode:active` or `location:MUC-1`, or a search filter `mode:archived`. Now both forms are reserved or refused (test).
 - **Older clients keep working.** German values are read as English where they come in: tool arguments (`visibility: "geteilt"`),
   `new_object`, search filters (`art:erkenntnis` finds the insights), logic programs (`O.kind == "erkenntnis"` means the same objects;
   `clingo_object.notation.FIELD_VALUE_ALIASES`, filled by the server so `clingo_object` still never imports `vi_mcp`).
@@ -160,6 +168,10 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
     visibilities, 46,423 hashtag values, 2,505 tool names, 1,505 search kinds, 33 empty reasons, 12 outcomes, 10 + 2 search kinds of
     judgments and logs, 7 + 2 self-model areas, 5 + 5 index kinds and sources; afterwards no German enum value or `art:`/`modus:` value
     (test helper over every column), the old filter `art:erkenntnis` and the new `art:insight` find the same objects; second start 0.18 s.
+  - Step 3a on a fresh copy: all steps in 10.9 s with the backup; 233,117 hashtag kinds, 27,606 objects with hashtags in data, 314
+    content centres rewritten; 338,945 hashtag rows before and after (no loss where two kinds joined); no German kind left; `thema:backup`
+    and `topic:backup` find the same 15 objects; second start 0.21 s. Full suite 1136 passed / 8 skipped on SQLite, 1138 / 7 on
+    PostgreSQL 16; code-check ok.
   - Step 2: full suite 1133 passed on SQLite, the 3 failing tests (expecting German values) corrected and rerun green; PostgreSQL 16
     1137 passed / 7 skipped; code-check ok.
   - Full suite 1134 passed / 8 skipped on SQLite; code-check ok. On PostgreSQL 16: 1132 passed, 3 failed, all in `tests/test_db.py`
@@ -227,9 +239,11 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
 
 ### What is missing
 
-- **Steps 3–4 of the English names are not done yet:** hashtag kinds and the system values of other hashtags (`thema:`, `art:`,
-  `modus:`, `ok:ja`, `zustand:offen`, …) and the keys inside `object.data` (`quelle`, `inhalt`, …) are still German in the database.
-  They follow in the same migration, with the same backup and counts.
+- **Steps 3b and 4 of the English names are not done yet:** the system values of hashtags other than `kind:`/`mode:` (`state:offen`,
+  `ok:ja`, `origin:schlaf`, …) together with the same values in object data, and the keys inside `object.data` (`quelle`, `inhalt`, …)
+  are still German in the database. They follow in the same migration, with the same backup and counts.
+- The router model stores its weights by feature name; the features are hashtags (`hint:<id>`, `hour:HH`, `error:…`). A model trained
+  before the migration carries the German names until it is trained again (on demand, about a minute after new experiences).
 - **Object ids keep their German prefix** (`erkenntnis:…`, `gespraech:<serial>`) — a decision, not an oversight: renaming ids would break
   every reference to them. If ids are to be migrated too, that is a step of its own (every column and data field that holds an id).
 - The change log of an object (`changes`: who, what, why) keeps its entries as written; a mode named in an old entry stays German there.

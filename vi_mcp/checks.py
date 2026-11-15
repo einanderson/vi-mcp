@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 
 from . import anonymize
-from . import memory as g
+from . import memory as g, names
 
 KINDS_IMPORT = ("erkenntnis", "regel", "suche", "skill", "reflex")
 TEXT_MIN, TEXT_MAX = 10, 1000
@@ -28,8 +28,11 @@ FIELDS = {
 }
 _HEX32 = re.compile(r"^[0-9a-f]{32}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
-#: netz: (0.39.0) names the network an import came from — set by the memory, never by a publisher
-FIXED_HASHTAGS = g.ADMIN_PREFIXES + ("herausgeber:", "pruefer:", "sicht:", "netz:")
+#: netz: (0.39.0) names the network an import came from — set by the memory, never by a publisher. In the wire form of 0.66 (German
+#: kinds): checks.py judges what goes onto and comes from the network. LOCAL_FIXED is the same set for objects in this memory (0.67.0).
+LOCAL_FIXED = g.ADMIN_PREFIXES + ("publisher:", "reviewer:", "visibility:", "net:")
+#: what is reserved on the way in and out, in both languages: a peer may not set a reserved hashtag in its English form either
+FIXED_HASHTAGS = tuple(dict.fromkeys([names.wire_kind(p) for p in LOCAL_FIXED] + list(LOCAL_FIXED)))
 
 _INSTRUCTION = [
     ("direktive", re.compile(r"ignor\w*\s+(alle\w*\s+|all\s+|die\s+|the\s+)*(vorherig\w*|bisherig\w*|previous|prior)|du bist (jetzt|ab sofort)|you are now|"
@@ -286,7 +289,7 @@ def check(raw, may_reflex: bool = False, internal_ok: bool = False) -> Finding:
         f = o.get("filter")
         if not isinstance(f, str) or not f.strip() or len(f) > 300:
             return b.reject("filter missing or too long")
-        if re.search(r"modus:|sicht:|instanz:", f):
+        if re.search(r"modus:|sicht:|instanz:|mode:|visibility:|instance:", f):  # 0.67.0: in either language
             return b.reject("filter must not address modus:, sicht: or instanz:")
         _check_text(b, "filter", f)
     if kind == "skill":

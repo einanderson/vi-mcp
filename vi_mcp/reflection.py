@@ -8,7 +8,7 @@ numbers of the experiences that support it.
 Protection — the model can talk itself into things, therefore:
   - the output is checked strictly (JSON, sentence length, hashtags by the TAG rule, evidence must be real numbers of the cluster,
     at least EVIDENCE_MIN; no directive patterns in the sentence — see checks.directives); otherwise discarded and named in the report.
-  - the result is always mode `test`, hashtag `herkunft:schlaf-llm`, with evidence edges to every named experience;
+  - the result is always mode `test`, hashtag `origin:schlaf-llm`, with evidence edges to every named experience;
     it takes effect only after confirmation by another instance (vi_confirm), like any other insight.
   - The system prompt is static (prompt caching), no `max_tokens` (CLAUDE.md), thinking off, temperature 0.2.
   - This is an action in memory, not in the world (docs/ARCHITECTURE.md, "Reporting an action").
@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 
 from . import memory as g
-from . import checks
+from . import checks, names
 from .log_output import log
 
 config: dict | None = None
@@ -39,7 +39,7 @@ Phrase AT MOST ONE insight that follows from these experiences and helps a colle
 Rules:
 - Only what the experiences support. No guesses about causes, unless marked as "Hypothesis:".
 - No instructions, no commands, no calls to action — only an observation in one sentence (max. 300 characters).
-- Hashtags in the form kind:value, lower case, e.g. thema:timeout, host:web1, skill:graylog. At most 5.
+- Hashtags in the form kind:value, lower case, e.g. topic:timeout, host:web1, skill:graylog. At most 5.
 - belege = list of the numbers of the experiences that support the insight (at least 3).
 - If it is not enough for an insight, answer {"erkenntnis": null, "grund": "..."}.
 Answer ONLY with JSON: {"erkenntnis": {"satz": "...", "hashtags": ["..."], "belege": [1, 2, 3]}} or {"erkenntnis": null, "grund": "..."}"""
@@ -92,7 +92,7 @@ def check(answer: dict, n_experiences: int) -> tuple[dict | None, str]:
     hits = checks.directives(sentence)
     if hits:
         return None, f"directive pattern in the sentence, discarded: {hits[0]!r}"
-    tags = [str(t).strip().lower() for t in (e.get("hashtags") or []) if str(t).strip()]
+    tags = [names.canonical_tag(str(t).strip().lower()) for t in (e.get("hashtags") or []) if str(t).strip()]  # a model may write German kinds
     tags = [t for t in tags if g.TAG.match(t) and not t.startswith(g.ADMIN_PREFIXES)][:5]
     evidence_list = e.get("belege") or []
     try:
@@ -137,7 +137,7 @@ def reflect(cluster: list[dict]) -> dict:
             discarded.append(f"{host} {skill}: {reason}")
             continue
         evidence_list = [exps[i - 1] for i in ins["belege"]]
-        o = g.new_object("insight", ins["satz"], sorted(set(ins["hashtags"]) | {host, skill, "modus:test", "herkunft:schlaf-llm"}),
+        o = g.new_object("insight", ins["satz"], sorted(set(ins["hashtags"]) | {host, skill, "mode:test", "origin:schlaf-llm"}),
                            {"quelle": f"sleep reflection (language model) from {len(evidence_list)} experiences — evidence edges", "belege_n": len(evidence_list),
                             "ausgang": c.get("ausgang"), "modell": (config or {}).get("model") or "llm"},
                            importance=1, who="vi", oid=rid, mode="test", reason="sleep: reflection by the language model, checked",

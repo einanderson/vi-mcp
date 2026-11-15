@@ -51,8 +51,8 @@ def test_vectors_in_sleep_and_proximity_edges(fake):
     s7b = report.data["schritte"]["7b_naehe"]
     assert s7b["kanten_neu"] == 1 and s7b["dubletten_moeglich"] == 1
     assert any("semantisch ähnlich" in gr for _, gr in g.load(a.id).edges())
-    assert "dublette:moeglich" in g.load(a.id).hashtags and "dublette:moeglich" in g.load(b.id).hashtags
-    assert "dublette:moeglich" not in g.load(c.id).hashtags
+    assert "duplicate:moeglich" in g.load(a.id).hashtags and "duplicate:moeglich" in g.load(b.id).hashtags
+    assert "duplicate:moeglich" not in g.load(c.id).hashtags
     assert sleep_cycle.run("Test 2").data["schritte"]["7_vektoren"]["neu"] == 0  # idempotent
 
 
@@ -74,7 +74,7 @@ def test_catch_up_names_the_real_remainder(gd, monkeypatch):
     monkeypatch.setattr(vector, "embed_fn", lambda texts: [[1.0, 0.0] for _ in texts])
     monkeypatch.setattr(vector, "BATCH", 2)
     for i in range(5):
-        g.new_object("insight", f"Wissen Nummer {i} zum Einbetten", ["thema:a"], {"quelle": "x"}, reason="T")
+        g.new_object("insight", f"Wissen Nummer {i} zum Einbetten", ["topic:a"], {"quelle": "x"}, reason="T")
     r = vector.catch_up(max_s=0)  # time already up: nothing embedded, everything pending
     assert r == {"zustand": "fertig", "neu": 0, "offen": 5, "pause_s": 0.0}
     r = vector.catch_up()
@@ -83,7 +83,7 @@ def test_catch_up_names_the_real_remainder(gd, monkeypatch):
 
 def test_semantic_search_checks_all_vectors_not_only_newest(fake):
     """0.19.2: candidates were the 200 most recently used objects — older docs were never compared (measured against the AIKB)."""
-    old = g.new_object("insight", "Proxy-Doku: Verbindung über den Proxy", ["doku:x"], {"quelle": "alt"}, reason="T")
+    old = g.new_object("insight", "Proxy-Doku: Verbindung über den Proxy", ["docs:x"], {"quelle": "alt"}, reason="T")
     g.db().execute("UPDATE object SET last_at = '2020-01-01T00:00:00+00:00', ts = '2020-01-01T00:00:00+00:00' WHERE id = ?", (old.id,))
     for i in range(260):
         g.new_object("insight", f"Disk voll auf web{i}", [f"host:web{i}"], {"quelle": "neu"}, reason="T")
@@ -106,7 +106,7 @@ def test_hybrid_search_finds_fresh_learning_without_vector(fake):
     for i in range(30):
         g.new_object("insight", f"Disk voll auf web{i}", [f"host:web{i}"], {"quelle": "alt"}, reason="T")
     vector.catch_up(max_s=600)
-    new = g.new_object("insight", "ipa-client-install scheitert mit TypeError IPACertificate, Ursache pip-cryptography", ["thema:ipa-client-install"],
+    new = g.new_object("insight", "ipa-client-install scheitert mit TypeError IPACertificate, Ursache pip-cryptography", ["topic:ipa-client-install"],
                          {"quelle": "neu"}, reason="T")
     r = tools.call_tool("vi_erinnere", {"filter": "ipa-client-install TypeError IPACertificate", "semantisch": True, "limit": 3}, "a", True)
     assert new.id in r and "via full text only" in r, r

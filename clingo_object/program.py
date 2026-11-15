@@ -2,7 +2,7 @@
 VI server — the same text either way, so both give the same answers.
 
     prog = Program(Knowledge, Insight, Skill)
-    prog.add(rel.review(O) <= O.where("thema:oo") & O.stale())
+    prog.add(rel.review(O) <= O.where("topic:oo") & O.stale())
     prog.notation()                  the program as text (what the server runs)
     prog.check(memory)               solved here: the objects of its filters come from memory.objects(filters)
     prog.ask(memory, ["review(\\"skill:x\\")"])

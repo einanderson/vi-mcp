@@ -1,7 +1,7 @@
 """Skills — solution paths that arise when something counts as solved (stage 6; procedural memory, docs/FORSCHUNG.md A3).
 
 A skill is a shared object `skill:<name>`:
-  Problem    triggers (tool:, skill:, host:, thema:, fehler:) at which it appears before an action
+  Problem    triggers (tool:, skill:, host:, thema:, error:) at which it appears before an action
   Solution   steps (tool sequence) + one sentence of instructions — at first text shown to the conscious session;
              a skill becomes executable only via the reviewed reflex path (code in memory), never by itself
   Versions   every evolution with time, author, reason, evidence (complete in daten.versionen)
@@ -9,7 +9,7 @@ A skill is a shared object `skill:<name>`:
 Origin:
   vi_solved      an instance reports: problem X was solved like this (steps, reason, evidence)
   sleep 4c        automatically: an action succeeded after errors of the same tool in the same conversation
-                  (`ueberraschung:erholt`) — the tool sequence from the first error to the success is the solution path
+                  (`surprise:erholt`) — the tool sequence from the first error to the success is the solution path
 Merging:
   vi_skill_merge(a, b, reason) new skill from both (triggers united, steps in sequence, evidence united);
                   a and b get mode `aufgegangen` with a reference — they do not vanish, they are merged.
@@ -82,7 +82,7 @@ def new(name: str, triggers: list[str], steps, instructions: str, reason: str, e
     old = g.load(oid)
     if old and old.kind == "skill":
         return evolve(old, st, instructions, reason, evidence_list, instance, who, triggers=rz)
-    o = g.new_object("skill", instructions.strip()[:600], rz + [f"skill:{n}", "modus:test"],
+    o = g.new_object("skill", instructions.strip()[:600], rz + [f"skill:{n}", "mode:test"],
                        {"name": n, "problem": {"reize": rz}, "loesung": {"schritte": st, "text": instructions.strip()[:600]}, **_content(instructions),
                         "version": 1, "versionen": [{"version": 1, "zeit": g.now(), "wer": who or f"ki@{instance}", "grund": reason.strip()[:300],
                                                      "belege": list(evidence_list or [])[:50]}],
@@ -157,13 +157,13 @@ def fusion(a_id: str, b_id: str, name: str, reason: str, instance: str) -> g.Mem
     new_o = new(name, triggers, steps, instructions, f"merge of {a.id} and {b.id}: {reason}", evidence_list, instance,
                 source=f"merge {a.id} + {b.id}")
     new_o.data["fusion_aus"] = [a.id, b.id]
-    if "herkunft:p2p" in a.hashtags or "herkunft:p2p" in b.hashtags:  # the origin survives the merge
-        new_o.hashtags = sorted(set(new_o.hashtags) | {"herkunft:p2p"})
+    if "origin:p2p" in a.hashtags or "origin:p2p" in b.hashtags:  # the origin survives the merge
+        new_o.hashtags = sorted(set(new_o.hashtags) | {"origin:p2p"})
     g.save(new_o)
     for x in (a, b):
         x.mode = "merged"
         x.data["aufgegangen_in"] = new_o.id
-        x.hashtags = [t for t in x.hashtags if not t.startswith(("modus:", "fusion:"))] + ["modus:merged"]
+        x.hashtags = [t for t in x.hashtags if not t.startswith(("mode:", "fusion:"))] + ["mode:merged"]
         x.change(f"ki@{instance}", f"merged into {new_o.id}", reason)
         g.save(x)
         new_o.link(x.id, "merged from")
@@ -185,7 +185,7 @@ def from_recovery(since: str) -> dict:
     damaged: set[str] = set()
     with g.lock:
         recovered = g.db().execute(
-            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'ueberraschung:erholt' "
+            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'surprise:erholt' "
             "WHERE o.kind = 'experience' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     for (eid,) in recovered:
         e = g.load(eid)
@@ -204,8 +204,8 @@ def from_recovery(since: str) -> dict:
             t = next((tg[5:] for tg in x.hashtags if tg.startswith("tool:")), None)
             if t and (not steps or steps[-1] != t):
                 steps.append(t)
-        sig = next((tg for tg in episode[error_idx[0]].hashtags if tg.startswith("fehler:")), None)
-        triggers = sorted({tg for x in remove for tg in x.hashtags if tg.startswith(("host:", "thema:"))} | {f"tool:{tool}", f"skill:{tool.split('_')[0]}"} | ({sig} if sig else set()))
+        sig = next((tg for tg in episode[error_idx[0]].hashtags if tg.startswith("error:")), None)
+        triggers = sorted({tg for x in remove for tg in x.hashtags if tg.startswith(("host:", "topic:"))} | {f"tool:{tool}", f"skill:{tool.split('_')[0]}"} | ({sig} if sig else set()))
         if not _has_content(tool, steps):
             continue  # "Bash failed and then succeeded" without another step is not knowledge, just the normal case
         name = f"auto-{g.hash_value(tool, sig or '', 'erholung')[:12]}"
@@ -245,17 +245,17 @@ def rate() -> dict:
     (0.67.0: the server withdraws its own skill; widerlegt is reserved for two independent foreign families)."""
     from . import bandit
     disputed = 0
-    for _, o, _g in g.recall("art:skill (modus:test OR modus:active OR modus:disputed)", limit=500, viewer=None):
+    for _, o, _g in g.recall("kind:skill (mode:test OR mode:active OR mode:disputed)", limit=500, viewer=None):
         if content_empty(o):
             o.mode = "withdrawn"
-            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:withdrawn"]
+            o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:withdrawn"]
             o.change("vi", "withdrawn", "sleep: solution path consists only of general tools; \"helped\" only counted that the tool usually succeeds anyway")
             g.save(o)
-    for _, o, _g in g.recall("art:skill (modus:test OR modus:active)", limit=500, viewer=None):
+    for _, o, _g in g.recall("kind:skill (mode:test OR mode:active)", limit=500, viewer=None):
         yes, no = bandit.counter(o)
         if bandit.shown(o) >= BAD_FROM and bandit.expectation(o) < BAD_RATIO and o.mode != "disputed":
             o.mode = "disputed"
-            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:disputed"]
+            o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:disputed"]
             o.change("vi", "disputed", f"sleep: helped {yes}, did not help {no} — check or refute the solution path")
             g.save(o)
             disputed += 1
@@ -264,13 +264,13 @@ def rate() -> dict:
 
 def fusion_proposals() -> dict:
     """Same problem key (tool + error signature) for two skills → fusion:vorschlag + edge. An instance decides."""
-    skills = [o for _, o, _g in g.recall("art:skill !modus:merged", limit=500, viewer=None)]
+    skills = [o for _, o, _g in g.recall("kind:skill !mode:merged", limit=500, viewer=None)]
     by_key: dict[tuple, list[g.MemoryObject]] = {}
     for o in skills:
         if not usable(o):
             continue
         tools = tuple(sorted(t for t in o.data["problem"]["reize"] if t.startswith("tool:")))
-        error = tuple(sorted(t for t in o.data["problem"]["reize"] if t.startswith("fehler:")))
+        error = tuple(sorted(t for t in o.data["problem"]["reize"] if t.startswith("error:")))
         if tools:
             by_key.setdefault((tools, error), []).append(o)
     n = 0

@@ -64,7 +64,7 @@ def load_all() -> dict[str, dict]:
     """Register all reflexes in mode aktiv/test. The TOOL schema of a tool reflex is determined in the sandbox
     — no code runs in the server."""
     new: dict[str, dict] = {}
-    for _, o, _g in g.recall("(modus:active OR modus:test)", limit=500, kinds=("reflex",)):
+    for _, o, _g in g.recall("(mode:active OR mode:test)", limit=500, kinds=("reflex",)):
         if o.mode not in ("active", "test"):
             continue
         schema = None
@@ -102,7 +102,7 @@ def run(r: dict, *args) -> dict:
         o.data["letzter_fehler"] = res["fehler"][:300]
         if o.data["fehler"] >= REFLEX_ERRORS_MIN:
             o.mode = r["modus"] = "broken"
-            o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:broken"]
+            o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:broken"]
             o.change("vi", "defective", f"{o.data['fehler']} errors: {res['fehler'][:120]}")
             log(f"reflex {r['name']} defective: {res['fehler']}")
             with _lock:
@@ -135,7 +135,7 @@ def before(tool: str, args: dict) -> tuple[dict, list[str]]:
         w = res.get("wert")
         if not isinstance(w, dict):
             continue
-        foreign = "herkunft:p2p" in r["objekt"].hashtags
+        foreign = "origin:p2p" in r["objekt"].hashtags
         if w.get("hinweis"):
             if foreign and checks.directives(str(w["hinweis"])):  # imported code must not emit instructions at runtime
                 hints.append(f"Reflex {r['name']}: hint contained an instruction pattern and was discarded")

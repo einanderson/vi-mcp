@@ -175,11 +175,11 @@ def line() -> str:
 
 
 def concept_tags(stored_regions: list[dict]) -> list[str]:
-    """zeigt:<concept> per distinct concept (lower case, blanks and brackets → "-"), so vi_recall zeigt:stecker finds the images showing it."""
+    """shows:<concept> per distinct concept (lower case, blanks and brackets → "-"), so vi_recall shows:stecker finds the images showing it."""
     seen = []
     for r in stored_regions:
         value = re.sub(r"[\s()]+", "-", r["begriff"].strip().lower()).strip("-")  # a hashtag value has no blanks or brackets (memory.TAG)
-        t = "zeigt:" + value
+        t = "shows:" + value
         if value and t not in seen:
             seen.append(t)
     return seen

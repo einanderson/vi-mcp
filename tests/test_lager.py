@@ -36,12 +36,12 @@ def test_old_experience_archived_with_stub(gd):
     b = sleep_cycle.run("Test").data["schritte"]["5_lager"]
     assert b["eingelagert"] == 1 and b["je_art"] == {"experience": 1}
     s = g.load(old)
-    assert s.mode == "archived" and "modus:archived" in s.hashtags and s.data["lager"] and "args" not in s.data
+    assert s.mode == "archived" and "mode:archived" in s.hashtags and s.data["lager"] and "args" not in s.data
     assert g.load(young).mode == "active"
     if g.backend() == "sqlite":  # PostgreSQL: the archive is a schema, no file
         assert stat.S_IMODE(os.stat(g.archive_path).st_mode) == 0o600 and g.archive_path != gd
     assert not [o for _, o, _g in g.recall("host:h1", viewer=None)]  # not in the foreground
-    assert [o.id for _, o, _g in g.recall("host:h1 modus:archived", viewer=None)] == [old]  # but findable
+    assert [o.id for _, o, _g in g.recall("host:h1 mode:archived", viewer=None)] == [old]  # but findable
     assert archive.content(old)["daten"]["args"]["host"] == "h1"
     assert sleep_cycle.run("Test 2").data["schritte"]["5_lager"]["eingelagert"] == 0  # idempotent
 
@@ -72,7 +72,7 @@ def test_knowledge_only_after_long_disuse(gd):
 
 def test_never_automatic(gd):
     ids = []
-    for kind, tags in (("reflex", ["reflex:r"]), ("frage", ["an:b"]), ("modell", ["modell:m"])):
+    for kind, tags in (("reflex", ["reflex:r"]), ("frage", ["to:b"]), ("modell", ["modell:m"])):
         d = {"name": "r", "art": "nachher", "code": "def run(t, a, e):\n    return None"} if kind == "reflex" else {"von": "a", "an": "b", "zustand": "offen", "zugestellt_an": [], "antworten": []}
         o = g.new_object(kind, "bleibt im aktiven Speicher", tags, d, reason="T")
         _age(o.id, 2000)
@@ -92,7 +92,7 @@ def test_before_names_archived_and_retrieval(gd):
         tools.call_tool("vi_lager_hole", {"id": k.id, "grund": ""}, "a", True)
     assert "back in active memory" in tools.call_tool("vi_lager_hole", {"id": k.id, "grund": "wird wieder gebraucht"}, "b", True)
     o = g.load(k.id)
-    assert o.mode == "active" and o.text == "cue9 braucht beim Neustart den Proxy" and o.data == bandit_before and "modus:archived" not in o.hashtags
+    assert o.mode == "active" and o.text == "cue9 braucht beim Neustart den Proxy" and o.data == bandit_before and "mode:archived" not in o.hashtags
     assert archive.content(k.id) is None
     assert any("Proxy" in x for x in intuition.before("Bash", {"host": "cue9"}, "b", False)["hinweise"])
     with pytest.raises(tools.Rejected, match="not in the long-term archive"):
@@ -132,7 +132,7 @@ def test_open_conversation_stays(gd):
 
 
 def test_condense_and_status(gd):
-    ids = [_knowledge("x" * 5000 + str(i), [f"thema:t{i}"]).id for i in range(40)]
+    ids = [_knowledge("x" * 5000 + str(i), [f"topic:t{i}"]).id for i in range(40)]
     for i in ids:
         _age(i, archive.DAYS["insight"] + 1)
     r = archive.cleanup()
@@ -142,7 +142,7 @@ def test_condense_and_status(gd):
 
 
 def test_crash_between_files_loses_nothing(gd):
-    k = _knowledge("überlebt den Absturz", ["thema:a"])
+    k = _knowledge("überlebt den Absturz", ["topic:a"])
     with g.lock:
         archive.db().execute("INSERT INTO object (id, kind, instance, visibility, archived, mode_before, reason, raw) VALUES (?,?,?,?,?,?,?,?)",
                            (k.id, k.kind, k.instance, k.visibility, g.now(), "aktiv", "Absturztest", zlib.compress(json.dumps({"text": "alt", "daten": {}, "hashtags": []}).encode())))

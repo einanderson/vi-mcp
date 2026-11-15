@@ -17,30 +17,30 @@ def test_parse_filter():
 
 @sqlite_only
 def test_file_only_for_owner(gd):
-    g.new_object("insight", "irgendein Text", ["thema:x"], reason="Test")
+    g.new_object("insight", "irgendein Text", ["topic:x"], reason="Test")
     for f in (gd, gd.with_name("vi.db-wal")):
         assert stat.S_IMODE(os.stat(f).st_mode) == 0o600, f
 
 
 def test_object_reason_required_and_history(gd):
-    o = g.new_object("insight", "Timeout bei host a", ["host:a", "thema:timeout"], reason="Test")
+    o = g.new_object("insight", "Timeout bei host a", ["host:a", "topic:timeout"], reason="Test")
     with pytest.raises(ValueError):
         o.confirm("ki", "")
     o.confirm("ki", "zweimal gesehen")
     o2 = g.load(o.id)
     assert o2.confirmed == 1 and o2.changes[-1]["grund"] == "zweimal gesehen"
     with pytest.raises(ValueError):
-        o2.tag(["art:x"], [], "ki", "fest")
+        o2.tag(["kind:x"], [], "ki", "fest")
 
 
 def test_recall_filter_fulltext_and_link(gd):
-    a = g.new_object("insight", "Disk voll auf web1", ["host:web1", "thema:disk"], reason="T")
-    b = g.new_object("insight", "Disk langsam auf web1", ["host:web1", "thema:disk"], reason="T")
-    g.new_object("insight", "Timeout auf db1", ["host:db1", "thema:timeout"], reason="T")
+    a = g.new_object("insight", "Disk voll auf web1", ["host:web1", "topic:disk"], reason="T")
+    b = g.new_object("insight", "Disk langsam auf web1", ["host:web1", "topic:disk"], reason="T")
+    g.new_object("insight", "Timeout auf db1", ["host:db1", "topic:timeout"], reason="T")
     ids = [o.id for _, o, _g in g.recall("host:web1")]
     assert set(ids) == {a.id, b.id}
-    assert [o.id for _, o, _g in g.recall("(host:web1 OR host:db1) !thema:disk")][0].startswith("erkenntnis:")
-    assert len(g.recall("(host:web1 OR host:db1) !thema:disk")) == 1
+    assert [o.id for _, o, _g in g.recall("(host:web1 OR host:db1) !topic:disk")][0].startswith("erkenntnis:")
+    assert len(g.recall("(host:web1 OR host:db1) !topic:disk")) == 1
     assert [o.id for _, o, _g in g.recall("langsam")] == [b.id]
     assert (a.id, "2 shared hashtags") in b.edges()
     b.refute("ki", "falsch")
@@ -49,15 +49,15 @@ def test_recall_filter_fulltext_and_link(gd):
 
 def test_drilldown_funnel(gd):
     for i in range(3):
-        g.new_object("insight", f"Fall {i}", ["host:web1", "thema:disk", f"nr:{i}"], reason="T")
-    g.new_object("insight", "anderes", ["host:web1", "thema:netz"], reason="T")
+        g.new_object("insight", f"Fall {i}", ["host:web1", "topic:disk", f"nr:{i}"], reason="T")
+    g.new_object("insight", "anderes", ["host:web1", "topic:netz"], reason="T")
     levels = g.drilldown("host:web1")
-    assert levels[0]["naechster"] == "thema:disk"
-    assert levels[1]["filter"] == "host:web1 thema:disk" and levels[1]["gesamt"] == 3
+    assert levels[0]["naechster"] == "topic:disk"
+    assert levels[1]["filter"] == "host:web1 topic:disk" and levels[1]["gesamt"] == 3
 
 
 def test_access_counts_relatively(gd):
-    o = g.new_object("insight", "x y z", ["thema:x"], reason="T")
+    o = g.new_object("insight", "x y z", ["topic:x"], reason="T")
     backup_copy = g.load(o.id)
     o.access()
     backup_copy.access()  # a stale state in memory must not reset the counter
@@ -93,12 +93,12 @@ def test_session_conversation_and_persist(gd):
     with session.on_behalf(s):
         v = intuition.before("netbox_get_devices", {"host": "Web1"})
         intuition.after("netbox_get_devices", v["args"], True, 12, None, "[1,2]", v["vorher_id"])
-        o = g.new_object("insight", "im Gespräch gelernt", ["thema:x"], reason="T")
+        o = g.new_object("insight", "im Gespräch gelernt", ["topic:x"], reason="T")
     assert o.conversation == s.serial
     assert session.finish(s.id)
     gs = g.load(f"gespraech:{s.serial}")
     assert gs.data["aufrufe"] == 1 and gs.data["zustand"] == "beendet"
-    assert {"tool:netbox_get_devices", "host:web1", "instanz:test", "zustand:beendet", "ok:ja"} <= set(gs.hashtags)
+    assert {"tool:netbox_get_devices", "host:web1", "instance:test", "state:beendet", "ok:ja"} <= set(gs.hashtags)
     assert session.find(s.id) is None
 
 
@@ -134,7 +134,7 @@ def test_reflex_checks():
 
 
 def test_reflex_defective_after_three_errors(gd):
-    g.new_object("reflex", "wirft immer", ["reflex:kaputt", "reflexart:nachher", "modus:test"],
+    g.new_object("reflex", "wirft immer", ["reflex:kaputt", "reflex_kind:nachher", "mode:test"],
                    {"name": "kaputt", "art": "nachher", "code": "def run(t, a, e):\n    raise ValueError('x')"},
                    oid="reflex:kaputt", mode="test", reason="T")
     reflexes.load_all()
@@ -152,7 +152,7 @@ def test_loop_error_becomes_rule_and_hint(gd):
         intuition.after("graylog_search", {"q": i}, False, 30000, f"TimeoutError: read timed out after {30 + i} s", None, v["vorher_id"])
     assert main_loop.step() == 1
     assert main_loop.step() == 0  # idempotent: the same rule not twice
-    rule = [o for _, o, _g in g.recall("art:rule regelart:wiederholter-fehler")][0]
+    rule = [o for _, o, _g in g.recall("kind:rule rule_kind:wiederholter-fehler")][0]
     assert rule.mode == "test" and rule.data["treffer"] == 3 and rule.conversation is None
     v = intuition.before("graylog_search", {"q": "neu"})
     assert any(h.startswith("Rule [") and "failed 3×" in h for h in v["hinweise"])
@@ -178,7 +178,7 @@ def test_create_instance_keeps_permissions(tmp_path):
 
 
 def test_too_large_data_stays_readable(gd):
-    o = g.new_object("insight", "viel Inhalt hier", ["thema:gross"], {"blob": "x" * (g.DATA_MAX + 10)}, reason="T")
+    o = g.new_object("insight", "viel Inhalt hier", ["topic:gross"], {"blob": "x" * (g.DATA_MAX + 10)}, reason="T")
     d = g.load(o.id).data
     assert d["gekuerzt_zeichen"] > g.DATA_MAX and "blob" not in d
 
@@ -187,9 +187,9 @@ def test_complete_knowledge_is_preserved(gd):
     """Code and API tables belong in the memory: nothing is shortened, everything is found and read back."""
     from vi_mcp import tools
     table = "| GET | /api/hosts | Liste |\n" * 2000 + "\ndef baue_abfrage(token = lese_token()):\n    return Zaunkoenig(token)\n"
-    r = tools.call_tool("vi_lerne", {"text": "Die Hosts-API liefert Listen", "inhalt": table, "hashtags": ["thema:api"], "quelle": "Handbuch Kapitel 3"}, "a", False)
+    r = tools.call_tool("vi_lerne", {"text": "Die Hosts-API liefert Listen", "inhalt": table, "hashtags": ["topic:api"], "quelle": "Handbuch Kapitel 3"}, "a", False)
     oid = next(w.strip("[]") for w in r.split() if w.startswith(("[erkenntnis:", "erkenntnis:")))
-    full = next(o for _, o, _g in g.recall("thema:api", viewer=None))
+    full = next(o for _, o, _g in g.recall("topic:api", viewer=None))
     assert full.data["inhalt"] == table.strip() and len(full.text) < 100
     assert full.id.startswith(oid[:20])
     assert table.strip() in tools.call_tool("vi_objekt", {"id": full.id}, "a", False)
@@ -199,15 +199,15 @@ def test_complete_knowledge_is_preserved(gd):
 def test_too_long_text_is_not_cut_off(gd):
     from vi_mcp import tools
     long = "Satz über die API. " * 200
-    tools.call_tool("vi_lerne", {"text": long, "hashtags": ["thema:lang"], "quelle": "Handbuch Kapitel 3"}, "a", False)
-    o = next(o for _, o, _g in g.recall("thema:lang", viewer=None))
+    tools.call_tool("vi_lerne", {"text": long, "hashtags": ["topic:lang"], "quelle": "Handbuch Kapitel 3"}, "a", False)
+    o = next(o for _, o, _g in g.recall("topic:lang", viewer=None))
     assert o.data["inhalt"] == long.strip() and len(o.text) == tools.TEXT_MAX
 
 
 def test_too_large_content_rejected_with_reason(gd):
     from vi_mcp import tools
     with pytest.raises(tools.Rejected, match="split it"):
-        tools.call_tool("vi_lerne", {"text": "Eine Kernaussage hier", "inhalt": "x" * (g.CONTENT_MAX + 1), "hashtags": ["thema:a"], "quelle": "Handbuch Kapitel 3"}, "a", False)
+        tools.call_tool("vi_lerne", {"text": "Eine Kernaussage hier", "inhalt": "x" * (g.CONTENT_MAX + 1), "hashtags": ["topic:a"], "quelle": "Handbuch Kapitel 3"}, "a", False)
 
 
 def test_skill_instructions_stay_complete(gd):
@@ -218,30 +218,30 @@ def test_skill_instructions_stay_complete(gd):
 
 
 @pytest.mark.parametrize("cli_command,expected", [
-    ("vzdump 101 --mode snapshot", {"skill:proxmox", "thema:vzdump"}),
-    ("ssh root@pve1.example 'qm list && pct list'", {"thema:ssh", "skill:proxmox", "thema:qm", "thema:pct", "host:pve1.example"}),
+    ("vzdump 101 --mode snapshot", {"skill:proxmox", "topic:vzdump"}),
+    ("ssh root@pve1.example 'qm list && pct list'", {"topic:ssh", "skill:proxmox", "topic:qm", "topic:pct", "host:pve1.example"}),
     # 0.19.4: every domain command becomes thema:, everyday shell commands do not; quoted arguments are not commands
-    ("sudo ipa-client-install --domain example.org", {"thema:ipa-client-install"}),
-    ("ssh gpu1.example 'llama-server -m m.gguf --load-mode mlock'", {"thema:ssh", "thema:llama-server", "host:gpu1.example"}),
-    ('sudo -u postgres psql -c "select 1"', {"skill:postgres", "thema:psql"}),
-    ("grep 'vzdump' job.log && qm list", {"thema:grep", "skill:proxmox", "thema:qm"}),
-    ("sudo sh -c 'apt-get update; pip3 install ansible'", {"thema:apt-get", "thema:pip3"}),
-    ("ansible-playbook site.yml -l web1.example,web2.example", {"skill:ansible", "thema:ansible-playbook", "host:web1.example", "host:web2.example"}),
-    ("ansible-playbook site.yml --limit 'sites_a:!zeit1.example'", {"skill:ansible", "thema:ansible-playbook"}),
+    ("sudo ipa-client-install --domain example.org", {"topic:ipa-client-install"}),
+    ("ssh gpu1.example 'llama-server -m m.gguf --load-mode mlock'", {"topic:ssh", "topic:llama-server", "host:gpu1.example"}),
+    ('sudo -u postgres psql -c "select 1"', {"skill:postgres", "topic:psql"}),
+    ("grep 'vzdump' job.log && qm list", {"topic:grep", "skill:proxmox", "topic:qm"}),
+    ("sudo sh -c 'apt-get update; pip3 install ansible'", {"topic:apt-get", "topic:pip3"}),
+    ("ansible-playbook site.yml -l web1.example,web2.example", {"skill:ansible", "topic:ansible-playbook", "host:web1.example", "host:web2.example"}),
+    ("ansible-playbook site.yml --limit 'sites_a:!zeit1.example'", {"skill:ansible", "topic:ansible-playbook"}),
     ('echo "a; qm b" | tee x', set()),
     # 0.20.2: tools with pitfalls are stimuli, plain everyday ones are not
-    ('cd /tmp/x && pkill -f "python3 worker.py"; sleep 2', {"thema:pkill"}),
-    ("find . -name '*.tmp' -exec rm {} +", {"thema:find"}),
-    ("timeout 300 ssh web1.example 'vzdump 101'", {"thema:ssh", "host:web1.example", "skill:proxmox", "thema:vzdump"}),
-    ("setsid nohup nice -n 10 pg_dump app", {"skill:postgres", "thema:pg_dump"}),
+    ('cd /tmp/x && pkill -f "python3 worker.py"; sleep 2', {"topic:pkill"}),
+    ("find . -name '*.tmp' -exec rm {} +", {"topic:find"}),
+    ("timeout 300 ssh web1.example 'vzdump 101'", {"topic:ssh", "host:web1.example", "skill:proxmox", "topic:vzdump"}),
+    ("setsid nohup nice -n 10 pg_dump app", {"skill:postgres", "topic:pg_dump"}),
     # 0.20.1: quoted code inside an ssh command is not a command
     ("""ssh web1.example 'curl -s http://x/slots | python3 -c "import json,sys; d=json.load(sys.stdin); print([s for s in d])"; top -bn1'""",
-     {"thema:ssh", "thema:curl", "thema:top", "host:web1.example"}),
-    ("""ssh web1.example 'sudo sh -c "apt-get update; qm list"'""", {"thema:ssh", "host:web1.example", "thema:apt-get", "skill:proxmox", "thema:qm"}),
-    ("sudo -u postgres pg_dump app > /tmp/a.sql", {"skill:postgres", "thema:pg_dump"}),
-    ("cd x; ansible-playbook -i hosts site.yml", {"skill:ansible", "thema:ansible-playbook"}),
-    ("docker compose up -d", {"skill:docker", "thema:docker"}),
-    ("echo qm ist kein Befehl hier | grep x", {"thema:grep"}),
+     {"topic:ssh", "topic:curl", "topic:top", "host:web1.example"}),
+    ("""ssh web1.example 'sudo sh -c "apt-get update; qm list"'""", {"topic:ssh", "host:web1.example", "topic:apt-get", "skill:proxmox", "topic:qm"}),
+    ("sudo -u postgres pg_dump app > /tmp/a.sql", {"skill:postgres", "topic:pg_dump"}),
+    ("cd x; ansible-playbook -i hosts site.yml", {"skill:ansible", "topic:ansible-playbook"}),
+    ("docker compose up -d", {"skill:docker", "topic:docker"}),
+    ("echo qm ist kein Befehl hier | grep x", {"topic:grep"}),
     ("ls -la /var/log/qm", set()),
 ])
 def test_commands_become_triggers(cli_command, expected):
@@ -255,8 +255,8 @@ def test_shell_triggers_only_for_shell(gd):
 
 def test_shown_ids_can_be_looked_up(gd):
     from vi_mcp import tools
-    tools.call_tool("vi_lerne", {"text": "Eine Erkenntnis zum Nachschlagen hier", "hashtags": ["thema:id"], "quelle": "Test 8.11."}, "a", False)
-    listing = tools.call_tool("vi_erinnere", {"filter": "thema:id"}, "a", False)
+    tools.call_tool("vi_lerne", {"text": "Eine Erkenntnis zum Nachschlagen hier", "hashtags": ["topic:id"], "quelle": "Test 8.11."}, "a", False)
+    listing = tools.call_tool("vi_erinnere", {"filter": "topic:id"}, "a", False)
     oid = listing.split("[", 1)[1].split("]", 1)[0]
     assert "Nachschlagen" in tools.call_tool("vi_objekt", {"id": oid}, "a", False)
     assert "Nachschlagen" in tools.call_tool("vi_objekt", {"id": oid[:20]}, "a", False)  # shortened, from older outputs
@@ -268,7 +268,7 @@ def test_matching_warning_beats_general(gd):
     from vi_mcp import tools
     for i in range(10):
         tools.call_tool("vi_lerne", {"text": f"Allgemeine Ansible-Notiz Nummer {i} mit Inhalt", "hashtags": ["skill:ansible"], "quelle": "Doku 8.11."}, "a", False)
-    tools.call_tool("vi_lerne", {"text": "freeipa-client nie auf zeit1 laufen lassen", "hashtags": ["skill:ansible", "thema:ansible-playbook", "host:zeit1"],
+    tools.call_tool("vi_lerne", {"text": "freeipa-client nie auf zeit1 laufen lassen", "hashtags": ["skill:ansible", "topic:ansible-playbook", "host:zeit1"],
                                 "quelle": "Vorfall 13.10.", "wichtigkeit": 3}, "a", False)
     v = intuition.before("Bash", {"command": "ansible-playbook playbooks/freeipa-client.yml -l sites"}, "a", False)
     assert "zeit1" in v["hinweise"][0] or any("zeit1" in h for h in v["hinweise"][:2])
@@ -278,7 +278,7 @@ def test_manual_paragraphs_do_not_displace_experience(gd):
     """0.19.3: before `docker logs` four Docker doc paragraphs took all slots; the matching ssh hint dropped out."""
     from vi_mcp import tools
     for i in range(6):
-        tools.call_tool("vi_lerne", {"text": f"Docker-Doku, Abschnitt {i}: allgemeiner Text", "hashtags": ["skill:docker", "art_wissen:doku-extern"],
+        tools.call_tool("vi_lerne", {"text": f"Docker-Doku, Abschnitt {i}: allgemeiner Text", "hashtags": ["skill:docker", "knowledge_kind:doku-extern"],
                                     "quelle": "Herstellerdoku"}, "a", False)
     tools.call_tool("vi_lerne", {"text": "ssh nach web1 nur mit Schlüssel und BatchMode", "hashtags": ["host:web1.example", "tool:ssh"], "quelle": "Erfahrung"}, "a", False)
     h = intuition.before("Bash", {"command": "ssh web1.example 'docker logs nginx'"}, "a", False)["hinweise"]
@@ -306,7 +306,7 @@ def test_missing_required_field_rejected_not_silently_answered(gd):
     tools.call_tool("vi_erinnere", {"filter": "Lizenz"}, "a", True)  # correctly named: works
     # 0.51.0: the names models guess for the search field count as filter (reported 11.11.2026: vi_recall(query=…) was refused)
     from vi_mcp import memory as g
-    g.new_object("insight", "Lizenz Dongle steckt am Host lic01", ["thema:lizenz"], {"quelle": "test"}, instance="a")
+    g.new_object("insight", "Lizenz Dongle steckt am Host lic01", ["topic:lizenz"], {"quelle": "test"}, instance="a")
     for guess in ("query", "q", "search", "text"):
         assert "Lizenz Dongle" in tools.call_tool("vi_recall", {guess: "Dongle"}, "a", True), guess
     assert tools._filter_alias("vi_net_search", {"query": "x"}) == {"query": "x"}  # a tool with its own query keeps it
@@ -329,10 +329,10 @@ def test_state_dependent_tools_are_never_remembered(gd):
 
 def test_colon_words_without_known_kind_are_free_text(gd):
     """0.26.0: "Hosts: 62.153.216.33" emptied the search silently — a colon word is a condition only as kind:value with a known kind."""
-    o = g.new_object("insight", "Die Hosts der Range 62.153.216.33 bis 62.153.216.46 sind Mailrelays", ["thema:netz"], {"quelle": "x"})
-    assert g.parse_filter("Hosts: 62.153.216.33", frozenset({"thema", "art"})) == ([], [], ["Hosts:", "62.153.216.33"])
-    assert g.parse_filter("um 10:30 thema:netz", frozenset({"thema"})) == ([["thema:netz"]], [], ["um", "10:30"])
-    assert g.parse_filter("foo:bar thema:netz", frozenset({"thema"})) == ([["thema:netz"]], [], ["foo:bar"])  # unknown kind
+    o = g.new_object("insight", "Die Hosts der Range 62.153.216.33 bis 62.153.216.46 sind Mailrelays", ["topic:netz"], {"quelle": "x"})
+    assert g.parse_filter("Hosts: 62.153.216.33", frozenset({"topic", "kind"})) == ([], [], ["Hosts:", "62.153.216.33"])
+    assert g.parse_filter("um 10:30 topic:netz", frozenset({"topic"})) == ([["topic:netz"]], [], ["um", "10:30"])
+    assert g.parse_filter("foo:bar topic:netz", frozenset({"topic"})) == ([["topic:netz"]], [], ["foo:bar"])  # unknown kind
     assert [x.id for _, x, _g in g.recall("Hosts: 62.153.216.33", viewer=None)] == [o.id]
     from vi_mcp import tools
     out = tools.call_tool("vi_recall", {"filter": "Hosts: 62.153.216.33"}, "a", True)
@@ -342,13 +342,13 @@ def test_colon_words_without_known_kind_are_free_text(gd):
 def test_recall_without_reinforcement(gd):
     """0.31.0: reinforce=false for measurements — access count and last use stay as they were, and the answer says so."""
     from vi_mcp import tools
-    o = g.new_object("insight", "nginx reload only after nginx -t", ["thema:nginx"], {"quelle": "x"}, reason="T")
+    o = g.new_object("insight", "nginx reload only after nginx -t", ["topic:nginx"], {"quelle": "x"}, reason="T")
     before = g.load(o.id)
-    out = tools.call_tool("vi_recall", {"filter": "thema:nginx", "reinforce": False}, "a", False)
+    out = tools.call_tool("vi_recall", {"filter": "topic:nginx", "reinforce": False}, "a", False)
     after = g.load(o.id)
     assert o.id in out and "read only (reinforce=false)" in out
     assert (after.accesses, after.last_at) == (before.accesses, before.last_at)
-    tools.call_tool("vi_recall", {"filter": "thema:nginx"}, "a", False)  # default: reinforced as before
+    tools.call_tool("vi_recall", {"filter": "topic:nginx"}, "a", False)  # default: reinforced as before
     assert g.load(o.id).accesses == before.accesses + 1
 
 
@@ -357,7 +357,7 @@ def test_exploration_adds_a_slot_instead_of_displacing_the_only_hint(gd, monkeyp
     import random
     from vi_mcp import tools
     for i in range(3):
-        tools.call_tool("vi_learn", {"text": f"Docker docs, section {i}: general text", "hashtags": ["skill:docker", "art_wissen:doku-extern"],
+        tools.call_tool("vi_learn", {"text": f"Docker docs, section {i}: general text", "hashtags": ["skill:docker", "knowledge_kind:doku-extern"],
                                     "source": "vendor docs"}, "a", False)
     tools.call_tool("vi_learn", {"text": "ssh to web1 only with key and BatchMode", "hashtags": ["host:web1.example", "tool:ssh"], "source": "experience"}, "a", False)
     monkeypatch.setattr(random, "random", lambda: 0.0)

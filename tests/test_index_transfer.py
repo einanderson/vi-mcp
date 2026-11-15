@@ -9,7 +9,7 @@ from vi_mcp import memory as g
 
 
 def _knowledge(text, index, yes=0.0, no=0.0, **kw):
-    o = g.new_object("insight", text, ["thema:deploy", "tool:dpkg"], {"quelle": "test 2026-11-13", "inhalt": f"full content of: {text}",
+    o = g.new_object("insight", text, ["topic:deploy", "tool:dpkg"], {"quelle": "test 2026-11-13", "inhalt": f"full content of: {text}",
                                                                           "nuetzlich": {"ja": yes, "nein": no, "n": int(yes + no)}},
                      index=index, visibility=kw.pop("visibility", "intern"), instance=kw.pop("instance", "claude-code"), **kw)
     return o
@@ -37,8 +37,8 @@ def two(tmp_path, monkeypatch):
 def test_export_holds_only_the_knowledge_of_the_index_and_counts_the_rest(two, tmp_path):
     good = _knowledge("vi-mcp deploy: back up config and database before dpkg -i", "proj", 12, 1)
     _knowledge("other project knowledge", "other")
-    g.new_object("insight", "a private note", ["thema:deploy"], {"quelle": "t"}, index="proj", visibility="private")
-    g.new_object("insight", "def f(): pass", ["art_wissen:code", "datei:x.py"], {"quelle": "t"}, index="proj", visibility="internal")
+    g.new_object("insight", "a private note", ["topic:deploy"], {"quelle": "t"}, index="proj", visibility="private")
+    g.new_object("insight", "def f(): pass", ["knowledge_kind:code", "file:x.py"], {"quelle": "t"}, index="proj", visibility="internal")
     g.new_object("experience", "Bash ok", ["tool:Bash"], {"quelle": "t"}, index="proj")
     r = it.export("proj", tmp_path / "proj.json")
     assert r["eintraege"] == 1 and r["eigen"] == 1
@@ -143,7 +143,7 @@ def test_the_way_back_finds_own_contents_that_share_a_generic_text(two, tmp_path
     """Found in the real test (13.11.2026): 40 of 180 contents came back as copies — many objects shared the text "What is missing",
     and find_local checked only the first 20 with that text. Now content narrows it first."""
     for i in range(25):
-        g.new_object("insight", "vi-mcp changelog: What is missing", ["thema:vi-mcp"],
+        g.new_object("insight", "vi-mcp changelog: What is missing", ["topic:vi-mcp"],
                      {"quelle": "CHANGELOG.md", "inhalt": f"gap number {i}", "nuetzlich": {"ja": 12, "nein": 1, "n": 13}},
                      index="proj", visibility="internal", instance="claude-code")
     it.export("proj", tmp_path / "a.json")

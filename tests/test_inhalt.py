@@ -24,7 +24,7 @@ def knowledge(gd, monkeypatch):
     ids = {}
     for topic, direction in (("tls", 0), ("disk", 1), ("netz", 2)):
         for i in range(8):
-            o = g.new_object("insight", f"Wissen {topic} Nummer {i} ausführlich", [f"thema:{topic}", "tool:Bash"], {"quelle": "Test 2.11."}, reason="T", instance="a")
+            o = g.new_object("insight", f"Wissen {topic} Nummer {i} ausführlich", [f"topic:{topic}", "tool:Bash"], {"quelle": "Test 2.11."}, reason="T", instance="a")
             vector.save(o.id, _vec(direction), "m")
             ids.setdefault(topic, []).append(o.id)
     content.forget_cache()
@@ -35,31 +35,31 @@ def test_compute_and_proximity(knowledge):
     r = content.compute()
     assert r["zustand"] == "fertig" and r["zentren"] == 4 and r["gruppen"] >= 2
     tls, disk = knowledge["tls"][0], knowledge["disk"][0]
-    assert content.proximity(tls, ["thema:tls"]) > 0.9  # matches the content of the situation, even without itself
-    assert content.proximity(disk, ["thema:tls"]) < 0.2
-    assert content.proximity(tls, ["thema:unbekannt"]) is None and content.proximity("erkenntnis:gibtsnicht", ["thema:tls"]) is None
+    assert content.proximity(tls, ["topic:tls"]) > 0.9  # matches the content of the situation, even without itself
+    assert content.proximity(disk, ["topic:tls"]) < 0.2
+    assert content.proximity(tls, ["topic:unbekannt"]) is None and content.proximity("erkenntnis:gibtsnicht", ["topic:tls"]) is None
     assert len({content.group(i) for i in knowledge["tls"]}) == 1 and content.group(tls) != content.group(disk)
-    assert "thema:tls" in content.group_name(content.group(tls)) and "meaning groups" in content.line()
+    assert "topic:tls" in content.group_name(content.group(tls)) and "meaning groups" in content.line()
 
 
 def test_self_excluded_from_count(gd, monkeypatch):
     monkeypatch.setattr(vector, "config", {"modell": "fake"})
-    a = g.new_object("insight", "Einziger Hinweis zum Thema A hier", ["thema:a"], {"quelle": "x"}, reason="T")
+    a = g.new_object("insight", "Einziger Hinweis zum Thema A hier", ["topic:a"], {"quelle": "x"}, reason="T")
     vector.save(a.id, _vec(0), "m")
     for i in range(3):
-        o = g.new_object("insight", f"Anderer Inhalt {i} zum Thema A", ["thema:a"], {"quelle": "x"}, reason="T")
+        o = g.new_object("insight", f"Anderer Inhalt {i} zum Thema A", ["topic:a"], {"quelle": "x"}, reason="T")
         vector.save(o.id, _vec(5), "m")
     content.forget_cache()
     content.compute()
-    assert content.proximity(a.id, ["thema:a"]) < 0.3  # without excluding it, it would be similar through itself
+    assert content.proximity(a.id, ["topic:a"]) < 0.3  # without excluding it, it would be similar through itself
 
 
 def test_features_and_switches(knowledge, monkeypatch):
     content.compute()
-    m = learning.hint_features(knowledge["tls"][0], ["thema:tls", "stunde:3"])
-    assert "naehe" in m and any(k.startswith("inhalt:") for k in m)
+    m = learning.hint_features(knowledge["tls"][0], ["topic:tls", "hour:3"])
+    assert "naehe" in m and any(k.startswith("content:") for k in m)
     monkeypatch.setattr(learning, "CONTENT", False)
-    assert set(learning.hint_features(knowledge["tls"][0], ["thema:tls"])) == {f"hinweis:{knowledge['tls'][0]}", "hinweisart:erkenntnis"}
+    assert set(learning.hint_features(knowledge["tls"][0], ["topic:tls"])) == {f"hint:{knowledge['tls'][0]}", "hint_kind:erkenntnis"}
 
 
 def test_model_learns_the_content(knowledge, monkeypatch):
@@ -72,21 +72,21 @@ def test_model_learns_the_content(knowledge, monkeypatch):
         topic = rng.choice(["tls", "disk"])
         hid = rng.choice(knowledge[topic])
         ok = rng.random() < (0.9 if topic == "tls" else 0.2)
-        g.new_object("experience", "Bash", ["tool:Bash", f"thema:{topic}", "ok:ja" if ok else "ok:nein"],
-                       {"vorher": {"reize": ["tool:Bash", f"thema:{topic}"], "gezeigt": [hid]}, "args": {"n": n}}, reason="T", instance="a")
+        g.new_object("experience", "Bash", ["tool:Bash", f"topic:{topic}", "ok:ja" if ok else "ok:nein"],
+                       {"vorher": {"reize": ["tool:Bash", f"topic:{topic}"], "gezeigt": [hid]}, "args": {"n": n}}, reason="T", instance="a")
     b = learning.train("Test")
     w = learning.model().data["gewichte"]
     assert b["zustand"] == "aktiv", b
     gt, gd_ = content.group(knowledge["tls"][0]), content.group(knowledge["disk"][0])
-    assert w.get(f"inhalt:{gt}", 0) > w.get(f"inhalt:{gd_}", 0)
-    new = g.new_object("insight", "Ganz neuer Hinweis zu Zertifikaten", ["thema:tls", "tool:Bash"], {"quelle": "x"}, reason="T")
+    assert w.get(f"content:{gt}", 0) > w.get(f"content:{gd_}", 0)
+    new = g.new_object("insight", "Ganz neuer Hinweis zu Zertifikaten", ["topic:tls", "tool:Bash"], {"quelle": "x"}, reason="T")
     vector.save(new.id, _vec(0), "m")
     old_disk = knowledge["disk"][0]
     content.compute()
     learning.train("Test 2")
     rank_pos = [h for h, _ in learning.ranking(learning.model(), ["tool:Bash"], [old_disk, new.id])]
     assert rank_pos[0] == new.id  # a new hint inherits the weight of its content
-    assert "Bedeutungs" in learning.explanation() or "inhalt:" in learning.explanation()
+    assert "Bedeutungs" in learning.explanation() or "content:" in learning.explanation()
 
 
 def test_sleep_never_twice_and_no_proxy_abort(gd, monkeypatch):

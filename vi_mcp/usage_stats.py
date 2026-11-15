@@ -120,7 +120,7 @@ def data(days: float = 7) -> dict:
         exps = db.execute("SELECT o.ts, o.instance, o.conversation, o.data, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'tool:%'), "
                          "(SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag IN ('ok:ja', 'ok:nein')) FROM object o "
                          "WHERE o.kind = 'experience' AND o.ts >= ? ORDER BY o.ts", (since,)).fetchall()
-        knowledge_new = db.execute("SELECT kind, visibility, accesses, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'quelle_art:%') "
+        knowledge_new = db.execute("SELECT kind, visibility, accesses, (SELECT tag FROM tag t WHERE t.object_id = o.id AND t.tag LIKE 'source_kind:%') "
                                 "FROM object o WHERE kind IN ('insight', 'rule', 'skill', 'search', 'image') AND ts >= ?", (since,)).fetchall()
         knowledge_total = db.execute("SELECT COUNT(*), SUM(accesses > 0) FROM object WHERE kind IN ('insight', 'rule', 'skill', 'search', 'image') "
                                 "AND mode NOT IN ('refuted', 'withdrawn', 'archived')").fetchone()

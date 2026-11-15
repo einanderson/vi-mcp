@@ -12,7 +12,7 @@ says nothing. Here the same episode keeps what solved it:
               without a language model a template from the same evidence
 
 The result is a skill `skill:loesung-<hash>` in mode test, visible `intern` (company knowledge, never into an open network), with the
-complete write-up in `inhalt`, tagged `herkunft:episode` and, with web sources, `herkunft:web`. Whether it helps is measured like every
+complete write-up in `inhalt`, tagged `origin:episode` and, with web sources, `origin:web`. Whether it helps is measured like every
 hint (bandit, router with the error signature as feature). An episode without content — the same call simply repeated, nothing read in
 between — is counted, not stored (nothing silently).
 
@@ -93,7 +93,7 @@ def evidence(ep: list[g.MemoryObject]) -> dict:
             docs.append(a.get("file_path") or a.get("id") or a.get("filter") or a.get("page"))
         elif t not in QUIET_TOOLS and not (t == _tool(fix) and _norm(a) in (_norm(_args(failed)), _norm(_args(fix)))):  # a retry is no measure
             actions.append({"tool": t, "args": a})  # something done in between — often the actual fix (a restart, an edit)
-    sig = next((t for t in failed.hashtags if t.startswith("fehler:")), None)
+    sig = next((t for t in failed.hashtags if t.startswith("error:")), None)
     # 0.58.1: for a shell the failing program is the specific trigger (sqlite3, pkill, …) — the error signature of a shell is often only
     # "Exit_code_#" and the tool alone matches every command (measured on production: 4 of 6 solutions had no specific trigger)
     from . import intuition
@@ -102,10 +102,10 @@ def evidence(ep: list[g.MemoryObject]) -> dict:
         cmd = str(_args(failed).get("command") or _args(failed).get("cmd") or "")
         programs = [b for b in intuition._commands(cmd) if b not in intuition.SHELL_EVERYDAY and b not in intuition.GENERIC_SHELL_WORDS
                     and re.fullmatch(r"[a-z][a-z0-9._+-]{1,40}", b)][:3]
-    generic_sig = bool(sig) and sig.lower().startswith("fehler:exit_code")
+    generic_sig = bool(sig) and sig.lower().startswith("error:exit_code")
     return {"tool": _tool(fix), "signatur": sig, "fehlgeschlagen": {"args": _args(failed), "fehler": str(failed.data.get("fehler") or "")[:2000]},
             "web": web, "dokumente": [d for d in docs if d][:10], "massnahmen": actions[:10], "loesung": {"args": _args(fix)}, "schritte": steps,
-            "kontext": sorted({t for x in ep for t in x.hashtags if t.startswith(("host:", "thema:"))} | {f"thema:{b}" for b in programs}),
+            "kontext": sorted({t for x in ep for t in x.hashtags if t.startswith(("host:", "topic:"))} | {f"topic:{b}" for b in programs}),
             "spezifisch": bool((sig and not generic_sig) or programs or any(t.startswith("host:") for x in ep for t in x.hashtags)),
             "belege": [x.id for x in ep], "gespraech": fix.conversation}
 
@@ -215,7 +215,7 @@ def store(ev: dict) -> tuple[g.MemoryObject | None, str]:
     existed = g.load(f"skill:{name_for(ev)}") is not None
     o = skills.new(name_for(ev), triggers, steps, text, f"episode in conversation {ev['gespraech']} ({w['von']})", ev["belege"],
                    g.SERVER_INSTANCE, source="; ".join(urls(ev))[:300] or f"conversation {ev['gespraech']}", who="vi")
-    tags = ["herkunft:episode"] + (["herkunft:web"] if ev["web"] else [])
+    tags = ["origin:episode"] + (["origin:web"] if ev["web"] else [])
     o.hashtags = o.hashtags + [t for t in tags if t not in o.hashtags]
     o.data = {**o.data, "befunde": f.reasons[:10], "geschrieben_von": w["von"]}
     g.save(o)
@@ -228,7 +228,7 @@ def from_episodes(since: str) -> dict:
     """Sleep step 4c: every recovery since `since` → solution with content, or counted with the reason it is not one."""
     with g.lock:
         rows = g.db().execute(
-            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'ueberraschung:erholt' "
+            "SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id AND t.tag = 'surprise:erholt' "
             "WHERE o.kind = 'experience' AND o.ts > ? AND o.conversation IS NOT NULL ORDER BY o.ts", (since,)).fetchall()
     out = {"episoden": 0, "neu": 0, "weiterentwickelt": 0, "mit_web": 0, "ohne_inhalt": 0, "unverwandt": 0, "unspezifisch": 0, "nicht_allgemein": 0,
            "abgelehnt": 0, "fehler": []}

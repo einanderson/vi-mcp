@@ -23,11 +23,11 @@ def test_names_are_checked_and_projects_map_to_indexes():
 
 
 def test_new_objects_land_in_global_or_the_given_index(gd):
-    a = g.new_object("insight", "general knowledge", ["thema:a"], {"quelle": "t"})
-    b = g.new_object("insight", "project knowledge", ["thema:a"], {"quelle": "t"}, index="Cue-Print")
+    a = g.new_object("insight", "general knowledge", ["topic:a"], {"quelle": "t"})
+    b = g.new_object("insight", "project knowledge", ["topic:a"], {"quelle": "t"}, index="Cue-Print")
     token = g.current_index.set("ansible")
     try:
-        c = g.new_object("insight", "special knowledge", ["thema:a"], {"quelle": "t"})
+        c = g.new_object("insight", "special knowledge", ["topic:a"], {"quelle": "t"})
     finally:
         g.current_index.reset(token)
     assert (g.load(a.id).idx, g.load(b.id).idx, g.load(c.id).idx) == ("global", "cue-print", "ansible")
@@ -61,17 +61,17 @@ def test_a_project_session_puts_its_experiences_and_knowledge_into_its_index(gd,
     with session.on_behalf(s):
         r = intuition.before("Bash", {"command": "ls"}, "a", False)
         intuition.after("Bash", {"command": "ls"}, True, 5, None, "ok", r["vorher_id"], "a", False)
-        k = g.new_object("insight", "learned in the project", ["thema:a"], {"quelle": "t"}, instance="a")
-    e = [o for _, o, _g in g.recall("art:experience", limit=5, viewer=None)][0]
+        k = g.new_object("insight", "learned in the project", ["topic:a"], {"quelle": "t"}, instance="a")
+    e = [o for _, o, _g in g.recall("kind:experience", limit=5, viewer=None)][0]
     assert e.idx == "cue-print" and g.load(k.id).idx == "cue-print"
     t = session.begin("a", "claude-code-hook 1", "scratch")
     with session.on_behalf(t):
-        assert g.new_object("insight", "learned in an ignored dir", ["thema:a"], {"quelle": "t"}, instance="a").idx == "global"
+        assert g.new_object("insight", "learned in an ignored dir", ["topic:a"], {"quelle": "t"}, instance="a").idx == "global"
 
 
 def test_vi_learn_takes_index_or_the_project_the_hook_sent(gd, monkeypatch):
     monkeypatch.setattr(indexes, "_config", lambda: {"map": {"repo": "cue-stack"}})
-    base = {"text": "a fact worth keeping", "hashtags": ["thema:a"], "source": "unit test of indexes"}
+    base = {"text": "a fact worth keeping", "hashtags": ["topic:a"], "source": "unit test of indexes"}
     out = tools.call_tool("vi_learn", {**base, "index": "Ansible"}, "a", False)
     assert g.load(out.split()[1]).idx == "ansible"
     out = tools.call_tool("vi_learn", {**base, "text": "another fact", "project": "repo"}, "a", False)
@@ -96,7 +96,7 @@ def test_search_restricts_to_an_index_or_puts_the_project_first(gd):
 def test_hints_before_an_action_put_the_project_first_and_record_it(gd, monkeypatch):
     from vi_mcp import intuition, session
     monkeypatch.setattr(indexes, "_config", lambda: {})
-    gen = g.new_object("insight", "rsync over ssh needs the key file", ["tool:rsync", "thema:ssh"], {"quelle": "t"}, index="global")
+    gen = g.new_object("insight", "rsync over ssh needs the key file", ["tool:rsync", "topic:ssh"], {"quelle": "t"}, index="global")
     own = g.new_object("insight", "rsync in cue-print goes through the jump host", ["tool:rsync"], {"quelle": "t"}, index="cue-print")
     s = session.begin("a", "claude-code-hook 1", "cue-print")
     with session.on_behalf(s):
@@ -113,7 +113,7 @@ def test_the_agent_session_gets_the_project_the_hook_noted_just_before(gd, monke
     agent_s = session.begin("a", "claude-code 2.1", None)
     with session.on_behalf(hook_s):
         assert "noted" in tools.call_tool("vi_context", {}, "a", False)
-    base = {"text": "learned by the agent session", "hashtags": ["thema:a"], "source": "unit test of indexes"}
+    base = {"text": "learned by the agent session", "hashtags": ["topic:a"], "source": "unit test of indexes"}
     with session.on_behalf(agent_s):
         out = tools.call_tool("vi_learn", base, "a", False)
     assert g.load(out.split()[1]).idx == "cue-print"
@@ -177,7 +177,7 @@ def test_backfill_puts_old_project_data_into_its_index_and_rename_merges(gd, mon
     s = session.begin("a", "claude-code-hook 1", "cue-print")  # before 0.61.0 the session recorded its project, objects stayed global
     t = session.begin("a", "claude-code-hook 1", "scratch")
     e1 = g.new_object("experience", "rsync 1", ["tool:rsync", "ok:ja"], {}, instance="a", conversation=s.serial, index="global")
-    k1 = g.new_object("insight", "learned in cue-print", ["thema:a"], {"quelle": "t"}, instance="a", conversation=s.serial, index="global")
+    k1 = g.new_object("insight", "learned in cue-print", ["topic:a"], {"quelle": "t"}, instance="a", conversation=s.serial, index="global")
     e2 = g.new_object("experience", "rsync 2", ["tool:rsync", "ok:ja"], {}, instance="a", conversation=t.serial, index="global")
     dry = indexes.backfill()
     assert dry == {"angewendet": False, "objekte": 2, "je_index": {"cue-print": {"experience": 1, "insight": 1}}}
@@ -194,7 +194,7 @@ def test_backfill_puts_old_project_data_into_its_index_and_rename_merges(gd, mon
 
 def test_the_index_table_has_a_row_for_every_index_with_description_and_tags(gd):
     # the user (13.11.2026): a primary key for the index, one index per object, and a table that gives each index tags and a description
-    g.new_object("insight", "project knowledge", ["thema:a"], {"quelle": "t"}, index="cue-print")
+    g.new_object("insight", "project knowledge", ["topic:a"], {"quelle": "t"}, index="cue-print")
     reg = indexes.registry()
     assert reg["global"]["art"] == "global" and reg["cue-print"]["art"] == "project"
     with g.lock:

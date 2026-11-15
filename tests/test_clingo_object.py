@@ -43,7 +43,7 @@ class Skill(Knowledge):
 
 
 def _aged(oid, kind, days, mode="test"):
-    o = g.new_object(kind, f"{oid} text", ["thema:oo"], {"quelle": "t"}, reason="T", oid=oid, mode=mode, link=False)
+    o = g.new_object(kind, f"{oid} text", ["topic:oo"], {"quelle": "t"}, reason="T", oid=oid, mode=mode, link=False)
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = ?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), oid))
         g.db().commit()
@@ -53,8 +53,8 @@ def _aged(oid, kind, days, mode="test"):
 def _program():
     O = Obj("O")
     return Program(Knowledge, Insight, Skill,
-                   rel.review(O) <= O.where("thema:oo") & O.stale(),
-                   rel.warn(O) <= O.where("thema:oo") & O.risky())
+                   rel.review(O) <= O.where("topic:oo") & O.stale(),
+                   rel.warn(O) <= O.where("topic:oo") & O.risky())
 
 
 def test_expressions_build_the_notation():
@@ -64,13 +64,13 @@ def test_expressions_build_the_notation():
     assert never(rel.a(H) & rel.b(H)).notation() == "never(a(H) & b(H))"
     assert soft(rel.flies(H) <= rel.bird(H), 0.9).notation() == "soft(flies(H) <= bird(H), 0.9)"
     assert (-rel.allowed("x")).notation() == '-allowed("x")'
-    assert (propose_tag(O, "status", "stale") <= O.where("art:skill")).notation() == 'propose(tag(O, "status", "stale")) <= (O in objects("art:skill"))'
+    assert (propose_tag(O, "status", "stale") <= O.where("kind:skill")).notation() == 'propose(tag(O, "status", "stale")) <= (O in objects("kind:skill"))'
 
 
 def test_classes_compile_to_flat_rules_by_python_mro():
     text = _program().notation()
-    assert 'stale(Self) <= (Self in objects("art:insight")) & (Self.mode == "test") & (Self.age > 90)' in text
-    assert 'stale(Self) <= (Self in objects("art:skill")) & (Self.mode == "test") & (Self.age > 30)' in text
+    assert 'stale(Self) <= (Self in objects("kind:insight")) & (Self.mode == "test") & (Self.age > 90)' in text
+    assert 'stale(Self) <= (Self in objects("kind:skill")) & (Self.mode == "test") & (Self.age > 30)' in text
     assert "class" not in text and "def " not in text  # the server never sees Python
     logic.translate(text)  # and the server accepts it
 
@@ -95,7 +95,7 @@ def test_local_and_server_give_the_same_answers(gd):
 def test_proposals_from_a_python_program_go_through_the_server(gd):
     _aged("skill:mid", "skill", 60)
     S = Obj("S")
-    prog = Program(Knowledge, Skill, propose_tag(S, "status", "stale") <= S.where("art:skill") & S.stale())
+    prog = Program(Knowledge, Skill, propose_tag(S, "status", "stale") <= S.where("kind:skill") & S.stale())
     assert prog.check(ServerData())["vorschlaege"][0]["ziel"] == "skill:mid"
     out = tools.call_tool("vi_logic", {"action": "propose", "source": prog.notation()}, "a", False)
     assert "held for review: vorschlag:" in out
@@ -107,7 +107,7 @@ def test_proposals_from_a_python_program_go_through_the_server(gd):
     (lambda: ~(Obj("O").age > 3), "opposite comparison"),
     (lambda: Var("h"), "capital"),
     (lambda: rel.objects(Var("H")), "word of the dialect"),
-    (lambda: bool(Obj("O").where("art:skill")), "no truth value"),
+    (lambda: bool(Obj("O").where("kind:skill")), "no truth value"),
 ])
 def test_mistakes_are_named_where_they_are_made(build, why):
     with pytest.raises(ExprError, match=why):
@@ -127,7 +127,7 @@ def test_a_method_must_return_a_condition():
 def test_only_the_classes_of_the_program_count():
     """A subclass the program was not given never joins silently: Knowledge alone has no kinds, so its method applies to nothing."""
     assert "stale" not in Program(Knowledge).notation()
-    assert "art:skill" not in Program(Knowledge, Insight).notation()
+    assert "kind:skill" not in Program(Knowledge, Insight).notation()
 
 
 # ── B3: the client against a real server (tests/test_http.py's fixture) ──────
@@ -143,7 +143,7 @@ def test_memory_client_against_a_real_server(srv, tmp_path, monkeypatch):
     mem = Memory(f"http://127.0.0.1:{port}/mcp", tf)
     assert tok_a not in repr(mem)
     g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "zone:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:gate1", link=False)
-    g.new_object("skill", "old skill", ["thema:oo"], {"quelle": "t"}, reason="T", oid="skill:x", mode="test", link=False)
+    g.new_object("skill", "old skill", ["topic:oo"], {"quelle": "t"}, reason="T", oid="skill:x", mode="test", link=False)
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = 'skill:x'", ((datetime.now(timezone.utc) - timedelta(days=60)).isoformat(),))
         g.db().commit()
@@ -208,12 +208,12 @@ class ServerCheck(ServerData):
 
 def test_the_agent_corrects_its_program_from_the_solver(gd):
     from clingo_object import agent
-    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
-    g.new_object("insight", "web1 internal", ["host:web1", "netz:intern"], {"quelle": "t"}, reason="T", oid="erkenntnis:w1", link=False)
+    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "net:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
+    g.new_object("insight", "web1 internal", ["host:web1", "net:intern"], {"quelle": "t"}, reason="T", oid="erkenntnis:w1", link=False)
     replies = iter([
-        "```logic\nans(H) <= O in objects(\"netz:dmz\") & (O.host == H)\n```",              # & binds tighter: refused
-        "```logic\nans(H) <= (O in objects(\"netz:dmz\")) & (O.hosts == H)\n```",            # wrong kind: solves, no ans
-        "```logic\nans(H) <= (O in objects(\"netz:dmz\")) & (O.host == H)\n```",
+        "```logic\nans(H) <= O in objects(\"net:dmz\") & (O.host == H)\n```",              # & binds tighter: refused
+        "```logic\nans(H) <= (O in objects(\"net:dmz\")) & (O.hosts == H)\n```",            # wrong kind: solves, no ans
+        "```logic\nans(H) <= (O in objects(\"net:dmz\")) & (O.host == H)\n```",
     ])
     seen = []
 
@@ -260,9 +260,9 @@ def test_the_agent_reads_the_vocabulary_from_the_server(gd):
     class Mem:
         def call(self, tool, args):
             return tools.call_tool(tool, args, "a", False)
-    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
+    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "net:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
     v = agent.vocabulary(Mem())
-    assert "- netz: dmz" in v and "- host: gate1" in v and "instanz" not in v
+    assert "- net: dmz" in v and "- host: gate1" in v and "instanz" not in v
 
 
 def test_the_agent_end_to_end_over_a_real_server(srv, tmp_path):
@@ -272,16 +272,16 @@ def test_the_agent_end_to_end_over_a_real_server(srv, tmp_path):
     tf = tmp_path / "token"
     tf.write_text(tok_a)
     mem = Memory(f"http://127.0.0.1:{port}/mcp", tf)
-    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "netz:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
+    g.new_object("insight", "gate1 in the DMZ", ["host:gate1", "net:dmz"], {"quelle": "t"}, reason="T", oid="erkenntnis:g1", link=False)
     voc = agent.vocabulary(mem)
-    assert "- netz: dmz" in voc
+    assert "- net: dmz" in voc
     seen = []
 
     def llm(messages):
         seen.append(messages[0]["content"])
-        return '```logic\nans(H) <= (O in objects("netz:dmz")) & (O.host == H)\n```'
+        return '```logic\nans(H) <= (O in objects("net:dmz")) & (O.host == H)\n```'
     r = agent.solve("Which hosts are in the DMZ?", mem, llm, vocabulary=voc)
-    assert r["state"] == "answered" and r["answer"] == ['ans("gate1")'] and "- netz: dmz" in seen[0]
+    assert r["state"] == "answered" and r["answer"] == ['ans("gate1")'] and "- net: dmz" in seen[0]
 
 
 def test_memory_reads_the_hook_command_of_claude_code(tmp_path, monkeypatch):

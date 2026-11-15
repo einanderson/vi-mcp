@@ -27,7 +27,7 @@ def action(tool, host, ok, context=None, instance="a"):
 
 def test_observation_view_and_features(gd):
     g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T")
-    action("checkmk_get_host", "web1", True, context=["thema:oom"])
+    action("checkmk_get_host", "web1", True, context=["topic:oom"])
     action("checkmk_get_host", "web2", False)
     with g.lock:
         rows = g.db().execute("SELECT tool, ok, hinweise_n, ueberraschung, router FROM beobachtung ORDER BY ts").fetchall()
@@ -35,10 +35,10 @@ def test_observation_view_and_features(gd):
     b = learning.observations()
     assert len(b) == 2  # one pair (with hint) + one baseline (without)
     with_hint = next(m for m, y, _ in b if y == 1)
-    assert "thema:oom" in with_hint and "hinweisart:erkenntnis" in with_hint and "hinweis_n:1" in with_hint and any(k.startswith("hinweis:erkenntnis:") for k in with_hint)
+    assert "topic:oom" in with_hint and "hint_kind:erkenntnis" in with_hint and "hint_n:1" in with_hint and any(k.startswith("hint:erkenntnis:") for k in with_hint)
     without = next(m for m, y, _ in b if y == 0)
-    assert "hinweis_n:0" in without and not any(k.startswith("hinweis:") for k in without)
-    assert "thema:oom" in g.recall("tool:checkmk_get_host ok:ja", viewer=None)[0][1].hashtags  # context stimulus is a tag
+    assert "hint_n:0" in without and not any(k.startswith("hint:") for k in without)
+    assert "topic:oom" in g.recall("tool:checkmk_get_host ok:ja", viewer=None)[0][1].hashtags  # context stimulus is a tag
 
 
 def test_exploration_is_tagged(gd, monkeypatch):
@@ -56,9 +56,9 @@ def test_exploration_is_tagged(gd, monkeypatch):
 
 def test_prediction_without_sklearn_and_ranking(gd):
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                       {"zustand": "aktiv", "gewichte": {"hinweis:regel:gut": 2.0, "hinweis:erkenntnis:schlecht": -2.0, "skill:x": 0.5}, "achsenabschnitt": 0.0},
+                       {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 2.0, "hint:erkenntnis:schlecht": -2.0, "skill:x": 0.5}, "achsenabschnitt": 0.0},
                        oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
-    p = learning.prediction(m, {"skill:x": 1.0, "hinweis:regel:gut": 1.0})
+    p = learning.prediction(m, {"skill:x": 1.0, "hint:regel:gut": 1.0})
     assert abs(p - 1 / (1 + 2.718281828 ** -2.5)) < 1e-6
     r = learning.ranking(m, ["skill:x"], ["erkenntnis:schlecht", "erkenntnis:neutral", "regel:gut"])
     assert [h for h, _ in r] == ["regel:gut", "erkenntnis:neutral", "erkenntnis:schlecht"] and r[0][1] > 0 > r[2][1]
@@ -109,14 +109,14 @@ def test_router_learns_which_hint_helps(gd):
     assert b["zustand"] == "aktiv", b
     assert b["nutzen_holdout"]["zustand"] == "nutzen" and b["nutzen_holdout"]["abstand"] > 0.3, b["nutzen_holdout"]  # 0.30.0
     m = learning.active()
-    assert m and m.data["gewichte"][f"hinweis:{r.id}"] > 0 > m.data["gewichte"][f"hinweis:{e.id}"]
+    assert m and m.data["gewichte"][f"hint:{r.id}"] > 0 > m.data["gewichte"][f"hint:{e.id}"]
     rf = learning.ranking(m, ["tool:graylog_search", "skill:graylog"], [e.id, r.id])
     assert rf[0][0] == r.id and rf[0][1] > 0.3
     v = intuition.before("graylog_search", {"q": "neu"}, "a")
     assert v["zugriff"]["router"] == "modell" and v["zugriff"]["gezeigt"][0] == r.id
     assert "Router model (aktiv)" in tools.call_tool("vi_modell", {}, "a", True)
     why = tools.call_tool("vi_why", {"id": r.id}, "a", False)  # 0.29.0: the decision just made (open, no vi_after yet), laid open
-    assert "open action, not reported yet" in why and "router modell" in why and f"hinweis:{r.id}" in why and "lift +" in why
+    assert "open action, not reported yet" in why and "router modell" in why and f"hint:{r.id}" in why and "lift +" in why
     assert sleep_cycle.run("Test").data["schritte"]["8_lernen"]["zustand"] == "aktiv"
 
 
@@ -211,7 +211,7 @@ def test_hint_feedback_is_direct_learning_signal(gd):
     action("checkmk_get_host", "web7", False)  # the action failed anyway — the indirect label would be 0
     outputs = tools.call_tool("vi_bestaetige", {"id": h.id, "grund": "Hinweis war richtig, Fehler hatte andere Ursache"}, "a", True)
     assert "feedback on the hint" in outputs
-    pair = [y for m, y, _ in learning.observations() if f"hinweis:{h.id}" in m]
+    pair = [y for m, y, _ in learning.observations() if f"hint:{h.id}" in m]
     assert pair == [1]
     # refuting an object that was not shown: normal refutation, no feedback
     others = g.new_object("insight", "web8 ist abgeschaltet", ["host:web8"], {"quelle": "y"}, reason="T", instance="b")
@@ -230,15 +230,15 @@ def test_contributions_add_up_to_the_prediction(gd):
     """0.29.0: vi_why lays open the same arithmetic as the router — the contributions plus intercept are the logit."""
     import math
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                     {"zustand": "aktiv", "gewichte": {"hinweis:regel:gut": 1.5, "hinweisart:regel": 0.25, "hinweis_n:1": -0.2, "skill:x": 0.5},
+                     {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 1.5, "hint_kind:regel": 0.25, "hint_n:1": -0.2, "skill:x": 0.5},
                       "achsenabschnitt": -0.3}, oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
-    f = {"skill:x": 1.0, "hinweis_n:1": 1.0, "hinweis:regel:gut": 1.0, "hinweisart:regel": 1.0, "unbekannt:y": 1.0}
+    f = {"skill:x": 1.0, "hint_n:1": 1.0, "hint:regel:gut": 1.0, "hint_kind:regel": 1.0, "unbekannt:y": 1.0}
     c = learning.contributions(m, f)
-    assert c[0] == ("hinweis:regel:gut", 1.5) and "unbekannt:y" not in dict(c)
+    assert c[0] == ("hint:regel:gut", 1.5) and "unbekannt:y" not in dict(c)
     p = learning.prediction(m, f)
     assert abs(math.log(p / (1 - p)) - (m.data["achsenabschnitt"] + sum(v for _, v in c))) < 1e-9
     w = learning.why(m, "regel:gut", ["skill:x"])
-    assert w["lift"] > 0 and dict(w["hint"])["hinweis:regel:gut"] == 1.5 and dict(w["situation"]) == {"skill:x": 0.5}
+    assert w["lift"] > 0 and dict(w["hint"])["hint:regel:gut"] == 1.5 and dict(w["situation"]) == {"skill:x": 0.5}
     assert w["p_with"] == learning.ranking(m, ["skill:x"], ["regel:gut"])[0][1] + w["p_without"]
 
 
@@ -285,13 +285,13 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
 def test_vi_why_separates_what_is_same_for_every_candidate(gd):
     """0.30.0: hinweis_n moves every lift alike; vi_why reports it apart from what decides the order."""
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                     {"zustand": "aktiv", "gewichte": {"hinweis_n:1": -0.35, "hinweis_n:0": 0.05, "hinweisart:erkenntnis": 0.2, "tool:x": 0.1},
+                     {"zustand": "aktiv", "gewichte": {"hint_n:1": -0.35, "hint_n:0": 0.05, "hint_kind:erkenntnis": 0.2, "tool:x": 0.1},
                       "achsenabschnitt": 0.0}, oid=learning.MODEL, reason="T", instance=g.SERVER_INSTANCE)
     h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
     w = learning.why(m, h.id, ["tool:x"])
-    assert abs(w["same_for_all"] - (-0.40)) < 1e-9 and dict(w["distinguishing"]) == {"hinweisart:erkenntnis": 0.2}
+    assert abs(w["same_for_all"] - (-0.40)) < 1e-9 and dict(w["distinguishing"]) == {"hint_kind:erkenntnis": 0.2}
     out = tools.call_tool("vi_why", {"id": h.id, "triggers": ["tool:x"]}, "a", False)
-    assert "decides the order): +0.200" in out and "never the order): hinweis_n:1 − hinweis_n:0 = -0.400" in out
+    assert "decides the order): +0.200" in out and "never the order): hint_n:1 − hint_n:0 = -0.400" in out
 
 
 def test_hint_age_is_a_feature(gd):
@@ -303,7 +303,7 @@ def test_hint_age_is_a_feature(gd):
     assert "alter:neu" not in learning.hint_features(h.id, [], (now + timedelta(days=8)).isoformat())
     assert "alter:neu" not in learning.hint_features(h.id, [])  # no time, no age claim
     action("checkmk_get_host", "web1", True)
-    assert any(m.get("alter:neu") == 1.0 and f"hinweis:{h.id}" in m for m, _y, _o in learning.observations())
+    assert any(m.get("alter:neu") == 1.0 and f"hint:{h.id}" in m for m, _y, _o in learning.observations())
 
 
 @pytest.mark.skipif(not HAS_SKLEARN, reason="scikit-learn fehlt")
@@ -338,19 +338,19 @@ def test_gate_must_hold_in_every_reference_class(monkeypatch):
     order looks useful; against tool+host it is not — the "usefulness" was the host. The gate must not pass."""
     from vi_mcp import bandit
     monkeypatch.setattr(bandit, "base_rate", lambda tool: 0.55)
-    train = [({"tool:t": 1.0, "host:easy": 1.0, "hinweis_n:0": 1.0}, int(i % 10 != 0), f"e{i}") for i in range(50)]
-    train += [({"tool:t": 1.0, "host:hard": 1.0, "hinweis_n:0": 1.0}, int(i % 10 < 2), f"h{i}") for i in range(50)]
-    holdout = [({"tool:t": 1.0, "host:easy": 1.0, "hinweis_n:1": 1.0, "hinweis:A": 1.0}, int(i % 10 != 0), f"a{i}") for i in range(100)]
-    holdout += [({"tool:t": 1.0, "host:hard": 1.0, "hinweis_n:1": 1.0, "hinweis:B": 1.0}, int(i % 10 < 2), f"b{i}") for i in range(100)]
-    u = learning.utility({"hinweis:A": 2.0, "hinweis:B": -2.0}, 0.0, holdout, train)
+    train = [({"tool:t": 1.0, "host:easy": 1.0, "hint_n:0": 1.0}, int(i % 10 != 0), f"e{i}") for i in range(50)]
+    train += [({"tool:t": 1.0, "host:hard": 1.0, "hint_n:0": 1.0}, int(i % 10 < 2), f"h{i}") for i in range(50)]
+    holdout = [({"tool:t": 1.0, "host:easy": 1.0, "hint_n:1": 1.0, "hint:A": 1.0}, int(i % 10 != 0), f"a{i}") for i in range(100)]
+    holdout += [({"tool:t": 1.0, "host:hard": 1.0, "hint_n:1": 1.0, "hint:B": 1.0}, int(i % 10 < 2), f"b{i}") for i in range(100)]
+    u = learning.utility({"hint:A": 2.0, "hint:B": -2.0}, 0.0, holdout, train)
     assert u["je_bezugsklasse"]["tool"]["zustand"] == "nutzen" and u["je_bezugsklasse"]["tool+host"]["zustand"] == "kein_nutzen"
     assert u["zustand"] == "kein_nutzen" and "tool+host:" in u["urteil"]
 
 
 def test_inseparable_hints_are_named():
     """0.32.0 (Duhem): two hints always shown in the same actions are reported as one group; a hint also shown alone is not."""
-    obs = [({"hinweis:A": 1.0, "hinweis:B": 1.0, "hinweis:C": 1.0}, 1, f"x{i}") for i in range(12)]
-    obs += [({"hinweis:C": 1.0}, 0, f"y{i}") for i in range(3)]
+    obs = [({"hint:A": 1.0, "hint:B": 1.0, "hint:C": 1.0}, 1, f"x{i}") for i in range(12)]
+    obs += [({"hint:C": 1.0}, 0, f"y{i}") for i in range(3)]
     r = learning.inseparable(obs)
     assert r == {"gruppen": 1, "hinweise": 2, "beispiele": [["A", "B"]]}
 

@@ -70,15 +70,15 @@ def test_proposal_lands_in_quarantine(open_):
     assert not error and "quarantine" in text and "rule finding" in text
     oid = text.split()[1]
     o = g.load(oid)
-    assert o.mode == "quarantine" and o.instance == config.OPEN and "herkunft:offen" in o.hashtags
+    assert o.mode == "quarantine" and o.instance == config.OPEN and "origin:offen" in o.hashtags
     _, sa, _ = _init(port, tok)
     assert "rm -rf" not in _call(port, sa, "vi_vorher", {"tool": "Bash", "args": {}}, tok)[1]  # has no effect
     assert any(h.startswith("rule finding") for h in p2p.sensitive(o))
-    harmless = _call(port, sid, "vi_lerne", {"text": "Der Neustart des Dienstes dauert etwa dreißig Sekunden", "hashtags": ["thema:neustart"], "quelle": "Beobachtung 8.11."})[1]
+    harmless = _call(port, sid, "vi_lerne", {"text": "Der Neustart des Dienstes dauert etwa dreißig Sekunden", "hashtags": ["topic:neustart"], "quelle": "Beobachtung 8.11."})[1]
     hid = harmless.split()[1]
     o = g.load(hid)
     o.data["pruefung"]["pruefer"] = {"status": "zulassen", "gruende": []}
-    o.hashtags = [t for t in o.hashtags if t != "pruefer:ausstehend"] + ["pruefer:zulassen"]
+    o.hashtags = [t for t in o.hashtags if t != "reviewer:ausstehend"] + ["reviewer:zulassen"]
     g.save(o)
     error, text = _call(port, sa, "vi_freigabe", {"id": hid, "grund": "geprüft"}, tok)
     assert not error and g.load(hid).mode == "test"
@@ -90,7 +90,7 @@ def test_no_shared_answer_cache(open_):
     v = json.loads(_call(port, sid, "vi_vorher", {"tool": "netbox_get_vms", "args": {"a": 1}, "lesend": True})[1])
     _call(port, sid, "vi_nachher", {"vorher_id": v["vorher_id"], "tool": "netbox_get_vms", "args": {"a": 1}, "ok": True, "ergebnis": "geheime Liste", "lesend": True})
     v2 = json.loads(_call(port, sid, "vi_vorher", {"tool": "netbox_get_vms", "args": {"a": 1}, "lesend": True})[1])
-    assert v2["antwort"] is None and not g.recall("art:answer", viewer=None)
+    assert v2["antwort"] is None and not g.recall("kind:answer", viewer=None)
 
 
 def test_without_open_stays_401(tmp_path, monkeypatch):
@@ -139,17 +139,17 @@ def test_internal_visible_only_with_token(open_):
     port, tok = open_
     assert g.OPEN_INSTANCE == config.OPEN
     _, sa, _ = _init(port, tok)
-    error, text = _call(port, sa, "vi_lerne", {"text": "Interne Anleitung: VPN-Konzentrator neu starten", "inhalt": "Schritt 1 ...", "hashtags": ["thema:vpn"],
+    error, text = _call(port, sa, "vi_lerne", {"text": "Interne Anleitung: VPN-Konzentrator neu starten", "inhalt": "Schritt 1 ...", "hashtags": ["topic:vpn"],
                                               "quelle": "Confluence 002IT", "sicht": "intern"}, tok)
     assert not error and "visibility internal" in text
     oid = text.split()[1]
     _, sid, _ = _init(port)  # without a token
-    assert oid not in _call(port, sid, "vi_erinnere", {"filter": "thema:vpn"})[1]
+    assert oid not in _call(port, sid, "vi_erinnere", {"filter": "topic:vpn"})[1]
     assert oid not in _call(port, sid, "vi_erinnere", {"filter": "VPN Konzentrator"})[1]
     assert "neu starten" not in _call(port, sid, "vi_vorher", {"tool": "Bash", "args": {"command": "vpn restart"}})[1]
     error, text = _call(port, sid, "vi_objekt", {"id": oid})
     assert error and "VPN" not in text
-    assert oid in _call(port, sa, "vi_erinnere", {"filter": "thema:vpn"}, tok)[1]  # visible with a token
+    assert oid in _call(port, sa, "vi_erinnere", {"filter": "topic:vpn"}, tok)[1]  # visible with a token
     o = g.load(oid)
     o.confirmed, o.data["nuetzlich"] = 9, {"ja": 9, "nein": 0, "n": 9}
     g.save(o)
@@ -159,7 +159,7 @@ def test_internal_visible_only_with_token(open_):
 def test_invalid_visibility_is_rejected(open_):
     port, tok = open_
     _, sa, _ = _init(port, tok)
-    error, text = _call(port, sa, "vi_lerne", {"text": "eine ausreichend lange Kernaussage", "hashtags": ["thema:x"], "quelle": "Beobachtung 9.11.", "sicht": "privat-oder-so"}, tok)
+    error, text = _call(port, sa, "vi_lerne", {"text": "eine ausreichend lange Kernaussage", "hashtags": ["topic:x"], "quelle": "Beobachtung 9.11.", "sicht": "privat-oder-so"}, tok)
     assert error and "visibility" in text
 
 

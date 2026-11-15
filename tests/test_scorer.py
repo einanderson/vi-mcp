@@ -19,12 +19,12 @@ def e(i, tool="Bash", ok=True, args=None, sig=None):
 
 
 def test_code_rules():
-    n = scorer.rate_conversation([e(1), e(2, ok=False, sig="fehler:x"), e(3, ok=False, sig="fehler:x"), e(4)], [])
+    n = scorer.rate_conversation([e(1), e(2, ok=False, sig="error:x"), e(3, ok=False, sig="error:x"), e(4)], [])
     assert n["e1"] == {"note": 1.0, "merkmale": []} and n["e2"]["note"] == 0 and "fehler_wiederholt" in n["e2"]["merkmale"] and "erholt" in n["e4"]["merkmale"]
     n = scorer.rate_conversation([e(1, args={"a": 1}), e(2, args={"a": 1})], [])
     assert n["e1"]["note"] == 0.4 and "identisch_wiederholt" in n["e1"]["merkmale"] and n["e2"]["note"] == 1.0
     edit = e(1, tool="Edit", args={"file_path": "a"})
-    n = scorer.rate_conversation([edit, e(2, args={"command": "python3 -m pytest -q"}, ok=False, sig="fehler:t")], [])
+    n = scorer.rate_conversation([edit, e(2, args={"command": "python3 -m pytest -q"}, ok=False, sig="error:t")], [])
     assert n["e1"]["note"] == 0.4 and "test_rot_danach" in n["e1"]["merkmale"]
     n = scorer.rate_conversation([edit, e(2, args={"command": "npm test"})], [])
     assert n["e1"]["note"] == 1.0 and "test_gruen_danach" in n["e1"]["merkmale"]
@@ -44,7 +44,7 @@ def action(s, tool, ok, error=None, n=None, **extra):
 def test_scorer_in_sleep_rebooks_and_labels(gd, monkeypatch):
     monkeypatch.setattr(intuition, "REPEAT_S", 0)  # this test is about rebooking: the same hint must count in both actions
     # 0.49.0: a shell hint needs more in common than the tool — here the program
-    k = g.new_object("insight", "Hinweis zu uptime hier", ["tool:Bash", "thema:uptime"], {"quelle": "x"}, reason="T", instance="b")
+    k = g.new_object("insight", "Hinweis zu uptime hier", ["tool:Bash", "topic:uptime"], {"quelle": "x"}, reason="T", instance="b")
     s = session.begin("a", "t")
     bandit._reason.update(zeit=time.time(), je={"Bash": 0.8}, alle=0.8)
     ids = [action(s, "Bash", True, command="uptime") for _ in range(2)]
@@ -87,14 +87,14 @@ def test_model_scorer_and_calibration(gd, monkeypatch):
     serial = _conversation()
     r = scorer.model_run()
     assert r["modell_bewertet"] == 1 and "<transcript>" in seen["u"]
-    b = g.recall("art:rating scorer:modell", viewer=None)[0][1]
+    b = g.recall("kind:rating scorer:modell", viewer=None)[0][1]
     assert b.data["note"] == 0.75 and b.data["belege"] == [1, 2] and b.visibility == "private" and b.instance == "a"
     assert scorer.model_run()["modell_bewertet"] == 0  # once per version
     assert not scorer.calibration()["geeicht"] and serial not in scorer.conversation_grades()  # uncalibrated does not count
     for i in range(scorer.CAL_MIN):
         z = _conversation(0) if i else serial
-        g.new_object("rating", "m", [f"scorer:mensch", f"ziel:{z}"], {"scorer": "mensch", "ziel": z, "note": 0.7}, reason="T", oid=f"bewertung:m{i}", conversation=z)
-        g.new_object("rating", "k", [f"scorer:modell", f"ziel:{z}"], {"scorer": "modell", "ziel": z, "note": 0.75}, reason="T", oid=f"bewertung:k{i}", conversation=z)
+        g.new_object("rating", "m", [f"scorer:mensch", f"target:{z}"], {"scorer": "mensch", "ziel": z, "note": 0.7}, reason="T", oid=f"bewertung:m{i}", conversation=z)
+        g.new_object("rating", "k", [f"scorer:modell", f"target:{z}"], {"scorer": "modell", "ziel": z, "note": 0.75}, reason="T", oid=f"bewertung:k{i}", conversation=z)
     k = scorer.calibration()
     assert k["geeicht"] and k["paare"] == scorer.CAL_MIN and k["quote"] == 1.0
 
@@ -161,7 +161,7 @@ def test_signal_endpoint(signal_srv):
     assert _signal(port, username, {"mcp_session_id": sid, "art": "note", "note": 0.8}) == 204
     s = session.find_without_touching(sid)
     assert [x["art"] for x in s.signals] == ["korrektur", "note"]
-    b = g.recall("art:rating scorer:mensch", viewer=None)[0][1]
+    b = g.recall("kind:rating scorer:mensch", viewer=None)[0][1]
     assert b.data["note"] == 0.8 and b.instance == "laptop" and b.visibility == "private"
     st, _, listing = request(port, "POST", {"jsonrpc": "2.0", "id": 5, "method": "tools/list"}, tok, sid)
     assert not [t["name"] for t in listing["result"]["tools"] if "bewerte" in t["name"] or "signal" in t["name"]]  # the model has no tool for it
@@ -179,20 +179,20 @@ def test_check_cases_router(gd):
 
 
 def test_batch_query_same_as_single(gd):
-    o = g.new_object("insight", "Vergleich der Ladewege", ["thema:a", "host:b"], {"quelle": "x"}, reason="T")
+    o = g.new_object("insight", "Vergleich der Ladewege", ["topic:a", "host:b"], {"quelle": "x"}, reason="T")
     assert g.load_many([o.id, "gibtsnicht"]) == {o.id: g.load(o.id)}
 
 
 def test_numpy_near_edges_as_before(gd, monkeypatch):
     random.seed(1)
     monkeypatch.setattr(vector, "config", {"modell": "fake"})
-    a = g.new_object("insight", "erstes Objekt", ["thema:a"], {"quelle": "x"}, reason="T")
-    b = g.new_object("insight", "zweites Objekt", ["thema:b"], {"quelle": "x"}, reason="T")
-    c = g.new_object("insight", "drittes Objekt", ["thema:c"], {"quelle": "x"}, reason="T")
+    a = g.new_object("insight", "erstes Objekt", ["topic:a"], {"quelle": "x"}, reason="T")
+    b = g.new_object("insight", "zweites Objekt", ["topic:b"], {"quelle": "x"}, reason="T")
+    c = g.new_object("insight", "drittes Objekt", ["topic:c"], {"quelle": "x"}, reason="T")
     vector.save(a.id, [1.0, 0.0, 0.0], "m")
     vector.save(b.id, [0.9, 0.1, 0.0], "m")
     vector.save(c.id, [0.0, 1.0, 0.0], "m")
-    vector.save(g.new_object("insight", "anderes Modell", ["thema:d"], {"quelle": "x"}, reason="T").id, [1.0, 0.0], "alt")
+    vector.save(g.new_object("insight", "anderes Modell", ["topic:d"], {"quelle": "x"}, reason="T").id, [1.0, 0.0], "alt")
     assert abs(vector.cosine([1, 0], [1, 0]) - 1) < 1e-6 and vector.cosine([0, 0], [1, 0]) == 0.0
     r = vector.proximity_edges()
     assert r["kanten_neu"] == 1 and any(x == b.id for x, _ in g.load(a.id).edges()) and not g.load(c.id).edges()

@@ -69,7 +69,9 @@ _WORD = re.compile(r"(?<![\w<])[^\s<>\"'`=:,;()\[\]{}]{8,}")
 _BRACKET_WORD = re.compile(r"(?<![\w<])[A-Za-z0-9]{6,}[\]\[!$%&*#]{1,3}(?![\w\]\[])")
 _MCP = re.compile(r"mcp__[\w-]+?__")
 #: hashtags whose value always describes the site or a person
-LOCATION_REF = ("host:", "ort:", "standort:", "site:", "kunde:", "nutzer:", "user:", "ip:", "gespraech:", "dublette:", "suche:")
+LOCATION_REF = ("host:", "ort:", "standort:", "site:", "kunde:", "nutzer:", "user:", "ip:", "gespraech:", "dublette:", "suche:",
+                # 0.67.0: the same kinds in their English form — a location hashtag must not pass in either language
+                "location:", "customer:", "conversation:", "duplicate:", "search:")
 CREDENTIAL_WORDS = re.compile(r"passwor|kennwort|zugangsdaten|anmeldedaten|credential", re.I)
 PRIVATE_EXTRA: tuple[str, ...] = ()
 EXTRA_NAMES: tuple[str, ...] = ()

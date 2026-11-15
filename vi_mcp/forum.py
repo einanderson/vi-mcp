@@ -3,7 +3,7 @@ one server (questions.py), carried by the logbooks.
 
 A post is a logbook entry of type `beitrag` {faden, eltern, art (frage|antwort), text, inhalt, hashtags, reize, autor, netz_id,
 loesch_hash, zeit}; its id is the SHA-256 of its content. A thread (faden) is the id of its question.
-  ask      vi_ask(to="netz" or "netz:<name>") — the local question as before, plus a post for the network
+  ask      vi_ask(to="netz" or "net:<name>") — the local question as before, plus a post for the network
   ingest   a foreign post: fixed rules, then quarantine like every import (the user's decision: only after review)
              question → a question object to "alle", delivered at the next vi_before after release
              answer   → only to an own question; an object of kind erkenntnis (it is knowledge, with evidence) — after release it is
@@ -20,7 +20,7 @@ import hashlib
 import hmac
 import json
 
-from . import memory as g
+from . import memory as g, names
 from .logbook import pseudonym, sha256
 
 MAX_OPEN_PER_INSTANCE = 20
@@ -67,7 +67,8 @@ def _post(instance: str, net: str, art: str, text: str, inhalt: str, hashtags: l
     if not token:
         raise ValueError(f"instance {instance} has no network token (vi_net_token): without it a post could never be revoked")
     net_id, obj_token = p2p._object_token(token, key, net)
-    clean = lambda ts: sorted({t.strip() for t in ts or [] if isinstance(t, str) and g.TAG.match(t.strip()) and not t.strip().startswith(checks.FIXED_HASHTAGS)})[:20]  # noqa: E731
+    # the wire form of 0.66 (German hashtag kinds): what every server signs and hashes
+    clean = lambda ts: sorted({w for t in ts or [] if isinstance(t, str) and g.TAG.match(t.strip()) and not (w := names.wire_tag(t.strip())).startswith(checks.FIXED_HASHTAGS)})[:20]  # noqa: E731
     content = {"faden": faden, "eltern": eltern, "art": art, "text": (text or "").strip()[:2000], "inhalt": (inhalt or "").strip()[:20000],
                "hashtags": clean(hashtags), "reize": clean(reize), "autor": author(instance, net), "netz_id": net_id,
                "loesch_hash": hashlib.sha256(obj_token.encode()).hexdigest(), "zeit": g.now()[:10]}
@@ -82,12 +83,12 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
         raise ValueError(f"unknown network {net!r} — known: {', '.join(p2p.networks())}")
     _tables()
     with g.lock:
-        n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? AND json_extract(data, '$.an') LIKE 'netz:%' "
+        n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? AND json_extract(data, '$.an') LIKE 'net:%' "
                            "AND json_extract(data, '$.zustand') IN ('offen', 'zugestellt')", (instance,)).fetchone()[0]
     if n >= MAX_OPEN_PER_INSTANCE:
         raise ValueError(f"{n} questions of {instance} to the network are still open (at most {MAX_OPEN_PER_INSTANCE}); they expire after {questions.EXPIRY_DAYS} days")
     content = _post(instance, net, "frage", text, source, [], triggers, None, None, f"beitrag|frage|{instance}|{g.now()}|{text[:40]}")
-    o = questions.ask(instance, f"netz:{net}", text, triggers, source)
+    o = questions.ask(instance, f"net:{net}", text, triggers, source)
     pid = sha256(content)
     o.data["beitrag"] = {"netz": net, "id": pid, "richtung": "aus"}
     g.save(o)
@@ -146,11 +147,11 @@ def ingest(raw: dict, header: dict, net: str) -> str:
     herkunft = {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": pid, "netz_id": raw["netz_id"], "netz": net}
     common = {"herkunft": herkunft, "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": raw["text"], "fremd_hashtags": raw["hashtags"] + raw["reize"],
               "beitrag": {"netz": net, "id": pid, "faden": raw["faden"] or pid, "art": raw["art"], "autor": raw["autor"], "richtung": "ein"}}
-    tags = ["herkunft:p2p", "herkunft:gespraech", f"herausgeber:{name}", "pruefer:ausstehend", "modus:quarantine", f"netz:{net}"]
+    tags = ["origin:p2p", "origin:gespraech", f"publisher:{name}", "reviewer:ausstehend", "mode:quarantine", f"net:{net}"]
     if raw["art"] == "frage":
         data = {**common, "von": f"{raw['autor']}@{net}", "an": "alle", "zustand": "offen", "quelle": raw["inhalt"] or f"question in network {net}",
                 "zugestellt_an": [], "antworten": [], "gemeldet": 0}
-        o = g.new_object("question", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["an:alle", "zustand:offen"])), data, importance=2,
+        o = g.new_object("question", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["to:alle", "state:offen"])), data, importance=2,
                          who=f"import@{name}", reason=f"question from {raw['autor']} in {net}", oid=f"frage:post-{pid[:32]}", mode="quarantine",
                          instance=f"p2p-{name}", visibility="internal" if company else None)
     else:
@@ -176,9 +177,9 @@ def release_questions() -> int:
     from . import p2p
     n = 0
     value = p2p.publisher_value(fresh=True)
-    for _, o, _g in g.recall("art:question modus:quarantine herkunft:gespraech", limit=200, viewer=None):
+    for _, o, _g in g.recall("kind:question mode:quarantine origin:gespraech", limit=200, viewer=None):
         b = o.data.get("beitrag") or {}
-        if b.get("richtung") != "ein" or b.get("art") != "frage" or "pruefer:ausstehend" in o.hashtags:
+        if b.get("richtung") != "ein" or b.get("art") != "frage" or "reviewer:ausstehend" in o.hashtags:
             continue
         if p2p.sensitive(o) or value.get(o.data["herkunft"]["herausgeber"], {}).get("gesperrt"):
             continue  # a rule finding, a reviewer doubt or a blocked publisher: a person decides
@@ -200,7 +201,7 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
         return
     if b["art"] == "frage":  # a question carries no claim: once reviewed it is delivered like a local one
         o.mode = "active"
-        o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:active"]
+        o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:active"]
         g.save(o)
         return
     q = g.load(o.data.get("frage") or "")

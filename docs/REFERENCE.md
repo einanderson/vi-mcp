@@ -10,14 +10,14 @@ Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server co
 
 ### `vi_before`
 
-VI hook for clients, BEFORE an action: report tool + arguments. Answer (JSON): antwort (remembered result if read-only and fresh — then do not run the tool), hinweise (insights, rules, learned searches, reflexes, questions from other instances), args (possibly changed by an active reflex), vorher_id (pass back to vi_after). read_only: optional, overrides the name pattern. context_hashtags: optional, what the client is working on (e.g. host:web1 thema:oom) — more triggers, better hits. **OPEN** · German alias `vi_vorher`
+VI hook for clients, BEFORE an action: report tool + arguments. Answer (JSON): antwort (remembered result if read-only and fresh — then do not run the tool), hinweise (insights, rules, learned searches, reflexes, questions from other instances), args (possibly changed by an active reflex), vorher_id (pass back to vi_after). read_only: optional, overrides the name pattern. context_hashtags: optional, what the client is working on (e.g. host:web1 topic:oom) — more triggers, better hits. **OPEN** · German alias `vi_vorher`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `tool` | string | yes | tool name, e.g. Bash or graylog_search (without an MCP server prefix) |
 | `args` | object |  | the tool's arguments as an object |
 | `read_only` | boolean |  | true if the tool only reads (then a fresh remembered answer may come back) (German: `lesend`) |
-| `context_hashtags` | array of string |  | hashtags of what you are working on (e.g. host:web1, thema:oom) — they select the hints (German: `kontext_hashtags`) |
+| `context_hashtags` | array of string |  | hashtags of what you are working on (e.g. host:web1, topic:oom) — they select the hints (German: `kontext_hashtags`) |
 
 ### `vi_after`
 
@@ -36,13 +36,13 @@ VI hook for clients, AFTER an action: report the result → experience, remember
 
 ### `vi_ask`
 
-VI collective: ask another instance (or all). The question appears to the target instance at its next action (vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), your own instance (its other conversations — e.g. other Claude Code sessions), '<instance>#<conversation>' (one conversation; yours is in the instructions and in vi_questions), or 'netz' / 'netz:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on an answer rates it for the whole network. · German alias `vi_frage`
+VI collective: ask another instance (or all). The question appears to the target instance at its next action (vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'alle' (all), your own instance (its other conversations — e.g. other Claude Code sessions), '<instance>#<conversation>' (one conversation; yours is in the instructions and in vi_questions), or 'netz' / 'net:<network>' — AIs on other servers of the network answer; their answers arrive reviewed, and vi_confirm / vi_refute on an answer rates it for the whole network. · German alias `vi_frage`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `to` | string | yes | target: an instance name, alle (all instances here), netz or netz:<name> (the AIs of the other servers) (German: `an`) |
+| `to` | string | yes | target: an instance name, alle (all instances here), netz or net:<name> (the AIs of the other servers) (German: `an`) |
 | `text` | string | yes | the question |
-| `triggers` | array of string |  | hashtags kind:value at which it appears (e.g. tool:ssh, host:web1, fehler:timeout) (German: `reize`) |
+| `triggers` | array of string |  | hashtags kind:value at which it appears (e.g. tool:ssh, host:web1, error:timeout) (German: `reize`) |
 | `source` | string |  | source: command, host and time, or URL (for vi_ask: why you ask) (German: `quelle`) |
 
 ### `vi_answer`
@@ -98,7 +98,7 @@ VI housekeeping: long-term archive for entries no longer used — status and stu
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string |  | id of an archived entry: its full content |
-| `filter` | string |  | e.g. (thema:oom OR thema:disk-full) !ok:ja |
+| `filter` | string |  | e.g. (topic:oom OR topic:disk-full) !ok:ja |
 | `limit` | integer |  | how many at most |
 
 ### `vi_archive_restore`
@@ -116,12 +116,12 @@ VI: the learned router model — state (active/test/too little data), observatio
 
 ### `vi_solved`
 
-VI skill: a problem counts as solved — store the solution as a skill (or evolve an existing one; new triggers replace the old). triggers = hashtags of the problem (tool:, host:, thema:, fehler:), steps = tool sequence, instructions = the full solution with commands and code, evidence = object IDs (experiences). A skill starts in mode test and appears before matching actions. · German alias `vi_geloest`
+VI skill: a problem counts as solved — store the solution as a skill (or evolve an existing one; new triggers replace the old). triggers = hashtags of the problem (tool:, host:, thema:, error:), steps = tool sequence, instructions = the full solution with commands and code, evidence = object IDs (experiences). A skill starts in mode test and appears before matching actions. · German alias `vi_geloest`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `name` | string | yes | name: letters, digits, - |
-| `triggers` | array of string | yes | hashtags kind:value at which it appears (e.g. tool:ssh, host:web1, fehler:timeout) (German: `reize`) |
+| `triggers` | array of string | yes | hashtags kind:value at which it appears (e.g. tool:ssh, host:web1, error:timeout) (German: `reize`) |
 | `steps` | array of string | yes | the tools of the solution path, in order (German: `schritte`) |
 | `instructions` | string | yes | the solution path in words (at least 10 characters) (German: `anleitung`) |
 | `reason` | string | yes | why — required, stored in the object's history (German: `grund`) |
@@ -133,7 +133,7 @@ VI skill: all skills (name, version, mode, benefit, steps); filter optional (has
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string |  | e.g. (thema:oom OR thema:disk-full) !ok:ja |
+| `filter` | string |  | e.g. (topic:oom OR topic:disk-full) !ok:ja |
 
 ### `vi_skill`
 
@@ -278,7 +278,7 @@ VI network wiki: write a page revision (instance with a network token). base_rev
 | `also_parents` | array of string |  | further heads this revision merges (resolves a conflict) |
 | `title` | string |  | page title |
 | `note` | string |  | what changed and why |
-| `hashtags` | array of string |  | hashtags kind:value (host:, tool:, skill:, thema:, fehler:) |
+| `hashtags` | array of string |  | hashtags kind:value (host:, tool:, skill:, thema:, error:) |
 | `source` | string |  | where the content comes from (German: `quelle`) |
 | `delete` | boolean |  | true: delete the page (a revision; it can be restored) |
 
@@ -320,13 +320,13 @@ VI: memory status — objects per kind, experiences 24 h, open conversations, ed
 
 ### `vi_learn`
 
-VI: store knowledge as an object. When: a non-obvious problem was solved, a lasting rule from the user, a looked-up system fact, a correction (rules 5–8); never secrets, search first. With hashtags kind:value (e.g. tool:graylog_search, host:web1.example, thema:timeout) and source (required). text = the key statement, shown as a hint before matching actions. content = the complete knowledge: code, API tables, commands, configurations, unabridged (up to 200,000 characters). Store it completely and do not point to files that exist on one machine only — what is missing here is a gap in memory. vi_object reads it back; full-text search finds it. Objects sharing hashtags are linked. **OPEN** · German alias `vi_lerne`
+VI: store knowledge as an object. When: a non-obvious problem was solved, a lasting rule from the user, a looked-up system fact, a correction (rules 5–8); never secrets, search first. With hashtags kind:value (e.g. tool:graylog_search, host:web1.example, topic:timeout) and source (required). text = the key statement, shown as a hint before matching actions. content = the complete knowledge: code, API tables, commands, configurations, unabridged (up to 200,000 characters). Store it completely and do not point to files that exist on one machine only — what is missing here is a gap in memory. vi_object reads it back; full-text search finds it. Objects sharing hashtags are linked. **OPEN** · German alias `vi_lerne`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `content` | string |  | complete knowledge: code, API tables, commands, unabridged (German: `inhalt`) |
 | `text` | string | yes | one concrete key statement — shown as a hint before matching actions |
-| `hashtags` | array of string | yes | hashtags kind:value (host:, tool:, skill:, thema:, fehler:) |
+| `hashtags` | array of string | yes | hashtags kind:value (host:, tool:, skill:, thema:, error:) |
 | `source` | string | yes | source: command, host and time, or URL (for vi_ask: why you ask) (German: `quelle`) |
 | `importance` | integer |  | 0–3 (default 1) (German: `wichtigkeit`) |
 | `visibility` | string (shared, internal) |  | shared (default): everyone, also without a token, and the networks. internal: only instances with a token — never an open network, only a company network (members of the same organisation) — for company knowledge (German: `sicht`) |
@@ -334,7 +334,7 @@ VI: store knowledge as an object. When: a non-obvious problem was solved, a last
 | `key` | string |  | optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1. |
 | `index` | string |  | optional: the index the knowledge belongs to — a project or special VI (e.g. cue-print, ansible); default: the project of your working directory, else global |
 | `project` | string |  | set by the hook: the name of your working directory (mapped to an index by the server) (German: `projekt`) |
-| `image` | string |  | optional: an image as base64 — stored as a memory of its own kind (art:image); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F] |
+| `image` | string |  | optional: an image as base64 — stored as a memory of its own kind (kind:image); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F] |
 | `regions` | array of object |  | optional, with image: what is where, in the output format of SAM 3 (Segment Anything with Concepts) — one entry per instance found |
 
 ### `vi_indexes`
@@ -420,7 +420,7 @@ VI: a private virtual intelligence machine. Execute VIL over its own mutable obj
 
 ### `vi_logic`
 
-VI: logical descriptions in a Python-like notation, checked by formal logic (answer set programming, clingo). Facts zone("gate1", "dmz"); rules head <= body with & (and), ~x (not derivable), -x (explicitly false), comparisons in parentheses (H != "a"); never(cond) = a constraint whose violation is reported; soft(rule) or soft(rule, 0.9) = a rule with a learned weight; built in: obligatory/forbidden/permitted/done → violation, conflict. Capitalised names are variables. action check: what follows, violated constraints, norm conflicts, contradictions, rule weights. ask: true/false/both/unknown/not_derived/undetermined per atom (+ P(atom) with probabilities). rate: a conclusion was checked against reality (correct true/false) — the rules that derive it learn their weight. save: keep a named rule set (then use rule_set=name in the other actions). Results are evidence 'inferred'. Object dialect clingo-objekt (memory objects as facts, as you may see them): (O in objects("art:skill host:web*")) binds O to the objects of a vi_recall filter; (O.host == H) reads a hashtag, (O.kind == "skill") a field (kind, mode, visibility, instance, index, text; numbers age, importance, confirmed, refuted, accesses, e.g. (O.age > 90)); linked(O, B) follows an edge (objects one edge away are imported too). Comparisons in parentheses. Classes, methods and inheritance are real Python in the package clingo-object (import clingo_object), which compiles them to this notation.
+VI: logical descriptions in a Python-like notation, checked by formal logic (answer set programming, clingo). Facts zone("gate1", "dmz"); rules head <= body with & (and), ~x (not derivable), -x (explicitly false), comparisons in parentheses (H != "a"); never(cond) = a constraint whose violation is reported; soft(rule) or soft(rule, 0.9) = a rule with a learned weight; built in: obligatory/forbidden/permitted/done → violation, conflict. Capitalised names are variables. action check: what follows, violated constraints, norm conflicts, contradictions, rule weights. ask: true/false/both/unknown/not_derived/undetermined per atom (+ P(atom) with probabilities). rate: a conclusion was checked against reality (correct true/false) — the rules that derive it learn their weight. save: keep a named rule set (then use rule_set=name in the other actions). Results are evidence 'inferred'. Object dialect clingo-objekt (memory objects as facts, as you may see them): (O in objects("kind:skill host:web*")) binds O to the objects of a vi_recall filter; (O.host == H) reads a hashtag, (O.kind == "skill") a field (kind, mode, visibility, instance, index, text; numbers age, importance, confirmed, refuted, accesses, e.g. (O.age > 90)); linked(O, B) follows an edge (objects one edge away are imported too). Comparisons in parentheses. Classes, methods and inheritance are real Python in the package clingo-object (import clingo_object), which compiles them to this notation.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -429,7 +429,7 @@ VI: logical descriptions in a Python-like notation, checked by formal logic (ans
 | `expected_answers` | array of string |  | verify: complete independently checked answer set (empty is valid) |
 | `reference` | string |  | verify: independent oracle or test that produced expected_answers |
 | `predicate` | string |  | verify: projected predicate, default ans |
-| `filters` | array of string |  | objects: vi_recall filters, e.g. ["art:skill", "host:web*"] |
+| `filters` | array of string |  | objects: vi_recall filters, e.g. ["kind:skill", "host:web*"] |
 | `edges` | boolean |  | objects: also edges and the objects one edge away (default true) |
 | `source` | string |  | statements, one per line (added to rule_set if both are given) (German: `quelle`) |
 | `rule_set` | string |  | name or id of a saved rule set |
@@ -472,7 +472,7 @@ VI: search memory. When: before starting any task, before changing actions on sy
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string | yes | e.g. (thema:oom OR thema:disk-full) !ok:ja |
+| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:ja |
 | `limit` | integer |  | how many hits at most (default 10) |
 | `semantic` | boolean |  | true: hybrid search — meaning (embedding) plus full text (German: `semantisch`) |
 | `reinforce` | boolean |  | default true; false = read only (access count and last use stay unchanged) |
@@ -573,8 +573,8 @@ VI: learn a search as a mnemonic — the hashtag combination (AND/OR) that finds
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `name` | string | yes | name: letters, digits, - |
-| `filter` | string | yes | e.g. (thema:oom OR thema:disk-full) !ok:ja |
-| `triggers` | array of string | yes | hashtags kind:value at which it appears (e.g. tool:ssh, host:web1, fehler:timeout) (German: `reize`) |
+| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:ja |
+| `triggers` | array of string | yes | hashtags kind:value at which it appears (e.g. tool:ssh, host:web1, error:timeout) (German: `reize`) |
 | `story` | string | yes | why this search finds the thing — a mnemonic (German: `geschichte`) |
 | `source` | string | yes | source: command, host and time, or URL (for vi_ask: why you ask) (German: `quelle`) |
 
@@ -584,7 +584,7 @@ VI: drill-down — search, add the most distinctive hashtag of the hits, search 
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string | yes | e.g. (thema:oom OR thema:disk-full) !ok:ja |
+| `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:ja |
 | `levels` | integer |  | how many levels at most (default 3) (German: `stufen`) |
 
 ### `vi_set_visibility`
@@ -593,7 +593,7 @@ VI: switch objects between shared and internal (e.g. company knowledge learned a
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `filter` | string | yes | e.g. art_wissen:handbuch |
+| `filter` | string | yes | e.g. knowledge_kind:handbuch |
 | `visibility` | string (shared, internal) | yes | shared or internal (German: `sicht`) |
 | `reason` | string | yes | why — required, stored in the object's history (German: `grund`) |
 | `apply` | boolean |  | false (default): only count |
@@ -1147,7 +1147,7 @@ First line of each module's docstring.
 | `dataset` | Training data from the memory (0.62.0) — the goal: a VI that comes out of the incubator fine-tunes an AI. |
 | `db` | Database access: SQLite (default, standard library) or PostgreSQL (optional, psycopg 3). |
 | `db_migrate` | Move a SQLite database to PostgreSQL (0.50.0): `vi-mcp db migrate`, `vi-mcp db status`. |
-| `doc_triggers` | Triggers for documentation (0.26.0): imported documentation gets host: and thema: hashtags so it can appear before matching actions. |
+| `doc_triggers` | Triggers for documentation (0.26.0): imported documentation gets host: and topic: hashtags so it can appear before matching actions. |
 | `embed_service` | Own embedding service (0.28.0) and reranker (0.60.0): `vi-mcp embed setup\|auto\|compare\|status\|remove` — vectors without a foreign stack. |
 | `evaluation` | Evaluation (0.55.0) — a fixed measuring instrument for the search, so every change to it is measured before it stays. |
 | `finetune` | Fine-tuning an AI with what a VI learned (0.62.0) — the VI knows how, and an AI on vi-mcp is told "I want to fine-tune". |

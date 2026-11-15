@@ -70,10 +70,10 @@ def test_no_access_to_server_state():
 
 
 def test_reflex_contract_in_sandbox(gd):
-    g.new_object("reflex", "meldet das Werkzeug", ["reflex:echo", "reflexart:nachher", "modus:test"],
+    g.new_object("reflex", "meldet das Werkzeug", ["reflex:echo", "reflex_kind:nachher", "mode:test"],
                    {"name": "echo", "art": "nachher", "code": "def run(tool, args, ergebnis):\n    return 'gesehen: ' + tool"},
                    oid="reflex:echo", mode="test", reason="T")
-    g.new_object("reflex", "Werkzeug", ["reflex:summe", "reflexart:werkzeug", "modus:active"],
+    g.new_object("reflex", "Werkzeug", ["reflex:summe", "reflex_kind:werkzeug", "mode:active"],
                    {"name": "summe", "art": "werkzeug", "code": "TOOL = {'description': 'summiert', 'inputSchema': {'type': 'object', 'properties': {'zahlen': {'type': 'array'}}}}\ndef run(args):\n    return str(sum(args.get('zahlen', [])))"},
                    oid="reflex:summe", mode="active", reason="T")
     loaded = reflexes.load_all()

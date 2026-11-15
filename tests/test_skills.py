@@ -15,12 +15,12 @@ def action(s, tool, ok, error=None, host="cue1"):
 
 
 def test_solved_skill_appears_and_evolves(gd):
-    r = tools.call_tool("vi_geloest", {"name": "Graylog Timeout", "reize": ["tool:graylog_search", "fehler:timeout", "art:x"],
+    r = tools.call_tool("vi_geloest", {"name": "Graylog Timeout", "reize": ["tool:graylog_search", "error:timeout", "kind:x"],
                                       "schritte": ["graylog_system_status", "graylog_search"], "anleitung": "Erst Systemstatus prüfen, dann mit kleinerem Zeitraum suchen",
                                       "grund": "dreimal so gelöst"}, "a", True)
     assert 'Skill "graylog-timeout" v1 (test' in r
     sk = g.load("skill:graylog-timeout")
-    assert sk.visibility == "shared" and sk.data["problem"]["reize"] == ["fehler:timeout", "tool:graylog_search"]
+    assert sk.visibility == "shared" and sk.data["problem"]["reize"] == ["error:timeout", "tool:graylog_search"]
     v = intuition.before("graylog_search", {"q": 1}, "b")
     assert any('Skill "graylog-timeout"' in h and "graylog_system_status → graylog_search" in h for h in v["hinweise"])
     intuition.after("graylog_search", {"q": 1}, True, 1, None, "ok", v["vorher_id"], "b")
@@ -41,15 +41,15 @@ def test_skill_from_recovery_in_sleep(gd):
     action(s, "checkmk_get_host", False, "ConnectionError: refused")
     action(s, "Bash", True)  # e.g. service restarted
     e_ok, _ = action(s, "checkmk_get_host", True)
-    assert "ueberraschung:erholt" in g.load(e_ok).hashtags
+    assert "surprise:erholt" in g.load(e_ok).hashtags
     b = sleep_cycle.run("Test")
     assert b.data["schritte"]["4c_skills"]["neu"] == 1
-    sk = [o for _, o, _g in g.recall("art:skill", viewer=None)][0]
+    sk = [o for _, o, _g in g.recall("kind:skill", viewer=None)][0]
     assert sk.instance == g.SERVER_INSTANCE and sk.mode == "test"
     assert [x["tool"] for x in sk.data["loesung"]["schritte"]] == ["checkmk_get_host", "Bash", "checkmk_get_host"]
-    assert {"tool:checkmk_get_host", "host:cue1"} <= set(sk.data["problem"]["reize"]) and any(t.startswith("fehler:") for t in sk.data["problem"]["reize"])
+    assert {"tool:checkmk_get_host", "host:cue1"} <= set(sk.data["problem"]["reize"]) and any(t.startswith("error:") for t in sk.data["problem"]["reize"])
     assert len(sk.edges()) >= 4
-    assert "herkunft:episode" in sk.hashtags and sk.visibility == "internal" and "Then this call worked" in str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
+    assert "origin:episode" in sk.hashtags and sk.visibility == "internal" and "Then this call worked" in str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
     # 0.56.0: a second recovery of the same problem with another measure is another solution (the helper's arguments differ) —
     # same problem key, so sleep proposes merging them; the same measure evolves the solution (tests/test_solutions.py)
     s2 = session.begin("b", "t")
@@ -69,19 +69,19 @@ def test_skill_becomes_disputed_when_useless(gd):
 
 
 def test_merge_with_reference_and_proposal(gd):
-    a = skills.new("a-weg", ["tool:t_x", "fehler:f_1"], ["t_a", "t_x"], "Weg A: erst t_a dann t_x", "Testlauf", [], "a")
-    b = skills.new("b-weg", ["tool:t_x", "fehler:f_1", "host:h9"], ["t_b", "t_x"], "Weg B: erst t_b dann t_x", "Testlauf", [], "b")
+    a = skills.new("a-weg", ["tool:t_x", "error:f_1"], ["t_a", "t_x"], "Weg A: erst t_a dann t_x", "Testlauf", [], "a")
+    b = skills.new("b-weg", ["tool:t_x", "error:f_1", "host:h9"], ["t_b", "t_x"], "Weg B: erst t_b dann t_x", "Testlauf", [], "b")
     v = sleep_cycle.run("Test").data["schritte"]["4c_skills"]
     assert v["vorschlaege"] == 2 and "fusion:vorschlag" in g.load(a.id).hashtags
     r = tools.call_tool("vi_skill_fusion", {"a": a.id, "b": b.id, "name": "t_x Störung", "grund": "beide lösen dasselbe"}, "c", True)
     assert "merged into" in r
-    new_o = [o for _, o, _g in g.recall("art:skill", viewer=None)][0]  # the only one not merged
+    new_o = [o for _, o, _g in g.recall("kind:skill", viewer=None)][0]  # the only one not merged
     assert new_o.id == "skill:t_x-st-rung"  # slug: underscore stays, umlaut becomes a hyphen
     assert [s["tool"] for s in new_o.data["loesung"]["schritte"]] == ["t_a", "t_x", "t_b"]
-    assert new_o.data["problem"]["reize"] == ["fehler:f_1", "host:h9", "tool:t_x"] and new_o.data["fusion_aus"] == [a.id, b.id]
+    assert new_o.data["problem"]["reize"] == ["error:f_1", "host:h9", "tool:t_x"] and new_o.data["fusion_aus"] == [a.id, b.id]
     assert g.load(a.id).mode == "merged" and g.load(a.id).data["aufgegangen_in"] == new_o.id
-    assert [o.id for _, o, _g in g.recall("art:skill", viewer=None)] == [new_o.id]  # merged ones no longer appear in searches
-    assert g.load(a.id).id in [o.id for _, o, _g in g.recall("art:skill modus:merged", viewer=None)]  # but on request
+    assert [o.id for _, o, _g in g.recall("kind:skill", viewer=None)] == [new_o.id]  # merged ones no longer appear in searches
+    assert g.load(a.id).id in [o.id for _, o, _g in g.recall("kind:skill mode:merged", viewer=None)]  # but on request
     assert "MERGED into" in tools.call_tool("vi_skill", {"id": a.id}, "a", True)
     with pytest.raises(tools.Rejected, match="already merged"):
         tools.call_tool("vi_skill_fusion", {"a": a.id, "b": new_o.id, "name": "x", "grund": "nochmal"}, "c", True)
@@ -91,13 +91,13 @@ def test_evolve_replaces_the_triggers(gd):
     """0.20.11: v2 of a skill kept the too general trigger tool:Bash from v1 and appeared before every shell command."""
     from vi_mcp import skills
     from vi_mcp import memory as g
-    s1 = skills.new("pruefen", ["thema:ansible-lint", "tool:Bash"], ["Bash"], "ansible-lint --offline rolle", "erste Fassung", [], "a")
+    s1 = skills.new("pruefen", ["topic:ansible-lint", "tool:Bash"], ["Bash"], "ansible-lint --offline rolle", "erste Fassung", [], "a")
     assert "tool:Bash" in s1.hashtags
-    s2 = skills.new("pruefen", ["thema:ansible-lint", "thema:yamllint"], ["Bash"], "ansible-lint --offline rolle; yamllint -d relaxed",
+    s2 = skills.new("pruefen", ["topic:ansible-lint", "topic:yamllint"], ["Bash"], "ansible-lint --offline rolle; yamllint -d relaxed",
                     "zu allgemeiner Reiz entfernt", [], "a")
     o = g.load(s2.id)
-    assert o.data["version"] == 2 and "tool:Bash" not in o.hashtags and "thema:yamllint" in o.hashtags
-    assert "thema:ansible-lint" in o.hashtags  # 0.20.12: a trigger present in both versions must not vanish
-    assert o.data["problem"]["reize"] == ["thema:ansible-lint", "thema:yamllint"]
-    assert o.data["versionen"][-1]["reize_vorher"] == ["thema:ansible-lint", "tool:Bash"]
+    assert o.data["version"] == 2 and "tool:Bash" not in o.hashtags and "topic:yamllint" in o.hashtags
+    assert "topic:ansible-lint" in o.hashtags  # 0.20.12: a trigger present in both versions must not vanish
+    assert o.data["problem"]["reize"] == ["topic:ansible-lint", "topic:yamllint"]
+    assert o.data["versionen"][-1]["reize_vorher"] == ["tool:Bash", "topic:ansible-lint"]  # sorted: tool: before topic:
     assert [x.id for _, x, _g in g.recall("tool:Bash", kinds=("skill",), viewer=None)] == []

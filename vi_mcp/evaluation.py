@@ -175,7 +175,7 @@ def sample_targets(n: int, exclude: set[str], seed: int) -> list[g.MemoryObject]
     import random
     with g.lock:
         ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind IN ('insight', 'rule', 'skill') AND mode = 'active' "
-                                            "AND length(text) >= 40 AND id NOT IN (SELECT object_id FROM tag WHERE tag = 'art_wissen:code')")]
+                                            "AND length(text) >= 40 AND id NOT IN (SELECT object_id FROM tag WHERE tag = 'knowledge_kind:code')")]
         # 0.61.0: imported code is left out — thousands of pieces would swamp the question set the search is judged by
     objs = [o for o in g.load_many([i for i in ids if i not in exclude]).values()]
     by: dict[str, list] = {}

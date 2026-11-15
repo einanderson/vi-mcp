@@ -244,7 +244,7 @@ def _export_form(o: g.MemoryObject, token: str, known_set: frozenset[str], net: 
     if len(raw_content) > checks.CONTENT_MAX:
         return None, "content too large for the network"
     ts = o.ts[:10]
-    raw_tags = [t for t in o.hashtags if not t.startswith(checks.FIXED_HASHTAGS + anonymize.LOCATION_REF)]
+    raw_tags = [t for t in map(names.wire_tag, o.hashtags) if not t.startswith(checks.FIXED_HASHTAGS + anonymize.LOCATION_REF)]  # wire form
     is_clean = lambda t: anonymize.tool_parts(t)
     tags = sorted({t2 for t in raw_tags if not anonymize.categories(((t2 := is_clean(t)).split(":", 1)[-1]), known_set)})
     net_id, object_token = _object_token(token, o.id)
@@ -264,7 +264,7 @@ def _export_form(o: g.MemoryObject, token: str, known_set: frozenset[str], net: 
         from . import skills
         if not skills.usable(o):  # 0.53.1
             return None, "skill damaged (no readable problem or solution)"
-        triggers = sorted({r2 for r in o.data["problem"]["reize"] if not r.startswith(anonymize.LOCATION_REF + ("instanz:",)) and not anonymize.categories((r2 := anonymize.tool_parts(r)).split(":", 1)[-1], known_set)})
+        triggers = sorted({r2 for r in map(names.wire_tag, o.data["problem"]["reize"]) if not r.startswith(anonymize.LOCATION_REF + ("instance:",)) and not anonymize.categories((r2 := anonymize.tool_parts(r)).split(":", 1)[-1], known_set)})
         outputs.update(name=anonymize.replace(o.data["name"], known_set), reize=triggers, schritte=[anonymize.tool_parts(s["tool"]) for s in o.data["loesung"]["schritte"]])
         if any(anonymize.categories(s, known_set) for s in outputs["schritte"]):
             return None, "steps contain internals"
@@ -293,7 +293,7 @@ def internal_form(o: g.MemoryObject, ids: dict) -> tuple[dict | None, str | None
     if len(raw_content) > checks.CONTENT_MAX:
         return None, "content too large for the network"
     ts = o.ts[:10]
-    outputs = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "hashtags": sorted({t for t in o.hashtags if not t.startswith(checks.FIXED_HASHTAGS)}),
+    outputs = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "hashtags": sorted({t for t in map(names.wire_tag, o.hashtags) if not t.startswith(checks.FIXED_HASHTAGS)}),
                "quelle": str(o.data.get("quelle") or f"geteilte Erfahrung vom {ts}")[:500], "wichtigkeit": o.importance, "zeit": ts, **ids}
     if raw_content:
         outputs["inhalt"] = raw_content
@@ -305,7 +305,7 @@ def internal_form(o: g.MemoryObject, ids: dict) -> tuple[dict | None, str | None
         from . import skills
         if not skills.usable(o):  # 0.53.1
             return None, "skill damaged (no readable problem or solution)"
-        outputs.update(name=o.data["name"], reize=sorted(set(o.data["problem"]["reize"])), schritte=[s["tool"] for s in o.data["loesung"]["schritte"]])
+        outputs.update(name=o.data["name"], reize=sorted({names.wire_tag(r) for r in o.data["problem"]["reize"]}), schritte=[s["tool"] for s in o.data["loesung"]["schritte"]])
     probe = checks.check(outputs, internal_ok=True)
     if probe.verdict == "ablehnen":
         return None, "own import rules: " + ", ".join(g_.split(":")[0] for g_ in probe.reasons)[:120]
@@ -322,7 +322,7 @@ def _collect(instance: str | None = None, net: str = STANDARD) -> tuple[list[tup
     # internal knowledge only into a company network; private never
     visibilities = ("shared", "internal") if is_company(net) else ("shared",)
     for kind in EXPORT_KINDS:
-        for _, o, _g in g.recall(f"art:{kind} !herkunft:p2p", limit=MAX_OBJECTS, viewer=None):
+        for _, o, _g in g.recall(f"kind:{kind} !origin:p2p", limit=MAX_OBJECTS, viewer=None):
             if o.visibility not in visibilities or o.mode != "active" or o.id in withdrawn or (instance and o.instance != instance):
                 continue
             if not _proven(o):
@@ -410,7 +410,7 @@ def answer_search(net: str, query: str, n: int = LIVE_MAX) -> list[dict]:
     known = _known()
     visibilities = ("shared", "internal") if is_company(net) else ("shared",)
     out = []
-    for _, o, _g in g.recall(" ".join(words) + " !herkunft:p2p", limit=max(1, min(int(n or LIVE_MAX), LIVE_MAX)) * 4, viewer=None, kinds=EXPORT_KINDS, or_fallback=True):
+    for _, o, _g in g.recall(" ".join(words) + " !origin:p2p", limit=max(1, min(int(n or LIVE_MAX), LIVE_MAX)) * 4, viewer=None, kinds=EXPORT_KINDS, or_fallback=True):
         if o.visibility not in visibilities or o.mode != "active" or o.id in withdrawn or o.instance not in tokens:
             continue
         raw, _reason = _export_form(o, tokens[o.instance], known, net)
@@ -506,7 +506,7 @@ def take_live(short_id: str, in_background: bool = True) -> g.MemoryObject:
         raise ValueError("fixed rules reject it: " + "; ".join(b.reasons)[:200])
     sha = sha256(b.mem_object)
     o = _create(b, {"pub": e["pub"], "seq": 0}, sha, e["netz"])
-    o.hashtags = sorted(set(o.hashtags) | {"herkunft:live"})
+    o.hashtags = sorted(set(o.hashtags) | {"origin:live"})
     g.save(o)
     ish = net_score.content_hash(b.mem_object)
     net_score.link(ish, o.id)
@@ -656,21 +656,21 @@ def _create(b: checks.Finding, header: dict, sha: str, net: str = STANDARD) -> g
     instance = f"p2p-{name}"
     data = {"quelle": o["quelle"], "herkunft": {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": sha, "netz_id": o["netz_id"], "netz": net},
              "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": o["text"], "fremd_hashtags": o["hashtags"]}
-    tags = o["hashtags"] + ["herkunft:p2p", f"herausgeber:{name}", "pruefer:ausstehend", "modus:quarantine", f"netz:{net}"]
+    tags = [names.canonical_tag(t) for t in o["hashtags"]] + ["origin:p2p", f"publisher:{name}", "reviewer:ausstehend", "mode:quarantine", f"net:{net}"]
     if o["art"] == "erkenntnis" and o.get("ausgang"):
         data["ausgang"] = o["ausgang"]
     if o.get("inhalt"):
         data["inhalt"] = o["inhalt"]
     if o["art"] == "suche":
         slug = checks.re.sub(r"[^a-z0-9_-]", "-", o["name"].lower())
-        data.update(name=f"p2p-{name}-{slug}"[:60], filter=o["filter"])
-        tags += o["reize"]
+        data.update(name=f"p2p-{name}-{slug}"[:60], filter=names.canonical_filter(o["filter"]))
+        tags += [names.canonical_tag(t) for t in o["reize"]]
     if o["art"] == "skill":
         slug = checks.re.sub(r"[^a-z0-9_-]", "-", o["name"].lower())
         n = f"p2p-{name}-{slug}"[:60]
-        data.update(name=n, schritte=o["schritte"], problem={"reize": o["reize"]}, loesung={"schritte": [{"tool": s} for s in o["schritte"]], "text": o["text"]},
+        data.update(name=n, schritte=o["schritte"], problem={"reize": [names.canonical_tag(t) for t in o["reize"]]}, loesung={"schritte": [{"tool": s} for s in o["schritte"]], "text": o["text"]},
                      version=1, versionen=[{"version": 1, "zeit": g.now(), "wer": f"import@{name}", "grund": "Import", "belege": []}], belege=[])
-        tags += o["reize"]
+        tags += [names.canonical_tag(t) for t in o["reize"]]
     if o["art"] == "reflex":
         data.update(name=f"p2p_{name.replace('-', '_')}_{o['name']}"[:40], art="vorher", code=o["code"], laeufe=0, fehler=0)
     oid = f"{o['art']}:p2p-{name}-{short}"
@@ -805,11 +805,11 @@ def publisher_value(fresh: bool = False) -> dict[str, dict]:
         return _value_cache[1]
     with g.lock:
         lines = g.db().execute("SELECT t.tag, COUNT(*), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.ja') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.nein') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.n') AS REAL), 0)) "
-                                "FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'herausgeber:%' GROUP BY t.tag").fetchall()
+                                "FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'publisher:%' GROUP BY t.tag").fetchall()
     outputs = {}
     for tag, n, yes, no, shown_flag in lines:
         mean = (1 + yes) / (2 + yes + no)
-        outputs[tag[12:]] = {"objekte": n, "ja": round(yes, 2), "nein": round(no, 2), "gezeigt": int(shown_flag), "mittel": round(mean, 3), "gesperrt": shown_flag >= VALUE_MIN_VERDICTS and mean < VALUE_BLOCK}
+        outputs[tag.split(":", 1)[1]] = {"objekte": n, "ja": round(yes, 2), "nein": round(no, 2), "gezeigt": int(shown_flag), "mittel": round(mean, 3), "gesperrt": shown_flag >= VALUE_MIN_VERDICTS and mean < VALUE_BLOCK}
     _value_cache = (time.time(), outputs)
     return outputs
 
@@ -831,11 +831,11 @@ def trust() -> dict:
 
 
 def without_blocked(mem_objects: list[g.MemoryObject]) -> list[g.MemoryObject]:
-    if not any("herkunft:p2p" in o.hashtags for o in mem_objects):
+    if not any("origin:p2p" in o.hashtags for o in mem_objects):
         return mem_objects
     value = publisher_value()
-    return [o for o in mem_objects if not any(t.startswith("herausgeber:") and value.get(t[12:], {}).get("gesperrt") for t in o.hashtags)
-            and not ("herkunft:p2p" in o.hashtags and net_score.hidden(o))]  # 0.40.0: the network score of this content
+    return [o for o in mem_objects if not any(t.startswith("publisher:") and value.get(t.split(":", 1)[1], {}).get("gesperrt") for t in o.hashtags)
+            and not ("origin:p2p" in o.hashtags and net_score.hidden(o))]  # 0.40.0: the network score of this content
 
 
 def auto_approve() -> int:
@@ -845,11 +845,11 @@ def auto_approve() -> int:
         return 0
     n = 0
     value = publisher_value(fresh=True)
-    for _, o, _g in g.recall("modus:quarantine", limit=MAX_OBJECTS, viewer=None):
+    for _, o, _g in g.recall("mode:quarantine", limit=MAX_OBJECTS, viewer=None):
         net = o.data["herkunft"].get("netz") or STANDARD
         if not (_conf().get("auto_release") or nets.get(net, {}).get("auto_release")):  # 0.41.0: per network, e.g. only the company one
             continue
-        if "pruefer:ausstehend" in o.hashtags or sensitive(o) or value.get(o.data["herkunft"]["herausgeber"], {}).get("gesperrt"):
+        if "reviewer:ausstehend" in o.hashtags or sensitive(o) or value.get(o.data["herkunft"]["herausgeber"], {}).get("gesperrt"):
             continue
         approve(o, "vi", True, False, "automatic: no rule findings, reviewer admits")
         n += 1
@@ -964,7 +964,7 @@ def approve(o: g.MemoryObject, instance: str, reflex_permission: bool, release_p
     if o.kind == "proposal":
         from . import logic
         logic.check_proposal(o, instance)  # still applicable? (target exists, visible, tag allowed) — before anything changes
-    if "pruefer:ausstehend" in o.hashtags and not release_permission:
+    if "reviewer:ausstehend" in o.hashtags and not release_permission:
         raise ValueError("the review is still pending")
     h = sensitive(o)
     if h and not release_permission:
@@ -972,7 +972,7 @@ def approve(o: g.MemoryObject, instance: str, reflex_permission: bool, release_p
     if not h and not (reflex_permission or release_permission):
         raise ValueError(f"instance {instance} may not release")
     o.mode = "test"  # provisional at first, even after release
-    o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:test"]
+    o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:test"]
     o.change(f"ki@{instance}", "released from quarantine", reason)
     g.save(o)
     if o.kind == "reflex":
@@ -995,7 +995,7 @@ def discard(o: g.MemoryObject, instance: str, reason: str) -> g.MemoryObject:
     if not (reason or "").strip():
         raise ValueError("reason is required")
     o.mode = "refuted"
-    o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:refuted"]
+    o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:refuted"]
     o.change(f"ki@{instance}", "discarded from quarantine", reason)
     g.save(o)
     if o.kind == "page":

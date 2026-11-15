@@ -103,7 +103,7 @@ def _new(owner, name, state=None, parent=None, snapshot=False, *, commit=True, e
     if anonymize.without_secrets(data) != data or len(json.dumps(data)) > g.DATA_MAX - 2000:
         raise ValueError("machine state exceeds limits or contains a credential pattern")
     return g.new_object("machine", "Snapshot " + name if snapshot else "Virtual intelligence machine " + name,
-                        ["thema:vi-machine"], data, oid=oid, visibility="private", instance=owner, link=False,
+                        ["topic:vi-machine"], data, oid=oid, visibility="private", instance=owner, link=False,
                         reason="explicit snapshot" if snapshot else "explicit machine creation", commit=commit)
 
 
@@ -293,7 +293,7 @@ def call(owner: str, args: dict) -> dict:
                 existing.change(owner, "training reference corrected", "explicit teach after independent recheck")
                 g.save(existing)
                 return {"state": "teaching corrected", "id": oid, "correct": checked["correct"], "visibility": "internal"}
-            published = g.new_object("rule", checked["question"], ["thema:machine-training"],
+            published = g.new_object("rule", checked["question"], ["topic:machine-training"],
                                      {"machine_example": example, "quelle": checked["reference"]}, oid=oid, instance=owner,
                                      visibility="internal", link=False, reason="machine owner explicitly published checked training example")
             return {"state": "taught", "id": published.id, "correct": checked["correct"], "visibility": "internal"}
@@ -338,7 +338,7 @@ def call(owner: str, args: dict) -> dict:
                         raise ValueError("object limit reached (including tombstones)")
                     tags = {}
                     for t in payload.get("hashtags", []):
-                        if not isinstance(t, str) or not g.TAG.fullmatch(t) or t.startswith(("instanz:", "modus:")):
+                        if not isinstance(t, str) or not g.TAG.fullmatch(t) or t.startswith(("instance:", "mode:")):
                             raise ValueError("invalid machine hashtag")
                         k, v = t.split(":", 1)
                         tags.setdefault(k, []).append(v)

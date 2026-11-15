@@ -73,7 +73,7 @@ def _entry(o: g.MemoryObject) -> tuple[dict | None, str | None]:
         return None, "private"
     if o.mode != "active":
         return None, f"mode {o.mode}"
-    if "art_wissen:code" in o.hashtags:
+    if "knowledge_kind:code" in o.hashtags:
         return None, "code piece (index import-code brings code)"
     imported = str(o.instance or "").startswith("p2p-")
     if imported and (o.kind not in ("insight", "rule") or "fremd_text" not in o.data):
@@ -156,7 +156,7 @@ def _net_ids(pub: str, form: dict) -> dict:
     import hashlib
     from . import logbook as lb
     nid = hashlib.sha256(bytes.fromhex(pub) + lb.canonical(form)).hexdigest()[:32]
-    return {"netz_id": nid, "loesch_hash": hashlib.sha256(f"datei:{nid}".encode()).hexdigest()}
+    return {"netz_id": nid, "loesch_hash": hashlib.sha256(f"file:{nid}".encode()).hexdigest()}
 
 
 def import_file(fpath: str | Path, as_index: str, in_background: bool = True) -> dict:

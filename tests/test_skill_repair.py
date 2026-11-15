@@ -15,18 +15,18 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _skill():
-    return skills.new("auto-test", ["tool:t_x", "fehler:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
+    return skills.new("auto-test", ["tool:t_x", "error:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
                       "sleep: recovery in conversation 1", ["erfahrung:a"], "a")
 
 
 def test_the_same_recovery_again_is_evidence_not_a_new_version(gd):
     o = _skill()
     for i in range(5):
-        o = skills.new("auto-test", ["tool:t_x", "fehler:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
+        o = skills.new("auto-test", ["tool:t_x", "error:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
                        "sleep: recovery in conversation 1", [f"erfahrung:b{i}"], "a")
     o = g.load(o.id)
     assert o.data["version"] == 1 and o.data["bestaetigt_ohne_aenderung"] == 5 and "erfahrung:b4" in o.data["belege"]
-    o = skills.new("auto-test", ["tool:t_x", "fehler:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
+    o = skills.new("auto-test", ["tool:t_x", "error:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
                    "sleep: recovery in conversation 2", ["erfahrung:c"], "a")
     assert g.load(o.id).data["version"] == 2  # another conversation is an independent line: a version
 

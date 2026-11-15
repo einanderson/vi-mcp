@@ -9,9 +9,9 @@ verdicts only tighten).
 Classes (exhaustive; "ok" when none applies):
   dominant      one feature carries the model: |w| ≥ DOMINANT_FACTOR × the DOMINANT_RANK-th largest |w| and ≥ DOMINANT_MIN
   contradicts   a hint weight and the hint's measured usefulness (bandit, ≥ CONTRA_MIN_N shown) point in opposite directions;
-                since 0.30.0 also a meaning-group weight (inhalt:<c>) against the pooled measured usefulness of the group's hints
-  network       a hint from the network (herkunft:p2p) with a strong positive weight and no confirmation by another instance
-  hour          an hour feature (stunde:HH) is among the strongest weights — time of day as a cause is post hoc
+                since 0.30.0 also a meaning-group weight (content:<c>) against the pooled measured usefulness of the group's hints
+  network       a hint from the network (origin:p2p) with a strong positive weight and no confirmation by another instance
+  hour          an hour feature (hour:HH) is among the strongest weights — time of day as a cause is post hoc
 """
 from __future__ import annotations
 
@@ -42,28 +42,28 @@ def audit(m: g.MemoryObject | None = None) -> dict:
             findings.append({"klasse": "dominant", "merkmal": top,
                              "grund": f"|w| {abs(tw):.2f} ≥ {DOMINANT_FACTOR:g} × {ref:.2f} (rank {DOMINANT_RANK})"})
     for k, v in ranked:
-        if not k.startswith("hinweis:") or abs(v) < STRONG:
+        if not k.startswith("hint:") or abs(v) < STRONG:
             continue
-        hint = g.load(k[8:])
+        hint = g.load(k.split(":", 1)[1])
         if hint is None:
             continue
         lift = bandit.lift(hint)
         if lift is not None and bandit.shown(hint) >= CONTRA_MIN_N and abs(lift) >= CONTRA_MIN_LIFT and (lift > 0) != (v > 0):
             findings.append({"klasse": "contradicts", "merkmal": k,
                              "grund": f"weight {v:+.2f}, but measured {lift * 100:+.0f} points over {bandit.shown(hint)} showings"})
-        if v > 0 and "herkunft:p2p" in hint.hashtags and not hint.foreign_confirmations():
-            publisher = next((t[11:] for t in hint.hashtags if t.startswith("herausgeber:")), "?")
+        if v > 0 and "origin:p2p" in hint.hashtags and not hint.foreign_confirmations():
+            publisher = next((t.split(":", 1)[1] for t in hint.hashtags if t.startswith("publisher:")), "?")
             findings.append({"klasse": "network", "merkmal": k,
                              "grund": f"weight {v:+.2f} for a hint from the network ({publisher}) that no other instance confirmed"})
     for k, v in ranked:  # 0.30.0: a group weight can push down hints that are measured as good (seen 10.11.2026: inhalt:21 −0.72)
-        if not k.startswith("inhalt:") or not k[7:].isdigit() or abs(v) < STRONG:
+        if not k.startswith("content:") or not k[len("content:"):].isdigit() or abs(v) < STRONG:
             continue
-        lift, n, members = _group_lift(int(k[7:]))
+        lift, n, members = _group_lift(int(k[len("content:"):]))
         if lift is not None and n >= CONTRA_MIN_N and abs(lift) >= CONTRA_MIN_LIFT and (lift > 0) != (v > 0):
             findings.append({"klasse": "contradicts", "merkmal": k,
                              "grund": f"group weight {v:+.2f}, but its {members} rated hints measured {lift * 100:+.0f} points over {n} showings"})
     for k, v in ranked[:HOUR_TOP]:
-        if k.startswith("stunde:"):
+        if k.startswith("hour:"):
             findings.append({"klasse": "hour", "merkmal": k, "grund": f"weight {v:+.2f} among the {HOUR_TOP} strongest — time of day is not a cause"})
     per = {c: sum(1 for f in findings if f["klasse"] == c) for c in CLASSES}
     return {"zustand": "befunde" if findings else "ok", "befunde": findings, "je_klasse": {c: n for c, n in per.items() if n}}

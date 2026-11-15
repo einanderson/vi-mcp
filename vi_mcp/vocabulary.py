@@ -22,7 +22,7 @@ import difflib
 from . import memory as g
 
 #: kinds that are bookkeeping, not vocabulary (instance names, serials, cache keys …); `art:` stays — it is the kind of object
-HIDDEN = tuple(p for p in g.ADMIN_PREFIXES if p != "art:")
+HIDDEN = tuple(p for p in g.ADMIN_PREFIXES if p != "kind:")
 MAX_CANDIDATES = 5000
 
 

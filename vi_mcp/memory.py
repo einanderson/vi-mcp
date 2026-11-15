@@ -64,10 +64,10 @@ DATA_MAX = 400_000
 DECAY_D = 0.3
 TAG = re.compile(r"^[a-z][a-z0-9_-]{0,30}:[^\s()]+$")
 #: hashtags only the system sets (instanz: comes from the token) — Objekt.tag refuses them, so do logic proposals (0.63.0)
-FIXED_TAG_PREFIXES = ("art:", "tool:", "instanz:", "herkunft:", "herausgeber:", "pruefer:", "modus:")
+FIXED_TAG_PREFIXES = ("kind:", "tool:", "instance:", "origin:", "publisher:", "reviewer:", "mode:")
 #: hashtags that are administration, not content (ignored for linking and drilldown)
-ADMIN_PREFIXES = ("art:", "cache:", "ok:", "serial:", "tag:", "instanz:", "zustand:", "an:", "von:", "ueberraschung:",
-              "modus:", "herkunft:", "konflikt:", "selbst:", "selbstbereich:", "modell:", "fusion:", "dublette:", "scorer:", "ziel:", "note:")
+ADMIN_PREFIXES = ("kind:", "cache:", "ok:", "serial:", "tag:", "instance:", "state:", "to:", "from:", "surprise:",
+              "mode:", "origin:", "conflict:", "selbst:", "self_area:", "modell:", "fusion:", "duplicate:", "scorer:", "target:", "grade:")
 
 lock = threading.RLock()
 _KINDS_CACHE: dict = {"t": float("-inf"), "kinds": frozenset()}
@@ -182,22 +182,19 @@ def refuted_mode(author: str, mode: str, data: dict, latest: str | None = None) 
 
 
 def _migrate(con: Any) -> None:
-    """0.1.x → 0.2.0: add columns instanz/sicht (author from the hashtag instanz:, visibility from the kind);
-    cache hashtag frage:<hash> → cache:<hash> (frage is now a kind)."""
+    """0.1.x → 0.2.0: add columns instance/visibility (author from the hashtag instance:, visibility from the kind). The cache hashtag
+    frage:<hash> of 0.1 becomes cache:<hash> in the migration of 0.67.0 (names.migrate_tags), before any kind is translated."""
     columns = {r[1] for r in con.execute("PRAGMA table_info(object)")}
     if "instance" not in columns:
         con.execute("ALTER TABLE object ADD COLUMN instance TEXT NOT NULL DEFAULT 'vi'")
-        con.execute("UPDATE object SET instance = COALESCE((SELECT substr(tag, 9) FROM tag WHERE object_id = object.id "
-                    "AND tag LIKE 'instanz:%' LIMIT 1), 'vi')")
+        con.execute("UPDATE object SET instance = COALESCE((SELECT substr(tag, 10) FROM tag WHERE object_id = object.id "
+                    "AND tag LIKE 'instance:%' LIMIT 1), 'vi')")  # 10 = len("instance:") + 1 (0.67.0: the hashtag kind is English)
         log("migration: column instanz added")
     if "visibility" not in columns:
         con.execute("ALTER TABLE object ADD COLUMN visibility TEXT NOT NULL DEFAULT 'shared'")
         for kind, visibility in VISIBILITY_PER_KIND.items():
             con.execute("UPDATE object SET visibility = ? WHERE kind = ?", (visibility, kind))
         log("migration: column sicht added")
-    n = con.execute("UPDATE tag SET tag = 'cache:' || substr(tag, 7) WHERE tag LIKE 'frage:%'").rowcount
-    if n:
-        log(f"migration: {n} cache hashtags frage: → cache:")
     con.execute("CREATE INDEX IF NOT EXISTS object_instance ON object(instance, visibility)")
     if "idx" not in columns:  # 0.61.0: the index of an object (vi_mcp/indexes.py); everything before is global
         con.execute("ALTER TABLE object ADD COLUMN idx TEXT NOT NULL DEFAULT 'global'")
@@ -217,8 +214,8 @@ def _migrate(con: Any) -> None:
     old = [r[0] for r in con.execute("SELECT id FROM object WHERE kind = 'insight' AND json_extract(data, '$.bild') IS NOT NULL")]
     for oid in old:
         con.execute("UPDATE object SET kind = 'image' WHERE id = ?", (oid,))
-        con.execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('art:insight', 'medium:bild')", (oid,))
-        con.execute("INSERT OR IGNORE INTO tag (object_id, tag) VALUES (?, 'art:image')", (oid,))
+        con.execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('kind:insight', 'medium:bild')", (oid,))
+        con.execute("INSERT OR IGNORE INTO tag (object_id, tag) VALUES (?, 'kind:image')", (oid,))
     if old:
         log(f"migration: {len(old)} image(s) from kind erkenntnis to kind bild (ids kept)")
     # 0.67.0: widerlegt split in two — an object its author refuted, without two foreign families, was withdrawn, not refuted; so
@@ -327,11 +324,12 @@ class MemoryObject:
 
     def tag(self, add: list[str], remove: list[str], who: str, reason: str) -> "Objekt":
         self._require_reason(reason)
+        add, remove = [names.canonical_tag(t) for t in add], [names.canonical_tag(t) for t in remove]  # 0.67.0: German kinds of older callers
         for t in list(add) + list(remove):
             if not TAG.match(t):
                 raise ValueError(f"hashtag {t!r} does not have the form kind:value")
             if t.startswith(FIXED_TAG_PREFIXES):
-                raise ValueError(f"{t}: fixed hashtag (instanz: is the author from the token; art:, tool:, herkunft:, herausgeber:, pruefer: and modus: are set by the system)")
+                raise ValueError(f"{t}: fixed hashtag (instance: is the author from the token; art:, tool:, herkunft:, herausgeber:, reviewer: and mode: are set by the system)")
         self.hashtags = sorted((set(self.hashtags) | set(add)) - set(remove))
         self.change(who, " ".join([f"+{t}" for t in add] + [f"-{t}" for t in remove]), reason)
         return save(self)
@@ -497,7 +495,7 @@ _known_indexes: set[str] = set()
 
 
 def save(o: MemoryObject, *, commit: bool = True) -> MemoryObject:
-    tags = sorted(set(o.hashtags) | {f"art:{o.kind}", f"instanz:{o.instance}"})
+    tags = sorted(set(o.hashtags) | {f"kind:{o.kind}", f"instance:{o.instance}"})
     if o.idx not in _known_indexes:  # 0.61.0: every index an object refers to has its row (the primary key of vi_index)
         with lock:
             db().execute("INSERT OR IGNORE INTO vi_index (name, kind, created) VALUES (?, ?, ?)",
@@ -577,7 +575,7 @@ def new_object(kind: str, text: str, hashtags: list[str], data: dict | None = No
         if not TAG.match(t):
             raise ValueError(f"hashtag {t!r} does not have the form kind:value")
     # instanz: is not a free hashtag but the author (column instanz) — one thing, one place
-    hashtags = [t for t in hashtags if not t.startswith("instanz:")]
+    hashtags = [t for t in hashtags if not t.startswith("instance:")]
     text, data = anonymize.without_secrets(text), anonymize.without_secrets(data)  # credentials are never stored
     ts = now()
     # random part: two equal actions in the same second are two objects, not one (otherwise INSERT OR REPLACE
@@ -631,7 +629,7 @@ def repeat(o: MemoryObject, text: str, hashtags: list[str], data: dict, importan
     o.data.update(data)
     o.data["repeats"] = int(o.data.get("repeats") or 1) + 1
     o.text = text
-    o.hashtags = sorted(set(o.hashtags) | {t for t in hashtags if not t.startswith("instanz:")})
+    o.hashtags = sorted(set(o.hashtags) | {t for t in hashtags if not t.startswith("instance:")})
     o.importance = max(o.importance, max(0, min(3, importance)))
     o.change(who, f"repeated ({o.data['repeats']}×), earlier text in the history", "vi_learn with the same key")
     save(o)
@@ -693,7 +691,7 @@ def merge_by_key(instance: str, key_of, who: str, reason: str, apply: bool = Fal
                 main.data[f] = newest.data[f]
         main.text = newest.text
         main.data["repeats"] = int(main.data.get("repeats") or 1) + len(rest)
-        main.hashtags = sorted(set().union(*[set(x.hashtags) for x in objs]) - {f"modus:{x.mode}" for x in objs})
+        main.hashtags = sorted(set().union(*[set(x.hashtags) for x in objs]) - {f"mode:{x.mode}" for x in objs})
         main.importance = max(x.importance for x in objs)
         main.accesses = sum(x.accesses for x in objs)
         main.confirmed = sum(x.confirmed for x in objs)
@@ -702,7 +700,7 @@ def merge_by_key(instance: str, key_of, who: str, reason: str, apply: bool = Fal
         for x in rest:
             x.mode = MERGED
             x.data["merged_into"] = main.id
-            x.hashtags = [t for t in x.hashtags if not t.startswith("modus:")] + [f"modus:{MERGED}"]
+            x.hashtags = [t for t in x.hashtags if not t.startswith("mode:")] + [f"mode:{MERGED}"]
             x.change(who, f"merged into {main.id}", reason)
             save(x)
             x.link(main.id, "merged into (same key)")
@@ -772,11 +770,11 @@ def _filter_sql(groups: list, remove: list, viewer: str | None) -> tuple[str, li
     if search_index.get():
         sql += " AND idx = ?"
         par.append(search_index.get())
-    if not any("modus:quarantine" in grp for grp in groups):
+    if not any("mode:quarantine" in grp for grp in groups):
         sql += " AND mode <> 'quarantine'"  # only via vi_quarantine
-    if not any("modus:merged" in grp for grp in groups):
+    if not any("mode:merged" in grp for grp in groups):
         sql += " AND mode <> 'merged'"  # merged skills only on request (reference is in the object)
-    if not any("modus:archived" in grp for grp in groups):
+    if not any("mode:archived" in grp for grp in groups):
         sql += " AND mode <> 'archived'"  # archived objects only on explicit request
     if viewer is not None:
         sql += " AND (visibility = 'shared' OR instance = ?" + (" OR visibility = 'internal')" if viewer != OPEN_INSTANCE else ")")
@@ -799,7 +797,7 @@ def ids_for_filter(filter_text: str, kinds: tuple[str, ...] = (), viewer: str | 
         viewer = current_instance.get()
     groups, remove, _w = parse_filter(filter_text, known_kinds())
     if kinds:
-        groups.append([f"art:{names.english(names.KINDS, a)}" for a in kinds])
+        groups.append([f"kind:{names.english(names.KINDS, a)}" for a in kinds])
     sql, par = _filter_sql(groups, remove, viewer)
     with lock:
         return [r[0] for r in db().execute(sql, par)]
@@ -833,7 +831,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
         from .stopwords import content_words
         words = content_words(words)
     if kinds:
-        groups.append([f"art:{names.english(names.KINDS, a)}" for a in kinds])
+        groups.append([f"kind:{names.english(names.KINDS, a)}" for a in kinds])
     sql, par = _filter_sql(groups, remove, viewer)
     word_hits: dict[str, float] = {}
     search_kind = None

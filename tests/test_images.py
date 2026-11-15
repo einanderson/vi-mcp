@@ -82,20 +82,20 @@ def test_image_with_description_and_sam3_regions_round_trip(srv):
     raw = png()
     r = _call(port, sid, "vi_learn", {"text": "Patch panel B3: both uplinks are plugged into the red ports",
                                       "content": "Full description: rack B3, top patch panel, ports 1 and 2 red, uplink cable on top.",
-                                      "hashtags": ["thema:patchpanel"], "source": "photo 10.11.2026, rack B3", "image": b64(raw), "regions": REGIONS}, tok)
+                                      "hashtags": ["topic:patchpanel"], "source": "photo 10.11.2026, rack B3", "image": b64(raw), "regions": REGIONS}, tok)
     assert not r["isError"], r
     text = r["content"][0]["text"]
     oid = text.split()[1]
     assert "image png 64×48" in text and "3 regions (red plug ×2, network cable)" in text
     o = g.load(oid)
     assert o.kind == "image" and oid.startswith("bild:")  # 0.37.0: its own kind
-    assert {"art:image", "zeigt:red-plug", "zeigt:network-cable"} <= set(o.hashtags) and "medium:bild" not in o.hashtags
-    assert oid in _call(port, sid, "vi_recall", {"filter": "art:image"}, tok)["content"][0]["text"]
+    assert {"kind:image", "shows:red-plug", "shows:network-cable"} <= set(o.hashtags) and "medium:bild" not in o.hashtags
+    assert oid in _call(port, sid, "vi_recall", {"filter": "kind:image"}, tok)["content"][0]["text"]
     assert oid in _call(port, sid, "vi_recall", {"filter": "Patch panel uplinks"}, tok)["content"][0]["text"]  # free text includes images
     assert o.data["bild"]["sha"] and o.data["regionen"][0] == {"begriff": "red plug", "box": [4.0, 6.0, 30.0, 40.0], "score": 0.93,
                                                                "maske": {"size": [48, 64], "counts": "PQ5d0"}}
     # found by concept hashtag and by full text of the concept; the hit line names the image
-    hit = _call(port, sid, "vi_recall", {"filter": "zeigt:red-plug"}, tok)["content"][0]["text"]
+    hit = _call(port, sid, "vi_recall", {"filter": "shows:red-plug"}, tok)["content"][0]["text"]
     assert oid in hit and "vi_object shows it" in hit
     assert oid in _call(port, sid, "vi_recall", {"filter": "network cable"}, tok)["content"][0]["text"]
     # vi_object returns the image as MCP content, byte for byte, with its regions
@@ -121,7 +121,7 @@ def test_image_with_description_and_sam3_regions_round_trip(srv):
 def test_bad_image_input_is_refused_with_its_reason(srv, change, reason):
     port, tok = srv
     sid = _session(port, tok)
-    args = {"text": "a photo of the rack in room B3", "hashtags": ["thema:rack"], "source": "photo 10.11.2026", "image": b64(png()), **change}
+    args = {"text": "a photo of the rack in room B3", "hashtags": ["topic:rack"], "source": "photo 10.11.2026", "image": b64(png()), **change}
     r = _call(port, sid, "vi_learn", args, tok)
     assert r["isError"]
     import re
@@ -132,14 +132,14 @@ def test_bad_image_input_is_refused_with_its_reason(srv, change, reason):
 def test_regions_need_an_image(srv):
     port, tok = srv
     sid = _session(port, tok)
-    r = _call(port, sid, "vi_learn", {"text": "regions without a picture", "hashtags": ["thema:x"], "source": "test 10.11.2026", "regions": REGIONS}, tok)
+    r = _call(port, sid, "vi_learn", {"text": "regions without a picture", "hashtags": ["topic:x"], "source": "test 10.11.2026", "regions": REGIONS}, tok)
     assert r["isError"] and "give image as well" in r["content"][0]["text"]
 
 
 def test_without_token_no_images(srv):
     port, _ = srv
     sid = _session(port)
-    r = _call(port, sid, "vi_learn", {"text": "a photo proposed without a token", "hashtags": ["thema:x"], "source": "test 10.11.2026", "image": b64(png())})
+    r = _call(port, sid, "vi_learn", {"text": "a photo proposed without a token", "hashtags": ["topic:x"], "source": "test 10.11.2026", "image": b64(png())})
     assert r["isError"] and "own instance with a token" in r["content"][0]["text"]
     assert images.stats() == (0, 0)
 
@@ -160,7 +160,7 @@ def test_same_image_stored_once_and_limits(gd, monkeypatch):
 
 def test_image_never_onto_the_network(gd):
     ref = images.store(png())
-    o = g.new_object("image", "Patch panel B3 photographed, red ports used", ["thema:patchpanel"],
+    o = g.new_object("image", "Patch panel B3 photographed, red ports used", ["topic:patchpanel"],
                      {"quelle": "photo 10.11.2026", "bild": ref}, instance="anna")
     assert p2p._export_form(o, "t" * 32, frozenset()) == (None, "has an image (images stay on this server)")
 
@@ -168,7 +168,7 @@ def test_image_never_onto_the_network(gd):
 def test_internal_image_invisible_without_token(srv):
     port, tok = srv
     sid = _session(port, tok)
-    r = _call(port, sid, "vi_learn", {"text": "internal wiring diagram of rack B3", "hashtags": ["thema:rack"], "source": "photo 10.11.2026",
+    r = _call(port, sid, "vi_learn", {"text": "internal wiring diagram of rack B3", "hashtags": ["topic:rack"], "source": "photo 10.11.2026",
                                       "image": b64(png()), "visibility": "internal"}, tok)
     oid = r["content"][0]["text"].split()[1]
     guest = _session(port)
@@ -186,7 +186,7 @@ def test_command_line_puts_a_file_in_and_gets_it_back(srv, tmp_path, monkeypatch
     (tmp_path / "rack.png").write_bytes(png())
     (tmp_path / "regions.json").write_text(json.dumps(REGIONS))
     (tmp_path / "desc.md").write_text("Full description of rack B3.")
-    assert image_cli.main([str(tmp_path / "rack.png"), "--text", "rack B3 front, two red plugs", "--hashtags", "thema:rack,host:b3",
+    assert image_cli.main([str(tmp_path / "rack.png"), "--text", "rack B3 front, two red plugs", "--hashtags", "topic:rack,host:b3",
                            "--source", "photo 10.11.2026", "--content-file", str(tmp_path / "desc.md"), "--regions", str(tmp_path / "regions.json")]) == 0
     oid = capsys.readouterr().out.split()[1]
     assert g.load(oid).data["inhalt"] == "Full description of rack B3."
@@ -203,7 +203,7 @@ def test_image_is_a_hint_before_a_matching_action(gd):
     """0.37.0: an image is a memory of its own kind and comes before a matching action like an insight."""
     from vi_mcp import intuition
     ref = images.store(png())
-    o = g.new_object("image", "Error dialog of the MSI: 'Setup failed' after an unreachable proxy", ["tool:msiexec", "thema:msi"],
+    o = g.new_object("image", "Error dialog of the MSI: 'Setup failed' after an unreachable proxy", ["tool:msiexec", "topic:msi"],
                      {"quelle": "screenshot 10.11.2026", "bild": ref}, instance="anna")
     v = intuition.before("msiexec", {"args": "/i vi-mcp.msi"}, "anna")
     text = json.dumps(v, ensure_ascii=False)
@@ -215,19 +215,19 @@ def test_old_image_insights_become_kind_bild(tmp_path):
     g.open_db(tmp_path / "vi.db")
     try:
         ref = images.store(png())
-        o = g.new_object("insight", "old style image insight from 0.35.0", ["thema:x", "medium:bild"], {"quelle": "q", "bild": ref}, instance="anna")
-        plain = g.new_object("insight", "an insight without an image stays one", ["thema:x"], {"quelle": "q"}, instance="anna")
+        o = g.new_object("insight", "old style image insight from 0.35.0", ["topic:x", "medium:bild"], {"quelle": "q", "bild": ref}, instance="anna")
+        plain = g.new_object("insight", "an insight without an image stays one", ["topic:x"], {"quelle": "q"}, instance="anna")
     finally:
         g.close_db()
     g.open_db(tmp_path / "vi.db")  # migration runs when the database is opened
     try:
         m = g.load(o.id)
-        assert m.kind == "image" and m.id == o.id and "art:image" in m.hashtags and not {"art:insight", "medium:bild"} & set(m.hashtags)
+        assert m.kind == "image" and m.id == o.id and "kind:image" in m.hashtags and not {"kind:insight", "medium:bild"} & set(m.hashtags)
         assert g.load(plain.id).kind == "insight"
     finally:
         g.close_db()
 
 
 def test_rules_tell_when_to_save_a_screenshot():
-    assert "Images are their own kind (art:image)" in tools.RULES
+    assert "Images are their own kind (kind:image)" in tools.RULES
     assert "Save a screenshot when it shows what text would lose" in tools.RULES and "Never screenshots with passwords" in tools.RULES

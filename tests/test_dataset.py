@@ -8,18 +8,18 @@ from vi_mcp import memory as g
 def _k(text, tags=(), yes=0.0, no=0.0, **kw):
     data = {"quelle": kw.pop("quelle", "https://docs.example/x"), "inhalt": kw.pop("inhalt", f"details of {text}"),
             "nuetzlich": {"ja": yes, "nein": no, "n": int(yes + no)}, **kw.pop("data", {})}
-    return g.new_object(kw.pop("kind", "erkenntnis"), text, list(tags) or ["thema:x"], data, visibility=kw.pop("visibility", "intern"),
+    return g.new_object(kw.pop("kind", "erkenntnis"), text, list(tags) or ["topic:x"], data, visibility=kw.pop("visibility", "intern"),
                         instance=kw.pop("instance", "a"), **kw)
 
 
 def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd, tmp_path, monkeypatch):
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    good = _k("restart nginx with systemctl reload, not restart", ["tool:nginx", "thema:reload"], 9, 1,
+    good = _k("restart nginx with systemctl reload, not restart", ["tool:nginx", "topic:reload"], 9, 1,
               data={"klasse": {"answers": "how", "memory": "procedure", "fragen": ["Wie lade ich nginx neu?", "nginx reload ohne Ausfall?"]}})
-    bad = _k("nginx needs a full restart after config changes", ["tool:nginx", "thema:reload"], 1, 9)
-    held = _k("the evaluation target", ["thema:y"], quelle="https://docs.example/held")
+    bad = _k("nginx needs a full restart after config changes", ["tool:nginx", "topic:reload"], 1, 9)
+    held = _k("the evaluation target", ["topic:y"], quelle="https://docs.example/held")
     _k("private note", visibility="private")
-    _k("def f(): pass", ["art_wissen:code", "datei:x.py"])
+    _k("def f(): pass", ["knowledge_kind:code", "file:x.py"])
     g.new_object("experience", "Bash ok", ["tool:Bash"], {"quelle": "t"})
     (tmp_path / "eval").mkdir()
     (tmp_path / "eval" / "recall.json").write_text(json.dumps([{"target": held.id, "group": "g", "stratum": "s", "frage": "nginx reload ohne Ausfall?",
@@ -59,8 +59,8 @@ def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd
 def test_scrubbing_is_audited_and_an_index_can_be_exported_alone(gd, tmp_path, monkeypatch):
     from vi_mcp import anonymize
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    o = _k("deploy note", ["thema:deploy"], index="proj", data={"klasse": {"fragen": ["How is proj deployed?"]}})
-    _k("other project", ["thema:deploy"], index="other", data={"klasse": {"fragen": ["How is other deployed?"]}})
+    o = _k("deploy note", ["topic:deploy"], index="proj", data={"klasse": {"fragen": ["How is proj deployed?"]}})
+    _k("other project", ["topic:deploy"], index="other", data={"klasse": {"fragen": ["How is other deployed?"]}})
     # a credential that slipped past the scrubber at save time (e.g. a pattern added later) — simulated by writing it directly
     with g.lock:
         g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps({**o.data, "inhalt": "password=hunter2secret"}), o.id))
@@ -78,12 +78,12 @@ def test_scrubbing_is_audited_and_an_index_can_be_exported_alone(gd, tmp_path, m
 
 def test_agentic_trajectories_search_the_vi_in_vil_relax_once_and_never_teach_a_miss(gd, tmp_path, monkeypatch):
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
-    direct = _k("restart nginx on web1 with reload", ["host:web1.example", "thema:nginx"],
+    direct = _k("restart nginx on web1 with reload", ["host:web1.example", "topic:nginx"],
                 data={"klasse": {"answers": "how", "memory": "procedure", "fragen": ["How do I restart nginx on web1?"]}})
-    relaxed = _k("the backup runs nightly at two", ["host:db1.example", "thema:backup"],
+    relaxed = _k("the backup runs nightly at two", ["host:db1.example", "topic:backup"],
                  data={"klasse": {"answers": "what", "memory": "fact", "fragen": ["Wann läuft die Sicherung?"]}})  # no question word in the text
-    _k("a lonely fact without tags matching its question", ["quelle_art:test"], data={"klasse": {"fragen": ["Quasselstrippe Zauberwort?"]}})
-    _k("secret db1 backup password location", ["host:db1.example", "thema:backup"], visibility="private", instance="b")
+    _k("a lonely fact without tags matching its question", ["source_kind:test"], data={"klasse": {"fragen": ["Quasselstrippe Zauberwort?"]}})
+    _k("secret db1 backup password location", ["host:db1.example", "topic:backup"], visibility="private", instance="b")
     data = dataset.build()
     by = {x["meta"]["id"]: x for x in data["agentic"]}
     a = by[direct.id]

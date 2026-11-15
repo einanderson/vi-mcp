@@ -9,7 +9,7 @@ from vi_mcp import memory as g
 
 
 def _fact(src="free -m on web1, 10.11. 14:00"):
-    return g.new_object("insight", "Dienst y braucht 2 GB RAM", ["thema:y"], {"quelle": src}, reason="T", instance="a")
+    return g.new_object("insight", "Dienst y braucht 2 GB RAM", ["topic:y"], {"quelle": src}, reason="T", instance="a")
 
 
 def test_one_family_counts_once(gd):

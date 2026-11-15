@@ -56,12 +56,12 @@ _daily: dict[tuple[str, str], list[float]] = {}
 #: so that manual paragraphs do not push experience knowledge (warnings, pitfalls) out of the budget. Measured 09.11.2026: before `docker logs`
 #: four general Docker doc paragraphs took all slots.
 # 0.26.0: company docs and manuals count as reference material too — documentation now carries host:/thema: triggers
-LOOKUP = ("art_wissen:doku-extern", "art_wissen:firmendoku", "art_wissen:handbuch")
+LOOKUP = ("knowledge_kind:doku-extern", "knowledge_kind:firmendoku", "knowledge_kind:handbuch")
 LOOKUP_MAX = 1
 #: 0.57.1: imported company and vendor documentation only via exploration, not regularly — measured on production (bandit, success over the
 #: tool's base rate, 12.11.2026): Confluence imports −12.3 ± 3.5 points over 52 showings, Docker docs −4.8 ± 0.8 over 314, while the
 #: skill manuals (~/skills) stood at +7.0 ± 5.6 over 40. They stay findable with vi_recall; the ε slot keeps measuring them (propensities).
-LOOKUP_EXPLORE_ONLY = ("art_wissen:doku-extern", "art_wissen:firmendoku")
+LOOKUP_EXPLORE_ONLY = ("knowledge_kind:doku-extern", "knowledge_kind:firmendoku")
 HOSTKEYS = ("host", "hostname", "host_name", "node", "device")
 OPEN_MAX_S = 3600
 
@@ -144,14 +144,14 @@ _ANSIBLE_LIMIT = re.compile(r"(?:^|\s)(?:-l|--limit)(?:\s+|=)(\S+)")
 
 
 def command_triggers(cli_command: str) -> list[str]:
-    """Pure. thema:<command> for every recognised command except everyday shell (since 0.19.4, before only known ones), skill:<area> for known ones,
+    """Pure. topic:<command> for every recognised command except everyday shell (since 0.19.4, before only known ones), skill:<area> for known ones,
     host:<target> for ssh and for host names after ansible -l/--limit."""
     outputs = []
     for b in _commands(cli_command or ""):
         if b in COMMAND_SKILL:
-            outputs += [f"skill:{COMMAND_SKILL[b]}", f"thema:{b}"]
+            outputs += [f"skill:{COMMAND_SKILL[b]}", f"topic:{b}"]
         elif b not in SHELL_EVERYDAY and re.fullmatch(r"[a-z][a-z0-9._+-]{1,40}", b):
-            outputs.append(f"thema:{b}")
+            outputs.append(f"topic:{b}")
     outputs += [f"host:{h.lower()}" for h in _SSH_TARGET.findall(cli_command or "")]
     for target in _ANSIBLE_LIMIT.findall(cli_command or ""):
         outputs += [f"host:{h.lower()}" for h in re.split(r"[:,]", target.strip("'\"")) if "." in h and not h.startswith(("!", "&", "~"))]
@@ -160,7 +160,7 @@ def command_triggers(cli_command: str) -> list[str]:
 
 def triggers(tool: str, args: dict, context: list[str] | None = None) -> list[str]:
     """Hint triggers of an action: tool, skill (prefix up to the first _), host from the arguments, for shell tools the
-    recognised commands and SSH targets, plus the client's context hashtags (what it is working on, e.g. thema:oom). Invalid hashtags are dropped."""
+    recognised commands and SSH targets, plus the client's context hashtags (what it is working on, e.g. topic:oom). Invalid hashtags are dropped."""
     r = [f"tool:{tool}", f"skill:{tool.split('_')[0]}"]
     for k, v in (args or {}).items():
         if k in HOSTKEYS and isinstance(v, str) and v.strip():
@@ -194,7 +194,7 @@ def _error_words(error: str) -> list[str]:
 
 
 def error_hints(tool: str, args: dict, error: str, instance: str | None) -> list[str]:
-    """Knowledge about this error. A hit carries the error's fehler: tag, or shares words with the error text — exit and HTTP codes count
+    """Knowledge about this error. A hit carries the error's error: tag, or shares words with the error text — exit and HTTP codes count
     as words — together with the skill, a host or (for a shell) the failing program, e.g. pkill. Measured 11.11.2026 (a Claude Code session):
     `pkill -f …` failing with "Exit code 144" brought only the generic loop rule "Bash failed 3× the same way", not the knowledge that
     pkill -f kills its own shell (exit 144) — the error text had no word besides the code, and the program was not looked at.
@@ -206,7 +206,7 @@ def error_hints(tool: str, args: dict, error: str, instance: str | None) -> list
     if tool in SHELL_TOOLS:
         cmd = str((args or {}).get("command") or (args or {}).get("cmd") or "")
         programs = [b for b in _commands(cmd) if b not in SHELL_EVERYDAY and b not in GENERIC_SHELL_WORDS and re.fullmatch(r"[a-z][a-z0-9._+-]{1,40}", b)]
-    sig = "fehler:" + error_signature(error)[:60].replace(" ", "_").replace("(", "_").replace(")", "_")
+    sig = "error:" + error_signature(error)[:60].replace(" ", "_").replace("(", "_").replace(")", "_")
     generic = {f"tool:{tool}", f"skill:{tool.split('_')[0]}"} if tool in SHELL_TOOLS else set()  # a shell says nothing specific
     found: dict[str, tuple[float, g.MemoryObject]] = {}
     text_query = " ".join(programs[:3] + words[:6] + codes[:2])
@@ -225,13 +225,13 @@ def error_hints(tool: str, args: dict, error: str, instance: str | None) -> list
             tagged = sig in o.hashtags
             if tagged or (shared_words >= 2 and (shared_tags or shared_words >= 3)) or (shared_tags and shared_words >= 1):
                 weight = shared_words + 2 * shared_tags + (3 if tagged else 0) - (4 if o.instance == g.SERVER_INSTANCE and o.kind == "rule" else 0)
-                weight += 2 if "herkunft:episode" in o.hashtags else 0  # 0.56.0: a solution with cause, command and source
+                weight += 2 if "origin:episode" in o.hashtags else 0  # 0.56.0: a solution with cause, command and source
                 found[o.id] = (weight, o)
     best = sorted(found.values(), key=lambda x: -x[0])[:ERROR_HINTS]
     if not best:
         return []
     from . import bandit
-    return [f"After this error — known in the VI: [{o.id}] ({'solution' if 'herkunft:episode' in o.hashtags else o.kind}, {bandit.mark(o)}) "
+    return [f"After this error — known in the VI: [{o.id}] ({'solution' if 'origin:episode' in o.hashtags else o.kind}, {bandit.mark(o)}) "
             f"{' '.join(o.text.split())[:240]}" + (" — vi_object for the full content" if o.data.get("inhalt") else "")
             for _w, o in best]
 
@@ -280,9 +280,9 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
     cand = [o for _, o, _g in g.recall("(" + " OR ".join(search_triggers) + ")", limit=HINT_BUDGET + 24, kinds=("insight", "rule", "skill", "image", "page"))]
     # 0.21.1: disputed items and unconfirmed language-model hypotheses only on request (vi_recall), not unasked before actions.
     # Measured 09.11.: a disputed sleep hypothesis was the most shown hint with 719 reinforcements and pushed out evidenced knowledge.
-    only_on_request = [o for o in cand if o.mode == "disputed" or ("herkunft:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
+    only_on_request = [o for o in cand if o.mode == "disputed" or ("origin:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
     cand = [o for o in cand if o not in only_on_request]
-    cand = [o for o in cand if "art_wissen:code" not in o.hashtags]  # 0.61.0: imported code is found by search and the file line, no hint
+    cand = [o for o in cand if "knowledge_kind:code" not in o.hashtags]  # 0.61.0: imported code is found by search and the file line, no hint
     from . import p2p  # sources that proved harmful are no longer shown
     cand = p2p.without_blocked(cand)
     router = "heuristik"
@@ -302,7 +302,7 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
         router = "bandit"
     # Fit first, then learned usefulness: a new, exactly matching rule has no history yet and would otherwise lose against
     # established general hints. Importance 3 (warning) goes first. Tool triggers of a shell say nothing specific.
-    general = ({f"tool:{tool}", f"skill:{tool.split('_')[0]}", "thema:ssh"} | {f"thema:{w}" for w in GENERIC_SHELL_WORDS}) \
+    general = ({f"tool:{tool}", f"skill:{tool.split('_')[0]}", "topic:ssh"} | {f"topic:{w}" for w in GENERIC_SHELL_WORDS}) \
         if tool in SHELL_TOOLS else set()  # ssh is only the transport; grep, sed, from, def … say nothing about the subject
     matching = set(search_triggers) - general
     # 0.61.0: Vorrang, kein Ausschluss — in a project its index comes right after "important and matching", before the number of
@@ -383,7 +383,7 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
             continue
         from_memory.append(f"{'Learned' if o.kind == 'insight' else 'Rule'}{ins} [{o.id}] ({provenance}"
                                + (", DISPUTED — contradicted by another instance" if o.mode == "disputed" else "")
-                               + f"; {', '.join(t for t in o.hashtags if t.startswith(('modus:', 'skill:', 'kollektiv:')))[:60]}): "
+                               + f"; {', '.join(t for t in o.hashtags if t.startswith(('mode:', 'skill:', 'collective:')))[:60]}): "
                                f"{o.text[:300]} [Source: {str(o.data.get('quelle', '—'))[:120]}]"
                                + (f" [complete with code/tables: vi_object {o.id}]" if o.data.get("inhalt") else ""))
     candidate_ids = [o.id for o in cand]
@@ -422,7 +422,7 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
     from .config import OPEN
     if read_only(tool, is_read_only) and instance != OPEN and not state_dependent(tool):  # without a token all share one instance: no remembered answers
         ttl = min(ttl_per_tool.get(tool, TTL_DEFAULT), TTL_MAX)
-        for _, o, _g in g.recall(f"art:answer cache:{_question(tool, args)}", limit=1, viewer=instance):
+        for _, o, _g in g.recall(f"kind:answer cache:{_question(tool, args)}", limit=1, viewer=instance):
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(o.ts)).total_seconds()
             if age <= ttl:
                 found.append(o.id)
@@ -502,7 +502,7 @@ def explain(hint: g.MemoryObject, instance: str, triggers: list[str] | None = No
                  f"P(ok) without hint {w['p_without'] * 100:.0f} %, with {w['p_with'] * 100:.0f} % → lift {w['lift'] * 100:+.1f} points")
         z.append(f"    what sets this hint apart from the other candidates (decides the order): {w['distinguishing_sum']:+.3f}")
         z += [f"      {k:44} {c:+.3f}" for k, c in w["distinguishing"][:8]] or ["      — none of its features is in the model"]
-        z.append(f"    same for every candidate (moves all lifts alike, never the order): hinweis_n:1 − hinweis_n:0 = {w['same_for_all']:+.3f}")
+        z.append(f"    same for every candidate (moves all lifts alike, never the order): hint_n:1 − hint_n:0 = {w['same_for_all']:+.3f}")
         if w["hint_unknown"]:
             z.append(f"    not in the model (fewer than {learning.MIN_PER_FEATURE} observations): {', '.join(w['hint_unknown'][:6])}")
         if w["situation"]:
@@ -676,7 +676,7 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
         if not ok and error_sig:
             n = g.db().execute("SELECT COUNT(*) FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag = ? "
                                "JOIN tag t2 ON t2.object_id = o.id AND t2.tag = ? WHERE o.kind = 'experience' AND o.ts >= ?",
-                               (f"tool:{tool}", f"fehler:{error_sig}", since)).fetchone()[0]
+                               (f"tool:{tool}", f"error:{error_sig}", since)).fetchone()[0]
             if n == 0:
                 return "neu", "first error of this kind in 24 h"
             if n <= 2:
@@ -694,16 +694,16 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
 def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: str | None, result: str | None,
               access: dict, instance: str | None = None, is_read_only: bool | None = None) -> g.MemoryObject:
     tags = [f"tool:{tool}", f"skill:{tool.split('_')[0]}", f"ok:{'unbekannt' if ok is None else 'ja' if ok else 'nein'}"]
-    tags += [t for t in access.get("reize", []) if t.startswith(("host:", "thema:"))]  # context triggers as tags (TRAINING.md 4a)
+    tags += [t for t in access.get("reize", []) if t.startswith(("host:", "topic:"))]  # context triggers as tags (TRAINING.md 4a)
     sig = None
     if error:
         sig = error_signature(error)[:60].replace(" ", "_").replace("(", "_").replace(")", "_")
-        if g.TAG.match(f"fehler:{sig}"):
-            tags.append(f"fehler:{sig}")
+        if g.TAG.match(f"error:{sig}"):
+            tags.append(f"error:{sig}")
         else:
             sig = None
     level, reason_u = surprise(tool, ok, sig)  # count BEFORE saving, otherwise the experience counts itself
-    tags.append(f"ueberraschung:{level}")
+    tags.append(f"surprise:{level}")
     tags = [t for t in tags if g.TAG.match(t)]
     text = f"{tool}({json.dumps(args, ensure_ascii=False)[:300]}) → " + (f"error: {error[:300]}" if error else "no result reported (vi_after missing)" if ok is None
                                                                        else f"ok, {len(result or '')} chars, {duration_ms} ms")
@@ -781,7 +781,7 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
     skip = set(shown or [])
     hits = g.recall(" ".join(words), limit=PROMPT_HINTS * 6, kinds=PROMPT_KINDS, viewer=instance, or_fallback=True)
     cand = [o for _s, o, _g in hits if o.id not in skip and o.mode not in ("disputed", "quarantine", "refuted", "withdrawn", "archived")
-            and not ("herkunft:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
+            and not ("origin:schlaf-llm" in o.hashtags and not o.foreign_confirmations())]
     cand = p2p.without_blocked(cand)
     lw = [w.lower() for w in words]
     scored = []
@@ -798,7 +798,7 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
     out = []
     pidx = g.current_index.get()  # 0.61.0: with equal shared words, the project's index first, then the full-text rank
     pidx = pidx if pidx and pidx != "global" else None
-    scored = [x for x in scored if "art_wissen:code" not in x[2].hashtags]  # 0.61.0: code is searched, not offered as a hint
+    scored = [x for x in scored if "knowledge_kind:code" not in x[2].hashtags]  # 0.61.0: code is searched, not offered as a hint
     for s, _rank, o in sorted(scored, key=lambda x: (x[0], not indexes.first(x[2], pidx), x[1])):
         if -s < best and -s <= 2:
             continue

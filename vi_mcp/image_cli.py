@@ -1,6 +1,6 @@
 """0.35.0: `vi-mcp image` — put an image file with its description into memory, or fetch one back.
 
-  vi-mcp image FILE --text "what it shows" --hashtags thema:x,host:y --source "where it comes from"
+  vi-mcp image FILE --text "what it shows" --hashtags topic:x,host:y --source "where it comes from"
                     [--content-file F|-] [--regions F.json] [--visibility shared|internal] [--importance 0-3]
   vi-mcp image get ID OUTFILE
 

@@ -18,7 +18,7 @@ def test_shell_commands_classified_by_effect():
 
 
 def test_usage_stats_count_calls_rules_and_searches(gd):
-    g.new_object("insight", "nginx auf web1 vor Neustart mit nginx -t prüfen", ["host:web1", "thema:nginx"], {"quelle": "x"}, reason="T")
+    g.new_object("insight", "nginx auf web1 vor Neustart mit nginx -t prüfen", ["host:web1", "topic:nginx"], {"quelle": "x"}, reason="T")
     # instance a searches beforehand, instance b does not
     text = tools.call_tool("vi_erinnere", {"filter": "nginx"}, "a", True)
     usage_stats.record("a", "claude-code", "vi_recall", "ok", 12, text)

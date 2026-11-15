@@ -205,8 +205,33 @@ VALUE_COLUMNS: tuple[tuple[str, str, dict[str, str]], ...] = (
 ARCHIVE_VALUE_COLUMNS: tuple[tuple[str, str, dict[str, str]], ...] = (
     ("object", "kind", KINDS), ("object", "visibility", VISIBILITIES), ("object", "mode_before", MODES),
 )
-#: hashtags whose value is a stored enum (step 2 rewrites the value; step 3 the kind)
-TAG_VALUES: dict[str, dict[str, str]] = {"art": KINDS, "modus": MODES}
+# ---------------------------------------------------------------- hashtags (step 3)
+
+#: hashtag kinds (the part before the colon). Kinds that are English already (host:, tool:, skill:, os:, …) are not listed. Two pairs
+#: join a kind that existed in both languages: fehler: and error:, muster: and pattern: (one name for one thing).
+TAG_KINDS: dict[str, str] = {
+    "art": "kind", "instanz": "instance", "thema": "topic", "art_wissen": "knowledge_kind", "quelle_art": "source_kind", "bereich": "area",
+    "seite": "page", "ueberraschung": "surprise", "zustand": "state", "herkunft": "origin", "ort": "location", "kritikalitaet": "criticality",
+    "doku": "docs", "lizenz": "license", "fehler": "error", "abschnitt": "section", "dienst": "service", "muster": "pattern", "netz": "net",
+    "modus": "mode", "feld": "field", "feldart": "field_kind", "note": "grade", "ziel": "target", "konflikt": "conflict", "regel": "rule",
+    "projekt": "project", "logik": "logic", "an": "to", "von": "from", "zeigt": "shows", "kollektiv": "collective", "regelart": "rule_kind",
+    "dublette": "duplicate", "zeit": "time", "pruefer": "reviewer", "datum": "date", "modell": "model", "dauer": "duration",
+    "metrik": "metric", "selbst": "self", "selbstbereich": "self_area", "zeitraum": "period", "hinweis": "hint", "hinweis_n": "hint_n",
+    "gespraech": "conversation", "herausgeber": "publisher", "suche": "search", "erkenntnis": "insight", "datei": "file", "frage": "question",
+    "antwort": "answer", "stunde": "hour", "inhalt": "content", "funktion": "function", "konstante": "constant", "bewertung": "rating",
+    "vorschlag": "proposal", "maschine": "machine", "philosophie": "philosophy", "hinweisart": "hint_kind", "modul": "module",
+    "geaendert_in": "changed_in", "ruft": "calls", "ruft_gesperrt": "calls_locked", "schreibt": "writes",
+    "schreibt_ungesperrt": "writes_unlocked", "wirft": "raises", "koerper": "body", "schluessel": "key", "wert": "value",
+    "importiert": "imports", "importiert_spaet": "imports_late", "sprache": "language", "standort": "site", "kunde": "customer",
+    "nutzer": "user", "ausgang": "outcome", "zustaendig": "responsible", "pfad": "path", "bild": "image", "sicht": "visibility",
+    "direktive": "directive", "reflexart": "reflex_kind", "selbstbild": "self_image",
+}
+#: spellings of the same German kind that are not the canonical one (read, never written)
+TAG_KIND_ALIASES: dict[str, str] = {"art-wissen": "knowledge_kind"}
+#: hashtags whose value is a stored enum, by English kind (step 2: kind:, mode:)
+TAG_VALUES: dict[str, dict[str, str]] = {"kind": KINDS, "mode": MODES}
+#: the German kind of each English hashtag kind whose value step 2 rewrote (for the migration: the tags still carry the German kind then)
+_TAG_VALUES_GERMAN_KIND = {"art": "kind", "modus": "mode"}
 
 _REVERSE: dict[int, dict[str, str]] = {}
 
@@ -231,14 +256,22 @@ def id_prefix(kind: str) -> str:
 
 
 def canonical_tag(tag: str) -> str:
-    """A hashtag as stored since 0.67.0 — for tool input and search filters of clients that still write the German form."""
+    """A hashtag as stored since 0.67.0 — for tool input, search filters and imports that still carry the German form."""
     if not isinstance(tag, str) or ":" not in tag:
         return tag
     k, v = tag.split(":", 1)
+    k = TAG_KINDS.get(k) or TAG_KIND_ALIASES.get(k) or k
     m = TAG_VALUES.get(k)
     if m and not v.endswith("*"):
         v = english(m, v)
     return f"{k}:{v}"
+
+
+def wire_kind(prefix: str) -> str:
+    """A hashtag kind or prefix ("topic" or "topic:") in the wire form of 0.66."""
+    colon = prefix.endswith(":")
+    k = prefix[:-1] if colon else prefix
+    return wire(TAG_KINDS, k) + (":" if colon else "")
 
 
 _FILTER_TAG = re.compile(r"(?<![\w:])([a-z][a-z0-9_-]{0,30}:[^\s()]+)")
@@ -255,7 +288,9 @@ def wire_tag(tag: str) -> str:
         return tag
     k, v = tag.split(":", 1)
     m = TAG_VALUES.get(k)
-    return f"{k}:{wire(m, v)}" if m else tag
+    if m:
+        v = wire(m, v)
+    return f"{wire(TAG_KINDS, k)}:{v}"
 
 
 def _value_pending(con: Any, columns) -> bool:
@@ -270,8 +305,8 @@ def _value_pending(con: Any, columns) -> bool:
                                            "OR data LIKE '%\"stil\"%' OR data LIKE '%\"ziele\"%' OR data LIKE '%\"grenzen\"%') LIMIT 1").fetchone():
         return True
     if "tag" in present:
-        for k, m in TAG_VALUES.items():
-            old = [f"{k}:{o}" for o, n in m.items() if o != n]
+        for gk, ek in _TAG_VALUES_GERMAN_KIND.items():
+            old = [f"{gk}:{o}" for o, n in TAG_VALUES[ek].items() if o != n]
             if con.execute(f"SELECT 1 FROM tag WHERE tag IN ({','.join('?' * len(old))}) LIMIT 1", old).fetchone():
                 return True
     return False
@@ -303,6 +338,108 @@ def _self_areas(con: Any) -> int:
     return n
 
 
+def _german_tag_kinds() -> list[str]:
+    return [k for k in {**TAG_KINDS, **TAG_KIND_ALIASES} if (TAG_KINDS.get(k) or TAG_KIND_ALIASES.get(k)) != k]
+
+
+def _tags_in_data(d: dict) -> bool:
+    """Step 3: the hashtags an object keeps in its data (triggers of skills, questions and experiences, a search's filter, the kinds of
+    derived_triggers) in their English form. data.fremd_hashtags is the wire form as imported and stays. True if something changed."""
+    changed = False
+
+    def tags(lst):
+        nonlocal changed
+        if not isinstance(lst, list):
+            return lst
+        new = [canonical_tag(t) for t in lst]
+        changed |= new != lst
+        return new
+    for holder in (d, d.get("problem"), d.get("vorher")):
+        if isinstance(holder, dict) and "reize" in holder:
+            holder["reize"] = tags(holder["reize"])
+    if isinstance(d.get("filter"), str):
+        f = canonical_filter(d["filter"])
+        changed |= f != d["filter"]
+        d["filter"] = f
+    dt = d.get("derived_triggers")
+    if isinstance(dt, dict) and any(k in TAG_KINDS for k in dt):
+        d["derived_triggers"] = {TAG_KINDS.get(k, k): v for k, v in dt.items()}
+        changed = True
+    return changed
+
+
+def migrate_tags(con: Any) -> dict[str, int]:
+    """Step 3: hashtags with a German kind get the English one (thema: → topic:, fehler: → error:, …), and so do the hashtags kept in
+    object data, in content centres and in index tags. Portable, idempotent."""
+    import json
+    present = _tables(con)
+    counts: dict[str, int] = {}
+    if "tag" in present:
+        kinds = _german_tag_kinds()
+        rows = con.execute(f"SELECT DISTINCT tag FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))})", kinds).fetchall()
+        n = 0
+        # 0.1.x kept its search cache as frage:<hash>; since 0.2.0 that is cache:<hash> (before, memory._migrate did it on every start)
+        legacy = con.execute("SELECT COUNT(*) FROM tag WHERE tag LIKE 'frage:%'").fetchone()[0]
+        if legacy:
+            con.execute("INSERT OR IGNORE INTO tag (object_id, tag) SELECT object_id, 'cache:' || substr(tag, 7) FROM tag WHERE tag LIKE 'frage:%'")
+            con.execute("DELETE FROM tag WHERE tag LIKE 'frage:%'")
+            counts["cache hashtags of 0.1"] = legacy
+            rows = [r for r in rows if not r[0].startswith("frage:")]
+        for (old,) in rows:
+            new = canonical_tag(old)
+            if new != old:
+                con.execute("INSERT OR IGNORE INTO tag (object_id, tag) SELECT object_id, ? FROM tag WHERE tag = ?", (new, old))
+                n += con.execute("DELETE FROM tag WHERE tag = ?", (old,)).rowcount
+        if n:
+            counts["tag kinds"] = n
+    if "object" in present:
+        n = 0
+        for oid, raw in con.execute("SELECT id, data FROM object WHERE data LIKE '%reize%' OR data LIKE '%filter%' OR data LIKE '%derived_triggers%'").fetchall():
+            try:
+                d = json.loads(raw or "{}")
+            except ValueError:
+                continue
+            if _tags_in_data(d):
+                con.execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d, ensure_ascii=False), oid))
+                n += 1
+        if n:
+            counts["hashtags in data"] = n
+    if "centre" in present:
+        n = 0
+        for (old,) in con.execute("SELECT tag FROM centre").fetchall():
+            new = canonical_tag(old)
+            if new != old:
+                if con.execute("SELECT 1 FROM centre WHERE tag = ?", (new,)).fetchone():
+                    con.execute("DELETE FROM centre WHERE tag = ?", (old,))  # the English centre exists: the content model rebuilds it
+                else:
+                    con.execute("UPDATE centre SET tag = ? WHERE tag = ?", (new, old))
+                n += 1
+        if n:
+            counts["centre tags"] = n
+    if "vi_index" in present:
+        n = 0
+        for name, raw in con.execute("SELECT name, tags FROM vi_index").fetchall():
+            try:
+                lst = json.loads(raw or "[]")
+            except ValueError:
+                continue
+            new = [canonical_tag(t) for t in lst] if isinstance(lst, list) else lst
+            if new != lst:
+                con.execute("UPDATE vi_index SET tags = ? WHERE name = ?", (json.dumps(new, ensure_ascii=False), name))
+                n += 1
+        if n:
+            counts["index tags"] = n
+    return counts
+
+
+def _tags_pending(con: Any) -> bool:
+    present = _tables(con)
+    if "tag" not in present:
+        return False
+    kinds = _german_tag_kinds()
+    return bool(con.execute(f"SELECT 1 FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))}) LIMIT 1", kinds).fetchone())
+
+
 def migrate_values(con: Any, columns) -> dict[str, int]:
     """Step 2: rewrite every stored enum value of `columns` and the enum values of the hashtags art: and modus:. Portable UPDATEs,
     idempotent. Returns the rewritten rows per class."""
@@ -323,11 +460,11 @@ def migrate_values(con: Any, columns) -> dict[str, int]:
             counts["self areas"] = n
     if "tag" in present:
         n = 0
-        for k, m in TAG_VALUES.items():
-            for old, new in m.items():
+        for gk, ek in _TAG_VALUES_GERMAN_KIND.items():
+            for old, new in TAG_VALUES[ek].items():
                 if old == new:
                     continue
-                o, w = f"{k}:{old}", f"{k}:{new}"
+                o, w = f"{gk}:{old}", f"{gk}:{new}"
                 con.execute("INSERT OR IGNORE INTO tag (object_id, tag) SELECT object_id, ? FROM tag WHERE tag = ?", (w, o))
                 n += con.execute("DELETE FROM tag WHERE tag = ?", (o,)).rowcount
         if n:
@@ -403,7 +540,7 @@ def migrate_db(con: Any, tables: dict[str, str], target: Any, label: str) -> dic
     per class into the table name_migration and the log. The caller commits."""
     values = {"memory": VALUE_COLUMNS, "archive": ARCHIVE_VALUE_COLUMNS}.get(label, ())
     schema = _pending_schema(con, tables)
-    if not schema and not (values and _value_pending(con, values)):
+    if not schema and not (values and (_value_pending(con, values) or (label == "memory" and _tags_pending(con)))):
         return {}
     backup = _backup(con, target, label)
     log(f"migration {STEP} ({label}): backup copy before renaming: {backup}")
@@ -413,6 +550,8 @@ def migrate_db(con: Any, tables: dict[str, str], target: Any, label: str) -> dic
         counts = {"tables": sum(1 for d in done if "." not in d.split("→")[0]), "columns": sum(1 for d in done if "." in d.split("→")[0])}
     if values:
         counts.update(migrate_values(con, values))
+    if label == "memory":
+        counts.update(migrate_tags(con))
     _record(con, counts, backup)
     log(f"migration {STEP} ({label}): " + ", ".join(f"{n} {cls}" for cls, n in counts.items()))
     return counts

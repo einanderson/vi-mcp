@@ -10,9 +10,9 @@ NOW = datetime(2026, 11, 13, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.mark.parametrize("text, act, qtype, flt, since, notes", [
-    ("ask.how deploy @web1 #Vi-Mcp since:30d", "ask", "how", "deploy host:web1* thema:vi-mcp", "2026-10-14", 0),
-    ("ask.why \"Origin null\" !#csrf @web1.example", "ask", "why", '"Origin null" !thema:csrf host:web1.example', None, 0),
-    ("ask.where (#backup OR #restore) since:2026-11-01", "ask", "where", "(thema:backup OR thema:restore)", "2026-11-01", 0),
+    ("ask.how deploy @web1 #Vi-Mcp since:30d", "ask", "how", "deploy host:web1* topic:vi-mcp", "2026-10-14", 0),
+    ("ask.why \"Origin null\" !#csrf @web1.example", "ask", "why", '"Origin null" !topic:csrf host:web1.example', None, 0),
+    ("ask.where (#backup OR #restore) since:2026-11-01", "ask", "where", "(topic:backup OR topic:restore)", "2026-11-01", 0),
     ("ask.foo x", "ask", None, "x", None, 1),
     ("tell.fact x", "tell", None, "x", None, 0),
     ("host:web1 nginx", None, None, "host:web1 nginx", None, 0),       # no VIL: an ordinary filter, untouched
@@ -24,9 +24,9 @@ def test_parse(text, act, qtype, flt, since, notes):
 
 
 def _seed():
-    plain = g.new_object("insight", "deploy notes for web1: the deploy took 4 minutes", ["host:web1.example", "thema:deploy"],
+    plain = g.new_object("insight", "deploy notes for web1: the deploy took 4 minutes", ["host:web1.example", "topic:deploy"],
                          {"quelle": "t"}, importance=3)
-    how = g.new_object("insight", "deploy web1: stop, copy, start", ["host:web1.example", "thema:deploy", "art_wissen:loesung"],
+    how = g.new_object("insight", "deploy web1: stop, copy, start", ["host:web1.example", "topic:deploy", "knowledge_kind:loesung"],
                        {"quelle": "https://wiki.example/deploy", "nuetzlich": {"ja": 9, "nein": 1, "n": 10}})
     return plain, how
 
@@ -50,13 +50,13 @@ class _O:
 
 
 def test_order_is_off_by_default_and_lifts_labelled_hits_at_most_lift_places_when_measured(gd):
-    hits = [(0, _O(["thema:x"]), 0) for _ in range(5)] + [(0, _O(["answers:how"]), 0)]
+    hits = [(0, _O(["topic:x"]), 0) for _ in range(5)] + [(0, _O(["answers:how"]), 0)]
     assert vil.order(hits, "how") == hits  # default "off": measured, every reordering lowered MRR
     out = vil.order(hits, "how", "labels")
     assert out.index(hits[5]) == 5 - vil.LIFT  # moved up, but not past the more relevant hits further ahead
     assert [h for h in out if h is not hits[5]] == hits[:5]  # the rest keeps its relevance order
     assert vil.order(hits, "how", "off") == hits and vil.order(hits, None) == hits
-    skill = [(0, _O(["thema:x"]), 0), (0, _O(["art_wissen:loesung"]), 0)]
+    skill = [(0, _O(["topic:x"]), 0), (0, _O(["knowledge_kind:loesung"]), 0)]
     assert vil.order(skill, "how", "labels") == skill  # the fixed prior alone moves nothing
     assert vil.order(skill, "how", "prior")[0] is skill[1]  # the old, measured-harmful mode stays available to measure against
 
@@ -70,8 +70,8 @@ def test_since_other_acts_and_evidence(gd):
     assert plain.id not in out and how.id in out and "1 older hit(s) left out" in out
     with pytest.raises(tools.Rejected, match="never run from a message"):
         tools.call_tool("vi_recall", {"filter": "do restart @web1", "semantic": False}, "a", False)
-    foreign = g.new_object("insight", "imported", ["thema:x"], {"quelle": "t"}, instance="p2p-vi-abc")
-    llm = g.new_object("insight", "derived", ["thema:x", "herkunft:schlaf-llm"], {"quelle": "sleep"})
+    foreign = g.new_object("insight", "imported", ["topic:x"], {"quelle": "t"}, instance="p2p-vi-abc")
+    llm = g.new_object("insight", "derived", ["topic:x", "origin:schlaf-llm"], {"quelle": "sleep"})
     assert [vil.evidence_of(o) for o in (g.load(how.id), g.load(plain.id), foreign, llm)] == ["measured", "unknown", "hearsay", "inferred"]
-    doc = g.new_object("insight", "documented", ["thema:x"], {"quelle": "https://docs.example/x"})
+    doc = g.new_object("insight", "documented", ["topic:x"], {"quelle": "https://docs.example/x"})
     assert vil.evidence_of(doc) == "documented"

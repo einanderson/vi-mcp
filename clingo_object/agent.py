@@ -22,21 +22,21 @@ Write ONLY the program in one ```logic block. Its answer is the atom ans(...): o
 
 Notation:
 - (O in objects("kind:value")) binds O to the memory objects with that hashtag; "kind:*" = any value; several conditions separated by
-  a blank are AND, (a OR b) is OR. Example: (O in objects("art:skill")), (H in objects("netz:dmz")).
+  a blank are AND, (a OR b) is OR. Example: (O in objects("kind:skill")), (H in objects("net:dmz")).
 - (O.host == H) reads hashtag kind host of O into H; (O.kind == "skill") the object kind; (O.mode == "test") its mode;
   numbers: (O.age > 90) days, (O.confirmed >= 1), (O.importance >= 2).
 - linked(O, B) follows an edge from O to B (B is then an object too).
 - head(X) <= body: a rule; & = and; ~p(X) = not derivable; comparisons go in parentheses because & binds tighter.
 - never(cond): a constraint that is reported when violated.
 - Facts about one host are spread over many objects (a monitoring finding, a Confluence page, an inventory entry): join them through the
-  hashtag VALUE, e.g. (A in objects("netz:dmz")) & (A.host == H) & (B in objects("ort:*")) & (B.host == H) & (B.ort == L).
+  hashtag VALUE, e.g. (A in objects("net:dmz")) & (A.host == H) & (B in objects("location:*")) & (B.host == H) & (B.ort == L).
   linked(O, B) is only for explicit edges between objects, not for "is about the same host".
 - Only use hashtag kinds and values from the list below; an empty answer is a valid answer when nothing matches.
 - Capitalised names are variables, strings in double quotes.
 Example — hosts at location MUE-0 for which no service is known:
 ```logic
-at(H) <= (O in objects("ort:MUE-0")) & (O.host == H)
-served(H) <= (S in objects("dienst:*")) & (S.host == H)
+at(H) <= (O in objects("location:MUE-0")) & (O.host == H)
+served(H) <= (S in objects("service:*")) & (S.host == H)
 ans(H) <= at(H) & ~served(H)
 ```"""
 

@@ -12,7 +12,7 @@ def _before(s, tool="Bash"):
 
 def test_hint_is_not_repeated_within_the_conversation(gd):
     # 0.49.0: before a shell command a hint must share more than the tool — here the program
-    k = g.new_object("insight", "uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"], {"quelle": "x"}, instance="b")
+    k = g.new_object("insight", "uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"], {"quelle": "x"}, instance="b")
     s = session.begin("a", "t")
     first = _before(s)
     assert k.id in first["zugriff"]["gezeigt"]

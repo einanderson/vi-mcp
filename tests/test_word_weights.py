@@ -62,8 +62,8 @@ def test_a_foreign_word_weight_arrives_signed_and_changes_the_combined_weight_an
 
 def test_word_weights_reorder_only_in_the_measuring_mode_and_vocabulary_shows_them(gd):
     from vi_mcp import vil
-    good = _k("deploy with the pipeline", ["thema:deploy", "tool:gitlab"], 9, 1)
-    poor = _k("deploy by hand over ssh", ["thema:deploy", "tool:scp"], 1, 9)
+    good = _k("deploy with the pipeline", ["topic:deploy", "tool:gitlab"], 9, 1)
+    poor = _k("deploy by hand over ssh", ["topic:deploy", "tool:scp"], 1, 9)
     word_weights.compute()
     ids = lambda t: [line.split("]")[0].strip(" [") for line in t.splitlines()[1:] if line.startswith("  [")]  # noqa: E731
     plain = tools.call_tool("vi_recall", {"filter": "deploy", "semantic": False, "reinforce": False}, "a", False)

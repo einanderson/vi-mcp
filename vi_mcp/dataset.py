@@ -93,7 +93,7 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
         if o.data.get("machine_example"):
             skipped["machine execution evidence belongs to checked program formats, not generic question-to-itself QA"] += 1
             continue
-        if "art_wissen:code" in o.hashtags:
+        if "knowledge_kind:code" in o.hashtags:
             skipped["code piece (a copy of a repository)"] += 1
             continue
         if o.id in targets:
@@ -160,7 +160,7 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     by_trigger: dict[str, list] = {}
     for o, w, n in rated:
         for t in o.hashtags:
-            if t.startswith(("tool:", "host:", "thema:", "fehler:")):
+            if t.startswith(("tool:", "host:", "topic:", "error:")):
                 by_trigger.setdefault(t, []).append((o, w, n))
     seen = set()
     for t, group in sorted(by_trigger.items()):
@@ -219,7 +219,7 @@ def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None
     tool = _tool_schema("vi_logic")
     sft, kto = [], []
     verified = {}
-    for _s, o, _p in g.recall("art:rule thema:logik", limit=5000, viewer=None):
+    for _s, o, _p in g.recall("kind:rule topic:logik", limit=5000, viewer=None):
         if o.visibility == "private" or o.mode not in ("active", "test") or "logik" not in o.data or (index and o.idx != index):
             continue
         if o.id in targets or evaluation.group_of(o) in eval_groups:
@@ -315,7 +315,7 @@ def machine_examples(index, audit, targets, eval_qs, eval_groups=None, skipped=N
     skipped = skipped if skipped is not None else Counter()
     sft, kto, dpo, pairs = [], [], [], {}
     tool = _tool_schema("vi_machine")
-    for _s, o, _w in g.recall("art:rule thema:machine-training", limit=5000, viewer=None):
+    for _s, o, _w in g.recall("kind:rule topic:machine-training", limit=5000, viewer=None):
         if o.visibility == "private" or o.mode not in ("active", "test") or (index and o.idx != index) or o.id in targets:
             continue
         e = o.data.get("machine_example")
@@ -433,7 +433,7 @@ def agentic_examples(items: list[tuple], eval_qs: set[str], audit: Counter) -> t
         qtype = (o.data.get("klasse") or {}).get("answers")
         qtype = qtype if qtype in vil.QTYPES else "what"
         host = next((t[5:] for t in o.hashtags if t.startswith("host:")), None)
-        topic = next((t[6:] for t in o.hashtags if t.startswith("thema:")), None)
+        topic = next((t[6:] for t in o.hashtags if t.startswith("topic:")), None)
         tags = " ".join(([f"@{host}"] if host else []) + ([f"#{topic}"] if topic else []))
         words = " ".join(_query_words(q))
         steps = [f"ask.{qtype} {words} {tags}".strip()] + ([f"ask.{qtype} {tags}"] if tags and words else [])
@@ -458,7 +458,7 @@ def agentic_examples(items: list[tuple], eval_qs: set[str], audit: Counter) -> t
 
 
 def _situation(o: g.MemoryObject) -> str:
-    triggers = [t for t in o.hashtags if t.startswith(("tool:", "host:", "thema:", "fehler:"))][:8]
+    triggers = [t for t in o.hashtags if t.startswith(("tool:", "host:", "topic:", "error:"))][:8]
     return "Situation: " + (", ".join(triggers) or "general") + ". Which piece of knowledge helps?"
 
 

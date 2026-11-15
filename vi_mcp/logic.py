@@ -64,6 +64,8 @@ from . import names as _names
 
 # 0.67.0: programs written against the German stored values (O.kind == "erkenntnis") still mean the same objects
 _notation.FIELD_VALUE_ALIASES.update(kind=_names.KINDS, mode=_names.MODES, visibility=_names.VISIBILITIES)
+_notation.TAG_KIND_ALIASES.update(_names.TAG_KINDS, **_names.TAG_KIND_ALIASES)
+_notation.TAG_VALUE_ALIASES.update(_names.TAG_VALUES)
 
 
 #: 0.63.0 clingo-objekt: memory objects as facts — at most this many objects per program (the rest is named "abgeschnitten")
@@ -258,7 +260,7 @@ def object_data(filters: list[str], viewer: str | None, edges: bool = True) -> d
     for f in filters:
         groups, _remove, _words = g.parse_filter(f, g.known_kinds())
         if not groups:
-            raise LogicError(f"objects({_quote(f)}) needs at least one kind:value condition that exists in memory (e.g. art:skill, "
+            raise LogicError(f"objects({_quote(f)}) needs at least one kind:value condition that exists in memory (e.g. kind:skill, "
                              "host:web1*) — free words are no set; vi_vocabulary lists the kinds")
         vis = g.ids_for_filter(f, viewer=viewer)
         if viewer is not None:
@@ -385,7 +387,7 @@ def _proposal_target_ok(p: dict, instance: str | None) -> str | None:
         if o.mode in NEVER_IMPORTED:
             return f"{oid} is in quarantine or archive"
     if p["aktion"] == "tag":
-        t = f"{p['art']}:{p['wert']}"
+        t = _names.canonical_tag(f"{p['art']}:{p['wert']}")  # 0.67.0: modus:/instanz: of an older program are the same system hashtags
         if not g.TAG.match(t):
             return f"{t!r} is no hashtag of the form kind:value"
         if t.startswith(g.FIXED_TAG_PREFIXES):
@@ -447,7 +449,7 @@ def _hold(p: dict, what: str, rules: list[str], prog_hash: str, rule_set: str | 
         return
     target = g.load(p["ziel"])
     g.new_object("proposal", f"Proposal from a logic program: {what}",
-                 ["thema:logik", f"vorschlag:{p['aktion']}", "modus:quarantine"],
+                 ["topic:logik", f"vorschlag:{p['aktion']}", "mode:quarantine"],
                  {"vorschlag": {k: p[k] for k in _PROPOSAL_KEYS if k in p}, "regeln": rules,
                   # a proposal changes another object: always sensitive, so only the release right (a person: vi-mcp release) decides
                   "pruefung": {"regeln": [f"logic proposal: {what}"[:160]], "pruefer": None},
@@ -463,7 +465,7 @@ def save_rule_set(name: str, source: str, description: str, visibility: str | No
     from . import memory as g
     _program, stmts = translate(source)
     return g.new_object("rule", f"Logic rule set {name}: " + (description or f"{len(stmts)} statements"),
-                        ["thema:logik", f"logik:{name}"], {"logik": {"name": name, "quelle": source, "aussagen": len(stmts),
+                        ["topic:logik", f"logic:{name}"], {"logik": {"name": name, "quelle": source, "aussagen": len(stmts),
                                                                      "clingo": CLINGO_VERSION, "beschreibung": description},
                                                            "inhalt": source, "quelle": f"vi_logic save by {who or instance}"},
                         importance=1, who=f"ki@{who or instance}", reason="vi_logic save", instance=instance, visibility=visibility)

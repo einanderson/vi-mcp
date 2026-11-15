@@ -19,7 +19,7 @@ def clock(gd, monkeypatch):
 
 
 def _slept(hours_ago):
-    o = g.new_object("sleep", "sleep", ["art:sleep"], {"quelle": "t"})
+    o = g.new_object("sleep", "sleep", ["kind:sleep"], {"quelle": "t"})
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = ?", ((NOON - timedelta(hours=hours_ago)).isoformat(timespec="seconds"), o.id))
         g.db().commit()

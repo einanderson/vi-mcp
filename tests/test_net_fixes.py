@@ -31,7 +31,7 @@ def test_net_token_tool_stores_the_token_and_shows_only_its_id(gd):
 
 
 def test_net_forget_takes_the_stored_token(gd):
-    o = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended runs", ["thema:backup"], {"quelle": "test"}, instance="a")
+    o = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended runs", ["topic:backup"], {"quelle": "test"}, instance="a")
     p2p.generate_token("a")
     out = tools.call_tool("vi_net_forget", {"ids": [o.id], "reason": "outdated"}, "a", False)  # no token from the agent
     assert out.startswith("1 entries recalled")
@@ -57,7 +57,7 @@ def test_net_token_cli_shows_id_exports_0600_and_recalls_without_printing_the_to
     cfg.write_text(json.dumps({"port": 8799, "db": str(db), "instances": {}}))
     monkeypatch.setenv("VI_MCP_CONFIG", str(cfg))
     g.open_db(db)
-    o = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended runs", ["thema:backup"], {"quelle": "test"}, instance="a")
+    o = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended runs", ["topic:backup"], {"quelle": "test"}, instance="a")
     token = p2p.generate_token("a")
     g.close_db()
     main = _main(monkeypatch)

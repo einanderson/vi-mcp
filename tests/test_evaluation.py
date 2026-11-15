@@ -12,9 +12,9 @@ def test_query_metrics_one_relevant_page():
 
 
 def test_page_ranking_counts_a_page_once(gd):
-    a = g.new_object("insight", "Part 1 of the backup page", ["thema:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
-    b = g.new_object("insight", "Part 2 of the backup page", ["thema:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
-    c = g.new_object("insight", "Something own", ["thema:backup"], {"quelle": "session 12.11."})
+    a = g.new_object("insight", "Part 1 of the backup page", ["topic:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
+    b = g.new_object("insight", "Part 2 of the backup page", ["topic:backup"], {"quelle": "https://wiki.example.org/p/1 · Version 3"})
+    c = g.new_object("insight", "Something own", ["topic:backup"], {"quelle": "session 12.11."})
     assert evaluation.page_ranking([a.id, b.id, c.id]) == ["https://wiki.example.org/p/1", c.id]
 
 
@@ -44,7 +44,7 @@ def test_nightly_writes_questions_in_portions_and_measures_once_a_day(gd, tmp_pa
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
     monkeypatch.setattr(evaluation, "EVAL_N", 6)
     monkeypatch.setattr(evaluation, "EVAL_MIN", 4)
-    objs = [g.new_object("insight", f"Service number {i} needs restart flag --force-{i} after the upgrade", [f"thema:svc{i}"],
+    objs = [g.new_object("insight", f"Service number {i} needs restart flag --force-{i} after the upgrade", [f"topic:svc{i}"],
                          {"quelle": f"session {i}"}) for i in range(8)]
     by_text = {o.text: o for o in objs}
     monkeypatch.setattr(reflection, "ask_fn", lambda system, user: json.dumps(

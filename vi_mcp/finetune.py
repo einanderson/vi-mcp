@@ -979,7 +979,7 @@ else:
     raise SystemExit("no philosophy/ in this kit — name the package: --package kollektiv (a run-6 kit was built for kollektiv 1.1.0)")
 mismatch = bool(kit_hash) and kit_hash != ph.package_hash(pkg)
 if mismatch:
-    print(f"note: the kit was built for hash {kit_hash[:16]}…, scored against {pkg['name']} {pkg['version']} {ph.package_hash(pkg)[:16]}…", file=sys.stderr)
+    print(f"grade: the kit was built for hash {kit_hash[:16]}…, scored against {pkg['name']} {pkg['version']} {ph.package_hash(pkg)[:16]}…", file=sys.stderr)
 whos = [w for w in o.who.split(",") if w]
 items = {json.loads(l)["id"]: json.loads(l) for l in open(items_f) if l.strip()}
 prose_items = {i: it for i, it in items.items() if (it.get("meta") or {}).get("task") in ("explain_seed", "recite")}

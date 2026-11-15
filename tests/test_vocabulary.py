@@ -4,9 +4,9 @@ from vi_mcp import tools, usage_stats, vocabulary
 
 
 def _seed():
-    g.new_object("insight", "nginx reload on web1", ["host:web1.example", "tool:nginx", "thema:reload"], {"quelle": "t"}, instance="a")
+    g.new_object("insight", "nginx reload on web1", ["host:web1.example", "tool:nginx", "topic:reload"], {"quelle": "t"}, instance="a")
     g.new_object("insight", "nginx config test on web2", ["host:web2.example", "tool:nginx"], {"quelle": "t"}, instance="a")
-    g.new_object("insight", "backup of db1", ["host:db1.example", "thema:backup"], {"quelle": "t"}, instance="a", visibility="internal")
+    g.new_object("insight", "backup of db1", ["host:db1.example", "topic:backup"], {"quelle": "t"}, instance="a", visibility="internal")
     g.new_object("insight", "private: secret host", ["host:geheim.example"], {"quelle": "t"}, instance="b", visibility="private")
 
 
@@ -57,20 +57,20 @@ def test_a_search_that_excludes_the_only_matches_is_named_not_a_search_problem(g
     empty answer is right, and it was counted as "known words, not together (a search problem)"."""
     g.new_object("experience", "Bash on web9", ["host:web9.example", "tool:Bash", "ok:ja"], {}, instance="centralstation")
     g.new_object("insight", "db1 backup", ["host:db1.example"], {"quelle": "t"})
-    assert vocabulary.empty_reason("(host:web9.example) !instanz:centralstation !art:experience", None)[0] == "ausgeschlossen"
+    assert vocabulary.empty_reason("(host:web9.example) !instance:centralstation !kind:experience", None)[0] == "ausgeschlossen"
     assert vocabulary.empty_reason("host:web9.example host:db1.example", None)[0] == "missed"  # both known, never together
-    out = tools.call_tool("vi_recall", {"filter": "(host:web9.example) !instanz:centralstation !art:experience", "semantic": False},
+    out = tools.call_tool("vi_recall", {"filter": "(host:web9.example) !instance:centralstation !kind:experience", "semantic": False},
                           "centralstation", False)
     assert "occur only in what your exclusions" in out
 
 
 def test_an_unknown_kind_gets_the_same_value_under_the_kind_that_exists(gd):
-    """0.62.5, found on production: `quelle:confluence` answered "not in memory" without a suggestion; the tag is quelle_art:confluence."""
+    """0.62.5, found on production: `quelle:confluence` answered "not in memory" without a suggestion; the tag is source_kind:confluence."""
     for i in range(3):
-        g.new_object("insight", f"KB page {i}", ["quelle_art:confluence", "thema:linux"], {"quelle": "t"})
+        g.new_object("insight", f"KB page {i}", ["source_kind:confluence", "topic:linux"], {"quelle": "t"})
     g.new_object("insight", "secret page", ["herkunft_x:confluence"], {"quelle": "t"}, instance="b", visibility="private")
     out = tools.call_tool("vi_recall", {"filter": "quelle:confluence", "semantic": False}, "a", False)
-    assert "did you mean quelle_art:confluence" in out
+    assert "did you mean source_kind:confluence" in out
     assert "herkunft_x" not in out  # nothing the viewer may not see
 
 

@@ -7,7 +7,7 @@ from vi_mcp import memory as g
 from vi_mcp import tools
 
 
-def _learn(instance, text, key=None, tags=("host:web1", "thema:sinkhole"), **kw):
+def _learn(instance, text, key=None, tags=("host:web1", "topic:sinkhole"), **kw):
     args = {"text": text, "hashtags": list(tags), "source": "log monitoring 10.11.", **({"key": key} if key else {}), **kw}
     return tools.call_tool("vi_learn", args, instance, False)
 
@@ -16,12 +16,12 @@ def test_same_key_updates_one_object(gd):
     first = _learn("cs", "Known error (relevance 3, 10 repeats): web1 asks bad.example 3×", key="host:web1 threat:bad.example")
     oid = first.split()[1]
     second = _learn("cs", "Known error (relevance 3, 12 repeats): web1 asks bad.example 5×, series goes on", key="host:web1 threat:bad.example",
-                    tags=("host:web1", "thema:dns"))
+                    tags=("host:web1", "topic:dns"))
     assert second.startswith(f"updated {oid}") and "2×" in second
     o = g.load(oid)
     assert o.text.endswith("5×, series goes on") and o.data["repeats"] == 2 and o.data["key"] == "host:web1 threat:bad.example"
     assert [h["text"] for h in o.data["history"]] == ["Known error (relevance 3, 10 repeats): web1 asks bad.example 3×"]
-    assert {"thema:sinkhole", "thema:dns", "host:web1"} <= set(o.hashtags)  # hashtags are united
+    assert {"topic:sinkhole", "topic:dns", "host:web1"} <= set(o.hashtags)  # hashtags are united
     hits = [x for _, x, _g in g.recall("host:web1", viewer=None)]
     assert [x.id for x in hits] == [oid]  # one object, not two
     assert any("repeated (2×)" in c["was"] for c in o.changes)
@@ -78,7 +78,7 @@ def test_merge_by_key_merges_repetitions_and_keeps_every_state(gd):
     assert [h["text"] for h in main.data["history"]] == [texts[0], texts[2]] and main.data["quelle"] == "cs 3"
     for x in (ids[2], ids[3]):
         o = g.load(x)
-        assert o.mode == g.MERGED and o.data["merged_into"] == ids[0] and "modus:merged" in o.hashtags  # nothing deleted
+        assert o.mode == g.MERGED and o.data["merged_into"] == ids[0] and "mode:merged" in o.hashtags  # nothing deleted
     assert g.load(ids[1]).mode == "active" and g.load(foreign).mode == "active"  # other key, other instance untouched
     assert {x.id for _, x, _g in g.recall("host:www2", viewer=None)} == {ids[0], foreign}
     # afterwards the key continues the main object

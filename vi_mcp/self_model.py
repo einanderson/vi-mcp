@@ -107,7 +107,7 @@ def proposal(instance: str, area: str, sentence: str, reason: str, evidence_list
     days = {o.ts[:10] for o in mem_objects}
     if len(days) < DAYS_MIN:
         raise ValueError(f"evidence must come from at least {DAYS_MIN} different days (spacing instead of burst); here: {sorted(days)}")
-    o = g.new_object("self", f"Proposal {area}: {sentence.strip()[:300]}", [f"selbstbereich:{area}", "modus:test"],
+    o = g.new_object("self", f"Proposal {area}: {sentence.strip()[:300]}", [f"self_area:{area}", "mode:test"],
                        {"bereich": area, "satz": sentence.strip()[:500], "grund": reason.strip()[:500], "belege": ids, "von": instance,
                         **({"replaces": replaces} if replaces else {})},
                        importance=2, who=f"ki@{instance}", mode="test", reason=reason, instance=instance)
@@ -147,7 +147,7 @@ def adopt(v: g.MemoryObject, instance: str, trusted: bool, reason: str) -> g.Mem
     k.data["erzaehlung"] = narrative(k)
     g.save(k)
     v.mode = "active"
-    v.hashtags = [t for t in v.hashtags if not t.startswith("modus:")] + ["modus:active"]
+    v.hashtags = [t for t in v.hashtags if not t.startswith("mode:")] + ["mode:active"]
     v.change(f"ki@{instance}", "adopted into the self", reason)
     g.save(v)
     return k

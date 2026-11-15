@@ -1,7 +1,7 @@
 """The loop — exactly one, because there is exactly one server process.
 
 Every LOOP_S seconds: delete expired answers, condense repeated errors into rules (mode test) —
-across all instances; if the error occurred at ≥ 2 instances, the rule carries `kollektiv:ja` —, unanswered
+across all instances; if the error occurred at ≥ 2 instances, the rule carries `collective:ja` —, unanswered
 questions become `abgelaufen` after 7 days,
 save open conversations, close idle conversations as `abgelaufen`, checkpoint the WAL.
 Errors of a run are counted and named in the status — nothing vanishes silently.
@@ -31,7 +31,7 @@ def step() -> int:
         rows = g.db().execute(
             "SELECT t1.tag, t2.tag, COUNT(*), COUNT(DISTINCT o.instance), group_concat(DISTINCT o.instance) "
             "FROM object o JOIN tag t1 ON t1.object_id = o.id AND t1.tag LIKE 'tool:%' "
-            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'fehler:%' WHERE o.kind = 'experience' AND o.ts >= ? "
+            "JOIN tag t2 ON t2.object_id = o.id AND t2.tag LIKE 'error:%' WHERE o.kind = 'experience' AND o.ts >= ? "
             "GROUP BY t1.tag, t2.tag HAVING COUNT(*) >= ?", (since, ERROR_RULE_MIN)).fetchall()
         for tool_tag, error_tag, n, n_inst, instances in rows:
             rid = f"regel:{g.hash_value(tool_tag, error_tag, 'wiederholter-fehler')}"
@@ -40,17 +40,17 @@ def step() -> int:
             data = {"treffer": n, "instanzen": sorted((instances or "").split(",")),
                      "quelle": "loop: experiences of the last 24 h" + (f" at {n_inst} instances" if collective else "")}
             if o is None:
-                g.new_object("rule", f"{tool_tag[5:]} failed {n}× in 24 h the same way ({error_tag[7:]})"
+                g.new_object("rule", f"{tool_tag[5:]} failed {n}× in 24 h the same way ({error_tag.split(":", 1)[-1]})"
                                         + (f", at {n_inst} instances" if collective else "")
                                         + " — check arguments or reachability before the next call",
-                               [tool_tag, f"skill:{tool_tag[5:].split('_')[0]}", error_tag, "regelart:wiederholter-fehler", "modus:test",
-                                f"kollektiv:{'ja' if collective else 'nein'}"],
+                               [tool_tag, f"skill:{tool_tag[5:].split('_')[0]}", error_tag, "rule_kind:wiederholter-fehler", "mode:test",
+                                f"collective:{'ja' if collective else 'nein'}"],
                                data, importance=2, oid=rid, mode="test",
                                reason=f"{n} identical errors in 24 h")  # author: the server (instance vi), no conversation
                 new += 1
             elif o.data.get("treffer") != n or o.data.get("instanzen") != data["instanzen"]:
                 o.data.update(data)
-                o.hashtags = [t for t in o.hashtags if not t.startswith("kollektiv:")] + [f"kollektiv:{'ja' if collective else 'nein'}"]
+                o.hashtags = [t for t in o.hashtags if not t.startswith("collective:")] + [f"collective:{'ja' if collective else 'nein'}"]
                 g.save(o)
     expired_questions = questions.let_expire()
     from . import usage_stats

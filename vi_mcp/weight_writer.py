@@ -15,7 +15,7 @@ plentiful. So the layer is
   - measured    offline first (paired log loss and ranking utility on the holdout, with and without the layer), then online in a
                 randomized share AB_SHARE of actions (arm logged as `vorher.arm`), and only then for all; re-checked every day;
   - blind to injected text  the model card holds feature names and numbers; hint texts only of the VI's own instances, never from the
-                network (`herkunft:p2p`) — a fetched page or a foreign object must not be able to steer the weights.
+                network (`origin:p2p`) — a fetched page or a foreign object must not be able to steer the weights.
 
 States (exhaustive, `llm_schicht.zustand`): keine · offline_verworfen · ab_test · aktiv · verworfen.
 """
@@ -46,7 +46,7 @@ CARD_TOP = 40
 COLD_MAX = 20
 SYSTEM = ("You edit the weights of a small logistic regression that ranks hints shown to AI agents before tool calls. P(ok) = "
           "sigmoid(intercept + sum of weights of the active features). Features: tool:/skill:/host:/thema:/fehler: describe the situation, "
-          "hinweis:<id> is a shown hint, stunde:HH the hour. The weights were fitted from thousands of labeled actions; you see each feature's "
+          "hint:<id> is a shown hint, hour:HH the hour. The weights were fitted from thousands of labeled actions; you see each feature's "
           "weight, its count and what was measured. You may propose small changes (delta) ONLY for the features listed under 'editable', "
           "each with a reason grounded in the numbers or the hint's content: e.g. a weight that contradicts its measured usefulness, an hour "
           "weight (time of day is no cause), or a new hint the fit has not seen yet whose content clearly fits or does not fit its triggers (judge new hints by their text and triggers — "
@@ -143,11 +143,11 @@ def card(m) -> dict:
             rows.append({"merkmal": k, "gewicht": w.get(k, 0.0), "audit": f"{f['klasse']}: {f['grund']}"})
     cold = []
     for o in _cold_start(set(w)):
-        cold.append({"merkmal": f"hinweis:{o.id}", "gewicht": 0.0, "neu": True, "text": o.text[:240],
+        cold.append({"merkmal": f"hint:{o.id}", "gewicht": 0.0, "neu": True, "text": o.text[:240],
                      "ausloeser": [t for t in o.hashtags if t.startswith(learning.TRIGGER_KINDS)][:8],
                      # no outcome numbers for new hints: with 1–2 observations the model judged from noise (production copy,
                      # 12.11.2026: "0 % success over 1 observation → −1.0"); a cold-start prior is a judgement of the content
-                     "beobachtungen_training": stats.get(f"hinweis:{o.id}", (0, 0))[0]})
+                     "beobachtungen_training": stats.get(f"hint:{o.id}", (0, 0))[0]})
     deletable = sorted(k for k in flagged if k in w)
     return {"achsenabschnitt": m.data.get("achsenabschnitt"), "auc_holdout": m.data.get("auc_holdout"), "loeschbar": deletable,
             "erfolgsquote_training": None if base is None else round(base, 3),
@@ -160,10 +160,10 @@ def _cold_start(known: set[str]) -> list[g.MemoryObject]:
     from datetime import datetime, timedelta, timezone
     since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
     out = []
-    for _s, o, _g in g.recall("(art:skill OR art:insight OR art:rule) !herkunft:p2p", limit=400, viewer=None):
-        if o.ts < since or o.mode not in ("active", "test") or f"hinweis:{o.id}" in known:
+    for _s, o, _g in g.recall("(kind:skill OR kind:insight OR kind:rule) !origin:p2p", limit=400, viewer=None):
+        if o.ts < since or o.mode not in ("active", "test") or f"hint:{o.id}" in known:
             continue
-        if any(t.startswith(("art_wissen:firmendoku", "art_wissen:doku-extern")) for t in o.hashtags):
+        if any(t.startswith(("knowledge_kind:firmendoku", "knowledge_kind:doku-extern")) for t in o.hashtags):
             continue  # imported documentation is shown only via exploration (0.57.1)
         out.append(o)
         if len(out) >= COLD_MAX:

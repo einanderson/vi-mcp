@@ -11,11 +11,11 @@ from clingo_object import philosophy as ph
 
 from . import memory as g
 
-TAG = "thema:philosophie"
+TAG = "topic:philosophie"
 #: a binding is its own object (kind regel, visibility intern), not a config entry: it has an author, a change history and a tombstone
 #: when it ends (mode aus), it reaches every server process and both databases without a restart, and an instance can read which
 #: philosophy applies to it. It stores the name and the HASH it was bound to — a newer install does not silently take over.
-BIND_TAG = "thema:philosophie-bindung"
+BIND_TAG = "topic:philosophie-bindung"
 
 
 def check_lines(r: dict) -> list[str]:
@@ -118,7 +118,7 @@ def install(ref: str, instance: str, who: str | None = None, visibility: str | N
         raise ValueError("package refused: " + "; ".join(r["errors"][:5]))
     o = logic.save_rule_set(f"philosophie-{pkg['name']}", pkg["seed"], f"philosophy {pkg['name']} {pkg['version']}: {pkg.get('description', '')}"[:300],
                             visibility, instance, who)
-    o.hashtags = sorted(set(o.hashtags) | {TAG, f"philosophie:{pkg['name']}"})
+    o.hashtags = sorted(set(o.hashtags) | {TAG, f"philosophy:{pkg['name']}"})
     o.data = {**o.data, "philosophie": {**{k: v for k, v in pkg.items() if k != "seed"}, "hash": r["hash"],
                                          "check": {"worlds": len(r["worlds"]), "coverage": r["coverage"]}}}
     o.change(f"ki@{who or instance}", "philosophy installed", f"{pkg['name']} {pkg['version']} hash {r['hash'][:16]} — every check passed")
@@ -178,7 +178,7 @@ def bind(name: str, who: str, instance: str | None = None, index: str | None = N
         g.save(o)
     meta = inst.data["philosophie"]
     o = g.new_object("rule", f"Philosophy binding: {name} {meta['version']} applies to {kind} {target}",
-                     [BIND_TAG, f"philosophie:{name}"],
+                     [BIND_TAG, f"philosophy:{name}"],
                      {"philosophie_bindung": {"name": name, "version": meta["version"], "hash": h, "installed": inst.id,
                                               "profile": meta.get("profile"), "target_kind": kind, "target": target}},
                      importance=1, who=f"ki@{who}", reason="vi_philosophy use", instance=who,

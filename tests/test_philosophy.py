@@ -85,7 +85,7 @@ def test_the_tool_and_install_store_a_checked_philosophy_as_a_rule_set(gd):
     msg = tools.call_tool("vi_philosophy", {"action": "install", "name": "kollektiv"}, "a", False)
     oid = msg.split()[1]
     o = g.load(oid)
-    assert o.kind == "rule" and "philosophie:kollektiv" in o.hashtags and o.visibility == "internal"
+    assert o.kind == "rule" and "philosophy:kollektiv" in o.hashtags and o.visibility == "internal"
     assert o.data["philosophie"]["hash"] == ph.package_hash(ph.load("kollektiv")) and o.data["logik"]["quelle"] == ph.load("kollektiv")["seed"]
     assert f"kollektiv {ph.load('kollektiv')['version']}" in tools.call_tool("vi_philosophy", {"action": "list"}, "a", False)
 

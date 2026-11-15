@@ -110,7 +110,7 @@ def test_two_networks_share_one_tls_port(net, tmp_path):
             b = net.build(sb, [a_pub], mode="peer", start=[public], kind=kind, net=name, ca_file=cert)
             nets[name] = (a, b)
         o_open = mem_object(1)
-        o_company = {**mem_object(2), "text": "Backup of db01.corp.example runs nightly via borg", "hashtags": ["host:db01", "thema:backup"]}
+        o_company = {**mem_object(2), "text": "Backup of db01.corp.example runs nightly via borg", "hashtags": ["host:db01", "topic:backup"]}
         nets["standard"][0].mcp.mem_objects.append(o_open)
         nets["firma"][0].mcp.mem_objects.append(o_company)
         for a, b in nets.values():

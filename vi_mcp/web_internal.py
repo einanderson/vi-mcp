@@ -166,7 +166,7 @@ def _excerpt(o: g.MemoryObject, n: int = 260) -> str:
 
 def _tag_links(base: str, tags: list[str]) -> str:
     from . import checks
-    shown = [t for t in tags if not t.startswith(checks.FIXED_HASHTAGS)][:14]
+    shown = [t for t in tags if not t.startswith(checks.LOCAL_FIXED)][:14]
     return '<div class="tags">' + "".join(f'<a href="{e(base)}/suche?q={urllib.parse.quote(t)}">{e(t)}</a>' for t in shown) + "</div>"
 
 

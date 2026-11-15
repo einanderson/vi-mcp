@@ -134,7 +134,7 @@ def test_proposals_are_listed_with_their_rule(gd):
 
 def _aged(oid, kind, days, mode="test"):
     from datetime import datetime, timedelta, timezone
-    o = g.new_object(kind, f"{oid} text", ["thema:oo"], {"quelle": "t"}, reason="T", oid=oid, mode=mode, link=False)
+    o = g.new_object(kind, f"{oid} text", ["topic:oo"], {"quelle": "t"}, reason="T", oid=oid, mode=mode, link=False)
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = ?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), oid))
         g.db().commit()
@@ -143,7 +143,7 @@ def _aged(oid, kind, days, mode="test"):
 
 def test_numbers_compare_from_either_side(gd):
     _aged("erkenntnis:old", "erkenntnis", 120)
-    a = logic.ask('old(O) <= (O in objects("thema:oo")) & (100 < O.age)\nyoung(O) <= (O in objects("thema:oo")) & (O.age <= 100)',
+    a = logic.ask('old(O) <= (O in objects("topic:oo")) & (100 < O.age)\nyoung(O) <= (O in objects("topic:oo")) & (O.age <= 100)',
                   ['old("erkenntnis:old")', 'young("erkenntnis:old")'])
     assert a == {'old("erkenntnis:old")': "true", 'young("erkenntnis:old")': "not_derived"}
 
@@ -208,8 +208,8 @@ def test_edges_are_loaded_only_for_a_program_that_follows_them(gd):
 
 
 def test_an_object_compared_with_a_hashtag_value_is_named():
-    """0.63.0, found measuring the agent on a production copy: (H in objects("netz:dmz")) & (P.host == H) compares a host name with an
+    """0.63.0, found measuring the agent on a production copy: (H in objects("net:dmz")) & (P.host == H) compares a host name with an
     object id and finds nothing, silently. The notation names it."""
     with pytest.raises(logic.LogicError, match="H is an object"):
-        logic.translate('ans(P) <= (P in objects("quelle_art:confluence")) & (H in objects("netz:dmz")) & (P.host == H)')
-    logic.translate('ans(P) <= (P in objects("quelle_art:confluence")) & (D in objects("netz:dmz")) & (D.host == H) & (P.host == H)')
+        logic.translate('ans(P) <= (P in objects("source_kind:confluence")) & (H in objects("net:dmz")) & (P.host == H)')
+    logic.translate('ans(P) <= (P in objects("source_kind:confluence")) & (D in objects("net:dmz")) & (D.host == H) & (P.host == H)')

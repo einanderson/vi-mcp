@@ -60,7 +60,15 @@ def _assert_no_german_values(con) -> None:
         n = con.execute(f"SELECT COUNT(*) FROM tag WHERE tag IN ({','.join('?' * len(old))})", old).fetchone()[0]
         if n:
             left[f"tag {k}:"] = n
+    kinds = names._german_tag_kinds()
+    n = con.execute(f"SELECT COUNT(*) FROM tag WHERE substr(tag, 1, instr(tag, ':') - 1) IN ({','.join('?' * len(kinds))})", kinds).fetchone()[0]
+    if n:
+        left["tag kinds"] = n
     import json
+    for oid, raw in con.execute("SELECT id, data FROM object WHERE data LIKE '%reize%' OR data LIKE '%filter%' OR data LIKE '%derived_triggers%'"):
+        d = json.loads(raw)
+        assert not names._tags_in_data(json.loads(raw)), (oid, "hashtags in data still German")
+        assert d.get("fremd_hashtags") is None or isinstance(d["fremd_hashtags"], list)
     for (raw,) in con.execute("SELECT data FROM object WHERE kind = 'self'"):
         assert not set(json.loads(raw).get("soll") or {}) & {"werte", "ziele", "stil", "grenzen"}
     assert not left, left
@@ -188,6 +196,20 @@ def test_the_network_still_sees_the_wire_form_of_0_66(gd):
 
 def test_german_values_of_older_clients_are_read_as_english(gd):
     o = g.new_object("erkenntnis", "kind given the old way", ["modus:aktiv"], {}, mode="aktiv", visibility="geteilt", instance="anna")
-    assert (o.kind, o.mode, o.visibility) == ("insight", "active", "shared") and "modus:active" in o.hashtags
+    assert (o.kind, o.mode, o.visibility) == ("insight", "active", "shared") and "mode:active" in o.hashtags
     assert [h[1].id for h in g.recall("art:erkenntnis kind given", viewer=None)] == [o.id]
     assert g.recall("art:insight kind given", viewer=None)[0][1].id == o.id
+
+
+def test_hashtags_travel_in_the_wire_form_and_reserved_ones_never_pass(gd):
+    from vi_mcp import checks, p2p
+    o = g.new_object("insight", "nginx on web1.example needs a reload after a certificate change", ["thema:tls", "fehler:handshake"],
+                     {"quelle": "journalctl -u nginx"}, instance="anna")
+    assert {"topic:tls", "error:handshake"} <= set(o.hashtags)  # German kinds of an older client are stored English
+    wire, why = p2p.internal_form(o, {"netz_id": "a" * 32, "loesch_hash": "b" * 64})
+    assert why is None and wire["hashtags"] == ["fehler:handshake", "thema:tls"]
+    good = {"art": "erkenntnis", "text": "A fact from a peer of 0.67.0 that writes English kinds", "quelle": "measured on the peer", "netz_id": "c" * 32,
+            "loesch_hash": "d" * 64, "hashtags": ["topic:a", "net:firma", "netz:firma", "mode:active", "instance:x"]}
+    assert checks.check(good).mem_object["hashtags"] == ["topic:a"]  # reserved in both languages
+    assert checks.check({**good, "hashtags": ["topic:a", "location:MUC-1"]}).verdict == "ablehnen"
+    assert checks.check({**good, "art": "suche", "name": "s", "reize": ["tool:x"], "filter": "mode:archived"}).verdict == "ablehnen"

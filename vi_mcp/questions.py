@@ -1,6 +1,6 @@
 """Questions between instances — instances learn from each other by asking each other.
 
-A question is an object `art:question` (geteilt) with `daten`:
+A question is an object `kind:question` (geteilt) with `daten`:
   von, an (instance name or "alle"), text, reize, zustand, zugestellt_an [instances], antworten [{instanz, text,
   belege, zeit}], gemeldet (answers the asker has already seen).
 States (exhaustive): `offen` (not yet shown to any target instance) · `zugestellt` (shown to at least one) ·
@@ -29,7 +29,7 @@ EXPIRY_DAYS = 7
 
 def _set_state(o: g.MemoryObject, state: str) -> None:
     o.data["zustand"] = state
-    o.hashtags = [t for t in o.hashtags if not t.startswith("zustand:")] + [f"zustand:{state}"]
+    o.hashtags = [t for t in o.hashtags if not t.startswith("state:")] + [f"state:{state}"]
 
 
 ANSWER_MAX = 20000
@@ -55,10 +55,10 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str, conver
     if len((text or "").strip()) < 10:
         raise ValueError("text (the question, one sentence) is required")
     to, target = split_target(to)
-    if not to or not (all(c.isalnum() or c in "-_." for c in to) or re.fullmatch(r"netz:[a-z][a-z0-9-]{1,30}", to)):
-        raise ValueError("an: name of an instance, 'alle', or netz:<network> (0.43.0: a question to the network); "
+    if not to or not (all(c.isalnum() or c in "-_." for c in to) or re.fullmatch(r"net:[a-z][a-z0-9-]{1,30}", to)):
+        raise ValueError("to: name of an instance, 'alle', or net:<network> (0.43.0: a question to the network); "
                          "<instance>#<conversation> asks one conversation")
-    if target is not None and (not CONVERSATION.fullmatch(target) or to in ("alle",) or to.startswith("netz:")):
+    if target is not None and (not CONVERSATION.fullmatch(target) or to in ("alle",) or to.startswith("net:")):
         raise ValueError(f"#{target}: a conversation is its serial number (e.g. claude-code#20261115004), and only after an instance name")
     if to == from_ and not conversation:
         raise ValueError("a question to your own instance needs a conversation to come from (an MCP session) — otherwise use vi_recall")
@@ -69,7 +69,7 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str, conver
     if len(text) > ANSWER_MAX:
         raise ValueError(f"a question has at most {ANSWER_MAX} characters — put longer material into an object (vi_learn) and name its id")
     # 14.11.2026: the question used to be cut to 1000 characters without notice; the whole text is now kept in inhalt
-    o = g.new_object("question", text[:1000], tags + [f"an:{to}", f"von:{from_}", "zustand:offen"],
+    o = g.new_object("question", text[:1000], tags + [f"to:{to}", f"from:{from_}", "state:offen"],
                        {"von": from_, "an": to, "zustand": "offen", "quelle": (source or "").strip()[:500],
                         "zugestellt_an": [], "antworten": [], "gemeldet": 0, **({"inhalt": text} if len(text) > 1000 else {}),
                         **({"von_gespraech": conversation} if conversation else {}), **({"an_gespraech": target} if target else {}),

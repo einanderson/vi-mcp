@@ -104,7 +104,7 @@ def local_form(o: g.MemoryObject) -> dict:
     """A local object in the fields the content hash uses (hashtags without the reserved ones), in the wire form: the German kind of 0.66,
     so the same meaning has the same hash on servers before and after 0.67.0."""
     from . import checks
-    d = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "inhalt": o.data.get("inhalt"), "hashtags": [t for t in o.hashtags if not t.startswith(checks.FIXED_HASHTAGS)]}
+    d = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "inhalt": o.data.get("inhalt"), "hashtags": [t for t in map(names.wire_tag, o.hashtags) if not t.startswith(checks.FIXED_HASHTAGS)]}
     if o.kind == "search":
         d.update(filter=o.data.get("filter"), name=o.data.get("name"))
     return d

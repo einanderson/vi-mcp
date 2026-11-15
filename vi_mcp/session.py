@@ -248,7 +248,7 @@ def persist(s: Session, state: str = "offen") -> None:
               + (f" · Hosts: {', '.join(sorted(hosts)[:12])}" if hosts else ""))
     o.data = {**o.data, "aufrufe": len(turns), "fehler": error, "ohne_ergebnis": without_result, "signale": list(s.signals), "werkzeuge": tools, "zustand": state,
                "gesichert": g.now()}
-    o.hashtags = sorted({t for t in o.hashtags if not t.startswith("zustand:")} | {f"zustand:{state}"}
+    o.hashtags = sorted({t for t in o.hashtags if not t.startswith("state:")} | {f"state:{state}"}
                         | {f"tool:{k}" for k in tools} | {f"skill:{k.split('_')[0]}" for k in tools}
                         | {f"host:{h}" for h in hosts} | ({"ok:nein"} if error else {"ok:ja"} if turns else set()))
     o.last_at = g.now()
@@ -316,7 +316,7 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
     o.text = f"Conversation {serial} ({o.data.get('client', '?')}, instance {o.instance}): content deleted on {g.now()[:16]} — {reason.strip()[:200]}"
     o.data = {"serial": serial, "client": o.data.get("client"), "zustand": "geloescht",
                "geloescht": {"zeit": g.now(), "wer": f"ki@{instance}", "grund": reason.strip()[:300], "objekte": len(ids)}}
-    o.hashtags = [t for t in o.hashtags if t.startswith(("serial:", "tag:"))] + ["zustand:geloescht"]
+    o.hashtags = [t for t in o.hashtags if t.startswith(("serial:", "tag:"))] + ["state:geloescht"]
     o.change(f"ki@{instance}", "deleted", reason)
     g.save(o)
     return {"serial": serial, "objekte": len(ids)}

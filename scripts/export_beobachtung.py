@@ -13,10 +13,10 @@ def load_observations(db_path):
         if "ok:unbekannt" in tags: continue                       # no label → no example
         before = d.get("vorher") or {}
         features = {t for t in tags if t.startswith(("tool:", "skill:", "host:"))}
-        features |= {t for t in before.get("reize", []) if t.startswith("thema:")}   # only in the JSON, not in tag
-        features |= {f"hinweis:{h.split(':')[0]}" for h in before.get("gefunden", []) if not h.startswith("antwort:")}
-        features.add(f"hinweis_n:{min(4, sum(1 for h in before.get('gefunden', []) if not h.startswith('antwort:')))}")
-        features.add(f"stunde:{ts[11:13]}")                        # time of day (UTC) from ISO time
+        features |= {t for t in before.get("reize", []) if t.startswith("topic:")}   # only in the JSON, not in tag
+        features |= {f"hint:{h.split(':')[0]}" for h in before.get("gefunden", []) if not h.startswith("antwort:")}
+        features.add(f"hint_n:{min(4, sum(1 for h in before.get('gefunden', []) if not h.startswith('antwort:')))}")
+        features.add(f"hour:{ts[11:13]}")                        # time of day (UTC) from ISO time
         yield oid, sorted(features), int(ok)
 
 def dict_vector(obs):

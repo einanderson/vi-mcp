@@ -7,7 +7,7 @@ table `vektor` (4 bytes per dimension, no extension — TRAINING.md 4c, way 1). 
 needs several seconds per request (measured 08.11.2026), this happens **during sleep**, in batches, never in `vi_before`:
   step 7_vektoren  add missing vectors for erkenntnis/regel/suche/skill (at most CATCHUP_MAX_S seconds per sleep)
   step 7b_naehe    pairs with cosine ≥ PROXIMITY_EDGE get an edge "semantisch ähnlich (cos 0.91)";
-                   pairs ≥ PROXIMITY_DUPLICATE without a common instance are marked `dublette:moeglich` (not
+                   pairs ≥ PROXIMITY_DUPLICATE without a common instance are marked `duplicate:moeglich` (not
                    merged — a human or a second instance decides that)
 Plus `vi_recall(filter, semantisch=true)`: embeds the free text **now** (takes time, stated in the result) and
 orders the candidates by cosine, fused with the full-text search (rank fusion, tools.RRF_K) — explicitly, never automatically.
@@ -185,7 +185,7 @@ def catch_up(max_s: float | None = None) -> dict:
 
 
 def proximity_edges() -> dict:
-    """Step 7b: edges between semantically close knowledge objects; very close pairs of different instances → dublette:moeglich.
+    """Step 7b: edges between semantically close knowledge objects; very close pairs of different instances → duplicate:moeglich.
     Incremental since 0.20.0: only not yet compared vectors against all (O(new × all) instead of O(all²); measured 9.6 s for 3,312 vectors
     with the full comparison, which would grow quadratically with the Confluence import)."""
     _table()
@@ -216,9 +216,9 @@ def proximity_edges() -> dict:
                 edges += 1
             if c >= PROXIMITY_DUPLICATE and a.instance != b.instance:
                 for o in (a, b):
-                    if "dublette:moeglich" not in o.hashtags:
-                        o.hashtags = o.hashtags + ["dublette:moeglich"]
-                        o.change("vi", "dublette:moeglich", f"cos {c:.2f} to {(b if o is a else a).id} (other instance) — an instance decides whether to merge")
+                    if "duplicate:moeglich" not in o.hashtags:
+                        o.hashtags = o.hashtags + ["duplicate:moeglich"]
+                        o.change("vi", "duplicate:moeglich", f"cos {c:.2f} to {(b if o is a else a).id} (other instance) — an instance decides whether to merge")
                         g.save(o)
                 duplicates += 1
     with g.lock:

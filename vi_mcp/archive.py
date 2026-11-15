@@ -11,8 +11,8 @@ What "no longer used" means (initial values in DAYS, changeable via the configur
 Never automatically: selbst, modell, frage (own life cycle), reflex (would silently switch off a behaviour), gespraech
 (the summary stays). What serves as evidence also stays: only edges with reason "Beleg…" count.
 
-A stub stays in memory: shortened text, hashtags, time, reason, `modus:archived`. It appears only if the
-filter contains `modus:archived`. If an archived knowledge entry fits an action, `vi_before` says so in one
+A stub stays in memory: shortened text, hashtags, time, reason, `mode:archived`. It appears only if the
+filter contains `mode:archived`. If an archived knowledge entry fits an action, `vi_before` says so in one
 line. An entry comes back with `vi_archive_restore` (with a reason, in its old mode). Deletion in the archive happens only
 via the deletion paths for conversations and instances.
 Order across the two files: write the target first, then change the source. A crash in between leaves
@@ -94,7 +94,7 @@ def store_in_archive(o: g.MemoryObject, reason: str) -> None:
     o.data = {"lager": True, "eingelagert": g.now(), "grund": reason[:300], "bytes": len(raw)}
     o.text = o.text[:STUB_CHARS]
     o.mode = "archived"
-    o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:archived"]
+    o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:archived"]
     o.change("vi", "moved to the long-term archive", reason)
     g.save(o)
     vector.remove_entry(o.id)
@@ -223,7 +223,7 @@ def hint(triggers: list[str]) -> list[str]:
     """One line for `vi_before` if archived knowledge fits the action."""
     if not triggers:
         return []
-    hits = [o for _, o, _g in g.recall("(" + " OR ".join(triggers) + ") modus:archived", limit=3, kinds=KNOWLEDGE)]
+    hits = [o for _, o, _g in g.recall("(" + " OR ".join(triggers) + ") mode:archived", limit=3, kinds=KNOWLEDGE)]
     if not hits:
         return []
     return ["Matching in the long-term archive: " + "; ".join(f"[{o.id}] {o.text[:80]}" for o in hits) + " — vi_archive_restore(id, reason) brings an entry back"]

@@ -11,7 +11,7 @@ An utterance:  ACT[.TYPE] WORD…  — tolerant: anything that does not start wi
          The body of a `def rule` is the logic notation of logic.py (facts, head <= body, never(…), soft(…)), checked by vi_logic.
   type   for ask: how · why · what · who · where · rule — which question it is
   words  kind:value as in vi_recall, plus short forms:  @web1 → host:web1* (a name without a dot: every host starting with it),
-         @web1.example → host:web1.example   #x → thema:x   since:30d / since:2026-10-01 (recency)
+         @web1.example → host:web1.example   #x → topic:x   since:30d / since:2026-10-01 (recency)
          !word negates, (a OR b), "phrase", free text — unchanged
 
 The question type does not reorder the hits (ORDER "off"): every reordering measured on a production copy — the fixed prior, a lift
@@ -39,11 +39,11 @@ _SHORT = re.compile(r"(?<![\w:])([!(]*)([@#])([A-Za-z0-9][\w.\-:/]*)")
 
 #: which kinds of knowledge usually answer which question — the fixed prior (hashtag or kind prefixes, in order of preference)
 PRIOR = {
-    "how": ("art:skill", "art_wissen:loesung", "art_wissen:runbook", "art_wissen:handbuch", "art_wissen:doku-extern"),
-    "why": ("fehler:", "ausgang:schlecht", "art_wissen:loesung"),
-    "rule": ("art:rule", "thema:vorgabe"),
-    "who": ("person:", "team:", "zustaendig:"),
-    "where": ("host:", "pfad:", "port:", "url:"),
+    "how": ("kind:skill", "knowledge_kind:loesung", "knowledge_kind:runbook", "knowledge_kind:handbuch", "knowledge_kind:doku-extern"),
+    "why": ("error:", "outcome:schlecht", "knowledge_kind:loesung"),
+    "rule": ("kind:rule", "topic:vorgabe"),
+    "who": ("person:", "team:", "responsible:"),
+    "where": ("host:", "path:", "port:", "url:"),
     "what": (),
 }
 
@@ -85,7 +85,7 @@ def parse(text: str, now: datetime | None = None) -> Utterance:
     def short(x):
         neg, sign, word = x.group(1), x.group(2), x.group(3)
         if sign == "#":
-            return f"{neg}thema:{word.lower()}"
+            return f"{neg}topic:{word.lower()}"
         # host hashtags are fully qualified: @web1 (no dot) means every host whose name starts with it, @web1.example exactly that one
         return f"{neg}host:{word}" + ("" if "." in word or word.endswith("*") else "*")
     rest = _SHORT.sub(short, rest)
@@ -129,7 +129,7 @@ def prior_rank(o, qtype: str | None) -> int:
     fixed PRIOR), 2 = anything else. Stable order inside each rank: priority, not exclusion."""
     if not qtype:
         return 2
-    tags = set(o.hashtags) | {f"art:{o.kind}"}
+    tags = set(o.hashtags) | {f"kind:{o.kind}"}
     if f"answers:{qtype}" in tags:
         return 0
     if any(t.startswith("answers:") and t != "answers:unsure" for t in tags):
@@ -147,19 +147,19 @@ def memory_of(o) -> str:
         return lab
     if o.kind in MEMORY:
         return MEMORY[o.kind]
-    if any(t.startswith("art_wissen:loesung") for t in o.hashtags):
+    if any(t.startswith("knowledge_kind:loesung") for t in o.hashtags):
         return "procedure"
     return "fact"
 
 
 def evidence_of(o) -> str:
     from . import bandit
-    if str(o.instance or "").startswith("p2p-") or "herkunft:p2p" in o.hashtags:
+    if str(o.instance or "").startswith("p2p-") or "origin:p2p" in o.hashtags:
         return "hearsay"
     yes, no = bandit.counter(o)
     if yes + no > 0:
         return "measured"
-    if "herkunft:schlaf-llm" in o.hashtags:  # derived by a language model in sleep — not every object of instance vi is
+    if "origin:schlaf-llm" in o.hashtags:  # derived by a language model in sleep — not every object of instance vi is
         return "inferred"
     if re.search(r"https?://", str(o.data.get("quelle") or "")):
         return "documented"

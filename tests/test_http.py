@@ -116,7 +116,7 @@ def test_two_sessions_two_conversations(srv):
     # 2 actions: one with after, one only with before → ok:unbekannt, not vanished
     assert gs.data["zustand"] == "beendet" and gs.data["aufrufe"] == 2 and gs.data["ohne_ergebnis"] == 1
     assert [o.text for _, o, _g in g.recall("tool:checkmk_get_host ok:unbekannt")][0].endswith("(vi_after missing)")
-    assert "instanz:laptop" in gs.hashtags and "host:web1" in gs.hashtags
+    assert "instance:laptop" in gs.hashtags and "host:web1" in gs.hashtags
 
 
 def test_foreign_session_and_reflex_permission(srv):
@@ -165,7 +165,7 @@ def test_several_addresses_one_memory(tmp_path, monkeypatch):
             r = c.getresponse(); r.read()
             sids.append(r.getheader("Mcp-Session-Id"))
         # both addresses, one process: two conversations in the same memory
-        assert len([o for _, o, _g in g.recall("art:conversation instanz:x")]) == 2
+        assert len([o for _, o, _g in g.recall("kind:conversation instance:x")]) == 2
     finally:
         for s in srvs:
             s.shutdown(); s.server_close()

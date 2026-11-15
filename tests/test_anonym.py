@@ -81,7 +81,7 @@ def test_public_domain_from_config():
         anonymize.configure(None)
 
 
-@pytest.mark.parametrize("field_name,value", [("text", "Der Host 10.1.2.3 fällt regelmäßig aus"), ("quelle", "Logzeile von db1.firma.intern"), ("hashtags", ["thema:a", "host:web1"]), ("hashtags", ["thema:10.1.2.3"])])
+@pytest.mark.parametrize("field_name,value", [("text", "Der Host 10.1.2.3 fällt regelmäßig aus"), ("quelle", "Logzeile von db1.firma.intern"), ("hashtags", ["topic:a", "host:web1"]), ("hashtags", ["topic:10.1.2.3"])])
 def test_import_rejects_internals_and_names_only_the_category(field_name, value):
     b = checks.check({**GOOD, field_name: value})
     assert b.verdict == "ablehnen" and "interna" in " ".join(b.reasons) and "10.1.2.3" not in " ".join(b.reasons) and "firma" not in " ".join(b.reasons)
@@ -99,7 +99,7 @@ def publisher(net, monkeypatch):  # noqa: F811
     return net
 
 
-def _mk_obj(text, tags=("thema:a",), instance="a", proven=True, **d):
+def _mk_obj(text, tags=("topic:a",), instance="a", proven=True, **d):
     o = g.new_object("insight", text, list(tags), {"quelle": "Messung vom 2.11.", **d}, reason="T", instance=instance)
     if proven:
         o.confirm("ki@andere", "stimmt", "andere")
@@ -118,7 +118,7 @@ def _revocations(k):
 
 def test_export_reveals_nothing(publisher):
     p2p.generate_token("alice-laptop")
-    _mk_obj("Auf srv-alpha ist 10.9.1.5 der Gateway, gemeldet von alice-laptop", tags=("thema:netz", "host:srv-alpha"), instance="alice-laptop", quelle="Ticket von max@firma.de")
+    _mk_obj("Auf srv-alpha ist 10.9.1.5 der Gateway, gemeldet von alice-laptop", tags=("topic:netz", "host:srv-alpha"), instance="alice-laptop", quelle="Ticket von max@firma.de")
     a, r = _import_bundle(publisher)
     raw = json.dumps(a, ensure_ascii=False)
     for forbidden in ("srv-alpha", "10.9.1.5", "alice-laptop", "max@", "firma.de", "host:"):
@@ -150,7 +150,7 @@ def test_proven_by_measured_benefit(publisher):
 def test_right_to_be_forgotten_end_to_end(publisher):
     tok = p2p.generate_token("a")
     one = _mk_obj("Erstes Wissen zum Eingang des Dienstes")
-    _mk_obj("Zweites Wissen zum Ausgang des Dienstes", tags=("thema:b",))
+    _mk_obj("Zweites Wissen zum Ausgang des Dienstes", tags=("topic:b",))
     a, r = _import_bundle(publisher)
     assert r["quarantaene"] == 2
     nid, _ = p2p._object_token(tok, one.id)
@@ -196,14 +196,14 @@ def test_new_version_replaces_the_old(publisher):
     g.save(o)
     a, r = _import_bundle(publisher, start=2)
     assert r["quarantaene"] == 1
-    t = [x[1].text for x in g.recall("modus:quarantine", viewer=None)]
+    t = [x[1].text for x in g.recall("mode:quarantine", viewer=None)]
     assert t == ["Zweite Fassung dieses Wissens im Netz"]
 
 
 def _publisher_with(k, yes, no):
     a = {**GOOD, "netz_id": "b" * 32}
     p2p.inbox(_bundle(k, [a]), in_background=False)
-    o = g.recall("modus:quarantine", viewer=None)[0][1]
+    o = g.recall("mode:quarantine", viewer=None)[0][1]
     o.data["nuetzlich"] = {"ja": yes, "nein": no, "n": yes + no}
     g.save(o)
     return o
@@ -229,7 +229,7 @@ def test_auto_approve_only_when_enabled_and_harmless(publisher, monkeypatch):
     assert p2p.auto_approve() == 0
     monkeypatch.setitem(p2p.config, "auto_freigabe", True)
     assert p2p.auto_approve() == 1
-    assert len(g.recall("modus:quarantine", viewer=None)) == 1 and len(g.recall("modus:test herkunft:p2p", viewer=None)) == 1
+    assert len(g.recall("mode:quarantine", viewer=None)) == 1 and len(g.recall("mode:test origin:p2p", viewer=None)) == 1
 
 
 def test_object_token_opens_no_other_object():
@@ -264,19 +264,19 @@ def test_tools(publisher):
 
 
 def test_credentials_are_never_stored(gd):
-    o = g.new_object("insight", "Login mit password=abc123 und Bearer abcdefghijkl", ["thema:a"], {"quelle": "x", "args": {"cmd": "curl https://u:p4ss@h/x", "liste": ["api_key: 77"]}}, reason="T", instance="a")
+    o = g.new_object("insight", "Login mit password=abc123 und Bearer abcdefghijkl", ["topic:a"], {"quelle": "x", "args": {"cmd": "curl https://u:p4ss@h/x", "liste": ["api_key: 77"]}}, reason="T", instance="a")
     raw = json.dumps([o.text, o.data])
     for v in ("abc123", "abcdefghijkl", "p4ss", "77"):
         assert v not in raw, v
-    r = g.new_object("reflex", "Reflex mit Code", ["thema:a"], {"code": "token = lese()  # password=ok"}, reason="T", instance="a")
+    r = g.new_object("reflex", "Reflex mit Code", ["topic:a"], {"code": "token = lese()  # password=ok"}, reason="T", instance="a")
     assert r.data["code"] == "token = lese()  # password=ok"  # source code is not mangled
 
 
 def test_location_tags_do_not_leave(publisher):
     p2p.generate_token("a")
-    _mk_obj("Wissen mit Standort im Hashtag bleibt ohne ihn", tags=("thema:a", "ort:MUC-1", "kunde:acme", "host:x"))
-    assert p2p.preview("a")["beispiele"][0]["hashtags"] == ["thema:a"]
-    assert checks.check({**GOOD, "hashtags": ["thema:a", "ort:MUC-1"]}).verdict == "ablehnen"
+    _mk_obj("Wissen mit Standort im Hashtag bleibt ohne ihn", tags=("topic:a", "location:MUC-1", "customer:acme", "host:x"))
+    assert p2p.preview("a")["beispiele"][0]["hashtags"] == ["thema:a"]  # the preview shows the wire form of 0.66
+    assert checks.check({**GOOD, "hashtags": ["topic:a", "location:MUC-1"]}).verdict == "ablehnen"
 
 
 def test_index_never_leaves(publisher):
@@ -284,7 +284,7 @@ def test_index_never_leaves(publisher):
     import json
     from vi_mcp import net_score
     p2p.generate_token("a")
-    o = _mk_obj("Wissen aus einem Kundenprojekt, gezeigt ohne den Projektnamen", tags=("thema:a",))
+    o = _mk_obj("Wissen aus einem Kundenprojekt, gezeigt ohne den Projektnamen", tags=("topic:a",))
     o.idx = "kunde-x"
     g.save(o)
     assert g.load(o.id).idx == "kunde-x"
@@ -299,7 +299,7 @@ def test_content_goes_to_net_anonymized(publisher):
     a = p2p.outbox()["objekte"][0]
     assert a["inhalt"].startswith("| GET | https://<host>/api | Liste |") and "requests.get(ziel)" in a["inhalt"]
     r = p2p.inbox(_bundle(publisher, [a]), in_background=False)
-    assert r["quarantaene"] == 1 and g.recall("modus:quarantine", viewer=None)[0][1].data["inhalt"] == a["inhalt"]
+    assert r["quarantaene"] == 1 and g.recall("mode:quarantine", viewer=None)[0][1].data["inhalt"] == a["inhalt"]
 
 
 def test_import_rejects_internals_in_content():
@@ -314,7 +314,7 @@ def test_long_content_is_sensitive(publisher):
 
 
 def test_code_examples_stay_locally_readable(gd):
-    o = g.new_object("insight", "Beispiel für den Aufruf", ["thema:a"], {"quelle": "x", "inhalt": 'token = lese_token()\npassword: ${PW}\nheaders = {"Authorization": f"Bearer {token}"}\npassword=abc123\n'}, reason="T", instance="a")
+    o = g.new_object("insight", "Beispiel für den Aufruf", ["topic:a"], {"quelle": "x", "inhalt": 'token = lese_token()\npassword: ${PW}\nheaders = {"Authorization": f"Bearer {token}"}\npassword=abc123\n'}, reason="T", instance="a")
     i = o.data["inhalt"]
     assert "token = lese_token()" in i and "${PW}" in i and "Bearer {token}" in i and "abc123" not in i
 
@@ -358,11 +358,11 @@ def test_company_network_export_keeps_the_open_network_clean(publisher, monkeypa
     images and credentials stay home."""
     monkeypatch.setattr(p2p, "config", {**p2p.config, "netze": {"firma": {"art": "firma", "instanz": "netz-firma"}}})
     p2p.generate_token("alice-laptop")
-    _mk_obj("Auf srv-alpha ist 10.9.1.5 der Gateway, gemeldet von alice-laptop", tags=("thema:netz", "host:srv-alpha"), instance="alice-laptop")
-    internal = _mk_obj("srv-beta hängt am Switch sw-07 im Keller, Port 12", tags=("thema:netz", "host:srv-beta"), instance="alice-laptop")
+    _mk_obj("Auf srv-alpha ist 10.9.1.5 der Gateway, gemeldet von alice-laptop", tags=("topic:netz", "host:srv-alpha"), instance="alice-laptop")
+    internal = _mk_obj("srv-beta hängt am Switch sw-07 im Keller, Port 12", tags=("topic:netz", "host:srv-beta"), instance="alice-laptop")
     internal.visibility = "internal"
     g.save(internal)
-    _mk_obj("Das Passwort für srv-gamma steht im Tresor unter Netz", tags=("thema:netz",), instance="alice-laptop")
+    _mk_obj("Das Passwort für srv-gamma steht im Tresor unter Netz", tags=("topic:netz",), instance="alice-laptop")
     company = json.dumps(p2p.outbox("firma"), ensure_ascii=False)
     assert "srv-alpha" in company and "srv-beta" in company and "Passwort" not in company
     open_ = json.dumps(p2p.outbox("standard"), ensure_ascii=False)
@@ -374,7 +374,7 @@ def test_ratings_carry_only_a_hash_and_numbers(publisher):
     """0.40.0: the rating export is a new kind of export — content hash and five numbers, never text, names or instances."""
     from vi_mcp import logbook as lb, net_score
     p2p.inbox(_bundle(publisher, [GOOD]), in_background=False)
-    o = g.recall("modus:quarantine", viewer=None)[0][1]
+    o = g.recall("mode:quarantine", viewer=None)[0][1]
     o.mode = "test"
     o.data["nuetzlich"] = {"ja": 1.0, "nein": 0.0, "n": 1}
     o.confirm("ki@alice-laptop", "half bei srv-alpha", "alice-laptop")
@@ -391,7 +391,7 @@ def test_index_file_names_no_instance_conversation_or_index_internals(gd, tmp_pa
     users and history stays home: instance, conversation, object id, the exporting index's position in other indexes."""
     from vi_mcp import index_transfer
     monkeypatch.setenv("VI_MCP_EXPORT_KEY", str(tmp_path / "k.key"))
-    o = g.new_object("insight", "deploy: back up the database before the package update", ["thema:deploy"], {"quelle": "test run"},
+    o = g.new_object("insight", "deploy: back up the database before the package update", ["topic:deploy"], {"quelle": "test run"},
                      index="kunde-x", visibility="internal", instance="alice-laptop", conversation="20261113042")
     index_transfer.export("kunde-x", tmp_path / "x.json")
     raw = (tmp_path / "x.json").read_text()

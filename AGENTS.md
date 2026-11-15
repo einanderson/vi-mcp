@@ -65,8 +65,8 @@ signed entries to its own logbook, the network service (`vi-p2p`, `vi-p2p@<netz>
 
 The MCP interface is English since 0.22.0 (tools, parameters, enum values); the German names remain valid as aliases (`vi_mcp/api_en.py`).
 Stored names become English in 0.67.0 (`vi_mcp/names.py`, the one table; an old database is migrated in place when opened, after a backup
-copy): tables, columns, indexes and stored values (kinds, modes, visibilities, …) are done; hashtag kinds and data keys follow in the same
-migration. Object ids keep their German prefix (identifiers, not names). The P2P wire
+copy): tables, columns, indexes, stored values (kinds, modes, visibilities, …) and hashtag kinds (`topic:`, `error:`, …) are done; the
+system values of hashtags and the data keys follow in the same migration. Object ids keep their German prefix (identifiers, not names). The P2P wire
 format and content hashes stay German (signed by every server) and are translated at the boundary. The configuration files are English since
 0.51.0 (keys and the network kinds free/open/company); `config.normalize` and `net_service.english_file` still read the German keys of
 older files, and the package rewrites them in English at install (`configure.migrate_configs`, a copy of the old file stays).

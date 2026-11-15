@@ -64,7 +64,7 @@ def prompt(variant: str, o: g.MemoryObject) -> tuple[list[str], str, str]:
                   + ".\nGive the main type as primary, an additional one as secondary (else none), and up to three search questions in the "
                     "entry's own language. JSON only.")
     from . import checks
-    tags = ", ".join(t for t in o.hashtags if not t.startswith(checks.FIXED_HASHTAGS) and not t.startswith(("answers:", "memory:")))
+    tags = ", ".join(t for t in o.hashtags if not t.startswith(checks.LOCAL_FIXED) and not t.startswith(("answers:", "memory:")))
     user = (f"Entry kind: {o.kind}\nHashtags: {tags}\nTitle: {o.text}\n\nContent:\n{str(o.data.get('inhalt') or '(none)')[:CONTENT_CHARS]}")
     return order, system, user
 
@@ -636,7 +636,7 @@ def pairs_pending(limit: int = 20, stale: bool = False, sample: int = 0) -> list
     ph = qa_pairs.prompt_sha256()
     live = ("SELECT id FROM object WHERE kind IN ('insight', 'rule', 'skill') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn', "
             "'merged', 'archived') AND visibility <> 'private' AND NOT EXISTS (SELECT 1 FROM tag t WHERE t.object_id = object.id "
-            "AND t.tag = 'art_wissen:code') ")
+            "AND t.tag = 'knowledge_kind:code') ")
     from datetime import datetime, timedelta, timezone
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=PAIRS_RETRY_AFTER_S)).isoformat(timespec="milliseconds")
     with g.lock:

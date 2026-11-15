@@ -20,7 +20,7 @@ import json
 import secrets
 import time
 
-from . import memory as g
+from . import memory as g, names
 from . import wiki_merge as wm
 from .logbook import pseudonym, sha256
 
@@ -98,7 +98,7 @@ def write(instance: str, net: str, slug: str, text: str, base_rev: str | None, t
     title = (title or (v.title if v.heads else "") or slug.rsplit("/", 1)[-1].replace("-", " ")).strip()
     if len(title) < 3:
         title = f"Page {slug}"
-    tags = sorted({t.strip() for t in hashtags or [] if isinstance(t, str) and g.TAG.match(t.strip()) and not t.strip().startswith(checks.FIXED_HASHTAGS)})[:20]
+    tags = sorted({w for t in hashtags or [] if isinstance(t, str) and g.TAG.match(t.strip()) and not (w := names.wire_tag(t.strip())).startswith(checks.FIXED_HASHTAGS)})[:20]  # wire form
     key = f"seite|{net}|{slug}|{time.time_ns()}|{secrets.token_hex(4)}"
     net_id, obj_token = p2p._object_token(token, key, net)
     content = {"seite": slug, "titel": title[:200], "text": "" if delete else (text or ""), "eltern": sorted(set(full)), "hashtags": tags,
@@ -170,7 +170,7 @@ def ingest(raw: dict, header: dict, net: str) -> str:
             "herkunft": {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": rev, "netz_id": raw["netz_id"], "netz": net},
             "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": f"{raw['titel']} — {raw['notiz'] or 'edit of the page'}"[:1000],
             "fremd_hashtags": raw["hashtags"], "wiki": {"netz": net, "seite": slug, "rev": rev, "geloescht": raw["geloescht"]}}
-    tags = sorted(set(raw["hashtags"] + ["herkunft:p2p", f"herausgeber:{name}", "pruefer:ausstehend", "modus:quarantine", f"netz:{net}", "herkunft:wiki"]))
+    tags = sorted(set(raw["hashtags"] + ["origin:p2p", f"publisher:{name}", "reviewer:ausstehend", "mode:quarantine", f"net:{net}", "origin:wiki"]))
     g.new_object("page", data["fremd_text"], tags, data, who=f"import@{name}", reason=f"wiki revision from {name}", oid=oid, mode="quarantine",
                  instance=f"p2p-{name}", visibility="internal" if p2p.is_company(net) else None)
     with g.lock:
@@ -194,7 +194,7 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
         g.db().commit()
     if accepted:  # the revision lives on in the page; the quarantine object is merged into it
         o.mode = "merged"
-        o.hashtags = [t for t in o.hashtags if not t.startswith("modus:")] + ["modus:merged"]
+        o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:merged"]
         o.data["merged_into"] = page_id(w["netz"], w["seite"])
         g.save(o)
     materialize(w["netz"], w["seite"])
@@ -252,7 +252,7 @@ def materialize(net: str, slug: str) -> wm.View:
     text = (v.title + (" — " + first[0][:300].replace("\n", " ") if first else ""))[:1000]
     authors = sorted({m["autor"] for m in meta if m["status"] == "released"})
     foreign = any(not m["eigen"] for m in meta if m["rev"] in v.heads)
-    tags = sorted({t for h in v.heads for t in revs[h].hashtags} | {"herkunft:wiki", f"netz:{net}"} | ({"herkunft:p2p"} if foreign else set()))
+    tags = sorted({t for h in v.heads for t in revs[h].hashtags} | {"origin:wiki", f"net:{net}"} | ({"origin:p2p"} if foreign else set()))
     data = {"quelle": f"network wiki {net}, page {slug}", "inhalt": render(v, meta),
             "wiki": {"netz": net, "seite": slug, "koepfe": v.heads, "zustand": v.state, "konflikte": len(v.conflicts), "autoren": authors,
                      "ausstehend": sum(1 for m in meta if m["status"] == "pending"), "revisionen": len(meta)}}

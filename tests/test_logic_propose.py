@@ -120,15 +120,15 @@ def test_rules_are_learned_from_rated_conclusions_and_held_for_review(gd):
     new version of the rule set."""
     for i in range(10):
         zone = "dmz" if i % 2 == 0 else "intern"
-        g.new_object("insight", f"note {i}", ["thema:oo", f"zone:{zone}", f"host:h{i}"], {"quelle": "t"}, reason="T",
+        g.new_object("insight", f"note {i}", ["topic:oo", f"zone:{zone}", f"host:h{i}"], {"quelle": "t"}, reason="T",
                      oid=f"erkenntnis:n{i}", mode="test", link=False)
-    src = 'review(O) <= (O in objects("thema:oo")) & (O.mode == "test")'
+    src = 'review(O) <= (O in objects("topic:oo")) & (O.mode == "test")'
     tools.call_tool("vi_logic", {"action": "save", "name": "rev", "source": src, "visibility": "internal"}, "a", False)
     for i in range(10):
         tools.call_tool("vi_logic", {"action": "rate", "rule_set": "rev", "conclusion": f'review("erkenntnis:n{i}")',
                                      "correct": i % 2 == 0}, "a", False)
     out = tools.call_tool("vi_logic", {"action": "learn", "rule_set": "rev"}, "a", False)
-    assert 'soft(review(O) <= (O in objects("thema:oo")) & (O.zone == "dmz")' in out
+    assert 'soft(review(O) <= (O in objects("topic:oo")) & (O.zone == "dmz")' in out
     assert "from 8 rated conclusions (2 held out to test)" in out and "held out: 1/1 right, 0/1 wrong" in out
     held = _held(out)
     assert len(held) == 1 and g.load(held[0]).data["vorschlag"]["aktion"] == "rule"

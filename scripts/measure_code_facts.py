@@ -351,7 +351,7 @@ def main(subject: Path, out: Path) -> int:
                "clingo_missing": sorted(truth - ans)[:10], "clingo_extra": sorted(ans - truth)[:10]}
         if q["search"]:
             hits = g.recall(q["search"], limit=500, viewer=None, or_fallback=True)
-            pieces = [o for _s, o, _d in hits if "art_wissen:code" in o.hashtags and not code_import._is_fact(o)]
+            pieces = [o for _s, o, _d in hits if "knowledge_kind:code" in o.hashtags and not code_import._is_fact(o)]
             for k in (4, 10):
                 names = set().union(*[piece_names(o) for o in pieces[:k]]) if pieces else set()
                 if q.get("modules"):

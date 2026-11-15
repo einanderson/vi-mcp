@@ -2,7 +2,7 @@
 
 Proposed by a Claude Code session that worked a whole day next to the right manuals without opening them (11.11.2026): it looked for a
 GitLab repository with a local `git grep` because nothing told it that a GitLab skill with its own tools existed. The memory knows it:
-  - every imported skill manual has one overview object (tag `art-wissen:ueberblick` or `art_wissen:ueberblick`, plus `doku:<skill>`);
+  - every imported skill manual has one overview object (tag `art-wissen:ueberblick` or `knowledge_kind:ueberblick`, plus `docs:<skill>`);
   - which tools belong to a skill it has measured: experiences tagged `tool:<prefix>_…` with the skill's prefix.
 `table()` joins both; `text()` renders one line per skill. Visibility as everywhere: what the instance may read. The hook puts it into the
 first prompt of a session (it is too long for the instructions, which some clients cut at about 2,000 characters); `vi_capabilities` returns
@@ -15,18 +15,18 @@ import time
 
 from . import memory as g
 
-OVERVIEW_TAGS = ("art-wissen:ueberblick", "art_wissen:ueberblick")
+OVERVIEW_TAGS = ("art-wissen:ueberblick", "knowledge_kind:ueberblick")
 TOOLS_PER_SKILL = 8
 DESCRIPTION_CHARS = 90
-EXTERNAL_TAG = "art_wissen:doku-extern"
+EXTERNAL_TAG = "knowledge_kind:doku-extern"
 CACHE_S = 600
 _cache: dict = {}
 
 
 def _description(text: str, doc: str) -> str:
-    """The overview text after its standard opening ("Vollständige Doku zu X: vi_erinnere doku:X."), first sentence, shortened."""
+    """The overview text after its standard opening ("Vollständige Doku zu X: vi_erinnere docs:X."), first sentence, shortened."""
     t = " ".join((text or "").split())
-    t = re.sub(r"^.*?doku:" + re.escape(doc) + r"\.\s*", "", t)
+    t = re.sub(r"^.*?docs:" + re.escape(doc) + r"\.\s*", "", t)
     if t.startswith("(Abschnitte:"):  # an overview without a description: its sections say what it covers
         t = "sections: " + t[len("(Abschnitte:"):].strip().rstrip(")")
     else:
@@ -43,7 +43,7 @@ def _manual_names(doc: str, prefix: str) -> set[str]:
     (0.53.2 listed proxmox_vms_list, jira_acme_, prompt_tokens …; checked against the real tool list by a Claude Code session)."""
     with g.lock:  # every section of the skill's manual (herkunft:skills-ordner), not vendor documentation
         ids = [r[0] for r in g.db().execute("SELECT t1.object_id FROM tag t1 WHERE t1.tag = ? AND NOT EXISTS (SELECT 1 FROM tag t2 "
-                                            "WHERE t2.object_id = t1.object_id AND t2.tag = ?) LIMIT 400", (f"doku:{doc}", EXTERNAL_TAG))]
+                                            "WHERE t2.object_id = t1.object_id AND t2.tag = ?) LIMIT 400", (f"docs:{doc}", EXTERNAL_TAG))]
     pattern = re.compile(rf"\b({re.escape(prefix)}_[a-z0-9_]{{2,60}})\b")
     names: set[str] = set()
     for o in g.load_many(ids).values():
@@ -124,11 +124,11 @@ def table(instance: str | None) -> list[dict]:
         o = objs.get(oid)
         if not o or not g.visible_to(o, instance):
             continue
-        doc = next((t[5:] for t in o.hashtags if t.startswith("doku:")), None)
+        doc = next((t[5:] for t in o.hashtags if t.startswith("docs:")), None)
         if not doc or doc in rows:
             continue
         prefix = next((t[6:] for t in o.hashtags if t.startswith("skill:")), None)
-        rows[doc] = {"skill": doc, "doc": f"doku:{doc}", "description": _description(o.text, doc), "tools": _tools(prefix or "", doc), "id": o.id}
+        rows[doc] = {"skill": doc, "doc": f"docs:{doc}", "description": _description(o.text, doc), "tools": _tools(prefix or "", doc), "id": o.id}
     out = sorted(rows.values(), key=lambda r: r["skill"])
     _cache[instance] = (time.monotonic(), out)
     return out
@@ -139,7 +139,7 @@ def text(instance: str | None) -> str:
     if not rows:
         return ""
     head = (f"[Skills] {len(rows)} skill manuals in the VI — before working on one of these systems or searching for a tool, use the skill and "
-            "read its manual (vi_object <id>, or vi_recall doku:<skill>). Tools are real names only — registered from the MCP server "
+            "read its manual (vi_object <id>, or vi_recall docs:<skill>). Tools are real names only — registered from the MCP server "
             "(vi_tools_register) or seen in use; none known: see the manual. A skill tool missing "
             "(\"No such tool available\")? vi_recall the error text — the MCP server that serves it is probably not registered.")
     lines = [head]

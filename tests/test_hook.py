@@ -39,7 +39,7 @@ def test_before_after_and_remembered_answer(h):
     assert h.process(ev("PreToolUse", tool_name=t, tool_input={"host": "web1"}, tool_use_id="u1")) is None
     h.process(ev("PostToolUse", tool_name=t, tool_input={"host": "web1"}, tool_use_id="u1",
                     tool_response={"content": [{"type": "text", "text": "web1 aktiv"}]}))
-    e = [o for _, o, _g in g.recall("tool:netbox_get_devices art:experience ok:ja")]
+    e = [o for _, o, _g in g.recall("tool:netbox_get_devices kind:experience ok:ja")]
     assert len(e) == 1 and e[0].data["vorher"]["reize"][:3] == ["tool:netbox_get_devices", "skill:netbox", "host:web1"]
     # second identical call (other Claude session): from memory → denied with the answer as reason
     outputs = h.process(ev("PreToolUse", "cc-2", tool_name=t, tool_input={"host": "web1"}, tool_use_id="u2"))
@@ -52,7 +52,7 @@ def test_builtin_tools_never_from_memory(h):
         outputs = h.process(ev("PreToolUse", tool_name="Read", tool_input={"file_path": "/etc/hosts"}, tool_use_id=uid))
         assert outputs is None
         h.process(ev("PostToolUse", tool_name="Read", tool_input={"file_path": "/etc/hosts"}, tool_use_id=uid, tool_response="inhalt"))
-    assert len(g.recall("tool:Read art:experience")) == 2 and not g.recall("tool:Read art:answer")
+    assert len(g.recall("tool:Read kind:experience")) == 2 and not g.recall("tool:Read kind:answer")
 
 
 def test_error_hint_and_own_tools(h):
@@ -69,7 +69,7 @@ def test_error_hint_and_own_tools(h):
 
 def test_session_end_and_server_restart(h):
     h.process(ev("PreToolUse", "cc-9", tool_name="Grep", tool_input={"pattern": "a"}, tool_use_id="g1"))
-    serial = [o for _, o, _g in g.recall("art:conversation instanz:laptop")][0].data["serial"]
+    serial = [o for _, o, _g in g.recall("kind:conversation instance:laptop")][0].data["serial"]
     h.process(ev("SessionEnd", "cc-9", reason="exit"))
     gs = g.load(f"gespraech:{serial}")
     assert gs.data["zustand"] == "beendet" and gs.data["ohne_ergebnis"] == 1  # before without after: named

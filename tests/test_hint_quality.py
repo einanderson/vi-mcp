@@ -12,7 +12,7 @@ def _k(text, tags, **kw):
 
 def test_tool_only_and_generic_word_hints_stay_away_from_shell_commands(gd):
     noise = _k("ssh to the build host only with the key file", ["tool:Bash", "skill:Bash"])
-    grep_noise = _k("A commit chain with pytest | tail commits on red tests", ["tool:Bash", "thema:grep"])
+    grep_noise = _k("A commit chain with pytest | tail commits on red tests", ["tool:Bash", "topic:grep"])
     specific = _k("web1 answers ssh only with BatchMode and the key file", ["host:web1.example", "tool:Bash"])
     v = intuition.before("Bash", {"command": "grep -n foo vi_mcp/web.py"}, "a", False)
     shown = v["zugriff"]["gezeigt"]
@@ -29,7 +29,7 @@ def test_mcp_tools_keep_their_tool_hints(gd):
 
 def test_a_hint_at_most_daily_max_times_a_day_per_instance(gd, monkeypatch):
     monkeypatch.setattr(intuition, "_daily", {})
-    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"])
+    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
     seen = 0
     for i in range(intuition.DAILY_MAX + 2):
         s = session.begin("a", f"t{i}")  # a new conversation every time: the per-conversation guard does not apply
@@ -41,7 +41,7 @@ def test_a_hint_at_most_daily_max_times_a_day_per_instance(gd, monkeypatch):
 
 
 def test_feedback_in_one_call_and_the_nudge(gd):
-    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"])
+    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
     s = session.begin("a", "t")
     with session.on_behalf(s):
         v = intuition.before("Bash", {"command": "uptime"}, "a", False)
@@ -51,12 +51,12 @@ def test_feedback_in_one_call_and_the_nudge(gd):
     assert "feedback recorded for 1 hint(s)" in out and "erkenntnis:nie-gezeigt" in out
     d = usage_stats.data(1)
     assert d["regeln"]["rueckmeldungen"] == 1
-    e = [o for _s, o, _g in g.recall("art:experience", viewer=None)][0]
+    e = [o for _s, o, _g in g.recall("kind:experience", viewer=None)][0]
     assert e.data["rueckmeldung"] == {k.id: 1}
 
 
 def test_opening_a_shown_hint_counts_as_use(gd):
-    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"])
+    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
     s = session.begin("a", "t")
     with session.on_behalf(s):
         v = intuition.before("Bash", {"command": "uptime"}, "a", False)
@@ -93,10 +93,10 @@ def test_matched_lift_resolves_simpsons_paradox(gd):
 
 
 def test_measured_useful_hints_and_warnings_are_not_capped(gd):
-    useful = _k("uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"])
+    useful = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
     useful.data["nuetzlich"] = {"ja": 2.0, "nein": 0.5, "n": 4}  # the bandit measured an advantage
     g.save(useful)
-    warning = _k("never run uptime -s on the frozen host", ["tool:Bash", "thema:uptime"], importance=3)
+    warning = _k("never run uptime -s on the frozen host", ["tool:Bash", "topic:uptime"], importance=3)
     for i in range(intuition.DAILY_MAX + 3):
         s = session.begin("a", f"t{i}")
         with session.on_behalf(s):
@@ -107,7 +107,7 @@ def test_measured_useful_hints_and_warnings_are_not_capped(gd):
 def test_feedback_with_before_id_books_exactly_that_action(gd):
     """0.50.1: two agents of one instance run in parallel with the same hint (CentralStation fleet, 11.11.2026). Without before_id the
     feedback lands on the most recent action — possibly the neighbour's; with before_id exactly on its own."""
-    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"])
+    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
     ids = []
     for t in ("agent-1", "agent-2"):
         s = session.begin("cs", t)
@@ -201,7 +201,7 @@ def test_opening_a_hint_the_hook_showed_in_another_session_counts(gd):
     """Production 14.11.2026: 'opened with vi_object after being shown 0' over 7 days with 1503 vi_object calls. The hook shows hints
     in its own MCP session (client claude-code-hook); the agent opens them over its own connection — the same-session check in
     vi_object never matched. intuition.opened already links by instance and recent experience, across sessions."""
-    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "thema:uptime"])
+    k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
     hook = session.begin("a", "claude-code-hook")
     with session.on_behalf(hook):
         v = intuition.before("Bash", {"command": "uptime"}, "a", False)

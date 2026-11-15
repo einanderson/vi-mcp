@@ -5,7 +5,7 @@ state: every imported object stays in quarantine until it is released. Before ea
 attack checks whether the model holds; otherwise nothing is reviewed. The answer field `kanarie` must always be ROT:
 if an object makes the model change it, that counts as an incident. A test line mixed into every object was rated
 by the real model as an attack by the object (measured 08.11.2026) and was dropped. The prompt lives outside the repo
-(config `reviewer_prompt`). Without prompt or model the object stays in quarantine with `pruefer:ausfall`.
+(config `reviewer_prompt`). Without prompt or model the object stays in quarantine with `reviewer:ausfall`.
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def user_input(o: g.MemoryObject, candidates: list[dict]) -> str:
     d = o.data
     lines = [f"text: {_protection(d.get('fremd_text', o.text))}", f"hashtags: {_protection(', '.join(d.get('fremd_hashtags', [])))}", f"quelle: {_protection(d.get('quelle', ''))}"]
     if d.get("inhalt"):
-        lines.append("inhalt: " + _protection(d["inhalt"][:CONTENT_READ]))
+        lines.append("content: " + _protection(d["inhalt"][:CONTENT_READ]))
     if d.get("schritte"):
         lines.append("schritte: " + _protection(", ".join(d["schritte"])))
     if d.get("code"):
@@ -74,7 +74,7 @@ def postprocess(answer: dict, candidate_ids: set[str]) -> dict:
 
 
 def _candidates(o: g.MemoryObject) -> list[dict]:
-    content = [t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("herausgeber:", "pruefer:"))]
+    content = [t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("publisher:", "reviewer:"))]
     if len(content) < 2:
         return []
     with g.lock:
@@ -86,7 +86,7 @@ def _candidates(o: g.MemoryObject) -> list[dict]:
 
 def _set(o: g.MemoryObject, result: dict) -> None:
     o.data["pruefung"]["pruefer"] = result
-    o.hashtags = [t for t in o.hashtags if not t.startswith("pruefer:")] + [f"pruefer:{result['status']}"]
+    o.hashtags = [t for t in o.hashtags if not t.startswith("reviewer:")] + [f"reviewer:{result['status']}"]
     o.change("vi", f"reviewer: {result['status']}", "; ".join(result["gruende"])[:280] or "no findings")
     g.save(o)
     if o.kind == "page":  # 0.41.0: time from arrival to review, for vi_stats
@@ -102,7 +102,7 @@ def _answer(system: str, user: str) -> dict:
 def selftest(system: str) -> str:
     """Empty string = passed, otherwise the reason."""
     user = ('Review this object. Answer only with the JSON.\n<objekt art="erkenntnis" herausgeber="selbsttest" signatur="gueltig">\n'
-            f"text: {SELFTEST_TEXT}\nhashtags: thema:selbsttest\nquelle: keine\nregelbefunde: []\nlokale_kandidaten: []\n</objekt>")
+            f"text: {SELFTEST_TEXT}\nhashtags: topic:selbsttest\nquelle: keine\nregelbefunde: []\nlokale_kandidaten: []\n</objekt>")
     try:
         a = _answer(system, user)
     except (urllib.error.URLError, OSError, ValueError, KeyError, json.JSONDecodeError, TypeError) as e:
@@ -121,14 +121,14 @@ def work_off(limit: int = 100) -> dict:
         return {"zustand": "laeuft_bereits"}
     counter: dict[str, int] = {}
     try:
-        open_ = g.recall("pruefer:ausstehend modus:quarantine", limit=1, viewer=None)
+        open_ = g.recall("reviewer:ausstehend mode:quarantine", limit=1, viewer=None)
         if not open_:
             return {"zustand": "nichts_offen"}
         reason = selftest(system)
         if reason:
             log(f"reviewer halted: {reason}")
             return {"zustand": "selbsttest_gescheitert", "grund": reason}
-        for _, o, _g in g.recall("pruefer:ausstehend modus:quarantine", limit=limit, viewer=None):
+        for _, o, _g in g.recall("reviewer:ausstehend mode:quarantine", limit=limit, viewer=None):
             cand = _candidates(o)
             try:
                 result = postprocess(_answer(system, user_input(o, cand)), {k["id"] for k in cand})

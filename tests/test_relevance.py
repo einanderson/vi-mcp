@@ -29,9 +29,9 @@ def _search(q):
 
 def test_free_text_searches_are_graded_and_reported(gd, grader):
     table, sent = grader
-    a = g.new_object("insight", "deploy web1: stop the service, copy, start", ["host:web1.example", "thema:deploy"], {"quelle": "t"})
-    b = g.new_object("insight", "deploy notes: the deploy of web1 took 4 minutes", ["host:web1.example", "thema:deploy"], {"quelle": "t"})
-    secret = g.new_object("insight", "deploy web1 private trick", ["host:web1.example", "thema:deploy"], {"quelle": "t"},
+    a = g.new_object("insight", "deploy web1: stop the service, copy, start", ["host:web1.example", "topic:deploy"], {"quelle": "t"})
+    b = g.new_object("insight", "deploy notes: the deploy of web1 took 4 minutes", ["host:web1.example", "topic:deploy"], {"quelle": "t"})
+    secret = g.new_object("insight", "deploy web1 private trick", ["host:web1.example", "topic:deploy"], {"quelle": "t"},
                           instance="agent", visibility="private")
     table[a.text] = 3
     table[b.text] = 1

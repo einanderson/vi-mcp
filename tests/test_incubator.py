@@ -8,7 +8,7 @@ from vi_mcp import memory as g
 
 
 def _k(i, rated=False, **kw):
-    return g.new_object("insight", f"knowledge number {i} about deploying", ["thema:deploy"],
+    return g.new_object("insight", f"knowledge number {i} about deploying", ["topic:deploy"],
                         {"quelle": "t", "inhalt": f"content {i}", **({"nuetzlich": {"ja": 3, "nein": 1, "n": 4}} if rated else {})},
                         visibility="internal", instance="a", **kw)
 

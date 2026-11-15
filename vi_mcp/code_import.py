@@ -281,7 +281,7 @@ def main(argv: list[str]) -> int:
 
 # ── the server side (vi_code_sync) ────────────────────────────────────────
 
-CODE_TAG = "art_wissen:code"
+CODE_TAG = "knowledge_kind:code"
 
 
 def piece_id(index: str, repo: str, path: str, symbol: str) -> str:
@@ -301,7 +301,7 @@ def _held(index: str, repo: str, path: str | None = None) -> list:
     par = [index, CODE_TAG, f"repo:{tag_value(repo)}"]
     if path is not None:
         sql += " AND id IN (SELECT object_id FROM tag WHERE tag = ?)"
-        par.append(f"datei:{tag_value(path)}")
+        par.append(f"file:{tag_value(path)}")
     with g.lock:
         ids = [r[0] for r in g.db().execute(sql, par)]
     return list(g.load_many(ids).values())
@@ -348,7 +348,7 @@ def server_sync(index: str, repo: str, commit: str, files: list[dict], removed: 
     for f in files:
         path, sha, lang = str(f["path"]), str(f["sha"]), str(f.get("lang") or "txt")
         keep = set()
-        common = [CODE_TAG, f"datei:{tag_value(path)}", f"sprache:{tag_value(lang)}", f"repo:{tag_value(repo)}"]
+        common = [CODE_TAG, f"file:{tag_value(path)}", f"language:{tag_value(lang)}", f"repo:{tag_value(repo)}"]
         for c in f.get("chunks") or []:
             oid = piece_id(index, repo, path, str(c["symbol"]))
             keep.add(oid)
@@ -385,16 +385,16 @@ def file_line(index: str, file_path: str) -> tuple[str | None, str | None]:
     fp = str(file_path).replace("\\", "/")
     with g.lock:
         rows = g.db().execute("SELECT DISTINCT t.tag FROM tag t JOIN object o ON o.id = t.object_id WHERE o.idx = ? AND o.mode = 'active' "
-                              "AND t.tag LIKE 'datei:%' AND o.id IN (SELECT object_id FROM tag WHERE tag = ?)", (index, CODE_TAG)).fetchall()
-    paths = [r[0][6:] for r in rows]
+                              "AND t.tag LIKE 'file:%' AND o.id IN (SELECT object_id FROM tag WHERE tag = ?)", (index, CODE_TAG)).fetchall()
+    paths = [r[0].split(":", 1)[1] for r in rows]
     best = max((p for p in paths if fp.endswith("/" + p) or fp == p), key=len, default=None)
     if best is None:
         return None, None
     with g.lock:
         ids = [r[0] for r in g.db().execute("SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id WHERE o.idx = ? AND o.mode = 'active' "
-                                            "AND t.tag = ?", (index, f"datei:{best}"))]
+                                            "AND t.tag = ?", (index, f"file:{best}"))]
     pieces = sorted((o for o in g.load_many(ids).values() if not _is_fact(o)), key=lambda o: o.data.get("von") or 0)
     names = [str(o.data.get("symbol")) for o in pieces if not str(o.data.get("symbol", "")).startswith("(")]
     commit = next((str(o.data.get("commit"))[:7] for o in pieces if o.data.get("commit")), "?")
     shown = ", ".join(names[:12]) + (f" … (+{len(names) - 12})" if len(names) > 12 else "") if names else f"{len(pieces)} piece(s)"
-    return f"Code index {index}: {best} holds {shown} (commit {commit}; vi_recall datei:{best} index={index})", best
+    return f"Code index {index}: {best} holds {shown} (commit {commit}; vi_recall file:{best} index={index})", best

@@ -64,18 +64,18 @@ def call(i, name, args):
 
 def test_local_user_reads_internal_knowledge_without_a_token(local):
     sock = local({ME: "anna"})
-    o = g.new_object("insight", "Internal runbook: restart the VPN concentrator with vpnctl restart", ["thema:vpn"],
+    o = g.new_object("insight", "Internal runbook: restart the VPN concentrator with vpnctl restart", ["topic:vpn"],
                      {"quelle": "runbook 10.11.2026"}, instance="anna", visibility="internal")
     out, _err = bridge(sock, [INIT, INITIALIZED, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-                              call(3, "vi_recall", {"filter": "thema:vpn"}),
-                              call(4, "vi_learn", {"text": "learned over stdio, without any token", "hashtags": ["thema:stdio"], "source": "test 10.11.2026"})])
+                              call(3, "vi_recall", {"filter": "topic:vpn"}),
+                              call(4, "vi_learn", {"text": "learned over stdio, without any token", "hashtags": ["topic:stdio"], "source": "test 10.11.2026"})])
     assert [m["id"] for m in out] == [1, 2, 3, 4]  # the notification got no answer; stdout is JSON-RPC only
     assert "instance anna" in out[0]["result"]["instructions"]
     assert "vi_confirm" in {t["name"] for t in out[1]["result"]["tools"]}  # a real instance, not the open guest
     assert o.id in out[2]["result"]["content"][0]["text"]  # internal knowledge visible
     learned = g.load(out[3]["result"]["content"][0]["text"].split()[1])
     assert learned.instance == "anna"
-    conv = g.recall("art:conversation instanz:anna", viewer=None)
+    conv = g.recall("kind:conversation instance:anna", viewer=None)
     assert conv and conv[0][1].data.get("familie") == "claude"  # family from the client name, as over HTTP
 
 

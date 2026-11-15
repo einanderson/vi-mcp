@@ -21,8 +21,8 @@ def test_content_words_drop_function_words_and_never_empty_a_query():
 
 
 def test_a_natural_question_finds_the_runbook_and_a_stop_word_query_still_searches(gd):
-    runbook = g.new_object("insight", "Zertifikat tauschen auf dem Webserver: neues Zertifikat einspielen, Dienst neu laden", ["thema:tls"])
-    chatter = g.new_object("insight", "Wie ist das bei dir, was machst du und wie geht es dir", ["thema:smalltalk"])
+    runbook = g.new_object("insight", "Zertifikat tauschen auf dem Webserver: neues Zertifikat einspielen, Dienst neu laden", ["topic:tls"])
+    chatter = g.new_object("insight", "Wie ist das bei dir, was machst du und wie geht es dir", ["topic:smalltalk"])
     question = "Wie tausche ich das Zertifikat auf dem Webserver"
     hits = [o.id for _s, o, _w in g.recall(question, limit=5, or_fallback=True, viewer=None)]
     assert hits[0] == runbook.id and chatter.id not in hits

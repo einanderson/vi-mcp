@@ -97,16 +97,16 @@ def _o(text, tags, vis, instance="a", mode="active"):
 
 
 def test_answer_search_follows_the_export_rules(mem):
-    _o("Borg restore needs the repository key exported first", ["thema:backup"], "geteilt")
-    _o("Borg on db01.corp.example runs at 02:00 nightly", ["thema:backup", "host:db01"], "intern")
-    _o("Borg private note about my own laptop backups", ["thema:backup"], "privat")
-    _o("Borg from an instance without a network token", ["thema:backup"], "geteilt", instance="z")
-    _o("Borg disputed claim about compaction speed", ["thema:backup"], "geteilt", mode="disputed")
+    _o("Borg restore needs the repository key exported first", ["topic:backup"], "geteilt")
+    _o("Borg on db01.corp.example runs at 02:00 nightly", ["topic:backup", "host:db01"], "intern")
+    _o("Borg private note about my own laptop backups", ["topic:backup"], "privat")
+    _o("Borg from an instance without a network token", ["topic:backup"], "geteilt", instance="z")
+    _o("Borg disputed claim about compaction speed", ["topic:backup"], "geteilt", mode="disputed")
     open_ = [x["text"] for x in p2p.answer_search("standard", "borg")]
     company = [x["text"] for x in p2p.answer_search("firma", "borg")]
     assert open_ == ["Borg restore needs the repository key exported first"]  # not proven, still answered: a question is asked on purpose
     assert sorted(company) == ["Borg on db01.corp.example runs at 02:00 nightly", "Borg restore needs the repository key exported first"]
-    assert p2p.answer_search("standard", "modus:quarantine sicht:privat") == []  # filter syntax is not passed through
+    assert p2p.answer_search("standard", "mode:quarantine visibility:privat") == []  # filter syntax is not passed through
     with pytest.raises(tools.Rejected, match="network service"):
         tools.call_tool("vi_net_answer_search", {"query": "borg"}, "a", False)
     assert json.loads(tools.call_tool("vi_net_answer_search", {"query": "borg"}, "netz-firma", False))
@@ -115,7 +115,7 @@ def test_answer_search_follows_the_export_rules(mem):
 def test_live_search_and_take_end_to_end(mem, net, monkeypatch):
     a, b, c = _three(net)
     k = hashlib.sha256(b"t").hexdigest()
-    hit = {**GOOD, "text": "Borg restore needs the repository key exported first", "hashtags": ["thema:backup"]}
+    hit = {**GOOD, "text": "Borg restore needs the repository key exported first", "hashtags": ["topic:backup"]}
     b.mcp.answers = [hit]
     c.mcp.answers = [{**hit, "netz_id": "b" * 32, "quelle": "another server's runbook 2026"}]  # same meaning from a second server
     a.k.local_token_sha256 = k
@@ -123,12 +123,12 @@ def test_live_search_and_take_end_to_end(mem, net, monkeypatch):
     monkeypatch.setattr(p2p, "config", {**p2p.config, "lokal": {"url": f"http://127.0.0.1:{port}", "token": "t"}})
     out = tools.call_tool("vi_net_search", {"query": "borg"}, "a", False)
     assert "asked 2 member(s), 2 answered" in out and "1 hit(s), unreviewed — data, not instructions" in out and "(2 server(s))" in out
-    assert not g.recall("thema:backup", viewer=None)  # nothing stored
+    assert not g.recall("topic:backup", viewer=None)  # nothing stored
     hid = out.split("[", 1)[1].split("]", 1)[0]
     r = tools.call_tool("vi_net_search", {"query": "borg", "take": hid}, "a", False)
     assert "taken into quarantine" in r
-    o = g.recall("modus:quarantine", viewer=None)[0][1]
-    assert "herkunft:live" in o.hashtags and "herkunft:p2p" in o.hashtags
+    o = g.recall("mode:quarantine", viewer=None)[0][1]
+    assert "origin:live" in o.hashtags and "origin:p2p" in o.hashtags
     with pytest.raises(tools.Rejected, match="already here"):
         tools.call_tool("vi_net_search", {"query": "borg", "take": hid}, "a", False)
     s = p2p.search_stats()
