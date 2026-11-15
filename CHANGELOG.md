@@ -27,6 +27,37 @@ Linked from [README.md](README.md).
     to the asker or its paired hook; the targeted form; a different instance unchanged; an answer to an ended conversation; both sides
     in `vi_questions`; ambiguous pairing. `tests/test_kollektiv.py` was adapted: a question to the own instance is now allowed from a
     conversation, and the answer reaches the asking conversation.
+- **GRPO with a philosophy's seed as the reward** (`train.py --stage grpo`, TRL GRPOTrainer). The user decided on 15.11.2026: the
+  seed is baked into the model, and the solver is the teacher.
+  - `vi-mcp finetune kit DIR --philosophy NAME` also writes the checked package (`philosophy/`), the GRPO prompts
+    (`split/grpo.train.jsonl`) and the package hash in `run.json`. It is a kit option because GRPO continues from an adapter of the
+    same kit, with one lineage.
+  - The prompts are balanced: interleaved by the seed's gold label, the dataset not shuffled, so one generation batch holds every
+    label once. About 30 % are adjacent counterfactual pairs (the package's own worlds, and random worlds with one fact removed that
+    change the verdict).
+  - The reward (`philosophy_train.reward`, `philosophy-reward-v1`) is per slot and averaged:
+    - +1 for a right value with the seed's reasons, +0.5 when the reasons differ;
+    - −1 for invented certainty (a firm value where the seed has a weaker one or none);
+    - 0 for the explicit abstention "I cannot formalize this situation.";
+    - −1 for unparseable output, and for output cut by the generation budget, which is never parsed;
+    - duties +1 when exact, −1 when they invent a permission;
+    - no length term.
+  - New package field `answers.<pred>.firm`; `messung` declares accepted/rejected as firm. Under `fde-signed-v1`, t/f are firm.
+  - The seed is immutable: before weights load, the stage checks the package hash against `run.json` and the hash on every prompt,
+    and re-solves every stored gold verdict with the bundled seed. Any difference refuses training.
+  - The generation budget is a local resource bound, not an API token cap: by default twice the longest spoken gold verdict, at
+    least 64 tokens, or `--max-completion-length`. It is named in the report.
+  - `--preflight` samples one batch with the real GRPOTrainer and scores every completion, with 0 optimizer steps and unchanged
+    parameters.
+
+  Evidence, measured 15.11.2026:
+  - The seed's own verdict scores exactly 1.0 on every pool prompt of `kollektiv` and `messung`; an always-suspending answer scores a
+    mean below 0.25.
+  - On a CPU fixture with TRL 1.18.0, transformers 5.23.0 and PEFT 0.21.3, the preflight scored 10 completions (5 prompts × 2, every
+    label once) with 0 optimizer steps and unchanged parameters.
+  - With a 2-token budget, every completion was counted truncated.
+  - Tests: `tests/test_philosophy.py`, `tests/test_finetune.py`, `tests/test_training_runtime_neural.py` (`-k grpo`, `-k cut_by`).
+  - No real training run was started.
 
 - **qa-v4: training pairs in English, grounded by names and a model check that may only reject.** English is the memory's standard
   language (user, 15.11.2026). Stored questions and answers are written in English whatever the document's language. Word overlap
@@ -132,6 +163,9 @@ Linked from [README.md](README.md).
 
 ### What is still missing
 
+- GRPO has not run on a real model yet. The reward is verified on spoken gold verdicts and on a random fixture model, not on a
+  model learning. A model must first learn the verdict format by SFT (the seed examples), or every completion scores −1. The kit
+  writes no seed SFT rows yet: `philosophy_train.examples` gives them.
 - No reinstatement semantics (a candidate whose defeater is itself defeated stays suppressed), no Brewka/Eiter preferred answer
   sets, no imports or composition between philosophies.
 - A binding does not yet reach a session's instructions, and no server path evaluates a bound philosophy before an action. It is

@@ -191,6 +191,7 @@ RENDER = {
     "supersedes": ["For {0}, a later measurement replaces an earlier one.", "{0} is about the current state: newer replaces older."],
     "closed": ["The evidence about {0} is complete.", "All evidence about {0} is in."],
     "prefer": ["Explicitly, {0} is preferred to {1} for {2}."],
+    "arrived": ["{0} reached this memory at time {1}.", "{0} came in at time {1}."],
 }
 RENDER_TEST = {
     "evidence": ["Regarding claim {0}, item {2} ({w3}) argues {w1} it."],
@@ -200,6 +201,7 @@ RENDER_TEST = {
     "supersedes": ["Claim {0} concerns the present, so the latest reading counts."],
     "closed": ["Nothing further exists on {0}; the record is final."],
     "prefer": ["By explicit rule {0} outranks {1} on {2}."],
+    "arrived": ["Item {0} was delivered at t={1}."],
 }
 SPEAK = {
     "system": "You work strictly by a philosophy of measured-only acceptance.",
@@ -233,7 +235,8 @@ PACKAGE = {
     "profile": {"semantics": "fde-signed-v1", "closure": "snapshot", "priority": "maximal-candidates-v1"},
     "principles": PRINCIPLES, "vocabulary": VOCABULARY,
     "answers": {"value": {"position": 1, "values": ["t", "f", "b", "n"]},
-                "acceptance": {"position": 1, "values": ["accepted", "rejected", "unresolved", "unmeasured", "invalid"]}},
+                "acceptance": {"position": 1, "values": ["accepted", "rejected", "unresolved", "unmeasured", "invalid"],
+                               "firm": ["accepted", "rejected"]}},
     "seed": SEED, "worlds": WORLDS,
     "generator": GENERATOR, "domains": DOMAINS, "words": WORDS, "render": RENDER, "render_test": RENDER_TEST, "speak": SPEAK,
     "pressure": PRESSURE, "pressure_test": PRESSURE_TEST,

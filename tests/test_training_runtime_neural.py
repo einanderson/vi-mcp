@@ -144,3 +144,74 @@ def test_heldout_loss_of_a_fresh_adapter_equals_the_base(kit, monkeypatch):
     assert r.returncode == 0, r.stderr[-2000:]
     out = json.loads((directory / "heldout-loss-sft.json").read_text())
     assert out["examples"] > 0 and math.isfinite(out["base_nll"]) and abs(out["difference"]) < 1e-6
+
+
+@pytest.fixture()
+def phil_kit(kit):
+    """The same kit with GRPO prompts for the philosophy kollektiv (vi-mcp finetune kit --philosophy kollektiv)."""
+    directory, base = kit
+    finetune.kit(str(directory), base_model=str(base), force=True, philosophy="kollektiv", philosophy_prompts=12)
+    return directory, base
+
+
+def test_grpo_preflight_samples_and_scores_with_the_seed_but_never_trains(phil_kit, monkeypatch):
+    """--stage grpo --preflight: real GRPOTrainer, one generation batch sampled and scored by the seed's reward, zero optimizer steps,
+    parameters unchanged. The fixture model is random, so its completions are cut or unparseable: the path is verified, not quality."""
+    from trl import GRPOTrainer
+    directory, base = phil_kit
+    def forbidden(*args, **kwargs):
+        raise AssertionError("preflight must not train, save model weights or run an optimizer")
+    monkeypatch.setattr(GRPOTrainer, "train", forbidden)
+    monkeypatch.setattr(GRPOTrainer, "save_model", forbidden)
+    monkeypatch.setattr(torch.optim.AdamW, "step", forbidden)
+    before = hashlib.sha256((base / "model.safetensors").read_bytes()).hexdigest()
+    run = (directory / "run.json").read_bytes()
+    monkeypatch.chdir(directory)
+    monkeypatch.syspath_prepend(str(directory))
+    monkeypatch.delitem(sys.modules, "training_runtime", raising=False)
+    monkeypatch.setattr(sys, "argv", ["train.py", "--stage", "grpo", "--preflight", "--cpu", "--from-base", "--num-generations", "2"])
+    with pytest.raises(SystemExit) as exited:
+        runpy.run_path(str(directory / "train.py"), run_name="__main__")
+    report = json.loads((directory / "preflight-grpo.json").read_text())
+    assert exited.value.code == 0, report
+    assert report["status"] == "preflight_passed" and report["trainer_verified"] and report["parameters_unchanged"]
+    assert report["optimizer_steps"] == 0 and not report["training_started"]
+    seed = report["seed_check"]
+    assert seed["hash"] == json.loads(run)["philosophy"]["hash"] and seed["gold_mismatch"] == 0 and seed["gold_resolved"] == json.loads(run)["philosophy"]["prompts"]
+    gr = report["grpo"]
+    assert gr["prompts_per_step"] == 5 and gr["num_generations"] == 2 and not gr["shuffle_dataset"] and not gr["mask_truncated_completions"]
+    assert gr["generation_budget"] == max(64, 2 * report["audit"]["longest_reference"]) and "longest spoken gold verdict" in gr["generation_budget_rule"]
+    s = report["sampled"]
+    assert s["completions"] == 10 and len(set(s["batch_labels"])) == 5  # one batch, every gold label once
+    assert all(-1.0 <= r <= 1.0 for r in s["rewards"]) and sum(s["kinds"].values()) == 10 and s["advantages_shape"] == [10]
+    assert hashlib.sha256((base / "model.safetensors").read_bytes()).hexdigest() == before
+    assert not list((directory / "out").glob("grpo/adapter_model.*")) and (directory / "run.json").read_bytes() == run
+
+
+def test_grpo_refuses_a_changed_seed_before_loading_weights(phil_kit, monkeypatch):
+    from vi_mcp.training_runtime import main
+    from transformers import AutoModelForCausalLM
+    directory, _base = phil_kit
+    monkeypatch.chdir(directory)
+    assert main(["--stage", "grpo", "--tokenizer-only"]) == 0
+    report = json.loads((directory / "preflight-grpo.json").read_text())
+    assert report["status"] == "tokenizer_passed" and report["audit"]["generation_budget"] >= 64 and report["seed_check"]["gold_mismatch"] == 0
+    def forbidden(*args, **kwargs):
+        raise AssertionError("a changed seed must be refused before model weights are loaded")
+    monkeypatch.setattr(AutoModelForCausalLM, "from_pretrained", forbidden)
+    seed = directory / "philosophy" / "seed.co"
+    seed.write_text(seed.read_text().replace("counts(S, P, O) <= line(S, P, O, I) & author(S, A) & (I != A)", "counts(S, P, O) <= line(S, P, O, I)"))
+    assert main(["--stage", "grpo", "--preflight", "--cpu", "--from-base"]) == 2
+    assert json.loads((directory / "preflight-grpo.json").read_text())["error_class"] == "ValueError"
+
+
+def test_a_completion_cut_by_the_generation_budget_is_never_parsed(phil_kit, monkeypatch):
+    """A local generation budget is a resource bound, named in the report; whatever reaches it gets the truncated reward."""
+    from vi_mcp.training_runtime import main
+    directory, _base = phil_kit
+    monkeypatch.chdir(directory)
+    assert main(["--stage", "grpo", "--preflight", "--cpu", "--from-base", "--num-generations", "2", "--max-completion-length", "2"]) == 0
+    report = json.loads((directory / "preflight-grpo.json").read_text())
+    assert report["grpo"]["generation_budget"] == 2 and report["grpo"]["generation_budget_rule"] == "given (--max-completion-length)"
+    kinds = report["sampled"]["kinds"]
+    assert kinds.get("truncated", 0) >= 8 and all(r == -1.0 for r in report["sampled"]["rewards"]), kinds

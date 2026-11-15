@@ -24,7 +24,7 @@ from pathlib import Path
 from . import __version__
 from . import memory as g
 
-GUIDE_VERSION = "2026-11-15"
+GUIDE_VERSION = "2026-11-15b"
 TEST_SHARE = 0.15
 STRATIFY_MIN = 5  # a stage with at least this many groups always gets held-out groups
 
@@ -90,6 +90,11 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
    to continue the logic stage; without this flag each later stage starts from out/sft. `--stage logic --from-base` explicitly starts
    program training directly on a fresh adapter without a prior QA stage. Solver-only examples and
    observational hint pairs are withheld from default program/DPO training. Checked machine examples are published explicitly with vi_machine teach.
+   A philosophy: `vi-mcp finetune kit DIR --philosophy NAME` also writes the checked package and GRPO prompts;
+   `python train.py --stage grpo --from-adapter out/sft` trains with the seed as reward (TRL GRPOTrainer). The stage re-solves every
+   gold verdict with the bundled seed and refuses a changed package hash. The reward is +1 for a right value with its reasons and
+   −1 for invented certainty; the explicit "I cannot formalize this situation." gives 0; unparseable or cut output gives −1. There is
+   no length term. The generation budget is a local resource bound (twice the longest gold verdict), named in the report.
 5. `convert.sh` → GGUF adapter; start llama-server with base and adapter.
 6. Knowledge probe: `python probe.py answer --adapter out/sft`, `python probe.py judge --url URL --model NAME` (or a person writes
    probe/judgments.jsonl), `python probe.py summarize` → probe/probe_eval.json. Measured 15.11.2026 (Qwen3-0.6B, LoRA rank 64,
@@ -159,7 +164,8 @@ def plan_lines(p: dict) -> list[str]:
 
 
 TRAIN_PY = r'''"""Fine-tuning kit entry point. First run --preflight (no training); --tokenizer-only loads no model weights.
-Stages: sft, agentic, logic, kto, dpo. Use --from-adapter to continue a selected prior stage.
+Stages: sft, agentic, logic, kto, dpo, grpo (a philosophy's seed as reward; needs a kit written with --philosophy NAME).
+Use --from-adapter to continue a selected prior stage.
 """
 from training_runtime import main
 
@@ -769,7 +775,33 @@ def _write(p: Path, text: str, mode: int = 0o600) -> None:
     os.chmod(p, mode)
 
 
-def kit(directory: str, index: str | None = None, base_model: str | None = None, force: bool = False) -> dict:
+#: GRPO prompts a kit gets with --philosophy (each solved by the seed at kit time and again before training)
+PHILOSOPHY_PROMPTS = 1000
+
+
+def philosophy_stage(d: Path, name: str, prompts: int = PHILOSOPHY_PROMPTS, seed: int = 11) -> dict:
+    """GRPO data for a philosophy, in the same kit as the knowledge stages: GRPO continues from an adapter of this kit (the same base
+    model and one run.json lineage, which `record` reads), so a separate kit would split that lineage. Writes the checked package
+    (philosophy/) and split/grpo.train.jsonl; the seed's hash goes into run.json and the stage refuses to train if it changed."""
+    from clingo_object import philosophy as ph
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load(name)
+    r = ph.check(pkg)
+    if not r["ok"]:
+        raise ValueError(f"philosophy {name} refused: " + "; ".join(r["errors"][:3]))
+    ph.write(pkg, str(d / "philosophy"))
+    if ph.package_hash(ph.load(str(d / "philosophy"))) != r["hash"]:
+        raise ValueError("the written philosophy package does not round-trip to its hash")
+    pool = pt.grpo_pool(pkg, prompts, seed)
+    target = d / "split" / "grpo.train.jsonl"
+    _write(target, "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in pool["rows"]))
+    return {"name": pkg["name"], "version": pkg["version"], "hash": r["hash"], "prompts": len(pool["rows"]), "labels": pool["labels"],
+            "counterfactual_pairs": pool["pairs"], "short_of_balance": pool["short_of_balance"], "reward_version": pool["reward_version"],
+            "seed": seed, "grpo_train_sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+
+
+def kit(directory: str, index: str | None = None, base_model: str | None = None, force: bool = False,
+        philosophy: str | None = None, philosophy_prompts: int = PHILOSOPHY_PROMPTS) -> dict:
     """Write the fine-tuning kit. Runs nothing; a person runs the scripts on the GPU host."""
     from . import evaluation, incubator
     base = base_model or _cfg().get("base_model")
@@ -821,6 +853,7 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     run = {"base_model": base, "kit": g.now(), "vi_mcp": __version__, "handbook": GUIDE_VERSION, "index": index,
            "dataset_manifest_sha256": hashlib.sha256((d / "dataset" / "manifest.json").read_bytes()).hexdigest(), "split": split,
            "incubator": manifest.get("inkubator"),
+           "philosophy": philosophy_stage(d, philosophy, philosophy_prompts) if philosophy else None,
            "kit_code_sha256": {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "heldout_loss.py",
                                          d / "synth_qa.py", d / "qa_pairs.py", d / "probe.py",
@@ -836,7 +869,7 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
         raise ValueError(f"{d}: no run.json — not a kit written by vi-mcp finetune kit")
     run = json.loads((d / "run.json").read_text(encoding="utf-8"))
     adapters = {}
-    for stage in ("sft", "agentic", "logic", "kto", "dpo"):
+    for stage in ("sft", "agentic", "logic", "kto", "dpo", "grpo"):
         f = d / "out" / stage / "adapter_model.safetensors"
         if f.exists():
             adapters[stage] = hashlib.sha256(f.read_bytes()).hexdigest()
@@ -890,6 +923,8 @@ def main(argv: list[str]) -> int:
         x.add_argument("--base")
     k.add_argument("directory")
     k.add_argument("--force", action="store_true", help="also for a VI still in the incubator (the datasheet names the open criteria)")
+    k.add_argument("--philosophy", help="also write GRPO prompts for this philosophy (built-in name or package directory): train.py --stage grpo")
+    k.add_argument("--philosophy-prompts", type=int, default=PHILOSOPHY_PROMPTS, help="how many GRPO prompts (default %(default)s)")
     r.add_argument("directory")
     o = a.parse_args(argv)
     if o.cmd == "guide":
@@ -907,7 +942,7 @@ def main(argv: list[str]) -> int:
         if o.cmd == "plan":
             print("\n".join(plan_lines(plan(o.index, o.base))))
         elif o.cmd == "kit":
-            print(json.dumps(kit(o.directory, o.index, o.base, o.force), indent=2, ensure_ascii=False))
+            print(json.dumps(kit(o.directory, o.index, o.base, o.force, o.philosophy, o.philosophy_prompts), indent=2, ensure_ascii=False))
         else:
             print(record(o.directory).text)
     except ValueError as e:

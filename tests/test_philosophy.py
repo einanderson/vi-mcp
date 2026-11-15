@@ -323,3 +323,73 @@ def test_binding_names_philosophy_and_hash_and_keeps_two_verdicts_apart(gd, tmp_
     assert [b["name"] for b in philosophy.bindings("a")] == ["messung"]
     gone = g.load(rows[0]["binding"])
     assert gone.mode == "aus" and gone.changes[-1]["was"] == "philosophy binding ended"
+
+
+# ── GRPO: the seed as a verifiable reward ───────────────────────────────────────────────────────────────────────────────────────
+
+def _lazy(pkg, gold):
+    """A policy that always suspends: every value unknown, every acceptance its weakest, no duties."""
+    from clingo_object import philosophy_train as pt
+    weak = {"value": "n", "acceptance": "unresolved"}
+    w = {**gold, "answers": {s: dict(weak) for s in gold["subjects"]}, "duties": [], "reasons": {}}
+    return pt.speak(pkg, w)
+
+
+@pytest.mark.parametrize("name", ["kollektiv", "messung"])
+def test_the_seeds_own_verdict_earns_full_reward_and_neither_suspension_nor_brevity_is_paid(name):
+    """User 15.11.2026: "der Solver ist der Lehrer". Codex: no reward for being shorter, none for saying unknown more often; invented
+    certainty costs most (TruthRL arXiv 2509.25760)."""
+    import json
+    import statistics
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load(name)
+    pool = pt.grpo_pool(pkg, 60, seed=4)
+    rows = pool["rows"]
+    golds = [json.loads(r["gold_json"]) for r in rows]
+    assert all(pt.reward(pkg, g, r["reference"])["reward"] == 1.0 for g, r in zip(golds, rows))
+    lazy = statistics.mean(pt.reward(pkg, g, _lazy(pkg, g))["reward"] for g in golds)
+    assert lazy < 0.25, lazy  # always suspending is far from the seed's verdict
+    g, ref = golds[0], rows[0]["reference"]
+    assert pt.reward(pkg, g, ref + "\nThat is all I can say about it.")["reward"] == 1.0  # no length term either way
+    assert pt.reward(pkg, g, ref, truncated=True) == {"reward": -1.0, "kind": "truncated", "slots": {}}
+    assert pt.reward(pkg, g, "Well, it depends.")["kind"] == "unparseable"
+    assert pt.reward(pkg, g, pt.CANNOT) == {"reward": 0.0, "kind": "cannot_formalize", "slots": {}}
+    # invented certainty: a firm value where the seed says unknown or both, or gives no verdict at all
+    for r, gold in zip(rows, golds):
+        s = gold["subjects"][0]
+        if (gold["answers"].get(s) or {}).get("value") in ("n", "b", None):
+            firm = {**gold, "answers": {**gold["answers"], s: {**(gold["answers"].get(s) or {}), "value": "t"}}}
+            out = pt.reward(pkg, gold, pt.speak(pkg, firm))
+            assert out["slots"].get("invented_certainty") == 1 and out["reward"] < 1.0
+            break
+    else:
+        raise AssertionError("no prompt with an unknown, both or missing verdict")
+
+
+def test_the_grpo_pool_is_balanced_by_label_and_keeps_counterfactual_pairs_together():
+    import json
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load("kollektiv")
+    pool = pt.grpo_pool(pkg, 100, seed=5)
+    rows = pool["rows"]
+    assert set(pool["labels"]) == {"t", "f", "b", "n", "none"} and not pool["short_of_balance"]
+    assert len({r["label"] for r in rows[:5]}) == 5  # the first generation batch holds every label once
+    assert max(pool["labels"].values()) - min(pool["labels"].values()) <= pool["pairs"] * 2
+    assert pool["pairs"] >= sum(1 for w in pkg["worlds"] if w.get("counterfactual_of"))
+    by_pair = {}
+    for i, r in enumerate(rows):
+        if r["pair"]:
+            by_pair.setdefault(r["pair"], []).append(i)
+    for pid, idx in by_pair.items():
+        assert len(idx) == 2 and idx[1] == idx[0] + 1, pid
+        a, b = (json.loads(rows[i]["gold_json"]) for i in idx)
+        assert (a["answers"], a["duties"]) != (b["answers"], b["duties"]), pid  # one changed piece of evidence changes the verdict
+    assert all(r["hash"] == ph.package_hash(pkg) for r in rows)
+    assert pt.CANNOT in rows[0]["prompt"][1]["content"] and rows[0]["prompt"][0]["role"] == "system"
+
+
+def test_firm_values_must_be_answer_values():
+    pkg = copy.deepcopy(ph.load("messung"))
+    pkg["answers"]["acceptance"]["firm"] = ["accepted", "certain"]
+    r = ph.check(pkg)
+    assert not r["ok"] and any("firm values ['certain']" in e for e in r["errors"])

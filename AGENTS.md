@@ -160,7 +160,8 @@ once end to end on 14.11.2026 (Qwen/Qwen3-0.6B, AMD Strix Halo gfx1151, ROCm). T
    Expect `status: preflight_passed`.
 3. `python heldout_loss.py --stage sft --base-only`: optional, the base loss before training.
 4. `python train.py --stage sft --fp32 --epochs E`. Choose E from the measured throughput. Later stages
-   (`--stage logic|agentic|kto|dpo`) continue from `out/sft` unless `--from-base`.
+   (`--stage logic|agentic|kto|dpo|grpo`) continue from `out/sft` unless `--from-base`. `grpo` needs a kit written with
+   `--philosophy NAME` and trains with the seed as reward (docs/FINETUNING.md section 4b).
 5. `python heldout_loss.py --stage sft`: base vs adapter on the held-out rows. This shows knowledge absorption, not task success.
 
 Run training detached (`docker run -d …`) and watch for the end and for failures: `Traceback`, `out of memory`, `Killed`, and the

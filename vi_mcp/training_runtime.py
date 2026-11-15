@@ -14,7 +14,12 @@ import os
 from pathlib import Path
 
 FILES = {"sft": "train.jsonl", "agentic": "agentic.train.jsonl", "logic": "logic.train.jsonl",
-         "kto": "kto.train.jsonl", "dpo": "dpo.train.jsonl"}
+         "kto": "kto.train.jsonl", "dpo": "dpo.train.jsonl", "grpo": "grpo.train.jsonl"}
+#: GRPO (vi-mcp finetune kit --philosophy NAME): a philosophy's seed is the verifiable reward. The generation budget is a resource bound
+#: of local sampling, not an API token cap: by default twice the longest spoken gold verdict in tokens (at least GRPO_MIN_BUDGET); a
+#: completion that reaches it is never parsed and gets the reward for unparseable output (philosophy_train.reward, kind truncated).
+GRPO_BUDGET_FACTOR = 2
+GRPO_MIN_BUDGET = 64
 
 
 def digest(value):
@@ -129,12 +134,96 @@ def prepare(rows, tokenizer, stage, limit, *, skip_oversize=False):
     return prepared, audit
 
 
+def seed_check(rows, run):
+    """The seed is immutable during GRPO: the kit's package must have the hash run.json recorded, every prompt must carry it, and the
+    bundled solver must give every stored gold verdict again. Returns (package, report); raises on any difference."""
+    from clingo_object import philosophy as ph, philosophy_train as pt
+    meta = run.get("philosophy") or {}
+    if not meta.get("hash"):
+        raise ValueError("this kit has no philosophy — write it with: vi-mcp finetune kit DIR --philosophy NAME")
+    pkg = ph.load("philosophy")
+    if ph.package_hash(pkg) != meta["hash"]:
+        raise ValueError("the kit's philosophy package differs from the hash in run.json — the seed changed")
+    mismatch = 0
+    for row in rows:
+        if row.get("hash") != meta["hash"]:
+            raise ValueError("a GRPO prompt was made from another package hash")
+        again = pt.verdict(pkg, [tuple(f) for f in json.loads(row["facts_json"])])
+        mismatch += json.dumps(again, sort_keys=True) != row["gold_json"]
+    if mismatch:
+        raise ValueError(f"{mismatch} stored gold verdicts differ from the seed's verdict now")
+    return pkg, {"name": pkg["name"], "version": pkg["version"], "hash": meta["hash"], "gold_resolved": len(rows), "gold_mismatch": 0,
+                 "reward_version": pt.REWARD_VERSION, "reward": pt.REWARD, "firm": {k: sorted(v) for k, v in pt.firm_values(pkg).items()}}
+
+
+def prepare_grpo(rows, tokenizer, limit, budget=None):
+    """GRPO prompts: rendered with the chat template (thinking off) like every other stage; the generation budget is derived from the
+    longest spoken gold verdict unless given; a prompt that does not leave the budget inside the model context is refused, never cut."""
+    if type(limit) is not int or limit < 2:
+        raise ValueError("sequence limit must be at least two tokens")
+    audit, rejected, sized = {"rows": len(rows), "examples": 0, "longest_prompt": 0, "longest_reference": 0, "rejected": {}}, Counter(), []
+    for row in rows:
+        try:
+            messages = row["prompt"]
+            if not isinstance(messages, list) or not messages or not tokenizer.chat_template:
+                raise ValueError("conversation_or_template")
+            if not isinstance(row["gold_json"], str) or not isinstance(row["reference"], str) or not isinstance(row["label"], str):
+                raise ValueError("grpo_format")
+            json.loads(row["gold_json"])
+            text = tokenizer.apply_chat_template(messages, add_generation_prompt=True, enable_thinking=False, tokenize=False)
+            n_prompt = len(encode(tokenizer, text, special=True))
+            n_ref = len(encode(tokenizer, row["reference"] + (tokenizer.eos_token or "")))
+            sized.append(({"prompt": messages, "gold_json": row["gold_json"], "label": row["label"], "pair": row.get("pair") or ""}, n_prompt))
+            audit["longest_prompt"] = max(audit["longest_prompt"], n_prompt)
+            audit["longest_reference"] = max(audit["longest_reference"], n_ref)
+        except (ValueError, KeyError, TypeError) as e:
+            rejected[str(e) if str(e) in {"conversation_or_template", "grpo_format"} else "invalid_example"] += 1
+        except Exception:
+            rejected["chat_template_error"] += 1
+    given = budget is not None
+    if budget is None:
+        budget = max(GRPO_MIN_BUDGET, GRPO_BUDGET_FACTOR * audit["longest_reference"])
+    prepared = []
+    for item, n_prompt in sized:
+        if n_prompt + budget > limit:
+            rejected["oversize"] += 1
+        else:
+            prepared.append(item)
+    audit.update(examples=len(prepared), rejected=dict(rejected), generation_budget=budget,
+                 generation_budget_rule="given (--max-completion-length)" if given else
+                 f"{GRPO_BUDGET_FACTOR} x the longest spoken gold verdict ({audit['longest_reference']} tokens), at least {GRPO_MIN_BUDGET}",
+                 labels=dict(Counter(r["label"] for r, _n in sized)), pairs=len({r["pair"] for r, _n in sized if r["pair"]}))
+    audit["valid"] = bool(prepared) and not rejected
+    return prepared, audit
+
+
+def make_reward(pkg, tokenizer, record):
+    """The reward function TRL calls: each completion parsed and scored against the seed's verdict (philosophy_train.reward). A
+    completion that does not end in an end token reached the generation budget: truncated, never parsed."""
+    from clingo_object import philosophy_train as pt
+    stop = {t for t in (tokenizer.eos_token_id, tokenizer.pad_token_id) if t is not None}
+
+    def philosophy_reward(prompts, completions, completion_ids, gold_json, **kwargs):
+        out = []
+        for completion, ids, gold in zip(completions, completion_ids, gold_json):
+            text = completion[-1]["content"] if isinstance(completion, list) else completion
+            r = pt.reward(pkg, json.loads(gold), text, truncated=not ids or ids[-1] not in stop)
+            record.append(r)
+            out.append(r["reward"])
+        return out
+    return philosophy_reward
+
+
 def verify_prepared(trainer, rows, tokenizer, stage, limit):
     """No silent library truncation, column loss or changed targets. KL mismatches must fit the model too."""
     data = trainer.train_dataset
     if len(data) != len(rows):
         raise ValueError("trainer changed the number of examples")
     for expected, actual in zip(rows, data):
+        if stage == "grpo":
+            if actual["prompt"] != expected["prompt"] or actual["gold_json"] != expected["gold_json"]:
+                raise ValueError("trainer changed a GRPO prompt or its gold verdict")
+            continue
         if stage in ("sft", "agentic", "logic"):
             if actual["input_ids"] != expected["input_ids"] or actual["labels"] != expected["labels"]:
                 raise ValueError("trainer changed audited assistant tokens or masks")
@@ -203,6 +292,12 @@ def main(argv=None):
                                                                "reported bf16 problems (AMD gfx1151, ROCm/TheRock issue 9198)")
     parser.add_argument("--sequence-length", type=int, help="audited full-example bound, at most the model context")
     parser.add_argument("--skip-oversize", action="store_true", help="explicitly omit whole oversized episodes and count them; never truncate targets")
+    parser.add_argument("--num-generations", type=int, default=4, help="grpo: completions sampled per prompt (the group)")
+    parser.add_argument("--prompts-per-step", type=int, help="grpo: prompts per generation batch; default the number of gold labels, "
+                                                             "so one batch holds every label once (the pool is interleaved by label)")
+    parser.add_argument("--max-completion-length", type=int, help="grpo: generation budget in tokens (a local resource bound, not an "
+                                                                  "API cap); default twice the longest spoken gold verdict; a "
+                                                                  "completion reaching it counts as unparseable")
     o = parser.parse_args(argv)
     o.preflight = o.preflight or o.tokenizer_only
     report_path = Path(f"preflight-{o.stage}.json" if o.preflight else f"preparation-{o.stage}.json")
@@ -238,7 +333,11 @@ def main(argv=None):
         limit = o.sequence_length if o.sequence_length is not None else window
         if type(limit) is not int or not 2 <= limit <= window:
             raise ValueError("sequence limit exceeds the declared model context")
-        data, audit = prepare(rows, tok, o.stage, limit, skip_oversize=o.skip_oversize)
+        if o.stage == "grpo":
+            pkg, report["seed_check"] = seed_check(rows, run)
+            data, audit = prepare_grpo(rows, tok, limit, o.max_completion_length)
+        else:
+            data, audit = prepare(rows, tok, o.stage, limit, skip_oversize=o.skip_oversize)
         report["precision"] = "float32" if (o.cpu or o.fp32) else "model dtype; bf16 mixed precision when the GPU supports it"
         report.update(audit=audit, sequence_limit=limit, model_revision=getattr(config, "_commit_hash", None) or revision,
                       tokenizer_sha256=digest(tok.backend_tokenizer.to_str()),
@@ -276,6 +375,8 @@ def main(argv=None):
             peft = lora
             report["parent_adapter"] = "base" if o.stage == "sft" or o.from_base else "missing: fresh untrained probe only"
         from trl import SFTConfig, SFTTrainer, KTOConfig, KTOTrainer, DPOConfig, DPOTrainer
+        if o.stage == "grpo":
+            return grpo(o, run, report, report_path, model, peft, tok, data, audit, pkg, base, parent)
         classes = {"kto": (KTOConfig, KTOTrainer), "dpo": (DPOConfig, DPOTrainer)}
         cfg_class, trainer_class = classes.get(o.stage, (SFTConfig, SFTTrainer))
         options = {"output_dir": str(Path("out") / o.stage), "num_train_epochs": o.epochs,
@@ -330,3 +431,70 @@ def main(argv=None):
         write_report(report_path, report)
         print(f"Preparation refused ({type(e).__name__}); see {report_path}")
         return 2
+
+
+def grpo(o, run, report, report_path, model, peft, tok, data, audit, pkg, base, parent):
+    """GRPO with the philosophy's seed as reward (TRL GRPOTrainer). Preflight: construct the trainer, sample one generation batch,
+    score it — no optimizer step, parameters unchanged. Explicit choices, each named in the report: loss dapo (no length bias), beta 0
+    (no reference model), rewards scaled per group, truncated completions NOT masked (they keep the unparseable reward, so the model
+    learns to finish), dataset NOT shuffled (the pool is interleaved by gold label and keeps counterfactual pairs adjacent)."""
+    import torch
+    from datasets import Dataset
+    from trl import GRPOConfig, GRPOTrainer
+    if o.num_generations < 2:
+        raise ValueError("GRPO needs at least two completions per prompt")
+    prompts = o.prompts_per_step or max(1, len(audit["labels"]))
+    options = {"output_dir": str(Path("out") / "grpo"), "num_train_epochs": o.epochs, "learning_rate": o.lr or 5e-6,
+               "logging_steps": 10, "report_to": "none", "use_cpu": o.cpu, "seed": o.seed,
+               "bf16": not o.cpu and not o.fp32 and torch.cuda.is_available() and torch.cuda.is_bf16_supported(), "fp16": False,
+               "per_device_train_batch_size": o.num_generations, "gradient_accumulation_steps": prompts,
+               "num_generations": o.num_generations, "max_completion_length": audit["generation_budget"],
+               "shuffle_dataset": False, "loss_type": "dapo", "beta": 0.0, "scale_rewards": "group",
+               "mask_truncated_completions": False, "chat_template_kwargs": {"enable_thinking": False}, "log_completions": False}
+    if o.cpu:
+        options.update(bf16=False, fp16=False)
+    if o.preflight:
+        options["gradient_checkpointing"] = False
+    record = []
+    trainer = GRPOTrainer(model=model, processing_class=tok, reward_funcs=[make_reward(pkg, tok, record)],
+                          train_dataset=Dataset.from_list(data), peft_config=peft, args=GRPOConfig(**options))
+    verify_prepared(trainer, data, tok, "grpo", report["sequence_limit"])
+    trainable = sum(p.numel() for p in trainer.model.parameters() if p.requires_grad)
+    if not trainable:
+        raise ValueError("the adapter has no trainable parameters")
+    report.update(trainer_verified=True, parent_ready=report["parent_adapter"] != "missing: fresh untrained probe only",
+                  incubator_mature=(run.get("incubator") or {}).get("zustand") == "reif", trainable_parameters=trainable, seed=o.seed,
+                  grpo={"num_generations": o.num_generations, "prompts_per_step": prompts, "generation_budget": audit["generation_budget"],
+                        "generation_budget_rule": audit["generation_budget_rule"], "loss_type": "dapo", "beta": 0.0,
+                        "scale_rewards": "group", "mask_truncated_completions": False, "shuffle_dataset": False,
+                        "labels": audit["labels"], "counterfactual_pairs": audit["pairs"]})
+    if o.preflight:
+        before = parameter_hash(trainer.model)
+        batch = next(iter(trainer.get_train_dataloader()))
+        batch_labels = [row["label"] for row in batch[::o.num_generations]]
+        trainer.model.eval()
+        with torch.no_grad():
+            scored = trainer._generate_and_score_completions(batch)
+        after = parameter_hash(trainer.model)
+        if (before != after or trainer.state.global_step != 0 or trainer.optimizer is not None or len(record) != len(batch)
+                or not all(math.isfinite(r["reward"]) for r in record)):
+            raise ValueError("preflight changed parameters, ran an optimizer or did not score every completion")
+        report.update(status="preflight_passed", parameter_sha256=before, parameters_unchanged=True,
+                      sampled={"completions": len(record), "prompts": len(batch_labels), "batch_labels": batch_labels,
+                               "rewards": [r["reward"] for r in record], "kinds": dict(Counter(r["kind"] for r in record)),
+                               "advantages_shape": list(scored["advantages"].shape)})
+        write_report(report_path, report)
+        print(json.dumps(report, indent=2))
+        return 0
+    report["status"], report["training_started"], report["optimizer_steps"] = "prepared", True, None
+    write_report(report_path, report)
+    trainer.train()
+    trainer.save_model(str(Path("out") / "grpo"))
+    report.update(status="trained", optimizer_steps=int(trainer.state.global_step),
+                  rewards={"completions": len(record), "mean": sum(r["reward"] for r in record) / max(1, len(record)),
+                           "kinds": dict(Counter(r["kind"] for r in record))})
+    write_report(report_path, report)
+    run.update({"trained_grpo": str(Path("out") / "grpo"), "parent_grpo": base if o.from_base else str(parent),
+                "preparation_grpo_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest()})
+    write_report("run.json", run)
+    return 0
