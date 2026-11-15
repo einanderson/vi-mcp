@@ -162,7 +162,8 @@ once end to end on 14.11.2026 (Qwen/Qwen3-0.6B, AMD Strix Halo gfx1151, ROCm). T
 4. `python train.py --stage sft --fp32 --epochs E`. Choose E from the measured throughput. Later stages
    (`--stage logic|agentic|kto|dpo`) continue from `out/sft` unless `--from-base`. A kit written with `--philosophy NAME` adds the
    seed path `--stage language` (from the base) → `philosophy` (continues out/language) → `grpo` (continues out/philosophy), with
-   eval/philosophy.jsonl, `phil_answers.py` and `phil_score.py` (docs/FINETUNING.md section 4b).
+   eval/philosophy.jsonl, `phil_answers.py`, `phil_score.py` and `phil_roundtrip.py` (the prose answers by round trip with an
+   independent back-translator, a control beside every number; docs/FINETUNING.md section 4b).
 5. `python heldout_loss.py --stage sft`: base vs adapter on the held-out rows. This shows knowledge absorption, not task success.
 
 Run training detached (`docker run -d …`) and watch for the end and for failures: `Traceback`, `out of memory`, `Killed`, and the

@@ -7,6 +7,24 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **The kit scores a trained model's prose by the round trip: `phil_roundtrip.py`.** It is a separate script, not a `phil_score`
+  option: `phil_score` stays offline, fast and deterministic, while the round trip needs an endpoint and minutes.
+  - For each explain (whole and per block) and recite answer of the tuned model and of the base model, an OpenAI-compatible
+    back-translator (`--judge-url/--judge-model`, preferably another model family) writes clingo-object, with up to 4 repair rounds.
+    It uses `clingo_object/philosophy_explain.py`, which is bundled with the kit.
+  - Reported per answer: agreement of the rebuilt seed with the seed's answers AND duties on the package worlds plus `--random N`
+    worlds, the repair rounds, and whether it ran at all (a seed that does not run agrees with nothing and gets a named reason).
+  - A control stands beside every number: `--control FILE` (the frozen historical prose `tests/fixtures/kollektiv_principles_1.1.0.json`
+    or plain text), else the items' `gold_text` of a 1.1.0 kit. It is back-translated by the same model.
+  - A blind reading aid `eval/philosophy_blind.md` pairs each explain answer with the seed's rules in a random order, with the key in
+    `eval/philosophy_blind_key.json`.
+  - Answers and control are resumable (`eval/philosophy_roundtrip.jsonl`); the summary is `eval/philosophy_roundtrip.json`.
+  - It reads this kit's layout and run 6's (`eval/eval.jsonl`, `eval/answers.jsonl`, no `philosophy/`: `--package kollektiv`; the
+    1.1.0 → 1.2.0 hash difference is recorded as `hash_mismatch`; the translated seed is identical).
+  - Tests (`tests/test_finetune.py`, a fake OpenAI server, no real endpoint): faithful prose agrees on every world, unusable prose is
+    reported as not run after 4 rounds, the control, the blind file without model names, resumption without new calls, and the run-6
+    layout.
+
 - **One kit for the whole seed path: language → seed → GRPO, with its evaluation.** The user decided the order on 15.11.2026:
   "first teach the AI clingo, then the seed". `vi-mcp finetune kit DIR --base M --philosophy NAME` now writes everything, without
   hand-made data:
@@ -262,6 +280,9 @@ Linked from [README.md](README.md).
   Evidence: `tests/test_logic.py::test_contradictions_are_named_for_every_arity_and_never_confused_with_no_model_or_ambiguity`.
 
 ### What is missing
+
+- `phil_roundtrip.py` has not run on real answers yet: run 6's answers and an approved independent back-translator endpoint are
+  both still to come.
 
 - Same-instance questions: pairing an agent with its hook needs one vi-mcp call of the agent that its hook announced. Before that
   call, or without a hook, or when two hooks announce the same call within 60 s (counted in `session.pairing_counts`, not paired),

@@ -433,5 +433,147 @@ def test_one_kit_holds_the_whole_seed_path_without_any_principle_prose(vi, monke
     assert score["package_worlds"]["tuned"]["invented_certainty"].startswith("0/")
     assert score["formalize_heldout"]["tuned"]["facts_exact"] == f"{score['formalize_heldout']['tuned']['items']}/{score['formalize_heldout']['tuned']['items']}"
     assert score["recite"]["tuned"]["scored"].startswith("prose")
+    py_compile.compile(str(d / "phil_roundtrip.py"), doraise=True)  # the round trip of the prose sets ships with the kit
+    assert "phil_roundtrip.py" in json.loads((d / "run.json").read_text())["kit_code_sha256"]
     with pytest.raises(ValueError, match="no training data: missing"):
         finetune.philosophy_stage(vi / "k2", "code", 10)
+
+
+from pathlib import Path  # noqa: E402
+
+
+def _roundtrip_kit(d, old_format=False):
+    """A minimal kit for phil_roundtrip.py: bundled clingo_object, eval items, and (new format) philosophy/ with its hash in run.json.
+    old_format: the run-6 layout — eval/eval.jsonl + eval/answers.jsonl, no philosophy/, run.json naming kollektiv 1.1.0."""
+    import shutil
+    import clingo_object
+    from clingo_object import philosophy as ph
+    from clingo_object import philosophy_train as pt
+    pkg = ph.load("kollektiv")
+    (d / "clingo_object").mkdir(parents=True)
+    for f in Path(clingo_object.__file__).resolve().parent.glob("*.py"):
+        shutil.copy(f, d / "clingo_object" / f.name)
+    (d / "eval").mkdir()
+    (d / "phil_roundtrip.py").write_text(finetune.PHIL_ROUNDTRIP_PY)
+    items = [i for i in pt.eval_items(pkg, set())["items"] if i["meta"].get("task") in ("explain_seed", "recite")]
+    blocks = dict(ph.blocks(pkg["seed"])[0])
+    answers = []
+    for it in items:
+        b = it["meta"].get("block")
+        rules = "\n".join(blocks[b]) if b else "\n".join(r for rs in blocks.values() for r in rs)
+        answers.append({"id": it["id"], "set": it["set"], "base": "I am not sure what these rules mean.", "base_finish": "stop",
+                        "tuned": "RULES:\n" + rules, "tuned_finish": "stop"})
+    if old_format:
+        fx = json.loads((Path(__file__).resolve().parent / "fixtures" / "kollektiv_principles_1.1.0.json").read_text())
+        prose = {p["id"]: p["text"] for p in fx["principles"]}
+        for it in items:  # the 1.1.0 kit: the block as meta.principle and the historical prose as gold_text
+            if it["meta"].get("block"):
+                it["meta"]["principle"] = it["meta"].pop("block")
+                it["gold_text"] = prose[it["meta"]["principle"]]
+            else:
+                it["gold_text"] = "\n".join(f"{k}: {t}" for k, t in prose.items())
+        (d / "eval" / "eval.jsonl").write_text("".join(json.dumps(i) + "\n" for i in items))
+        (d / "eval" / "answers.jsonl").write_text("".join(json.dumps(a) + "\n" for a in answers))
+        (d / "run.json").write_text(json.dumps({"package": "kollektiv", "package_version": "1.1.0", "package_hash": "8d21" + "0" * 60}))
+    else:
+        ph.write(pkg, str(d / "philosophy"))
+        (d / "eval" / "philosophy.jsonl").write_text("".join(json.dumps(i) + "\n" for i in items))
+        (d / "eval" / "philosophy_answers.jsonl").write_text("".join(json.dumps(a) + "\n" for a in answers))
+        (d / "run.json").write_text(json.dumps({"philosophy": {"hash": ph.package_hash(pkg)}}))
+    return pkg, items
+
+
+def _fake_back_translator(pkg):
+    """An OpenAI-compatible fake: prose holding 'RULES:' comes back as exactly those rules; the frozen 1.1.0 prose of P1 comes back as
+    the whole seed (a control that runs); anything else as rules clingo refuses (a back-translation that does not run)."""
+    import http.server
+    import threading
+    from clingo_object import philosophy as ph
+    calls = []
+    whole = "\n".join(r for _b, rs in ph.blocks(pkg["seed"])[0] for r in rs)
+
+    class Fake(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            calls.append(body)
+            prose = body["messages"][0]["content"].split("Description:\n", 1)[1].split("\n\nReply with the rules only", 1)[0]
+            if "RULES:" in prose:
+                content = prose.split("RULES:\n", 1)[1]
+            elif "Evidence a member gives about its own statement does not count" in prose and "P2" in prose:
+                content = whole
+            else:
+                content = "value(S <= unclear"
+            out = json.dumps({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(out.encode())
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, calls
+
+
+def test_the_kit_scores_prose_answers_by_the_round_trip(tmp_path):
+    """phil_roundtrip.py: each prose answer is back-translated by an independent endpoint and judged by the seed's verdicts on package
+    and random worlds; a control stands beside it; a blind reading aid keeps the models apart from the reader. A fake server only."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    pytest.importorskip("clingo")
+    d = tmp_path / "kit"
+    pkg, items = _roundtrip_kit(d)
+    srv, calls = _fake_back_translator(pkg)
+    fixture = Path(__file__).resolve().parent / "fixtures" / "kollektiv_principles_1.1.0.json"
+    url = f"http://127.0.0.1:{srv.server_address[1]}/v1"
+    run = lambda *extra: subprocess.run([sys.executable, "phil_roundtrip.py", "--judge-url", url, "--judge-model", "fake", "--random", "5",
+                                         "--control", str(fixture), *extra], cwd=d, capture_output=True, text=True, timeout=300)
+    try:
+        p = run()
+        assert p.returncode == 0, p.stderr[-2000:]
+        assert all("max_tokens" not in c and c["chat_template_kwargs"] == {"enable_thinking": False} for c in calls)
+        out = json.loads((d / "eval" / "philosophy_roundtrip.json").read_text())
+        worlds = len(pkg["worlds"]) + 5
+        tuned, base = out["sets"]["explain_seed_part"]["tuned"], out["sets"]["explain_seed_part"]["base"]
+        assert tuned["items"] == 7 and tuned["ran"] == 7 and tuned["exact"] == 7 and tuned["agreement_mean"] == 1.0
+        assert base["ran"] == 0 and base["agreement_mean"] == 0.0 and all(v.endswith("(did not run)") for v in base["per_item"].values())
+        assert out["sets"]["explain_seed"]["tuned"]["per_item"]["explain_seed:all"] == f"{worlds}/{worlds}"
+        assert out["sets"]["recite"]["tuned"]["exact"] == out["sets"]["recite"]["tuned"]["items"]
+        assert out["control"]["whole"]["agreement"] == 1.0 and set(out["control"]["blocks"]) == {f"P{i}" for i in range(1, 8)}
+        assert out["back_translator"] == "fake" and out["worlds"] == {"package": len(pkg["worlds"]), "random": 5, "rnd_seed": 77}
+        rows = [json.loads(x) for x in (d / "eval" / "philosophy_roundtrip.jsonl").read_text().splitlines()]
+        failed = next(r for r in rows if r["who"] == "base")
+        assert failed["ran"] is False and failed["repair_rounds"] == 4 and failed["reason"]  # four rounds, then named as not run
+        blind = (d / "eval" / "philosophy_blind.md").read_text()
+        key = json.loads((d / "eval" / "philosophy_blind_key.json").read_text())
+        assert "tuned" not in blind and "base" not in blind.lower().replace("based", "")
+        assert "counts(S, P, O) <= line(S, P, O, I) & author(S, A) & (I != A)" in blind and len(key) == 8
+        assert all(sorted(v.values()) == ["base", "tuned"] for v in key.values())
+        n = len(calls)
+        assert run().returncode == 0 and len(calls) == n  # resumable: answers and control are kept, nothing is asked again
+    finally:
+        srv.shutdown()
+
+
+def test_the_round_trip_reads_a_run_6_kit(tmp_path):
+    import subprocess
+    import sys
+    pytest.importorskip("clingo")
+    d = tmp_path / "kit6"
+    pkg, _items = _roundtrip_kit(d, old_format=True)
+    srv, _calls = _fake_back_translator(pkg)
+    url = f"http://127.0.0.1:{srv.server_address[1]}/v1"
+    try:
+        p = subprocess.run([sys.executable, "phil_roundtrip.py", "--judge-url", url, "--random", "0"], cwd=d, capture_output=True, text=True)
+        assert p.returncode != 0 and "--package kollektiv" in p.stderr + p.stdout
+        p = subprocess.run([sys.executable, "phil_roundtrip.py", "--judge-url", url, "--random", "0", "--package", "kollektiv", "--who", "tuned"],
+                           cwd=d, capture_output=True, text=True, timeout=300)
+        assert p.returncode == 0, p.stderr[-2000:]
+        out = json.loads((d / "eval" / "philosophy_roundtrip.json").read_text())
+        assert out["hash_mismatch"] is True and out["kit_hash"].startswith("8d21") and "base" not in out["sets"]["explain_seed_part"]
+        assert out["sets"]["explain_seed_part"]["tuned"]["exact"] == 7  # the block comes from meta.principle in the old format
+        assert out["control"]["source"] == "gold_text of the items"
+    finally:
+        srv.shutdown()

@@ -146,6 +146,7 @@ python train.py --stage philosophy --fp32                     # the seed, contin
 python train.py --stage grpo --fp32                           # the seed as reward, continues out/philosophy
 python phil_answers.py --adapter out/grpo --fp32              # base and tuned answers to eval/philosophy.jsonl, resumable
 python phil_score.py                                          # eval/philosophy_score.json
+python phil_roundtrip.py --judge-url U --judge-model M --control kollektiv_principles_1.1.0.json   # prose sets by round trip
 ```
 Run `--tokenizer-only`, then `--preflight` for each stage first. `--from-adapter` or `--from-base` overrides a stage's parent.
 
@@ -159,6 +160,7 @@ missing fields are named.
 | `split/grpo.train.jsonl` | GRPO prompts with the seed's verdict (below) |
 | `eval/philosophy.jsonl` | judge on training phrasings and on held-out phrasings, held-out pressure, held-out formalize, the package worlds, explain the seed (whole and per block), recite, the held-out language; judge items whose world occurs in training are dropped and counted |
 | `phil_answers.py`, `phil_score.py` | answers and the score: world_exact, every answer value, duties_exact, invented certainty, facts_exact for formalize, budget cuts |
+| `phil_roundtrip.py` | the prose sets (explain the seed whole and per block, recite) of base and tuned scored by the round trip: an independent back-translator (`--judge-url/--judge-model`, preferably another model family) writes clingo-object from each answer with up to 4 repair rounds; per answer the agreement of the rebuilt seed with the seed's answers and duties on the package worlds plus `--random N` worlds, the repair rounds, and whether it ran at all. A control prose (`--control FILE`, or the items' `gold_text` in a 1.1.0 kit) is back-translated alike and reported beside every number. Writes `eval/philosophy_roundtrip.{jsonl,json}` (resumable) and a blind reading aid `eval/philosophy_blind.md` with its key in `eval/philosophy_blind_key.json`. Also reads a run-6 kit (`eval/eval.jsonl`, `eval/answers.jsonl`, `--package kollektiv`) |
 | `philosophy/` | the checked package; its hash is in `run.json` → `philosophy` with the counts and file hashes |
 
 **No principle prose in training.** The user decided that only the clingo seed is stored and that prose is a translation of it. So:

@@ -24,7 +24,7 @@ from pathlib import Path
 from . import __version__
 from . import memory as g
 
-GUIDE_VERSION = "2026-11-15c"
+GUIDE_VERSION = "2026-11-15d"
 TEST_SHARE = 0.15
 STRATIFY_MIN = 5  # a stage with at least this many groups always gets held-out groups
 
@@ -93,7 +93,8 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
    A philosophy: `vi-mcp finetune kit DIR --philosophy NAME` also writes the seed path, in the order "first clingo, then the seed":
    `--stage language` (clingo-object both ways, from the base), `--stage philosophy` (the seed's judge, formalize and pressure examples,
    half with the seed's rules shown; no principle prose anywhere), `--stage grpo` (the seed as reward, continues out/philosophy), and
-   eval/philosophy.jsonl with `phil_answers.py` and `phil_score.py` (world_exact, values, duties, invented certainty). The GRPO stage re-solves every
+   eval/philosophy.jsonl with `phil_answers.py` and `phil_score.py` (world_exact, values, duties, invented certainty) and
+   `phil_roundtrip.py` (the prose answers by round trip: --judge-url/--judge-model, --control FILE). The GRPO stage re-solves every
    gold verdict with the bundled seed and refuses a changed package hash. The reward is +1 for a right value with its reasons and
    −1 for invented certainty; the explicit "I cannot formalize this situation." gives 0; unparseable or cut output gives −1. There is
    no length term. The generation budget is a local resource bound (twice the longest gold verdict), named in the report.
@@ -845,7 +846,7 @@ PHIL_SCORE_PY = r'''"""Score base and tuned answers (eval/philosophy_answers.jso
 The gold is the solver's verdict stored with each item; the package is the kit's philosophy/ (the one whose hash run.json names).
 Judge sets: world_exact (every answer and the duties exactly the seed's), each answer predicate right/total, duties_exact,
 invented_certainty (a firm value where the seed has a weaker one or none, over those statements), budget_cut. formalize: facts_exact.
-explain_seed, recite and language are prose: listed for a judge or the round trip, not scored here.
+explain_seed, recite and language are prose: not scored here — phil_roundtrip.py scores the prose sets by the round trip.
     python phil_score.py   -> eval/philosophy_score.json
 """
 import collections, json
@@ -903,7 +904,7 @@ for st, whos in res.items():
         row = {"items": n, "budget_cut": c["budget_cut"]}
         task = next(it["meta"].get("task") for it in items.values() if it["set"] == st)
         if task in ("explain_seed", "recite", "explain_rules", "write_rules"):
-            row["scored"] = "prose: judge or round trip"
+            row["scored"] = "prose: by round trip, phil_roundtrip.py"
         elif task == "formalize":
             row["facts_exact"] = f"{c['facts_exact']}/{n}"
         else:
@@ -915,6 +916,181 @@ for st, whos in res.items():
         out["sets"][st][who] = row
 json.dump(out, open("eval/philosophy_score.json", "w"), indent=1)
 print(json.dumps(out, indent=1))
+'''
+
+
+PHIL_ROUNDTRIP_PY = r'''"""Score the PROSE answers of base and tuned (explain_seed, explain_seed_part, recite) by the round trip.
+
+Prose is a translation of the seed and counts only as far as it rebuilds it: an independent back-translator (an OpenAI-compatible
+endpoint, preferably another model family than the trained one) writes clingo-object from each answer, with up to 4 repair rounds fed
+with clingo's messages (clingo_object/philosophy_explain.py, bundled). Agreement is the share of worlds where the rebuilt seed gives the
+seed's answers AND duties: every package world plus --random worlds from the package's generator. For a block item only that block is
+rebuilt; the other blocks stay the seed's. A rebuilt seed that does not run agrees with nothing and is reported as not run.
+The control, back-translated by the same model, stands beside every number: --control FILE (a frozen prose, e.g. the JSON of
+tests/fixtures/kollektiv_principles_1.1.0.json, or plain text), else the items' gold_text (kits of the 1.1.0 format carry the
+historical prose there). Without a control, a low number may be the back-translator's limit, not the model's.
+Also writes a blind reading aid: per explain item the answers of both models in a random order, next to the seed's rules, with the
+key in a separate file. Works on this kit (eval/philosophy.jsonl, eval/philosophy_answers.jsonl, philosophy/) and on a run-6 kit
+(eval/eval.jsonl, eval/answers.jsonl, no philosophy/ directory: name the package with --package).
+    python phil_roundtrip.py --judge-url URL [--judge-model M] [--random 50] [--control FILE] [--package NAME|DIR] [--who tuned,base]
+    -> eval/philosophy_roundtrip.jsonl (per answer, resumable), eval/philosophy_roundtrip.json, eval/philosophy_blind.md, eval/philosophy_blind_key.json
+"""
+import argparse, collections, json, random, sys, time
+from pathlib import Path
+from clingo_object import philosophy as ph, philosophy_explain as pe
+
+a = argparse.ArgumentParser()
+a.add_argument("--judge-url", required=True, help="back-translator: OpenAI-compatible endpoint (…/v1)")
+a.add_argument("--judge-model")
+a.add_argument("--random", type=int, default=50, help="random worlds from the package's generator besides its own worlds")
+a.add_argument("--rnd-seed", type=int, default=77)
+a.add_argument("--control", help="a reference prose: the JSON of a frozen prose (principles: [{id, title, text}]) or plain text")
+a.add_argument("--package", help="built-in name or package directory (default: this kit's philosophy/)")
+a.add_argument("--items")
+a.add_argument("--answers")
+a.add_argument("--who", default="tuned,base")
+a.add_argument("--out", default="eval/philosophy_roundtrip")
+a.add_argument("--no-proxy", action="store_true")
+o = a.parse_args()
+
+
+def first(*names):
+    return next((x for x in names if Path(x).exists()), None)
+
+
+items_f = o.items or first("eval/philosophy.jsonl", "eval/eval.jsonl")
+answers_f = o.answers or first("eval/philosophy_answers.jsonl", "eval/answers.jsonl")
+if not items_f or not answers_f:
+    raise SystemExit("no evaluation items or answers found (eval/philosophy.jsonl + eval/philosophy_answers.jsonl, or eval/eval.jsonl + eval/answers.jsonl)")
+run = json.load(open("run.json")) if Path("run.json").exists() else {}
+kit_hash = (run.get("philosophy") or {}).get("hash") or run.get("package_hash")
+if o.package:
+    pkg = ph.load(o.package)
+elif Path("philosophy/philosophy.json").exists():
+    pkg = ph.load("philosophy")
+    if kit_hash and ph.package_hash(pkg) != kit_hash:
+        raise SystemExit("philosophy/ differs from the hash in run.json — not the seed this kit was built for")
+else:
+    raise SystemExit("no philosophy/ in this kit — name the package: --package kollektiv (a run-6 kit was built for kollektiv 1.1.0)")
+mismatch = bool(kit_hash) and kit_hash != ph.package_hash(pkg)
+if mismatch:
+    print(f"note: the kit was built for hash {kit_hash[:16]}…, scored against {pkg['name']} {pkg['version']} {ph.package_hash(pkg)[:16]}…", file=sys.stderr)
+whos = [w for w in o.who.split(",") if w]
+items = {json.loads(l)["id"]: json.loads(l) for l in open(items_f) if l.strip()}
+prose_items = {i: it for i, it in items.items() if (it.get("meta") or {}).get("task") in ("explain_seed", "recite")}
+answers = {json.loads(l)["id"]: json.loads(l) for l in open(answers_f) if l.strip()}
+
+
+def block_of(it):
+    m = it.get("meta") or {}
+    return m.get("block") or m.get("principle")
+
+
+blocks = dict(ph.blocks(pkg["seed"])[0])
+judge = pe.chat_client(o.judge_url, o.judge_model, proxy=not o.no_proxy)
+facts = pe.worlds(pkg, o.random, o.rnd_seed)
+gold = [pe.verdict(pkg, f) for f in facts]
+
+
+def measure(text, block):
+    if not (text or "").strip():
+        return {"ran": False, "reason": "empty answer", "agreement": 0.0, "same": 0, "worlds": len(facts), "repair_rounds": 0}
+    if block and block not in blocks:
+        return {"ran": False, "reason": f"block {block} is not in the seed", "agreement": 0.0, "same": 0, "worlds": len(facts), "repair_rounds": 0}
+    bt = pe.back_translate(pkg, text, judge, block=block)
+    full = pe._with_block(pkg, block, bt["seed"]) if block else bt["seed"]
+    ag = pe.agreement(pkg, full, facts, gold)
+    ran = not bt.get("failed") and "error" not in ag
+    return {"ran": ran, **({"reason": (ag.get("error") or (bt["errors"] or ["no valid rules after the repair rounds"])[-1])[:300]} if not ran else {}),
+            "agreement": ag["agreement"] if ran else 0.0, "same": ag["same"] if ran else 0, "worlds": len(facts),
+            "repair_rounds": bt["rounds"], "errors": bt["errors"][:3], "rebuilt": bt["seed"]}
+
+
+# the control: one whole prose and, where the reference has them, one prose per block
+control_whole, control_blocks = None, {}
+if o.control:
+    raw = Path(o.control).read_text(encoding="utf-8")
+    try:
+        fx = json.loads(raw)
+        control_blocks = {p["id"]: p["text"] for p in fx["principles"]}
+        control_whole = "\n".join(f"{p['id']} {p.get('title', '')}: {p['text']}" for p in fx["principles"])
+    except (ValueError, KeyError, TypeError):
+        control_whole = raw
+else:
+    for it in prose_items.values():
+        if it.get("gold_text"):
+            if block_of(it):
+                control_blocks[block_of(it)] = it["gold_text"]
+            elif control_whole is None:
+                control_whole = it["gold_text"]
+t0 = time.time()
+out_rows = Path(o.out + ".jsonl")
+earlier = [json.loads(l) for l in out_rows.read_text().splitlines() if l.strip()] if out_rows.exists() else []
+done = {(r["id"], r["who"]) for r in earlier}
+f = open(out_rows, "a")
+
+
+def control_row(cid, text, block):
+    """The control is measured once and kept like an answer (resumable): who = control."""
+    old = next((r for r in earlier if r["id"] == cid and r["who"] == "control"), None)
+    if old is not None:
+        return old
+    r = {"id": cid, "set": "control", "who": "control", "block": block, **measure(text, block)}
+    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    f.flush()
+    return r
+
+
+control = {"source": o.control or ("gold_text of the items" if control_whole or control_blocks else None)}
+if control_whole:
+    control["whole"] = control_row("control:whole", control_whole, None)
+needed = {block_of(it) for it in prose_items.values() if block_of(it)}
+control["blocks"] = {b: control_row(f"control:{b}", t, b) for b, t in sorted(control_blocks.items()) if b in needed}
+todo = [(i, w) for i in sorted(prose_items) for w in whos if i in answers and (i, w) not in done]
+for k, (i, w) in enumerate(todo):
+    it, ans = prose_items[i], answers[i]
+    r = {"id": i, "set": it["set"], "who": w, "block": block_of(it), "finish": ans.get(f"{w}_finish"), **measure(ans.get(w), block_of(it))}
+    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    f.flush()
+    print(f"{k + 1}/{len(todo)} {i} {w}: {'ran' if r['ran'] else 'did not run'} {r['same']}/{r['worlds']} ({round(time.time() - t0)} s)", flush=True)
+f.close()
+rows = [r for r in (json.loads(l) for l in out_rows.read_text().splitlines() if l.strip()) if r["who"] != "control"]
+summary = {"package": pkg["name"], "version": pkg["version"], "hash": ph.package_hash(pkg), "kit_hash": kit_hash, "hash_mismatch": mismatch,
+           "back_translator": o.judge_model or "model at the judge URL", "worlds": {"package": len(pkg["worlds"]), "random": len(facts) - len(pkg["worlds"]),
+           "rnd_seed": o.rnd_seed}, "missing_answers": sorted(i for i in prose_items if i not in answers), "control": control, "sets": {}}
+by = collections.defaultdict(list)
+for r in rows:
+    by[(r["set"], r["who"])].append(r)
+for (st, w), rs in sorted(by.items()):
+    ran = [r for r in rs if r["ran"]]
+    summary["sets"].setdefault(st, {})[w] = {
+        "items": len(rs), "ran": len(ran), "budget_cut": sum(r.get("finish") not in (None, "stop") for r in rs),
+        "agreement_mean": round(sum(r["agreement"] for r in rs) / len(rs), 3),
+        "agreement_mean_of_ran": round(sum(r["agreement"] for r in ran) / len(ran), 3) if ran else None,
+        "exact": sum(r["agreement"] == 1.0 for r in rs),
+        "per_item": {r["id"]: f"{r['same']}/{r['worlds']}" + ("" if r["ran"] else " (did not run)") for r in rs}}
+Path(o.out + ".json").write_text(json.dumps(summary, indent=1, ensure_ascii=False) + "\n")
+# the blind reading aid: per explain item both models' prose, in a random order, next to the seed's rules
+lines, key = ["# Blind reading: model prose next to the seed's rules", "",
+              "Which model wrote which text is in philosophy_blind_key.json — open it only after reading. Judge whether each text says "
+              "what the rules say: every condition and exception, nothing added.", ""], {}
+code = pe.ph.blocks(pkg["seed"])[0]
+for i in sorted(prose_items):
+    it = prose_items[i]
+    if it["meta"].get("task") != "explain_seed" or i not in answers:
+        continue
+    b = block_of(it)
+    rules = "\n".join(blocks.get(b, [])) if b else "\n".join(f"# {x}\n" + "\n".join(r) for x, r in code)
+    order = [w for w in whos if answers[i].get(w)]
+    random.Random(i).shuffle(order)
+    lines += [f"## {i}", "", "Rules:", "", "```", rules, "```", ""]
+    for n, w in enumerate(order, 1):
+        lines += [f"### Text {n}", "", answers[i][w], ""]
+    key[i] = {f"Text {n}": w for n, w in enumerate(order, 1)}
+Path("eval/philosophy_blind.md").write_text("\n".join(lines) + "\n")
+Path("eval/philosophy_blind_key.json").write_text(json.dumps(key, indent=1) + "\n")
+print(json.dumps({k: v for k, v in summary.items() if k != "control"} | {"control": {"whole": (control.get("whole") or {}).get("agreement"),
+      "blocks": {b: x["agreement"] for b, x in control["blocks"].items()}}}, indent=1, ensure_ascii=False))
 '''
 
 
@@ -930,7 +1106,7 @@ def philosophy_stage(d: Path, name: str, prompts: int = PHILOSOPHY_PROMPTS, seed
       philosophy split/philosophy.{train,test}.jsonl — the seed's judge, formalize and pressure examples; half of the judge and
                  pressure prompts show the seed's rules (without comment lines); no principle prose anywhere
       grpo       split/grpo.train.jsonl — the seed as reward
-      eval       eval/philosophy.jsonl with phil_answers.py and phil_score.py
+      eval       eval/philosophy.jsonl with phil_answers.py, phil_score.py and phil_roundtrip.py
     Order (the user, 15.11.2026: "first teach the AI clingo, then the seed"): --stage language (from the base), --stage philosophy
     (continues out/language), --stage grpo (continues out/philosophy). The checked package goes to philosophy/, its hash to run.json."""
     from clingo_object import clingo_prose as cp
@@ -973,6 +1149,7 @@ def philosophy_stage(d: Path, name: str, prompts: int = PHILOSOPHY_PROMPTS, seed
                reward_version=pool["reward_version"], grpo_train_sha256=_rows(split / "grpo.train.jsonl", pool["rows"]))
     _write(d / "phil_answers.py", PHIL_ANSWERS_PY, 0o700)
     _write(d / "phil_score.py", PHIL_SCORE_PY, 0o700)
+    _write(d / "phil_roundtrip.py", PHIL_ROUNDTRIP_PY, 0o700)
     return out
 
 
@@ -1035,7 +1212,7 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
            "kit_code_sha256": {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "heldout_loss.py",
                                          d / "synth_qa.py", d / "qa_pairs.py", d / "probe.py",
-                                         *[x for x in (d / "phil_answers.py", d / "phil_score.py") if x.exists()],
+                                         *[x for x in (d / "phil_answers.py", d / "phil_score.py", d / "phil_roundtrip.py") if x.exists()],
                                          d / "evaluation_core.py", *sorted(core.glob("*.py"))]}}
     _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
     return {"verzeichnis": str(d), **run, "eval_fragen": len(questions)}
