@@ -19,6 +19,12 @@ Linked from [README.md](README.md).
     both occur. If any verdict is missing, nothing is stored and the object is retried.
   - The server (`classify.make_pairs`) and the kit (`synth_qa.py`, in its parallel workers) share this definition.
   Evidence: `tests/test_finetune.py::test_qa_v4_english_pairs_are_grounded_by_names_and_a_model_check_that_may_only_reject`.
+  **Measured** with qwen27b as the classify model on 20 objects of a production copy, 15.11.2026:
+  - 20 of 20 objects get pairs: 57 pairs and 20 probes. qa-v3 gave 23 pairs on 15 of 20 objects.
+  - The fixed rule rejected 6 pairs.
+  - Pairs with a swapped name: the model check rejected 20 of 20, and so does the fixed rule.
+  - **Reversed statements** ("is" → "is not"): the fixed rule passed all 20, the model check rejected 20 of 20.
+  - The true pairs in both tests: kept 20 of 20.
 - **Code structure as facts, and architecture rules over them.** `vi-mcp index import-code` now also derives the structure of every
   Python file from the same `ast` pass: what it defines, calls, imports, writes (SQL INSERT/UPDATE/DELETE per table), raises, which
   tests call it, and which commits last touched it (git blame). It stores these as fact objects next to the code pieces (`code:funktion`,
