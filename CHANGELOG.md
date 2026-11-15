@@ -28,6 +28,10 @@ Linked from [README.md](README.md).
   Evidence: `~/.cache/vi-mcp/hook/hook.log` showed `vi_context: JSONDecodeError: Expecting value: line 1 column 1 (char 0)` three
   times in one evening; `tests/test_hook.py::test_vi_context_answer_is_plain_text_and_logs_no_error` against a real server fails
   without the fix and passes with it.
+- **`vi_learn(importance=0)` stored importance 1.** `int(args.get("importance") or 1)` turns an explicit 0 into the default,
+  although the schema allows 0–3. Now only a missing value falls back to 1 (three places in `tools.py`).
+  Evidence: `tests/test_dedup.py::test_importance_zero_is_kept` fails without the fix and passes with it; seen live when 378
+  history entries sent with importance 0 all landed with `wichtigkeit = 1`.
 - **`deploy/install.sh` says when scikit-learn is missing** — without it the router never trains and hints stay in heuristic
   order; the note names the package for Debian, Arch and Fedora.
 

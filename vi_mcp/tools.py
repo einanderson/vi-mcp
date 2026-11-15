@@ -1350,7 +1350,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 data.update(bild=ref, **({"regionen": regs} if regs else {}))
                 tags = tags + [t for t in images.concept_tags(regs) if t not in tags]
             if instance == config.OPEN:
-                return _proposal(text, tags, data, int(args.get("importance") or 1))
+                return _proposal(text, tags, data, int(args["importance"] if args.get("importance") is not None else 1))
             if args.get("visibility") not in (None, "geteilt", "intern"):
                 raise ValueError("visibility must be shared or internal")
             key = (args.get("key") or "").strip()[:500]
@@ -1360,7 +1360,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             if prev and args.get("visibility") and args["visibility"] != prev.visibility:
                 raise ValueError(f"key {key!r} belongs to {prev.id} with visibility {prev.visibility}; the visibility of a recurring finding does not change")
             if prev:
-                o = g.repeat(prev, text, tags, data, int(args.get("importance") or 1), who=f"ki@{instance}")
+                o = g.repeat(prev, text, tags, data, int(args["importance"] if args.get("importance") is not None else 1), who=f"ki@{instance}")
             else:
                 from . import indexes  # 0.61.0: explicit index, else the project the hook sent, else the session's (or global)
                 idx = indexes.normalize(args.get("index")) or (indexes.from_project(args["project"]) if args.get("project") else None)
@@ -1374,7 +1374,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 o = g.new_object("bild" if data.get("bild") else "erkenntnis", text,
                                  tags + (["pruefer:ausstehend", "modus:quarantaene"] if held else []),
                                  {**data, **({"key": key, "repeats": 1} if key else {}), **extra},
-                                 importance=int(args.get("importance") or 1), who=f"ki@{instance}", reason="vi_learn",
+                                 importance=int(args["importance"] if args.get("importance") is not None else 1), who=f"ki@{instance}", reason="vi_learn",
                                  visibility=args.get("visibility"), instance=instance, index=idx, mode="quarantaene" if held else "aktiv")
                 if held:
                     return (f"held {o.id} in quarantine — fixed rules found: {'; '.join(held)[:300]}. It is shown to nobody until another "

@@ -83,3 +83,11 @@ def test_merge_by_key_merges_repetitions_and_keeps_every_state(gd):
     assert {x.id for _, x, _g in g.recall("host:www2", viewer=None)} == {ids[0], foreign}
     # afterwards the key continues the main object
     assert _learn("cs", "Known error (relevance 3, 90 repeats): www2: new series", key="host:www2 threat:rce", tags=("host:www2",)).startswith(f"updated {ids[0]}")
+
+
+def test_importance_zero_is_kept(gd):
+    # the schema allows importance 0–3 (default 1); `int(args.get("importance") or 1)` turned an explicit 0 into 1
+    oid = _learn("cs", "Background note: kept on purpose with the lowest weight", importance=0).split()[1]
+    assert g.load(oid).importance == 0
+    oid = _learn("cs", "Default note: no importance given stays at the default").split()[1]
+    assert g.load(oid).importance == 1
