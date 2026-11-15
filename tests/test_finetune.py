@@ -84,7 +84,8 @@ def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo
             n = doc.split("db", 1)[1][0]
             more = [{"question": f"At what time is db{n}.example backed up each night?", "answer": f"At 02:00 with borg."}] \
                 if "up to 5 questions" in body["messages"][0]["content"] else []
-            pairs = more + [{"question": f"When does the backup of db{n}.example run?", "answer": f"At 02:00 with borg to /srv/backup/db{n}."},
+            pairs = more + [{"answer": "a pair without a question is rejected, never a crash"},
+                            {"question": f"When does the backup of db{n}.example run?", "answer": f"At 02:00 with borg to /srv/backup/db{n}."},
                      {"question": f"What does the document say about db{n}?", "answer": f"The backup of db{n}.example runs at 02:00."},
                      {"question": f"Who owns db{n}.example in the finance team?", "answer": "Alice Example from finance owns it since 2019."}]
             out = json.dumps({"choices": [{"message": {"content": "```json\n" + json.dumps({"pairs": pairs}) + "\n```"}, "finish_reason": "stop"}]})
@@ -110,7 +111,7 @@ def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo
         assert all(r["messages"][0]["content"].startswith("When does the backup") for r in synth)  # meta and ungrounded pairs dropped
         assert all(r["messages"][1]["content"].endswith(f"Source: https://wiki.example/{r['messages'][1]['content'].split('/srv/backup/')[1][:3]}") for r in synth)
         report = json.loads((d / "synth_report.json").read_text())
-        assert report["pairs"] == 6 and report["rejected"] == {"refers to the document instead of its subject": 6, "not grounded in the document": 6}
+        assert report["pairs"] == 6 and report["rejected"] == {"refers to the document instead of its subject": 6, "not grounded in the document": 6, "length": 6}
         assert run().returncode == 0 and len(calls) == 6  # resumable: done documents are not asked again
         # --more asks chosen documents again for further, varied pairs; --hold-out keeps evaluation probes out of training
         ids = sorted(json.loads(x)["meta"]["id"] for x in (d / "dataset/documents.jsonl").read_text().splitlines())

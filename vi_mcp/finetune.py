@@ -342,7 +342,7 @@ def main():
                     why = check(p, d["document"]) if isinstance(p, dict) else "format"
                     if not why and any(jaccard(p["question"], h) >= 0.5 for h in held.get(d["meta"]["id"], [])):
                         why = "too close to a held-out evaluation question"
-                    key = " ".join(sorted(words(p["question"]))) if isinstance(p, dict) else ""
+                    key = " ".join(sorted(words(str(p.get("question") or "")))) if isinstance(p, dict) else ""
                     if not why and key in asked.setdefault(d["meta"]["id"], set()):
                         why = "duplicate question"
                     if why:
