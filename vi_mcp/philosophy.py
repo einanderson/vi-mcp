@@ -29,16 +29,72 @@ def check_lines(r: dict) -> list[str]:
     return out
 
 
-def show_lines(pkg: dict) -> list[str]:
+def show_lines(pkg: dict, translation: dict | None = None) -> list[str]:
+    """The stored package — seed, vocabulary, answers — and, if one exists, the latest DERIVED translation with its agreement."""
+    bl, _problems = ph.blocks(pkg["seed"])
     out = [f"Philosophy {pkg['name']} {pkg['version']} — {pkg.get('description', '')}", f"Author: {pkg['author']} · profile "
-           f"{pkg['profile'].get('semantics')} · priority {pkg['profile'].get('priority', 'none')} · hash {ph.package_hash(pkg)[:16]}…", "", "Principles:"]
-    out += [f"  {p['id']} {p.get('title', '')}: {p['text']}" for p in ph.principles(pkg)]
+           f"{pkg['profile'].get('semantics')} · priority {pkg['profile'].get('priority', 'none')} · hash {ph.package_hash(pkg)[:16]}…",
+           "Only the seed is stored; prose is a translation checked by its round trip (vi-mcp philosophy explain).",
+           "Blocks: " + ", ".join(f"{b} ({len(r)} rule{'s' if len(r) != 1 else ''})" for b, r in bl)]
     out += ["", "Inputs the world gives:"] + [f"  {k}/{v['arity']}: {v.get('doc', '')}" for k, v in ph.vocabulary(pkg).items() if v["kind"] == "input"]
     iface = [f"  {k}/{v['arity']}: {v.get('doc', '')}" for k, v in ph.vocabulary(pkg).items() if v["kind"] == "interface"]
     out += (["", "Read by the priority profile (given by the world or derived by the seed from evidence):"] + iface) if iface else []
     out += ["", "Answers:"] + [f"  {k}: {', '.join(v['values'])}" for k, v in pkg["answers"].items()]
     out += ["", "Seed (clingo-object notation):", pkg["seed"]]
+    out += [""] + translation_lines(pkg, translation)
     return out
+
+
+def translation_lines(pkg: dict, t: dict | None) -> list[str]:
+    if not t:
+        return ["Translation: none stored (vi-mcp philosophy explain NAME … --store makes one; it is derived, never a source)."]
+    stale = t.get("seed_hash") != ph.package_hash(pkg)
+    head = (f"DERIVED translation ({'STALE — made for hash ' + t.get('seed_hash', '?')[:16] + '…, the seed changed since' if stale else 'current'}): "
+            f"translator {t.get('translator') or '?'}, back-translator {t.get('back_translator') or '?'}, {t.get('time', '?')}; whole seed "
+            f"{t['whole']['same']}/{t['whole']['worlds']} worlds agree ({t['whole']['agreement']:.0%})"
+            + (f", control {t['control']['agreement']:.0%}" if t.get("control") else ", no control"))
+    out = [head, t["whole"]["prose"]]
+    for b, x in (t.get("blocks") or {}).items():
+        out.append(f"  {b} ({x['agreement']:.0%} of {x['worlds']} worlds): {x['prose']}")
+    return out
+
+
+def stored_translation(name: str) -> dict | None:
+    """The newest derived translation stored on an installed object of this philosophy (needs the memory)."""
+    for o in _installed_all(name):
+        if o.data.get("uebersetzung"):
+            return o.data["uebersetzung"]
+    return None
+
+
+def explain(ref: str, url: str | None, model: str | None, judge_url: str | None, judge_model: str | None, *, random_n: int = 50,
+            per_block: bool = True, prose: str | None = None, control: str | None = None, proxy: bool = True) -> dict:
+    """The round trip of a philosophy (clingo_object.philosophy_explain): translator prose → independent back-translator → agreement
+    with the original's answers and duties. prose: measure given prose instead (a model's recitation); control: a reference prose."""
+    from clingo_object import philosophy_explain as pe
+    if not judge_url:
+        raise ValueError("explain needs a back-translator (judge_url, judge_model) — without the round trip a translation is unchecked")
+    if prose is None and not url:
+        raise ValueError("explain needs a translator (url, model), or prose to measure")
+    pkg = ph.load(ref)
+    names = {"translator": None if prose is not None else (model or "model at the translator URL"),
+             "back_translator": judge_model or "model at the judge URL"}
+    r = pe.round_trip(pkg, pe.chat_client(url, model, proxy=proxy) if prose is None else None, pe.chat_client(judge_url, judge_model, proxy=proxy),
+                      prose=prose, control=control, per_block=per_block and prose is None, random_n=random_n, names=names)
+    if prose is None and (judge_model or judge_url) == (model or url):
+        r["warning"] = "the same model translated and back-translated — not independent; prefer another model family as judge"
+    return r
+
+
+def store_translation(r: dict, who: str) -> g.MemoryObject:
+    """Store a round-trip report as a DERIVED artifact on the installed object whose hash it was made for — never as a source."""
+    o = next((x for x in _installed_all(r["package"]) if x.data["philosophie"]["hash"] == r["seed_hash"]), None)
+    if o is None:
+        raise ValueError(f"no installed {r['package']} with hash {r['seed_hash'][:16]}… — install it first, then store its translation")
+    o.data = {**o.data, "uebersetzung": r}
+    o.change(f"ki@{who}", "derived translation stored", f"round trip: whole seed {r['whole']['agreement']:.0%} of {r['whole']['worlds']} worlds"
+             + (f", control {r['control']['agreement']:.0%}" if r.get("control") else ""))
+    return g.save(o)
 
 
 def installed() -> list[g.MemoryObject]:
@@ -168,7 +224,7 @@ def binding_lines(rows: list[dict]) -> list[str]:
 
 
 def tool(args: dict, instance: str) -> str:
-    """vi_philosophy: guide (default) · list · show · check · evaluate · install · use · bound."""
+    """vi_philosophy: guide (default) · list · show · check · evaluate · install · use · bound · explain."""
     action = args.get("action") or "guide"
     if action == "guide":
         return ph.GUIDE
@@ -188,7 +244,16 @@ def tool(args: dict, instance: str) -> str:
         raise ValueError(f"{action} needs name — a built-in philosophy ({', '.join(sorted(ph.BUILTIN))}) or a package directory on the server")
     pkg = ph.load(ref)
     if action == "show":
-        return "\n".join(show_lines(pkg))
+        return "\n".join(show_lines(pkg, stored_translation(pkg["name"])))
+    if action == "explain":
+        from clingo_object import philosophy_explain as pe
+        r = explain(ref, args.get("url"), args.get("model"), args.get("judge_url"), args.get("judge_model"),
+                    random_n=int(args.get("random") if args.get("random") is not None else 50), per_block=not args.get("whole_only"),
+                    prose=args.get("prose"), control=args.get("control"))
+        lines = pe.summary_lines(r) + ([f"  ! {r['warning']}"] if r.get("warning") else [])
+        if args.get("store"):
+            lines.append(f"stored as a derived translation on {store_translation(r, instance).id}")
+        return "\n".join(lines + ["", "Prose (derived):", r["whole"]["prose"]])
     if action == "check":
         return "\n".join(check_lines(ph.check(pkg)))
     if action == "evaluate":
@@ -207,9 +272,10 @@ def tool(args: dict, instance: str) -> str:
 
 def main(argv: list[str]) -> int:
     """vi-mcp philosophy guide | list | show REF | check REF | new DIR --name N [--author A] | evaluate REF --facts FILE | install REF
+    | explain REF --url U --model M --judge-url U2 --judge-model M2 [--random N] [--prose F] [--control F] [--store]
     | use NAME --instance I | --index X [--off] | bound --instance I | --index X"""
     import argparse
-    a = argparse.ArgumentParser(prog="vi-mcp philosophy", description="equip an AI with a philosophy: packages of principles, seed and test worlds")
+    a = argparse.ArgumentParser(prog="vi-mcp philosophy", description="equip an AI with a philosophy: packages of a clingo-object seed and test worlds")
     u = a.add_subparsers(dest="cmd", required=True)
     u.add_parser("guide", help="the technique, step by step")
     u.add_parser("list", help="built-in and installed philosophies")
@@ -222,6 +288,19 @@ def main(argv: list[str]) -> int:
     ev = u.add_parser("evaluate", help="the seed's verdict on facts (clingo-object notation)")
     ev.add_argument("ref")
     ev.add_argument("--facts", required=True, help="file with facts")
+    ex = u.add_parser("explain", help="translate the seed into prose and check it by the round trip prose → seed → same verdicts")
+    ex.add_argument("ref")
+    ex.add_argument("--url", help="translator: OpenAI-compatible endpoint (…/v1)")
+    ex.add_argument("--model", help="translator model name")
+    ex.add_argument("--judge-url", required=True, help="independent back-translator endpoint (preferably another model family)")
+    ex.add_argument("--judge-model", help="back-translator model name")
+    ex.add_argument("--random", type=int, default=50, help="random worlds from the package's generator besides its own worlds (default 50)")
+    ex.add_argument("--whole-only", action="store_true", help="only the whole seed, not each block")
+    ex.add_argument("--prose", help="measure this prose (a file, e.g. a model's recitation) instead of translating")
+    ex.add_argument("--control", help="a reference prose (file), back-translated alike and reported beside every number")
+    ex.add_argument("--no-proxy", action="store_true", help="talk to the endpoints without the environment's proxy")
+    ex.add_argument("--json", help="write the full report to this file")
+    ex.add_argument("--store", action="store_true", help="store the report on the installed object of this hash (derived, never a source)")
     ins = u.add_parser("install", help="check and store in the VI as a rule set")
     ins.add_argument("ref")
     ins.add_argument("--visibility", choices=["shared", "internal"], default="internal")
@@ -241,7 +320,26 @@ def main(argv: list[str]) -> int:
         print(f"written {d} — edit philosophy.json, seed.co and worlds.jsonl, then: vi-mcp philosophy check {d}")
         return 0
     if o.cmd == "show":
-        print("\n".join(show_lines(ph.load(o.ref))))
+        print("\n".join(show_lines(ph.load(o.ref))))  # without the memory; vi_philosophy show adds a stored translation
+        return 0
+    if o.cmd == "explain":
+        from pathlib import Path
+        from clingo_object import philosophy_explain as pe
+        read = (lambda f: Path(f).read_text(encoding="utf-8") if f else None)
+        r = explain(o.ref, o.url, o.model, o.judge_url, o.judge_model, random_n=o.random, per_block=not o.whole_only,
+                    prose=read(o.prose), control=read(o.control), proxy=not o.no_proxy)
+        print("\n".join(pe.summary_lines(r) + ([f"  ! {r['warning']}"] if r.get("warning") else [])))
+        if o.json:
+            Path(o.json).write_text(json.dumps(r, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+            print(f"report: {o.json}")
+        if not o.store:
+            return 0
+        from . import config
+        g.open_db(config.load().db)
+        try:
+            print(f"stored as a derived translation on {store_translation(r, 'admin').id}")
+        finally:
+            g.close_db()
         return 0
     if o.cmd == "check":
         r = ph.check(ph.load(o.ref))

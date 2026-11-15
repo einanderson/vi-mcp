@@ -102,8 +102,9 @@ gespeichert: Im Schlaf schreibt der Server geprüfte Frage-Antwort-Paare und ein
 (`vi-mcp classify --pairs`), und `probe.py` im Kit misst danach, ob das Modell das Trainierte gelernt hat. *Gemessen* (15.11.2026,
 Qwen3-0.6B, LoRA): 7 richtig / 9 teilweise von 60 solchen Fragen gegen 0 / 5 beim Grundmodell (blind, p = 0,008).
 
-**Philosophie-Pakete** (0.66.0): eine KI mit einer Philosophie ausstatten — Prinzipien in Prosa und dieselben Prinzipien als
-geprüfter clingo-object-Regelsatz (der Samen) mit Testwelten (`vi-mcp philosophy`, Werkzeug `vi_philosophy`, Anleitung:
+**Philosophie-Pakete** (0.66.0): eine KI mit einer Philosophie ausstatten — ihre Prinzipien als geprüfter clingo-object-Regelsatz
+(der Samen) mit Testwelten. Gespeichert wird nur der Samen; Prosa ist eine Übersetzung, geprüft durch die Rückübersetzung
+(`vi-mcp philosophy explain`). Siehe `vi-mcp philosophy`, Werkzeug `vi_philosophy`, Anleitung:
 [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md), englisch). Das erste Paket, `kollektiv`, legt fest, wann ein Mitglied eines KI-Kollektivs etwas für wahr hält
 und was es tun muss.
 

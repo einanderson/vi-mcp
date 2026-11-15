@@ -43,7 +43,7 @@ STORED_VALUES: dict[str, dict[str, str]] = {
                "inspect": "inspect", "configure": "configure", "context": "context", "loop": "loop", "device": "device", "observe": "observe",
                "plan": "plan", "guide": "guide", "record": "record",  # 0.62.0: vi_finetune — not stored, the same in both languages
                "check": "check", "ask": "ask", "rate": "rate", "save": "save", "objects": "objects", "propose": "propose", "learn": "learn", "answer": "answer",
-               "list": "list", "show": "show", "evaluate": "evaluate", "install": "install", "use": "use", "bound": "bound"},  # 0.66.0: vi_philosophy, likewise  # 0.62.0: vi_logic, likewise (objects 0.63.0)
+               "list": "list", "show": "show", "evaluate": "evaluate", "install": "install", "use": "use", "bound": "bound", "explain": "explain"},  # 0.66.0: vi_philosophy, likewise  # 0.62.0: vi_logic, likewise (objects 0.63.0)
     "visibility": {"shared": "geteilt", "internal": "intern", "private": "privat"},
     "outcome": {"good": "gut", "bad": "schlecht"},
     "format": {"text": "text", "vil": "vil"},  # 0.62.0: vi_recall answer format — not stored, the same in both languages

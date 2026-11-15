@@ -12,7 +12,7 @@ commits that last touched a function are shown as where to look (last_touched_by
 """
 
 SEED = """\
-# P1 Rules and their scope. A finding is a candidate that no exemption excuses; every function of a module with a test is test code.
+# P1
 rule(no_import_cycle)
 rule(locked_writes)
 rule(english_tools)
@@ -27,70 +27,40 @@ has_finding(Q) <= finding(Q, X)
 clean(Q) <= rule(Q) & snapshot(R) & ~has_finding(Q)
 status(Q, violated) <= has_finding(Q)
 status(Q, ok) <= clean(Q)
-# P2 No import cycle: modules must not reach themselves through imports that run at import time.
+# P2
 reaches(A, B) <= imports(A, B) & module(B)
 reaches(A, C) <= reaches(A, B) & imports(B, C) & module(C)
 candidate(no_import_cycle, A) <= reaches(A, A)
 grund(no_import_cycle, A, B) <= candidate(no_import_cycle, A) & imports(A, B) & reaches(B, A)
-# P3 A guarded table is written only while the lock is held — in the function itself or by every caller.
+# P3
 open_write(F, T) <= writes_unlocked(F, T) & guarded(T) & production(F)
 unlocked_caller(F) <= calls(C, F) & snapshot(R) & ~calls_locked(C, F)
 covered(F) <= calls_locked(C, F) & snapshot(R) & ~unlocked_caller(F)
 uncovered(F) <= open_write(F, T) & snapshot(R) & ~covered(F)
 candidate(locked_writes, F) <= uncovered(F)
 grund(locked_writes, F, T) <= open_write(F, T) & uncovered(F)
-# P4 Every tool is registered under its English name, and every alias resolves to a registered tool.
+# P4
 registered(G, N) <= alias_of(A, G) & const_value(G, N)
 dangling(A, E) <= alias_of(A, G) & const_value(A, E) & snapshot(R) & ~registered(G, E)
 candidate(english_tools, E) <= dangling(A, E)
 grund(english_tools, E, A) <= dangling(A, E)
 candidate(english_tools, N) <= alias_of(A, G) & const_key(A, N) & const_value(G, N)
 grund(english_tools, N, G) <= alias_of(A, G) & const_key(A, N) & const_value(G, N)
-# P5 One meaning, one place: the same function body in two production modules is a duplicate.
+# P5
 same_body(F, G) <= body(F, H) & body(G, H) & in_module(F, M) & in_module(G, N) & (M != N) & production(F) & production(G)
 candidate(no_duplicates, F) <= same_body(F, G)
 grund(no_duplicates, F, G) <= same_body(F, G)
-# P6 Sufficient reason and duties: every finding names its reason, must be fixed, and points at the commits that last touched it.
+# P6
 reasoned(Q, X) <= grund(Q, X, W)
 never(finding(Q, X) & ~reasoned(Q, X))
 obligatory(fix(Q, X)) <= finding(Q, X)
 last_touched_by(Q, X, C) <= finding(Q, X) & changed_in(X, C)
-# P7 A function that writes a guarded table is tested directly.
+# P7
 tested_by(F, T) <= calls(T, F) & test(T)
 tested(F) <= tested_by(F, T)
 untested(F) <= writes_table(F, T) & guarded(T) & production(F) & snapshot(R) & ~tested(F)
 obligatory(add_test(F)) <= untested(F)
 """
-
-PRINCIPLES = [
-    {"id": "P1", "title": "Rules, scope and exemptions",
-     "text": "There are four architecture rules. Test code — every function of a module that contains a test — is outside their scope; "
-             "the rest is production code, known only over a complete snapshot of one commit. A candidate becomes a finding unless an "
-             "exemption with a written reason excuses it; an excused candidate stays visible with that reason. A rule is violated when it "
-             "has a finding and holds when a complete snapshot shows none.",
-     "defines": ["rule", "test_module", "production", "excused", "unexcused", "is_excused", "finding", "has_finding", "clean", "status"]},
-    {"id": "P2", "title": "No import cycle",
-     "text": "A module must not reach itself through imports that run when it is loaded. Imports inside functions run later and do not "
-             "count. The reason names the import that starts the cycle.", "defines": ["reaches", "candidate", "grund"]},
-    {"id": "P3", "title": "Guarded tables only under the lock",
-     "text": "A production function that writes a guarded table outside a lock is a finding, unless every function that calls it holds "
-             "the lock at the call. The reason names the table.",
-     "defines": ["open_write", "unlocked_caller", "covered", "uncovered", "candidate", "grund"]},
-    {"id": "P4", "title": "English tool names",
-     "text": "Every alias in an alias table must resolve to a name registered in its registry, and no registered tool may be registered "
-             "under a name that is itself an alias. The reason names the alias table or the registry.",
-     "defines": ["registered", "dangling", "candidate", "grund"]},
-    {"id": "P5", "title": "One meaning, one place",
-     "text": "The same function body in two production modules is a duplicate: one of them should use the other. The reason names the "
-             "other function.", "defines": ["same_body", "candidate", "grund"]},
-    {"id": "P6", "title": "Sufficient reason and duties",
-     "text": "Every finding names its reason; a finding without one is a violation. Every finding must be fixed. The commits that last "
-             "touched the function are where to look — not proof of what caused it.",
-     "defines": ["reasoned", "obligatory", "last_touched_by"]},
-    {"id": "P7", "title": "Writers of guarded tables are tested",
-     "text": "A test tests a function when it calls it directly. A production function that writes a guarded table and has no such test "
-             "must get one.", "defines": ["tested_by", "tested", "untested", "obligatory"]},
-]
 
 _IN = "input"
 VOCABULARY = {
@@ -180,9 +150,9 @@ WORLDS = [
 ]
 
 PACKAGE = {
-    "format": "philosophy-v1", "name": "code", "version": "1.0.0", "author": "vi-mcp",
+    "format": "philosophy-v2", "name": "code", "version": "1.1.0", "author": "vi-mcp",
     "profile": {"semantics": "fde-signed-v1", "closure": "snapshot", "priority": "none"},
-    "principles": PRINCIPLES, "vocabulary": VOCABULARY,
+    "vocabulary": VOCABULARY,
     "answers": {"status": {"position": 1, "values": ["ok", "violated"]}},
     "seed": SEED, "worlds": WORLDS,
 }
