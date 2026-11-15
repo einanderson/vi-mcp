@@ -46,6 +46,7 @@ LEARN (vi_learn: text = one concrete key statement; content = complete, with com
 8. Something turns out to be wrong — a hint contradicts what you just measured or read, or the user corrects it: correct it at once, in the same step, not at the end of the session: vi_refute the wrong object (reason with evidence), vi_learn the correction (with source).
 Search before learning: if it is already there, vi_confirm instead of creating it again. After hints: vi_feedback(helped=[ids], wrong=[ids]) — one call, no reason needed; it is how the VI learns which hint to show. vi_confirm / vi_refute when you checked the knowledge itself.
 Logic: whether something is allowed, forbidden, required or consistent under rules is decided by vi_logic (rules in a Python-like notation, clingo), not by prose reasoning; vi_logic(action="rate") books a conclusion you checked, so the rules' weights learn. A question over many objects (which hosts …, all findings that …) goes to vi_logic(action="answer", question=…): a program over all matching objects, exact where a search shows only its first hits.
+Philosophy: if the user wants to give an AI principles to work by (a philosophy, a seed of rules), call vi_philosophy — action guide explains the technique, check proves a package.
 Fine-tuning: if the user wants to fine-tune (train, adapt) a model with the knowledge of this VI, call vi_finetune — it says whether the VI is mature and gives the steps; vi_finetune(action="guide") explains how fine-tuning works.
 Code: the code of a solution, a fix, a reusable script or a query belongs in content, complete and runnable. Not a copy of a file that lives in a repository: name repository, path and commit instead — the code of a repository comes into its project index through the code import (vi-mcp index import-code), and vi_recall finds it there.
 Network wiki: what the whole network should maintain (a runbook, the answer to a recurring question) goes on a page with vi_page_write (network, page, text, base_rev = the revision you edited); vi_page_read shows a page with its open conflicts — resolve one by writing with base_rev = one head and also_parents = the others.
@@ -239,6 +240,17 @@ TOOLS = [
                              "index": {"type": "string", "description": "optional: one index (a project or special VI)"},
                              "base_model": {"type": "string", "description": "optional: the model to fine-tune (Hugging Face id or directory)"},
                              "directory": {"type": "string", "description": "record: the kit directory on the server"}})},
+    {"name": "vi_philosophy",
+     "description": "VI: equip an AI with a philosophy. A philosophy is a package: principles in prose and the same principles as a "
+                    "clingo-object rule set (the seed), proven by test worlds. action guide (default): the technique step by step; list: "
+                    "built-in and installed philosophies; show: principles, inputs, answers and seed of one; check: every rule of the "
+                    "format (vocabulary, no default negation outside closure, words for every rule, worlds, coverage, counterfactuals); "
+                    "evaluate: the seed's verdict on facts; install: check and store it in the VI as a rule set.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["guide", "list", "show", "check", "evaluate", "install"],
+                                        "description": "guide (default), list, show, check, evaluate or install"},
+                             "name": {"type": "string", "description": "a built-in philosophy (e.g. kollektiv) or a package directory on the server"},
+                             "facts": {"type": "string", "description": "evaluate: facts in clingo-object notation, one per line"},
+                             "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "install: default internal"}})},
     {"name": "vi_incubator",
      "description": "VI: is this VI (or one index) mature enough to fine-tune an AI with it? Every criterion — knowledge, checked share, "
                     "search quality, hint model, no harm from hints, labels, training data — with threshold, measured value and state.",
@@ -1359,6 +1371,13 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 return finetune.record(str(args["directory"]), f"ki@{instance}").text
             return "\n".join(finetune.plan_lines(finetune.plan(indexes.normalize(args.get("index")) if args.get("index") else None, args.get("base_model"))))
         except ValueError as e:
+            raise Rejected(str(e)) from e
+    if name == "vi_philosophy":  # 0.66.0
+        from . import philosophy
+        from clingo_object.philosophy import PackageError
+        try:
+            return philosophy.tool(args, instance)
+        except (ValueError, PackageError) as e:
             raise Rejected(str(e)) from e
     if name == "vi_incubator":  # 0.62.0
         from . import incubator, indexes

@@ -5,6 +5,35 @@ Linked from [README.md](README.md).
 
 ## Unreleased
 
+### What is new
+
+- **Philosophy packages: equip an AI with a philosophy.** A philosophy is a package. It holds the principles in prose and the same
+  principles as a clingo-object rule set, the **seed**, with typed vocabulary, answer values and test worlds. The technique is generic
+  (`clingo_object/philosophy.py`, standard library plus clingo, so it also works outside a server).
+  - `vi-mcp philosophy guide|list|show|check|new|evaluate|install` and the tool `vi_philosophy`.
+  - `check` refuses a package unless:
+    - every predicate is declared with its arity;
+    - default negation appears only in closure rules or `never(…)`, so missing evidence never becomes opposition;
+    - every derived predicate is named by a principle;
+    - every world solves to exactly one complete answer set with the expected atoms;
+    - every allowed answer value is produced;
+    - every counterfactual world changes an answer or a duty. A seed that calls everything unknown fails here.
+  - `install` stores a checked package as a rule set object with its manifest and hash.
+  - The skill text is `docs/PHILOSOPHY.md`, generated from the code; the same text is the skill `philosophie`.
+
+  The first package is **`kollektiv`**: how a member of an AI collective holds a statement true and what it must do.
+  - Its own evidence never counts.
+  - Support and opposition are separate predicates (Belnap/FDE: t/f/b/n over a closed view).
+  - Every value has a reason.
+  - Acceptance needs two independent lines.
+  - Duties: assert only what is accepted, report conflicts, ask about the unknown when a peer offers knowledge, never adopt
+    unreviewed foreign knowledge.
+  - 12 worlds cover self-confirmation, the same origin twice, an unrelated statement next to a conflict, an open view and
+    counterfactuals.
+
+  The package follows Codex's semantic review (`frage:e05f78b192e7fdb964119b82`).
+  Evidence: `tests/test_philosophy.py` (15 tests).
+
 ### What was fixed
 
 - **The logic engine names contradictions correctly.** Codex's review on 15.11.2026, done before the philosophical seed builds on
@@ -133,6 +162,9 @@ Linked from [README.md](README.md).
 - Grounding is lexical: a reversed negation ("must not" → "can") still passes (reproduced by Codex). An entailment check by a model
   is not built.
 - Long pages get pairs only from their first 6,000 characters (flagged `truncated`); pairs per anchored chunk are not built.
+- Philosophy packages, v1 limits: one semantics profile (`fde-signed-v1`). Not built yet: defeasible priorities, imports between
+  philosophies, binding an instance to a philosophy (`use`), the training stages that bake a seed into a model, and the prose
+  round trip.
 - Stored QA questions are not yet indexed for search (full text indexes `text`, vectors `o.text`), so they do not help retrieval yet.
 - `vi-mcp classify --pairs` for the existing production knowledge has to be started once by an operator. Until then, the kit's
   `synth_qa.py` covers the rest.

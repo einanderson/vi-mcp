@@ -6,7 +6,7 @@ Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server co
 
 ## MCP tools
 
-62 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
+63 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
 
 ### `vi_before`
 
@@ -358,6 +358,17 @@ VI: fine-tune an AI with the knowledge of this VI. When the user says they want 
 | `index` | string |  | optional: one index (a project or special VI) |
 | `base_model` | string |  | optional: the model to fine-tune (Hugging Face id or directory) |
 | `directory` | string |  | record: the kit directory on the server |
+
+### `vi_philosophy`
+
+VI: equip an AI with a philosophy. A philosophy is a package: principles in prose and the same principles as a clingo-object rule set (the seed), proven by test worlds. action guide (default): the technique step by step; list: built-in and installed philosophies; show: principles, inputs, answers and seed of one; check: every rule of the format (vocabulary, no default negation outside closure, words for every rule, worlds, coverage, counterfactuals); evaluate: the seed's verdict on facts; install: check and store it in the VI as a rule set.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | string (guide, list, show, check, evaluate, install) |  | guide (default), list, show, check, evaluate or install (German: `aktion`) |
+| `name` | string |  | a built-in philosophy (e.g. kollektiv) or a package directory on the server |
+| `facts` | string |  | evaluate: facts in clingo-object notation, one per line |
+| `visibility` | string (shared, internal) |  | install: default internal (German: `sicht`) |
 
 ### `vi_incubator`
 
@@ -1134,6 +1145,7 @@ First line of each module's docstring.
 | `net_torrent` | Torrent as a second way for large backlogs. Direct connection to known peers, marked private: no DHT, no LSD, no PEX, no UPnP. |
 | `on_demand` | Training on demand (since 0.20.0) — instead of only in the nightly sleep. |
 | `p2p` | The memory on the network: anonymous outbox, checked inbox, quarantine, right to be forgotten, value per publisher. |
+| `philosophy` | vi-mcp side of philosophy packages (0.66.0): the command line, installing a checked package into the VI, the tool vi_philosophy. |
 | `qa_pairs` | Grounded question-answer pairs for knowledge — the training form of a VI's knowledge (0.65.0). |
 | `questions` | Questions between instances — instances learn from each other by asking each other. |
 | `redteam` | Memory-poisoning test (0.62.0) — how often does planted knowledge reach an agent? Runs in a throw-away memory, never in the real one. |

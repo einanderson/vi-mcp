@@ -336,6 +336,9 @@ def _cli(argv: list[str]) -> int:
     if command == "finetune":  # 0.62.0: the interface for fine-tuning an AI with this VI
         from . import finetune
         return finetune.main(argv[1:])
+    if command == "philosophy":  # 0.66.0: equip an AI with a philosophy (packages of principles, seed and test worlds)
+        from . import philosophy
+        return philosophy.main(argv[1:])
     if command == "incubator":  # 0.62.0: maturity of a VI for fine-tuning
         from . import incubator
         return incubator.main(argv[1:])

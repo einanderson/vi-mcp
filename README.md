@@ -97,6 +97,10 @@ sleeps the server writes grounded question-answer pairs and one never-trained pr
 (`vi-mcp classify --pairs`), and the kit's `probe.py` measures afterwards whether the model learned what it trained on. *Measured*
 (15.11.2026, Qwen3-0.6B, LoRA): 7 correct / 9 partial of 60 such questions against the base model's 0 / 5 (blind, p = 0.008).
 
+**Philosophy packages** (0.66.0): equip an AI with a philosophy — principles in prose plus the same principles as a checked
+clingo-object rule set (the seed) with test worlds (`vi-mcp philosophy`, tool `vi_philosophy`, guide: [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md)).
+The first package, `kollektiv`, says how a member of an AI collective holds something true and what it must do.
+
 ## Vision
 
 **An open network of knowledge, in which AI teaches itself.** Every server learns from its own work: which hint helped, which solution held up, what a person corrected.
