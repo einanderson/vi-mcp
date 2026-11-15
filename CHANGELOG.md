@@ -3,9 +3,9 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
-## Unreleased
+## 0.66.0 — 2026-11-15 — the philosophical seed: philosophies as clingo, checked by round trip, trained by GRPO; search at 500k objects
 
-### What was measured and changed in the search (branch search-top4)
+### What was measured and changed in the search
 
 - **Hit@4 is measured.** The answers show 4 results, and the nightly figures now include hit4.
 - **Baseline on a production copy**, 150 questions × 2 styles = 300 queries:
@@ -292,16 +292,6 @@ Linked from [README.md](README.md).
   Evidence: `tests/test_philosophy.py` (28 tests). `vi-mcp philosophy check messung`: 19/19 worlds, every value and acceptance
   covered.
 
-### What is still missing
-
-- GRPO has not run on a real model yet. The reward is verified on spoken gold verdicts and on a random fixture model, not on a
-  model learning. A model must first learn the verdict format by SFT (the seed examples), or every completion scores −1. The kit
-  writes no seed SFT rows yet: `philosophy_train.examples` gives them.
-- No reinstatement semantics (a candidate whose defeater is itself defeated stays suppressed), no Brewka/Eiter preferred answer
-  sets, no imports or composition between philosophies.
-- A binding does not yet reach a session's instructions, and no server path evaluates a bound philosophy before an action. It is
-  visible through `vi_philosophy` only.
-
 ### What was fixed
 
 - **The logic engine names contradictions correctly.** Codex's review on 15.11.2026, done before the philosophical seed builds on
@@ -319,19 +309,26 @@ Linked from [README.md](README.md).
 
 ### What is missing
 
-- `phil_roundtrip.py` has not run on real answers yet: run 6's answers and an approved independent back-translator endpoint are
-  both still to come.
+- GRPO has not run on a real model yet. The reward is verified on spoken gold verdicts and on a random fixture model, not on a
+  model learning. A model must first learn the verdict format by SFT (the seed examples), or every completion scores −1. The kit
+  writes no seed SFT rows yet: `philosophy_train.examples` gives them.
+- No reinstatement semantics (a candidate whose defeater is itself defeated stays suppressed), no Brewka/Eiter preferred answer
+  sets, no imports or composition between philosophies.
+- A binding does not yet reach a session's instructions, and no server path evaluates a bound philosophy before an action. It is
+  visible through `vi_philosophy` only.
+- `phil_roundtrip.py` has not run on a trained model's answers yet; run 6 is still training. The back-translator is decided (user,
+  15.11.2026): Codex, of another model family than Qwen and not the seed's author, through `--judge-cmd`. Its control is measured:
+  the frozen reference prose (`tests/fixtures/kollektiv_principles_1.1.0.json`), back-translated blind by `codex exec` in an empty
+  directory, agrees with the seed in 49 of 66 worlds (74 %) after one round. Every value t/f/b/n matches; all 17 misses are
+  acceptance `unresolved` (and the duty that follows from it), which the reference prose never defines precisely.
 
 - Same-instance questions: pairing an agent with its hook needs one vi-mcp call of the agent that its hook announced. Before that
   call, or without a hook, or when two hooks announce the same call within 60 s (counted in `session.pairing_counts`, not paired),
   the asker's own hook may show it its own question once. `vi_ask` says so when the asking conversation is not paired yet.
 - Pairings live in the server process. After a restart all conversations are new, and answers to older same-instance questions go
   to any conversation of the instance.
-- Philosophy round trip: the only live measurement used one model for both directions. An independent back-translator of another
-  family is still to be measured. The whole-seed number after the `never` fix (56 %) comes from re-normalizing a stored output, not
-  from a new run.
-- The skill text `philosophie` outside this repository still describes stored prose principles; it is regenerated from
-  `docs/PHILOSOPHY.md` by whoever maintains the skills.
+- Philosophy round trip: the translator side (`vi-mcp philosophy explain` with a model writing the prose) has been measured live only
+  with one model for both directions. The whole-seed number after the `never` fix (56 %) comes from re-normalizing a stored output.
 - An answered broadcast question (`to="<instance>"`) is still delivered to conversations of the instance that have not seen it yet,
   as it was for instances before. This is kept on purpose (decision 15.11.2026): another conversation may add an answer.
 
