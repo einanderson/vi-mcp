@@ -24,7 +24,7 @@ from pathlib import Path
 from . import __version__
 from . import memory as g
 
-GUIDE_VERSION = "2026-11-15b"
+GUIDE_VERSION = "2026-11-15c"
 TEST_SHARE = 0.15
 STRATIFY_MIN = 5  # a stage with at least this many groups always gets held-out groups
 
@@ -90,8 +90,10 @@ Keep the adapter separate: `python convert_lora_to_gguf.py ADAPTER_DIR --base HF
    to continue the logic stage; without this flag each later stage starts from out/sft. `--stage logic --from-base` explicitly starts
    program training directly on a fresh adapter without a prior QA stage. Solver-only examples and
    observational hint pairs are withheld from default program/DPO training. Checked machine examples are published explicitly with vi_machine teach.
-   A philosophy: `vi-mcp finetune kit DIR --philosophy NAME` also writes the checked package and GRPO prompts;
-   `python train.py --stage grpo --from-adapter out/sft` trains with the seed as reward (TRL GRPOTrainer). The stage re-solves every
+   A philosophy: `vi-mcp finetune kit DIR --philosophy NAME` also writes the seed path, in the order "first clingo, then the seed":
+   `--stage language` (clingo-object both ways, from the base), `--stage philosophy` (the seed's judge, formalize and pressure examples,
+   half with the seed's rules shown; no principle prose anywhere), `--stage grpo` (the seed as reward, continues out/philosophy), and
+   eval/philosophy.jsonl with `phil_answers.py` and `phil_score.py` (world_exact, values, duties, invented certainty). The GRPO stage re-solves every
    gold verdict with the bundled seed and refuses a changed package hash. The reward is +1 for a right value with its reasons and
    −1 for invented certainty; the explicit "I cannot formalize this situation." gives 0; unparseable or cut output gives −1. There is
    no length term. The generation budget is a local resource bound (twice the longest gold verdict), named in the report.
@@ -164,7 +166,8 @@ def plan_lines(p: dict) -> list[str]:
 
 
 TRAIN_PY = r'''"""Fine-tuning kit entry point. First run --preflight (no training); --tokenizer-only loads no model weights.
-Stages: sft, agentic, logic, kto, dpo, grpo (a philosophy's seed as reward; needs a kit written with --philosophy NAME).
+Stages: sft, agentic, logic, kto, dpo; with a kit written with --philosophy NAME also the seed path language → philosophy → grpo
+(the clingo-object language from the base, the seed SFT continuing out/language, GRPO with the seed as reward continuing out/philosophy).
 Use --from-adapter to continue a selected prior stage.
 """
 from training_runtime import main
@@ -673,7 +676,8 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from training_runtime import prepare
 
-FILES = {"sft": "split/test.jsonl", "agentic": "split/agentic.test.jsonl", "logic": "split/logic.test.jsonl"}
+FILES = {"sft": "split/test.jsonl", "agentic": "split/agentic.test.jsonl", "logic": "split/logic.test.jsonl",
+         "language": "split/language.test.jsonl", "philosophy": "split/philosophy.test.jsonl"}
 a = argparse.ArgumentParser()
 a.add_argument("--stage", choices=sorted(FILES), default="sft")
 a.add_argument("--adapter", help="LoRA adapter directory (default out/<stage>)")
@@ -777,31 +781,204 @@ def _write(p: Path, text: str, mode: int = 0o600) -> None:
 
 #: GRPO prompts a kit gets with --philosophy (each solved by the seed at kit time and again before training)
 PHILOSOPHY_PROMPTS = 1000
+#: rows of the language stage (clingo-object both ways) and of the seed SFT stage — the sizes of run 6 (15.11.2026)
+LANGUAGE_ROWS = 3000
+PHILOSOPHY_ROWS = 1700
+HELDOUT_ROWS = 40
+#: what a package needs for training data, beyond what check() asks (philosophy_train: worlds drawn, facts and verdicts in words)
+TRAINING_FIELDS = ("generator", "domains", "render", "render_test", "speak", "pressure", "pressure_test")
+
+PHIL_ANSWERS_PY = r'''"""Answers of the base model and of base + adapter to eval/philosophy.jsonl, written per item (resumable).
+
+Scored afterwards by the seed's verdict (phil_score.py), not by a judge. Greedy, thinking off, the same messages for both. The new-token
+budget is a resource bound of local generation against endless loops of a small model, not an API cap: an answer that reaches it is
+marked "budget" and never counts as right.
+    python phil_answers.py [--adapter out/philosophy] [--budget 768] [--fp32]
+"""
+import argparse, json, time
+import torch
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+a = argparse.ArgumentParser()
+a.add_argument("--adapter", default="out/philosophy")
+a.add_argument("--budget", type=int, default=768)
+a.add_argument("--fp32", action="store_true")
+o = a.parse_args()
+base = json.load(open("run.json"))["base_model"]
+device = "cuda" if torch.cuda.is_available() else "cpu"
+tok = AutoTokenizer.from_pretrained(base)
+model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.float32 if (o.fp32 or device == "cpu") else "auto").to(device)
+model = PeftModel.from_pretrained(model, o.adapter).eval()
+items = [json.loads(l) for l in open("eval/philosophy.jsonl") if l.strip()]
+try:
+    done = {json.loads(l)["id"] for l in open("eval/philosophy_answers.jsonl") if l.strip()}
+except FileNotFoundError:
+    done = set()
 
 
-def philosophy_stage(d: Path, name: str, prompts: int = PHILOSOPHY_PROMPTS, seed: int = 11) -> dict:
-    """GRPO data for a philosophy, in the same kit as the knowledge stages: GRPO continues from an adapter of this kit (the same base
-    model and one run.json lineage, which `record` reads), so a separate kit would split that lineage. Writes the checked package
-    (philosophy/) and split/grpo.train.jsonl; the seed's hash goes into run.json and the stage refuses to train if it changed."""
+def answer(messages):
+    text = tok.apply_chat_template(messages, add_generation_prompt=True, enable_thinking=False, tokenize=False)
+    ids = tok(text, return_tensors="pt", add_special_tokens=False).to(device)
+    with torch.no_grad():
+        out = model.generate(**ids, do_sample=False, max_new_tokens=o.budget, eos_token_id=tok.eos_token_id,
+                             pad_token_id=tok.pad_token_id or tok.eos_token_id)
+    new = out[0, ids["input_ids"].shape[1]:].tolist()
+    return tok.decode(new, skip_special_tokens=True).strip(), "stop" if new and new[-1] == tok.eos_token_id else "budget"
+
+
+f, t0 = open("eval/philosophy_answers.jsonl", "a"), time.time()
+for i, it in enumerate(items):
+    if it["id"] in done:
+        continue
+    with model.disable_adapter():
+        b = answer(it["messages"])
+    t = answer(it["messages"])
+    f.write(json.dumps({"id": it["id"], "set": it["set"], "adapter": o.adapter, "budget": o.budget, "base": b[0], "base_finish": b[1],
+                        "tuned": t[0], "tuned_finish": t[1]}, ensure_ascii=False) + "\n")
+    f.flush()
+    print(f"{i + 1}/{len(items)} {round(time.time() - t0)} s", flush=True)
+'''
+
+PHIL_SCORE_PY = r'''"""Score base and tuned answers (eval/philosophy_answers.jsonl) against the seed's verdict, per evaluation set.
+
+The gold is the solver's verdict stored with each item; the package is the kit's philosophy/ (the one whose hash run.json names).
+Judge sets: world_exact (every answer and the duties exactly the seed's), each answer predicate right/total, duties_exact,
+invented_certainty (a firm value where the seed has a weaker one or none, over those statements), budget_cut. formalize: facts_exact.
+explain_seed, recite and language are prose: listed for a judge or the round trip, not scored here.
+    python phil_score.py   -> eval/philosophy_score.json
+"""
+import collections, json
+from clingo_object import philosophy as ph, philosophy_train as pt
+
+pkg = ph.load("philosophy")
+run = json.load(open("run.json"))
+if ph.package_hash(pkg) != (run.get("philosophy") or {}).get("hash"):
+    raise SystemExit("philosophy/ differs from the hash in run.json — not the seed this kit was built for")
+firm = pt.firm_values(pkg)
+items = {json.loads(l)["id"]: json.loads(l) for l in open("eval/philosophy.jsonl") if l.strip()}
+answers = [json.loads(l) for l in open("eval/philosophy_answers.jsonl") if l.strip()]
+res = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
+for a in answers:
+    it = items[a["id"]]
+    task = it["meta"].get("task")
+    for who in ("base", "tuned"):
+        c = res[it["set"]][who]
+        c["n"] += 1
+        c["budget_cut"] += a[f"{who}_finish"] != "stop"
+        if task in ("explain_seed", "recite", "explain_rules", "write_rules"):
+            continue
+        if a[f"{who}_finish"] != "stop":
+            continue  # a cut answer never counts as right
+        if task == "formalize":
+            gold = {l.replace(" ", "") for l in it["meta"]["facts"].splitlines() if l.strip()}
+            c["facts_exact"] += gold == {l.replace(" ", "") for l in a[who].splitlines() if l.strip()}
+            continue
+        gold = it["meta"]["gold"]
+        said = pt.parse_verdict(pkg, a[who])
+        sc = pt.score(pkg, gold, said)
+        for pred, x in sc["answers"].items():
+            c[f"{pred}_right"] += x["right"]
+        c["duties_exact"] += sc["duties_exact"]
+        c["world_exact"] += sc["duties_exact"] and all(x["wrong"] == 0 and x["missing"] == 0 for x in sc["answers"].values())
+        for s in gold["subjects"]:
+            for pred, fv in firm.items():
+                g = (gold["answers"].get(s) or {}).get(pred)
+                m = (said["answers"].get(s) or {}).get(pred)
+                if g not in fv:
+                    c["uncertain"] += 1
+                    c["invented_certainty"] += m in fv
+totals = collections.Counter()
+for it in items.values():
+    g = it["meta"].get("gold")
+    if g:
+        for s in g["subjects"]:
+            for pred in pkg["answers"]:
+                totals[(it["id"], pred)] += (g["answers"].get(s) or {}).get(pred) is not None
+out = {"package": pkg["name"], "hash": run["philosophy"]["hash"], "sets": {}}
+for st, whos in res.items():
+    out["sets"][st] = {}
+    for who, c in whos.items():
+        n = c["n"]
+        row = {"items": n, "budget_cut": c["budget_cut"]}
+        task = next(it["meta"].get("task") for it in items.values() if it["set"] == st)
+        if task in ("explain_seed", "recite", "explain_rules", "write_rules"):
+            row["scored"] = "prose: judge or round trip"
+        elif task == "formalize":
+            row["facts_exact"] = f"{c['facts_exact']}/{n}"
+        else:
+            for pred in pkg["answers"]:
+                total = sum(v for (i, p), v in totals.items() if p == pred and items[i]["set"] == st)
+                row[pred] = f"{c[pred + '_right']}/{total}"
+            row.update(world_exact=f"{c['world_exact']}/{n}", duties_exact=f"{c['duties_exact']}/{n}",
+                       invented_certainty=f"{c['invented_certainty']}/{c['uncertain']}")
+        out["sets"][st][who] = row
+json.dump(out, open("eval/philosophy_score.json", "w"), indent=1)
+print(json.dumps(out, indent=1))
+'''
+
+
+def _rows(path: Path, rows: list[dict]) -> str:
+    _write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def philosophy_stage(d: Path, name: str, prompts: int = PHILOSOPHY_PROMPTS, seed: int = 11, language_rows: int = LANGUAGE_ROWS,
+                     philosophy_rows: int = PHILOSOPHY_ROWS, heldout: int = HELDOUT_ROWS) -> dict:
+    """Everything for the seed path in the same kit as the knowledge stages (one base model, one run.json lineage for `record`):
+      language   split/language.{train,test}.jsonl — clingo-object both ways on rule sets that use no predicate of the package
+      philosophy split/philosophy.{train,test}.jsonl — the seed's judge, formalize and pressure examples; half of the judge and
+                 pressure prompts show the seed's rules (without comment lines); no principle prose anywhere
+      grpo       split/grpo.train.jsonl — the seed as reward
+      eval       eval/philosophy.jsonl with phil_answers.py and phil_score.py
+    Order (the user, 15.11.2026: "first teach the AI clingo, then the seed"): --stage language (from the base), --stage philosophy
+    (continues out/language), --stage grpo (continues out/philosophy). The checked package goes to philosophy/, its hash to run.json."""
+    from clingo_object import clingo_prose as cp
     from clingo_object import philosophy as ph
     from clingo_object import philosophy_train as pt
     pkg = ph.load(name)
     r = ph.check(pkg)
     if not r["ok"]:
         raise ValueError(f"philosophy {name} refused: " + "; ".join(r["errors"][:3]))
+    missing = [k for k in TRAINING_FIELDS if k not in pkg]
+    if missing:
+        raise ValueError(f"philosophy {name} has no training data: missing {', '.join(missing)} (how worlds are drawn and spoken)")
     ph.write(pkg, str(d / "philosophy"))
     if ph.package_hash(ph.load(str(d / "philosophy"))) != r["hash"]:
         raise ValueError("the written philosophy package does not round-trip to its hash")
+    split = d / "split"
+    vocab = set(ph.vocabulary(pkg)) if hasattr(ph, "vocabulary") else set(pkg.get("vocabulary") or {})
+    system = pt._system(pkg)
+    lang_train = cp.examples(language_rows, seed, exclude=vocab, system=system)
+    seen = {x["messages"][-2]["content"] for x in lang_train}
+    lang_test = [x for x in cp.examples(heldout * 3, seed + 1, exclude=vocab, system=system) if x["messages"][-2]["content"] not in seen][:heldout]
+    phil_train = pt.sft_rows(pkg, philosophy_rows, seed)
+    train_facts = {x["meta"]["facts"] for x in phil_train}
+    phil_test = [x for x in pt.sft_rows(pkg, heldout * 2, seed + 1, test=True) if x["meta"]["facts"] not in train_facts][:heldout]
+    ev = pt.eval_items(pkg, train_facts, lang_test, seed=seed + 100)
+    (d / "eval").mkdir(mode=0o700, exist_ok=True)
+    out = {"name": pkg["name"], "version": pkg["version"], "hash": r["hash"], "seed": seed, "order": ["language", "philosophy", "grpo"],
+           "prose_in_training": False, "seed_code_without_comments": True,
+           "language": {"train": len(lang_train), "test": len(lang_test), "excluded_predicates": len(vocab),
+                        "train_sha256": _rows(split / "language.train.jsonl", lang_train), "test_sha256": _rows(split / "language.test.jsonl", lang_test)},
+           "philosophy": {"train": len(phil_train), "test": len(phil_test),
+                          "tasks": dict(sorted(Counter(x["meta"]["task"] for x in phil_train).items())),
+                          "seed_shown": sum(x["meta"]["seed_shown"] for x in phil_train),
+                          "train_sha256": _rows(split / "philosophy.train.jsonl", phil_train),
+                          "test_sha256": _rows(split / "philosophy.test.jsonl", phil_test)},
+           "eval": {"items": dict(sorted(Counter(i["set"] for i in ev["items"]).items())), "dropped": ev["dropped"],
+                    "sha256": _rows(d / "eval" / "philosophy.jsonl", ev["items"])}}
     pool = pt.grpo_pool(pkg, prompts, seed)
-    target = d / "split" / "grpo.train.jsonl"
-    _write(target, "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in pool["rows"]))
-    return {"name": pkg["name"], "version": pkg["version"], "hash": r["hash"], "prompts": len(pool["rows"]), "labels": pool["labels"],
-            "counterfactual_pairs": pool["pairs"], "short_of_balance": pool["short_of_balance"], "reward_version": pool["reward_version"],
-            "seed": seed, "grpo_train_sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+    out.update(prompts=len(pool["rows"]), labels=pool["labels"], counterfactual_pairs=pool["pairs"], short_of_balance=pool["short_of_balance"],
+               reward_version=pool["reward_version"], grpo_train_sha256=_rows(split / "grpo.train.jsonl", pool["rows"]))
+    _write(d / "phil_answers.py", PHIL_ANSWERS_PY, 0o700)
+    _write(d / "phil_score.py", PHIL_SCORE_PY, 0o700)
+    return out
 
 
 def kit(directory: str, index: str | None = None, base_model: str | None = None, force: bool = False,
-        philosophy: str | None = None, philosophy_prompts: int = PHILOSOPHY_PROMPTS) -> dict:
+        philosophy: str | None = None, philosophy_prompts: int = PHILOSOPHY_PROMPTS, language_rows: int = LANGUAGE_ROWS,
+        philosophy_rows: int = PHILOSOPHY_ROWS) -> dict:
     """Write the fine-tuning kit. Runs nothing; a person runs the scripts on the GPU host."""
     from . import evaluation, incubator
     base = base_model or _cfg().get("base_model")
@@ -853,10 +1030,12 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     run = {"base_model": base, "kit": g.now(), "vi_mcp": __version__, "handbook": GUIDE_VERSION, "index": index,
            "dataset_manifest_sha256": hashlib.sha256((d / "dataset" / "manifest.json").read_bytes()).hexdigest(), "split": split,
            "incubator": manifest.get("inkubator"),
-           "philosophy": philosophy_stage(d, philosophy, philosophy_prompts) if philosophy else None,
+           "philosophy": philosophy_stage(d, philosophy, philosophy_prompts, language_rows=language_rows,
+                                          philosophy_rows=philosophy_rows) if philosophy else None,
            "kit_code_sha256": {str(p.relative_to(d)): hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in [d / "train.py", d / "training_runtime.py", d / "evaluate.py", d / "program_evaluate.py", d / "heldout_loss.py",
                                          d / "synth_qa.py", d / "qa_pairs.py", d / "probe.py",
+                                         *[x for x in (d / "phil_answers.py", d / "phil_score.py") if x.exists()],
                                          d / "evaluation_core.py", *sorted(core.glob("*.py"))]}}
     _write(d / "run.json", json.dumps(run, indent=2, ensure_ascii=False))
     return {"verzeichnis": str(d), **run, "eval_fragen": len(questions)}
@@ -869,7 +1048,7 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
         raise ValueError(f"{d}: no run.json — not a kit written by vi-mcp finetune kit")
     run = json.loads((d / "run.json").read_text(encoding="utf-8"))
     adapters = {}
-    for stage in ("sft", "agentic", "logic", "kto", "dpo", "grpo"):
+    for stage in ("sft", "agentic", "logic", "kto", "dpo", "language", "philosophy", "grpo"):
         f = d / "out" / stage / "adapter_model.safetensors"
         if f.exists():
             adapters[stage] = hashlib.sha256(f.read_bytes()).hexdigest()
@@ -907,7 +1086,7 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
 
 
 def main(argv: list[str]) -> int:
-    """vi-mcp finetune guide | plan [--index X] [--base M] | kit DIR [--index X] [--base M] [--force] | record DIR"""
+    """vi-mcp finetune guide | plan [--index X] [--base M] | kit DIR [--index X] [--base M] [--force] [--philosophy NAME] | record DIR"""
     import argparse
     from . import config
     a = argparse.ArgumentParser(prog="vi-mcp finetune", description="fine-tune an AI with what this VI learned (vi-mcp runs no training)")
@@ -925,6 +1104,8 @@ def main(argv: list[str]) -> int:
     k.add_argument("--force", action="store_true", help="also for a VI still in the incubator (the datasheet names the open criteria)")
     k.add_argument("--philosophy", help="also write GRPO prompts for this philosophy (built-in name or package directory): train.py --stage grpo")
     k.add_argument("--philosophy-prompts", type=int, default=PHILOSOPHY_PROMPTS, help="how many GRPO prompts (default %(default)s)")
+    k.add_argument("--language-rows", type=int, default=LANGUAGE_ROWS, help="rows of the clingo-object language stage (default %(default)s)")
+    k.add_argument("--philosophy-rows", type=int, default=PHILOSOPHY_ROWS, help="rows of the seed SFT stage (default %(default)s)")
     r.add_argument("directory")
     o = a.parse_args(argv)
     if o.cmd == "guide":
@@ -942,7 +1123,8 @@ def main(argv: list[str]) -> int:
         if o.cmd == "plan":
             print("\n".join(plan_lines(plan(o.index, o.base))))
         elif o.cmd == "kit":
-            print(json.dumps(kit(o.directory, o.index, o.base, o.force, o.philosophy, o.philosophy_prompts), indent=2, ensure_ascii=False))
+            print(json.dumps(kit(o.directory, o.index, o.base, o.force, o.philosophy, o.philosophy_prompts, o.language_rows,
+                                 o.philosophy_rows), indent=2, ensure_ascii=False))
         else:
             print(record(o.directory).text)
     except ValueError as e:

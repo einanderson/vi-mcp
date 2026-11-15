@@ -14,7 +14,16 @@ import os
 from pathlib import Path
 
 FILES = {"sft": "train.jsonl", "agentic": "agentic.train.jsonl", "logic": "logic.train.jsonl",
-         "kto": "kto.train.jsonl", "dpo": "dpo.train.jsonl", "grpo": "grpo.train.jsonl"}
+         "kto": "kto.train.jsonl", "dpo": "dpo.train.jsonl", "grpo": "grpo.train.jsonl",
+         "language": "language.train.jsonl", "philosophy": "philosophy.train.jsonl"}
+#: stages trained as chat SFT on complete assistant targets. language (the clingo-object language) and philosophy (the seed) are
+#: stages of their own, not the logic stage: the kit's logic files are vi_logic tool-use episodes from the VI, and the seed path
+#: needs its own adapters (out/language → out/philosophy → out/grpo) and its own lineage in run.json.
+SFT_STAGES = ("sft", "agentic", "logic", "language", "philosophy")
+#: stages that start from the base model unless a parent is given; every other stage continues an adapter
+ROOT_STAGES = ("sft", "language")
+#: the seed path's order (the user, 15.11.2026: "first teach the AI clingo, then the seed"); other stages continue out/sft
+DEFAULT_PARENT = {"philosophy": "out/language", "grpo": "out/philosophy"}
 #: GRPO (vi-mcp finetune kit --philosophy NAME): a philosophy's seed is the verifiable reward. The generation budget is a resource bound
 #: of local sampling, not an API token cap: by default twice the longest spoken gold verdict in tokens (at least GRPO_MIN_BUDGET); a
 #: completion that reaches it is never parsed and gets the reward for unparseable output (philosophy_train.reward, kind truncated).
@@ -58,7 +67,7 @@ def prepare(rows, tokenizer, stage, limit, *, skip_oversize=False):
     for row in rows:
         try:
             candidates = []
-            if stage in ("sft", "agentic", "logic"):
+            if stage in SFT_STAGES:
                 messages = row["messages"]
                 if not isinstance(messages, list) or not messages or not tokenizer.chat_template:
                     raise ValueError("conversation_or_template")
@@ -224,7 +233,7 @@ def verify_prepared(trainer, rows, tokenizer, stage, limit):
             if actual["prompt"] != expected["prompt"] or actual["gold_json"] != expected["gold_json"]:
                 raise ValueError("trainer changed a GRPO prompt or its gold verdict")
             continue
-        if stage in ("sft", "agentic", "logic"):
+        if stage in SFT_STAGES:
             if actual["input_ids"] != expected["input_ids"] or actual["labels"] != expected["labels"]:
                 raise ValueError("trainer changed audited assistant tokens or masks")
         else:
@@ -256,7 +265,7 @@ def parameter_hash(model):
 def verify_batch(batch, expected, tokenizer, stage, limit):
     allowed = set()
     for row in expected:
-        if stage in ("sft", "agentic", "logic"):
+        if stage in SFT_STAGES:
             allowed.add((tuple(row["input_ids"]), tuple(row["labels"])))
         else:
             prefix = encode(tokenizer, row["prompt"], special=True)
@@ -264,7 +273,7 @@ def verify_batch(batch, expected, tokenizer, stage, limit):
                 text = row[field] if row[field].endswith(tokenizer.eos_token) else row[field] + tokenizer.eos_token
                 ids = encode(tokenizer, row["prompt"] + text, special=True)
                 allowed.add((tuple(ids), tuple([0] * len(prefix) + [1] * (len(ids) - len(prefix)))))
-    target_key = "labels" if stage in ("sft", "agentic", "logic") else "completion_mask"
+    target_key = "labels" if stage in SFT_STAGES else "completion_mask"
     for ids, active, target in zip(batch["input_ids"].tolist(), batch["attention_mask"].tolist(), batch[target_key].tolist()):
         ids = tuple(v for v, keep in zip(ids, active) if keep)
         target = tuple(v for v, keep in zip(target, active) if keep)
@@ -277,7 +286,7 @@ def main(argv=None):
     parser.add_argument("--stage", choices=list(FILES), default="sft")
     parser.add_argument("--base")
     parser.add_argument("--revision", help="pin a remote model/tokenizer commit")
-    parser.add_argument("--from-adapter", default="out/sft")
+    parser.add_argument("--from-adapter", help="parent adapter (default out/sft; philosophy: out/language; grpo: out/philosophy)")
     parser.add_argument("--from-base", action="store_true", help="start a new adapter for this stage directly from the base, without a prior QA stage")
     parser.add_argument("--qlora", action="store_true")
     parser.add_argument("--lora-rank", type=int, default=16, help="LoRA rank r (alpha = 2r); a higher rank stores more new facts "
@@ -313,18 +322,19 @@ def main(argv=None):
         report.update(dataset_sha256=hashlib.sha256(source.read_bytes()).hexdigest(), base_model=base, kit_base_model=run["base_model"],
                       probe_model_override=base != run["base_model"], versions=versions())
         from transformers import AutoConfig, AutoTokenizer
-        parent = Path(o.from_adapter)
-        if o.from_base and o.from_adapter != "out/sft":
+        if o.from_base and o.from_adapter is not None:
             raise ValueError("choose either a parent adapter or a fresh base")
+        o.from_adapter = o.from_adapter or DEFAULT_PARENT.get(o.stage, "out/sft")
+        parent = Path(o.from_adapter)
         parent_config = (json.loads((parent / "adapter_config.json").read_text())
-                         if o.stage != "sft" and not o.from_base and (parent / "adapter_config.json").exists() else None)
+                         if o.stage not in ROOT_STAGES and not o.from_base and (parent / "adapter_config.json").exists() else None)
         if parent_config is not None:
             if parent_config["base_model_name_or_path"] != base:
                 raise ValueError("parent adapter belongs to a different base model")
             if o.revision is not None and o.revision != parent_config.get("revision"):
                 raise ValueError("requested revision differs from the parent adapter's recorded base revision")
         revision = parent_config.get("revision") if parent_config is not None else o.revision
-        tokenizer_source = parent if o.stage != "sft" and not o.from_base and (parent / "tokenizer_config.json").exists() else base
+        tokenizer_source = parent if o.stage not in ROOT_STAGES and not o.from_base and (parent / "tokenizer_config.json").exists() else base
         tok = AutoTokenizer.from_pretrained(tokenizer_source, revision=revision if tokenizer_source == base else None, trust_remote_code=False)
         config = AutoConfig.from_pretrained(base, revision=revision, trust_remote_code=False)
         window = getattr(config, "max_position_embeddings", getattr(config, "n_positions", None))
@@ -368,19 +378,19 @@ def main(argv=None):
                                                             dtype=torch.float32 if (o.cpu or o.fp32) else "auto", trust_remote_code=False)
             peft, report["parent_adapter"] = None, str(parent)
         else:
-            if o.stage != "sft" and not o.from_base and not o.preflight:
+            if o.stage not in ROOT_STAGES and not o.from_base and not o.preflight:
                 raise ValueError("later stages require an existing parent adapter")
             model = AutoModelForCausalLM.from_pretrained(base, revision=report["model_revision"], quantization_config=quant,
                                                          dtype=torch.float32 if (o.cpu or o.fp32) else "auto", trust_remote_code=False)
             peft = lora
-            report["parent_adapter"] = "base" if o.stage == "sft" or o.from_base else "missing: fresh untrained probe only"
+            report["parent_adapter"] = "base" if o.stage in ROOT_STAGES or o.from_base else "missing: fresh untrained probe only"
         from trl import SFTConfig, SFTTrainer, KTOConfig, KTOTrainer, DPOConfig, DPOTrainer
         if o.stage == "grpo":
             return grpo(o, run, report, report_path, model, peft, tok, data, audit, pkg, base, parent)
         classes = {"kto": (KTOConfig, KTOTrainer), "dpo": (DPOConfig, DPOTrainer)}
         cfg_class, trainer_class = classes.get(o.stage, (SFTConfig, SFTTrainer))
         options = {"output_dir": str(Path("out") / o.stage), "num_train_epochs": o.epochs,
-                   "learning_rate": o.lr or (2e-4 if o.stage == "sft" else 1e-4 if o.stage in ("agentic", "logic") else 5e-6),
+                   "learning_rate": o.lr or (2e-4 if o.stage in ROOT_STAGES + ("philosophy",) else 1e-4 if o.stage in ("agentic", "logic") else 5e-6),
                    "logging_steps": 10, "max_length": None, "report_to": "none", "use_cpu": o.cpu, "seed": o.seed,
                    "bf16": not o.cpu and not o.fp32 and torch.cuda.is_available() and torch.cuda.is_bf16_supported(), "fp16": False,
                    "per_device_train_batch_size": 4 if o.stage == "kto" else 1}
@@ -389,7 +399,7 @@ def main(argv=None):
         if o.preflight:
             checkpointing = "activation_checkpointing" if "activation_checkpointing" in cfg_class.__dataclass_fields__ else "gradient_checkpointing"
             options[checkpointing] = False
-        if o.stage in ("sft", "agentic", "logic"):
+        if o.stage in SFT_STAGES:
             options.update(dataset_kwargs={"skip_prepare_dataset": True}, packing=False)
         trainer = trainer_class(model=model, processing_class=tok, train_dataset=Dataset.from_list(data),
                                 peft_config=peft, args=cfg_class(**options))
@@ -420,7 +430,7 @@ def main(argv=None):
         trainer.save_model(str(Path("out") / o.stage))
         report.update(status="trained", optimizer_steps=int(trainer.state.global_step))
         write_report(report_path, report)
-        run.update({f"trained_{o.stage}": str(Path("out") / o.stage), f"parent_{o.stage}": base if o.stage == "sft" or o.from_base else str(parent),
+        run.update({f"trained_{o.stage}": str(Path("out") / o.stage), f"parent_{o.stage}": base if o.stage in ROOT_STAGES or o.from_base else str(parent),
                     f"preparation_{o.stage}_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest()})
         write_report("run.json", run)
         return 0

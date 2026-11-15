@@ -215,3 +215,25 @@ def test_a_completion_cut_by_the_generation_budget_is_never_parsed(phil_kit, mon
     assert report["grpo"]["generation_budget"] == 2 and report["grpo"]["generation_budget_rule"] == "given (--max-completion-length)"
     kinds = report["sampled"]["kinds"]
     assert kinds.get("truncated", 0) >= 8 and all(r == -1.0 for r in report["sampled"]["rewards"]), kinds
+
+
+@pytest.mark.parametrize("stage, args, parent", [
+    ("language", [], "base"),                                            # the first stage of the seed path starts from the base
+    ("philosophy", ["--from-base"], "base"),
+    ("philosophy", [], "missing: fresh untrained probe only"),           # by default it continues out/language, which is not there yet
+])
+def test_the_seed_path_stages_preflight_with_real_trainers(phil_kit, monkeypatch, stage, args, parent):
+    from trl import SFTTrainer
+    from vi_mcp.training_runtime import main
+    directory, _base = phil_kit
+    def forbidden(*a, **k):
+        raise AssertionError("preflight must not train")
+    monkeypatch.setattr(SFTTrainer, "train", forbidden)
+    monkeypatch.setattr(torch.optim.AdamW, "step", forbidden)
+    monkeypatch.chdir(directory)
+    assert main(["--stage", stage, "--tokenizer-only"] + args) == 0
+    assert json.loads((directory / f"preflight-{stage}.json").read_text())["audit"]["valid"]
+    assert main(["--stage", stage, "--preflight", "--cpu"] + args) == 0
+    report = json.loads((directory / f"preflight-{stage}.json").read_text())
+    assert report["status"] == "preflight_passed" and report["parameters_unchanged"] and report["optimizer_steps"] == 0
+    assert report["parent_adapter"] == parent and not report["audit"]["rejected"] and report["audit"]["target_tokens"]

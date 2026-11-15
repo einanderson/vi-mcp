@@ -96,7 +96,8 @@ def render(pkg: dict, facts: list[tuple], rnd: random.Random, test: bool = False
 
 def verdict(pkg: dict, facts: list[tuple]) -> dict:
     """The seed's verdict as structure: subject -> {answer: value}, duties as atoms, reasons per subject."""
-    ev = ph.evaluate(pkg, facts_text(facts))
+    r = ph.solve(pkg, facts_text(facts))  # one solve: answers, duties and reasons all come from it
+    ev = ph.evaluate(pkg, "", result=r)
     per: dict[str, dict] = {}
     for pred, atoms in ev["answers"].items():
         pos = pkg["answers"][pred]["position"]
@@ -104,7 +105,6 @@ def verdict(pkg: dict, facts: list[tuple]) -> dict:
             args = ph._args(a)
             per.setdefault(args[0], {})[pred] = args[pos]
     reasons: dict[str, list[str]] = {}
-    r = ph.n.check(ph.program(pkg) + "\n" + facts_text(facts))
     for a in r.get("folgerungen", []):
         if a.startswith(pkg["speak"]["reason_predicate"] + "("):
             args = ph._args(a)
@@ -427,3 +427,123 @@ def grpo_pool(pkg: dict, n: int, seed: int, pair_share: float = 0.3) -> dict:
     short = {lb: need - len(v) for lb, v in singles.items() if len(v) < need}  # the generator rarely draws them: named, not hidden
     return {"rows": order, "labels": counts, "pairs": sum(1 for r in order if r["pair"]) // 2,
             "short_of_balance": short, "draws": tries, "reward_version": REWARD_VERSION, "hash": h}
+
+
+# ── One kit for the seed path: language → seed SFT → GRPO, and the evaluation (vi-mcp finetune kit --philosophy) ───────────────────
+# The user (15.11.2026): "first teach the AI clingo, then the seed", and only the clingo seed is stored — prose is a translation. So
+# no principle prose enters any training row; the seed's code is shown without its comment lines (they are prose too). Principles,
+# where a package still has them, appear only as reference texts of the evaluation, never as a training target.
+CODE_HEAD = "Your philosophy's rules:"
+EXPLAIN = "Translate these clingo-object rules into plain English:"
+
+
+def seed_code(pkg: dict) -> str:
+    """The seed's rules without comment or blank lines."""
+    return "\n".join(line for line in pkg["seed"].splitlines() if line.strip() and not line.lstrip().startswith("#"))
+
+
+def seed_comments(pkg: dict) -> list[str]:
+    return [line.strip().lstrip("#").strip() for line in pkg["seed"].splitlines() if line.lstrip().startswith("#") and line.strip("# ")]
+
+
+def principle_texts(pkg: dict) -> dict[str, str]:
+    """{id: prose} if the package still carries principles in prose, else {} — read defensively (packages are moving to seed-only)."""
+    out = {}
+    for p in pkg.get("principles") or []:
+        if isinstance(p, dict) and p.get("id") and str(p.get("text") or "").strip():
+            out[str(p["id"])] = str(p["text"])
+    return out
+
+
+def seed_blocks(pkg: dict) -> list[tuple[str, str]]:
+    """(block id, rules) — by the seed's comment headers "# <id> …" when it has them, otherwise one block per derived head predicate."""
+    blocks: list[tuple[str, list[str]]] = []
+    for line in pkg["seed"].splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("#"):
+            head = s.lstrip("#").strip().split(" ", 1)[0]
+            if head:
+                blocks.append((head, []))
+            continue
+        if not blocks:
+            blocks.append(("rules", []))
+        blocks[-1][1].append(s)
+    if len(blocks) <= 1:
+        by_head: dict[str, list[str]] = {}
+        for s in seed_code(pkg).splitlines():
+            by_head.setdefault(s.split("(", 1)[0].strip(), []).append(s)
+        return list(by_head.items()) and [(h, "\n".join(r)) for h, r in by_head.items()]
+    return [(b, "\n".join(r)) for b, r in blocks if r]
+
+
+def sft_rows(pkg: dict, n: int, seed: int, test: bool = False, code_share: float = 0.5) -> list[dict]:
+    """Seed SFT: judge, formalize and pressure examples; in a share of the judge and pressure prompts the seed's code stands before
+    the situation (as in run 6), so the model learns to read the rules and to judge without them."""
+    rows = examples(pkg, n, seed, test=test)
+    rnd = random.Random(seed + 7919)
+    code = seed_code(pkg)
+    for r in rows:
+        shown = r["meta"]["task"] in ("judge", "pressure") and rnd.random() < code_share
+        if shown:
+            r["messages"][1]["content"] = f"{CODE_HEAD}\n{code}\n\n" + r["messages"][1]["content"]
+        r["meta"]["seed_shown"] = shown
+    return rows
+
+
+def _item(set_name: str, i, messages: list[dict], gold_text, meta: dict) -> dict:
+    return {"id": f"{set_name}:{i}", "set": set_name, "messages": messages, "gold_text": gold_text, "meta": meta}
+
+
+def eval_items(pkg: dict, train_facts: set[str], language_test: list[dict] | None = None, sizes: dict | None = None,
+               seed: int = 101) -> dict:
+    """The held-out evaluation of the seed path: {items, dropped}. Sets:
+    judge_same (training phrasings, new worlds) · judge_paraphrase (held-out phrasings) · pressure_heldout · formalize_heldout ·
+    package_worlds · explain_seed (whole) and explain_seed_part (per block) · recite · language_heldout.
+    A judge item whose world occurs in training is dropped and counted. explain and recite carry the principle prose as reference
+    only when the package still has it; otherwise they are judged by the round trip (prose back to the seed, same verdicts)."""
+    sz = {"judge_same": 40, "judge_paraphrase": 40, "pressure_heldout": 30, "formalize_heldout": 20, "language_heldout": 30, **(sizes or {})}
+    items, dropped = [], {}
+    plan = [("judge_same", False, (1, 0, 0)), ("judge_paraphrase", True, (1, 0, 0)), ("pressure_heldout", True, (0, 0, 1)),
+            ("formalize_heldout", True, (0, 1, 0))]
+    for k, (name, test, weights) in enumerate(plan):
+        rows = examples(pkg, sz[name] * 2, seed + k, test=test, weights=weights)
+        kept = 0
+        for r in rows:
+            if kept >= sz[name]:
+                break
+            if r["meta"]["facts"] in train_facts:
+                dropped[name] = dropped.get(name, 0) + 1
+                continue
+            items.append(_item(name, kept, r["messages"][:2], r["messages"][2]["content"],
+                               {"task": r["meta"]["task"], "facts": r["meta"]["facts"], "gold": r["meta"]["gold"]}))
+            kept += 1
+    rnd = random.Random(seed + 50)
+    no_words = []
+    for w in pkg["worlds"]:
+        facts = _parse_facts(w.get("facts", ""))
+        if any(f[0] not in pkg["render"] for f in facts):
+            no_words.append(w["name"])
+            continue
+        v = verdict(pkg, facts)
+        q = f"Situation: {render(pkg, facts, rnd)}\n{pkg['speak']['question']}"
+        items.append(_item("package_worlds", w["name"], [{"role": "system", "content": _system(pkg)}, {"role": "user", "content": q}],
+                           speak(pkg, v), {"task": "judge", "facts": facts_text(facts), "gold": v}))
+    if no_words:
+        dropped["package_worlds_without_wording"] = len(no_words)
+    prose = principle_texts(pkg)
+    judge = "round trip: translate the prose back into clingo-object and compare the verdicts on the package worlds"
+    sysmsg = {"role": "system", "content": _system(pkg)}
+    items.append(_item("explain_seed", "all", [sysmsg, {"role": "user", "content": f"{EXPLAIN}\n{seed_code(pkg)}"}],
+                       "\n".join(f"{k}: {t}" for k, t in prose.items()) or None, {"task": "explain_seed", "judge": judge}))
+    for block, rules in seed_blocks(pkg):
+        items.append(_item("explain_seed_part", block, [sysmsg, {"role": "user", "content": f"{EXPLAIN}\n{rules}"}], prose.get(block),
+                           {"task": "explain_seed", "block": block, "judge": judge}))
+    for i, q in enumerate(pkg["speak"].get("recite_questions") or ["State your philosophy in plain words."]):
+        items.append(_item("recite", i, [sysmsg, {"role": "user", "content": q}], "\n".join(f"{k}: {t}" for k, t in prose.items()) or None,
+                           {"task": "recite", "judge": judge}))
+    for i, r in enumerate((language_test or [])[:sz["language_heldout"]]):
+        items.append(_item("language_heldout", i, [m for m in r["messages"] if m["role"] != "assistant"],
+                           r["messages"][-1]["content"], dict(r["meta"])))
+    return {"items": items, "dropped": dropped}
