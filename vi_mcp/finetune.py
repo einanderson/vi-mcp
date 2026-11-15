@@ -226,8 +226,10 @@ pairs join the shared split. The pairs are model output checked for word overlap
 """
 import argparse, concurrent.futures as cf, hashlib, json, random, re, threading, time, urllib.request
 
+PAIRS = 3
 SYSTEM = ("You write training questions for a company knowledge base. You get one document. Write up to 3 questions that an employee "
-          "would really ask and that this document answers, each with a short answer of one to three sentences. Use only facts stated "
+          "would really ask and that this document answers, each with a short answer of one to three sentences. Vary the facts and the "
+          "wording; when asked for more than 3, ask about the same facts in different words too. Use only facts stated "
           "in the document; copy names, paths, hosts, commands and numbers exactly. Each question must make sense without seeing the "
           "document: name the system, host or topic, never write 'the document', 'this page' or 'the text'. Write in the language of "
           "the document. If the document states no answerable fact (an empty table, only a title), return an empty list. "
@@ -258,8 +260,17 @@ def check(pair, document):
     return None
 
 
-def ask(url, model, document):
-    body = {"model": model, "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": document[:DOC_CHARS]}],
+def system_for(pairs):
+    return SYSTEM.replace("Write up to 3 questions", f"Write up to {pairs} questions")
+
+
+def jaccard(a, b):
+    x, y = words(a), words(b)
+    return len(x & y) / max(1, len(x | y))
+
+
+def ask(url, model, document, system=SYSTEM):
+    body = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": document[:DOC_CHARS]}],
             "temperature": 0.3, "chat_template_kwargs": {"enable_thinking": False}}
     req = urllib.request.Request(url.rstrip("/") + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
@@ -276,7 +287,28 @@ def main():
     a.add_argument("--limit", type=int, default=0, help="at most this many documents in this run (seeded random order); 0 = all")
     a.add_argument("--workers", type=int, default=4)
     a.add_argument("--seed", type=int, default=1114)
+    a.add_argument("--pairs", type=int, default=PAIRS, help="pairs asked per document; more varied pairs per fact inject knowledge "
+                   "better (paraphrase scaling: arXiv 2312.05934, 2411.00686)")
+    a.add_argument("--more", help="file of object ids (one per line): ask these documents again for further pairs, even if done")
+    a.add_argument("--hold-out", help="JSONL of {id, question} kept out of training (evaluation probes): a pair whose question is "
+                   "this close (word Jaccard >= 0.5) to one of them is rejected")
     o = a.parse_args()
+    system = system_for(o.pairs)
+    prompt_sha256 = hashlib.sha256(system.encode()).hexdigest()
+    held = {}
+    if o.hold_out:
+        for l in open(o.hold_out, encoding="utf-8"):
+            if l.strip():
+                h = json.loads(l)
+                held.setdefault(h["id"], []).append(h["question"])
+    asked = {}
+    try:
+        for l in open("dataset/qa_synth.jsonl", encoding="utf-8"):
+            if l.strip():
+                r = json.loads(l)
+                asked.setdefault(r["meta"]["id"], set()).add(" ".join(sorted(words(r["messages"][0]["content"]))))
+    except FileNotFoundError:
+        pass
     docs = [json.loads(l) for l in open("dataset/documents.jsonl", encoding="utf-8") if l.strip()]
     done = set()
     for name in ("dataset/qa_synth.jsonl", "dataset/synth_rejected.jsonl"):
@@ -284,7 +316,8 @@ def main():
             done |= {json.loads(l)["meta"]["id"] for l in open(name, encoding="utf-8") if l.strip()}
         except FileNotFoundError:
             pass
-    todo = [d for d in docs if d["meta"]["id"] not in done]
+    again = {l.strip() for l in open(o.more, encoding="utf-8") if l.strip()} if o.more else set()
+    todo = [d for d in docs if d["meta"]["id"] in again] if o.more else [d for d in docs if d["meta"]["id"] not in done]
     random.Random(o.seed).shuffle(todo)
     todo = todo[: o.limit] if o.limit else todo
     lock, stats, t0 = threading.Lock(), {"documents": 0, "pairs": 0, "rejected": {}}, time.time()
@@ -293,7 +326,7 @@ def main():
 
     def one(d):
         try:
-            pairs, finish = ask(o.url, o.model, d["document"])
+            pairs, finish = ask(o.url, o.model, d["document"], system)
         except Exception as e:  # noqa: BLE001 — a failed call is counted, never a silent gap; the next run retries it
             return d, None, f"request failed: {type(e).__name__}"
         if pairs is None or finish != "stop":
@@ -307,15 +340,21 @@ def main():
                 kept, reasons = [], []
                 for p in pairs or []:
                     why = check(p, d["document"]) if isinstance(p, dict) else "format"
+                    if not why and any(jaccard(p["question"], h) >= 0.5 for h in held.get(d["meta"]["id"], [])):
+                        why = "too close to a held-out evaluation question"
+                    key = " ".join(sorted(words(p["question"]))) if isinstance(p, dict) else ""
+                    if not why and key in asked.setdefault(d["meta"]["id"], set()):
+                        why = "duplicate question"
                     if why:
                         reasons.append(why)
                     else:
+                        asked[d["meta"]["id"]].add(key)
                         kept.append(p)
                 if error:
                     reasons.append(error)
                 for why in reasons:
                     stats["rejected"][why] = stats["rejected"].get(why, 0) + 1
-                meta = {**d["meta"], "question_source": "synthetic", "generator": o.model, "prompt_sha256": PROMPT_SHA256}
+                meta = {**d["meta"], "question_source": "synthetic", "generator": o.model, "prompt_sha256": prompt_sha256}
                 for p in kept:
                     answer = p["answer"].strip() + f"\n\nSource: {d['source']}"
                     out.write(json.dumps({"messages": [{"role": "user", "content": p["question"].strip()},
@@ -326,7 +365,8 @@ def main():
                 out.flush(); rej.flush()
                 if stats["documents"] % 20 == 0:
                     print(f"{stats['documents']}/{len(todo)} documents, {stats['pairs']} pairs, {round(time.time() - t0)} s", flush=True)
-    stats.update(seconds=round(time.time() - t0), generator=o.model, prompt_sha256=PROMPT_SHA256, remaining=len(docs) - len(done) - len(todo))
+    stats.update(seconds=round(time.time() - t0), generator=o.model, prompt_sha256=prompt_sha256, pairs_asked=o.pairs,
+                 remaining=len([d for d in docs if d["meta"]["id"] not in done]) - (0 if o.more else len(todo)))
     json.dump(stats, open("synth_report.json", "w"), indent=1)
     print(json.dumps(stats, indent=1))
 

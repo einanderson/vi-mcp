@@ -30,9 +30,25 @@ Linked from [README.md](README.md).
   2412.14964). Measured: 12 real documents → 14 pairs in 38 s, 21 candidates rejected.
   Evidence: `tests/test_finetune.py::test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo_rows`.
 
+- **More varied pairs per fact, and a held-out guard.** `synth_qa.py --pairs N` asks for up to N pairs per document; `--more FILE`
+  asks chosen documents again (duplicates are rejected); `--hold-out FILE` rejects a pair whose question is too close (word Jaccard
+  ≥ 0.5) to a held-out evaluation question of that document. Knowledge recall rises with the number of paraphrases per fact
+  (arXiv 2312.05934, 2411.00686). `train.py --lora-rank R` sets the adapter rank (alpha 2R; default 16 as before).
+  Evidence: `tests/test_finetune.py::test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo_rows`.
+
+### What was measured
+
+- **Second run (corrected data):** 3 epochs, LoRA r16, on 894 doc2query plus 2,042 synthesized rows. Loops fell from 55 to 6 of
+  100 answers. On questions about held-out documents there is no significant gain (p ≈ 0.1). A test set of held-out documents
+  cannot show knowledge injection, because closed-book fine-tuning only knows what it was trained on. On 60 new questions
+  about trained documents (a knowledge probe), tuned scored 4 correct and 3 partial vs base 0 and 5 (strict p = 0.0625), so a gain
+  is visible but not yet significant. The tuned model never says "I don't know" and invents hosts and IPs.
+
 ### What is still missing
 
 - Synthesized pairs are model output checked for word overlap, not verified by a person.
+- The kit's own split measures generalization to unseen documents; a knowledge probe (new questions about trained documents)
+  is not built into the kit yet.
 
 ## 0.64.1 — 2026-11-14 — fine-tuning on a GPU end to end; statistics that measured nothing now measure
 

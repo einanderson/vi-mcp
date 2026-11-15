@@ -191,6 +191,8 @@ def main(argv=None):
     parser.add_argument("--from-adapter", default="out/sft")
     parser.add_argument("--from-base", action="store_true", help="start a new adapter for this stage directly from the base, without a prior QA stage")
     parser.add_argument("--qlora", action="store_true")
+    parser.add_argument("--lora-rank", type=int, default=16, help="LoRA rank r (alpha = 2r); a higher rank stores more new facts "
+                                                                   "(LoRA learns less than full fine-tuning: arXiv 2405.09673)")
     parser.add_argument("--epochs", type=float, default=2)
     parser.add_argument("--lr", type=float)
     parser.add_argument("--seed", type=int, default=42)
@@ -257,7 +259,10 @@ def main(argv=None):
         if o.cpu and o.qlora:
             raise ValueError("this kit's 4-bit training path requires an appropriate accelerator")
         quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4") if o.qlora else None
-        lora = LoraConfig(r=16, lora_alpha=32, lora_dropout=.05, target_modules="all-linear", task_type="CAUSAL_LM",
+        if not 1 <= o.lora_rank <= 1024:
+            raise ValueError("LoRA rank must be between 1 and 1024")
+        report["lora_rank"] = o.lora_rank
+        lora = LoraConfig(r=o.lora_rank, lora_alpha=2 * o.lora_rank, lora_dropout=.05, target_modules="all-linear", task_type="CAUSAL_LM",
                           revision=report["model_revision"])
         if parent_config is not None:
             model = AutoPeftModelForCausalLM.from_pretrained(parent, is_trainable=True, quantization_config=quant,

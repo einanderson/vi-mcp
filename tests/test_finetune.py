@@ -82,7 +82,9 @@ def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo
             calls.append(body)
             doc = body["messages"][1]["content"]
             n = doc.split("db", 1)[1][0]
-            pairs = [{"question": f"When does the backup of db{n}.example run?", "answer": f"At 02:00 with borg to /srv/backup/db{n}."},
+            more = [{"question": f"At what time is db{n}.example backed up each night?", "answer": f"At 02:00 with borg."}] \
+                if "up to 5 questions" in body["messages"][0]["content"] else []
+            pairs = more + [{"question": f"When does the backup of db{n}.example run?", "answer": f"At 02:00 with borg to /srv/backup/db{n}."},
                      {"question": f"What does the document say about db{n}?", "answer": f"The backup of db{n}.example runs at 02:00."},
                      {"question": f"Who owns db{n}.example in the finance team?", "answer": "Alice Example from finance owns it since 2019."}]
             out = json.dumps({"choices": [{"message": {"content": "```json\n" + json.dumps({"pairs": pairs}) + "\n```"}, "finish_reason": "stop"}]})
@@ -110,11 +112,28 @@ def test_documents_without_a_question_become_grounded_synthetic_pairs_never_echo
         report = json.loads((d / "synth_report.json").read_text())
         assert report["pairs"] == 6 and report["rejected"] == {"refers to the document instead of its subject": 6, "not grounded in the document": 6}
         assert run().returncode == 0 and len(calls) == 6  # resumable: done documents are not asked again
+        # --more asks chosen documents again for further, varied pairs; --hold-out keeps evaluation probes out of training
+        ids = sorted(json.loads(x)["meta"]["id"] for x in (d / "dataset/documents.jsonl").read_text().splitlines())
+        doc = {i: json.loads(x)["document"] for i, x in zip(ids, sorted((d / "dataset/documents.jsonl").read_text().splitlines(),
+                                                                       key=lambda x: json.loads(x)["meta"]["id"]))}
+        (d / "more.txt").write_text("\n".join(ids[:2]) + "\n")
+        n0 = doc[ids[0]].split("db", 1)[1][0]
+        (d / "probe.jsonl").write_text(json.dumps({"id": ids[0], "question": f"At what time is db{n0}.example backed up every night?"}) + "\n")
+        p = subprocess.run([sys.executable, "synth_qa.py", "--url", url, "--model", "m", "--pairs", "5", "--more", "more.txt",
+                            "--hold-out", "probe.jsonl"], cwd=d, capture_output=True, text=True, timeout=60)
+        assert p.returncode == 0, p.stderr
+        assert len(calls) == 8 and "up to 5 questions" in calls[-1]["messages"][0]["content"]
+        synth = [json.loads(x) for x in (d / "dataset/qa_synth.jsonl").read_text().splitlines()]
+        new = [r for r in synth if r["messages"][0]["content"].startswith("At what time")]
+        assert [r["meta"]["id"] for r in new] == [ids[1]]  # ids[0]'s paraphrase is too close to its held-out probe
+        report = json.loads((d / "synth_report.json").read_text())
+        assert report["rejected"]["too close to a held-out evaluation question"] == 1 and report["rejected"]["duplicate question"] == 2
+        assert report["pairs_asked"] == 5
     finally:
         srv.shutdown()
     split = finetune.resplit(str(d))
-    assert split["train"] + split["test"] == 24 + 6
-    assert sum(side.get("synthetic", 0) for side in split["qa_question_sources"].values()) == 6
+    assert split["train"] + split["test"] == 24 + 7
+    assert sum(side.get("synthetic", 0) for side in split["qa_question_sources"].values()) == 7
     rj = json.loads((d / "run.json").read_text())
     assert rj["qa_synth_sha256"] and rj["split"] == split
     assert finetune.main(["split", str(d)]) == 0
