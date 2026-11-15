@@ -6,7 +6,7 @@ Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server co
 
 ## MCP tools
 
-63 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
+64 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
 
 ### `vi_before`
 
@@ -194,17 +194,27 @@ VI P2P: release an imported object (then mode test) or discard it (action=discar
 
 ### `vi_net_token`
 
-VI network: create a token to recall own entries later. One-time and shown only once; without a token this instance shares nothing. · German alias `vi_netz_token`
+VI network: create this instance's network token (once; without it the instance shares nothing). The memory keeps the token itself and never shows it — the result names only its id and where it is stored; vi_page_write, vi_ask and vi_net_forget use it from there. · German alias `vi_netz_token`
 
 ### `vi_net_forget`
 
-VI network: right to be forgotten. Recall own entries from the network (ids or all=true). Receivers delete them; locally they stay but are no longer shared. Reason is required. · German alias `vi_netz_vergiss`
+VI network: right to be forgotten. Recall own entries from the network (ids or all=true). Receivers delete them; locally they stay but are no longer shared. Reason is required; the network token comes from the memory. · German alias `vi_netz_vergiss`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `token` | string | yes | the instance's network token (vi_net_token) — proves the entries are its own |
+| `token` | string |  | optional, only for callers before 0.66.1: the instance's network token; without it the memory uses the one it keeps |
 | `ids` | array of string |  | ids of own entries to recall |
 | `all` | boolean |  | true: recall every own entry in this network (German: `alle`) |
+| `reason` | string | yes | why — required, stored in the object's history (German: `grund`) |
+
+### `vi_net_peer_remove`
+
+VI network: remove a peer address from a network's peer list on this server (e.g. one vi_net_status reports as invalid or paused). The network service drops it at its next round and does not take it back while it is removed. Reason is required.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `network` | string | yes | network name (default: standard) (German: `netz`) |
+| `address` | string | yes | the peer address exactly as vi_net_status lists it, e.g. https://host.example/vi-p2p/wiki |
 | `reason` | string | yes | why — required, stored in the object's history (German: `grund`) |
 
 ### `vi_prompt_context`
@@ -651,7 +661,9 @@ python3 -m vi_mcp instance NAME [--reflexes] [--release] [--human]
 python3 -m vi_mcp net …                 network: setup, invite, exclude, invitation, join, run, peers, id, status
 python3 -m vi_mcp setup [--help]        register vi-mcp in Claude Code, Codex CLI and Hermes Agent (ANSI menu)
 python3 -m vi_mcp p2p-key PATH          create an Ed25519 seed (0600), prints the public key
-python3 -m vi_mcp net-token NAME        show an instance's network token if it was lost (needs access to the database)
+python3 -m vi_mcp net-token NAME [--forget (--all|--ids ID,…) --reason R] [--export FILE]
+                                        an instance's network token: id and storage (never printed), recall entries,
+                                        backup into a 0600 file (needs access to the database)
 python3 -m vi_mcp quarantine [N]       what waits in quarantine, with the check results (as administrator / sudo)
 python3 -m vi_mcp release ID "REASON" [--discard]   release (or discard) a held entry as a person; uses the token in
                                        /etc/vi-mcp/freigabe-token (made on first use)
@@ -725,6 +737,8 @@ positional arguments:
     wiki                the public wiki network: on (join: free network,
                         outgoing, start vi-wiki.org or --start) · off (stop
                         the service) · status
+    peers               list the peers with their state · remove ADDRESS: drop
+                        one from the peer list and the start list (0.66.1)
     proxy-config        nginx configuration for every network published on 443
                         (setup --public)
 
@@ -896,10 +910,14 @@ options:
 #### `vi-mcp net peers`
 
 ```text
-usage: vi-mcp net peers [-h]
+usage: vi-mcp net peers [-h] [{list,remove}] [address]
+
+positional arguments:
+  {list,remove}
+  address
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help     show this help message and exit
 ```
 
 #### `vi-mcp net block`

@@ -252,9 +252,9 @@ def test_permissions_and_single_use(publisher):
 
 
 def test_tools(publisher):
-    t = tools.call_tool("vi_netz_token", {}, "a", False).split("\n")[-1]
-    with pytest.raises(tools.Rejected):
-        tools.call_tool("vi_netz_token", {}, "a", False)
+    out = tools.call_tool("vi_netz_token", {}, "a", False)
+    t = p2p._token("a")  # 0.66.1: kept by the memory, never in the tool result; a second call names the same token
+    assert t not in out and p2p.token_id(t) in tools.call_tool("vi_netz_token", {}, "a", False)
     o = _mk_obj("Das hier wird über das Werkzeug zurückgerufen")
     assert json.loads(tools.call_tool("vi_netz_vorschau", {}, "a", False))["anzahl"] == 1
     with pytest.raises(tools.Rejected):

@@ -410,6 +410,7 @@ def build(k: config.Config) -> list[Server]:
     from . import archive, p2p, reviewer, reflection, vector
     archive.DAYS.update(k.archive_days)
     p2p.config = k.p2p
+    p2p.service_instances = frozenset(k.instances)  # 0.66.1: vi_net_status names a network nobody set up
     anonymize.configure(k.p2p)
     reviewer.prompt_path = Path(k.reviewer_prompt) if k.reviewer_prompt else None
     vector.config = k.embed

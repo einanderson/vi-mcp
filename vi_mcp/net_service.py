@@ -440,7 +440,7 @@ class NetService:
                 self.exchange_peers(address)
         except (urllib.error.URLError, OSError, TimeoutError, ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
             log(f"network: reconcile with {address}: {type(e).__name__}: {str(e)[:120]}")
-            self.log.peer_result(address, False)
+            self.log.peer_result(address, False, f"{type(e).__name__}: {str(e)[:120]}")
         return new
 
     def _record_backlog(self, address: str) -> None:
@@ -460,11 +460,17 @@ class NetService:
         st = self.log.status()
         now = time.time()
         peers = [{"adresse": p["adresse"], "version": p["version"], "zuletzt_s": round(now - p["zuletzt"]) if p["zuletzt"] else None, "fehler": p["fehler"],
-                  "erreichbar": bool(p["zuletzt"]) and p["fehler"] == 0, "fehlt_hier": p["fehlt_hier"], "fehlt_dort": p["fehlt_dort"]} for p in self.log.peers()]
+                  "erreichbar": p["state"] == "reachable", "fehlt_hier": p["fehlt_hier"], "fehlt_dort": p["fehlt_dort"],
+                  # 0.66.1: a named state per peer (logbook.PEER_STATES) with its reason, and when a paused one is tried again
+                  "state": p["state"], "reason": p["reason"],
+                  "resume_at": datetime.fromtimestamp(p["paused_until"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if p["paused_until"] else None}
+                 for p in self.log.peers()]
         return {"netz": self.k.net, "art": self.k.kind, "modus": self.k.mode, "pausiert": self.paused, "identitaeten": st.get("identitaeten"), "gesperrt": st.get("gesperrt"),
                 "bewaehrt": len(self.trusted), "pseudonym": lb.pseudonym(self.log.pub), "version": __version__,
                 "mitglieder": st["mitglieder"], "eintraege": st["eintraege"], "unbekannte_typen": st["unbekannte_typen"], "gabelungen": st["gabelungen"],
                 "verstoesse": st["verstoesse"], "peers": peers, "transport": dict(self.usage_stats),
+                "rejected_addresses": [{"address": a, "source": src, "reason": why} for a, (src, why) in sorted(self.log.rejected_addresses.items())][:50],
+                "removed_peers": sorted(self.log.removed)[:50],
                 "eigene": {t: self.log.count_own(t) for t in ("objekt", "widerruf", "bewertung", "seite", "beitrag")}}
 
     def _fetch(self, address: str, pub: str, target: int) -> int:
@@ -760,6 +766,7 @@ class NetService:
             a = self.mcp.outbox(self.snapshot())
             self._trust(a.get("vertrauen"))
             self.paused = bool(a.get("aus"))  # 0.47.0: switched off in the memory
+            self._removed(a.get("removed_peers"))
         except (urllib.error.URLError, OSError, ValueError, KeyError, TimeoutError) as e:
             log(f"network: memory not reachable: {type(e).__name__}: {str(e)[:120]}")
             return 0
@@ -773,6 +780,16 @@ class NetService:
                 self.log.attach("widerruf", {"ziel": w["netz_id"], "token": w["token"]}, w["netz_id"])
                 new += 1
         return new + self._ratings(a.get("bewertungen") or []) + self._pages(a.get("seiten") or []) + self._posts(a.get("beitraege") or [])
+
+    def _removed(self, addresses) -> None:
+        """0.66.1: the peer addresses the memory removed (vi_net_peer_remove) leave the peer table and stay out while it lists them."""
+        if not isinstance(addresses, list):
+            return
+        now = {str(a).rstrip("/") for a in addresses if isinstance(a, str)}
+        for a in now - self.log.removed:
+            if self.log.peer_forget(a):
+                log(f"network {self.k.net}: peer {a} removed (decided in the memory)")
+        self.log.removed = now
 
     def _posts(self, posts: list) -> int:
         """0.43.0: own posts (questions and answers between AIs) — each once, at most POSTS_PER_DAY, only once no peer is older than 0.39.0."""

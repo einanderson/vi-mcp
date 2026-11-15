@@ -657,7 +657,7 @@ Der Import lehnt jedes Objekt mit Fundstelle ab. `vi_net_preview` zeigt genau, w
 
 **Zugangsdaten werden auch lokal nie gespeichert**, soweit ihre Form sie verrät (`password=…`, `Bearer …`, Schlüsselblöcke, URLs mit Anmeldung). Hostnamen und IPs bleiben lokal und privat erhalten, weil die Hinweise daran hängen.
 
-**Recht auf Vergessen.** Ohne Netz-Token (`vi_net_token`, einmalig) verteilt eine Instanz nichts. Aus dem Token entsteht je Objekt ein eigener Löschnachweis. `vi_net_forget` ruft eigene Einträge zurück:
+**Recht auf Vergessen.** Ohne Netz-Token (`vi_net_token`, einmalig) verteilt eine Instanz nichts. Das Gedächtnis bewahrt den Token selbst auf und nennt nur seine Id und den Ablageort (0.66.1); er gelangt nie in das Gespräch eines Agenten. Aus dem Token entsteht je Objekt ein eigener Löschnachweis. `vi_net_forget` ruft eigene Einträge zurück (als Administrator: `vi-mcp net-token NAME --forget …`):
 Empfänger löschen sie samt Suchindex und Vektor und merken sich nur einen Grabstein, damit sie nicht wiederkommen. Das Netz erfährt dabei nicht, welche Instanz es war, und ein Löschnachweis öffnet kein anderes Objekt.
 
 **Grenzen:** Muster erkennen keine Bedeutung. Ein frei stehender Eigenname fällt nur auf, wenn er in der Liste bekannter Namen steht (`p2p.interne_namen`). Löschen wirkt bei Empfängern, die sich an das Protokoll halten; wer eine Kopie behält, kann nicht gezwungen werden. Direkte Nachbarn sehen die IP-Adresse des anderen, und die angekündigte Adresse eines `peerhost` kennt jedes Mitglied.
@@ -682,6 +682,7 @@ Empfänger löschen sie samt Suchindex und Vektor und merken sich nur einen Grab
 | `vi_page_read` · `vi_page_write` · `vi_page_history` · `vi_page_forget` | Netz-Wiki: lesen, bearbeiten, Verlauf, Revision zurückrufen |
 | `vi_net_search` | Live-Suche in einem Netz; Treffer zur Prüfung übernehmen |
 | `vi_net_switch` | ein Netz auf Wunsch des Nutzers ab- oder einschalten (z. B. das öffentliche Wiki-Netz) |
+| `vi_net_peer_remove` | eine Peer-Adresse entfernen, die `vi_net_status` als ungültig oder pausiert meldet (0.66.1) |
 | `vi_prompt_context` | Wissen zur Nutzerfrage — vom Hook aufgerufen, auch bei Folgefragen |
 
 ## Entwicklung

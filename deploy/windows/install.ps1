@@ -46,6 +46,10 @@ if (-not $Embed) { if ($previous -and $previous.embed) { $Embed = "$($previous.e
 $Wiki = "$Wiki".Trim()
 $wikiGiven = [bool]$Wiki  # given now (dialog or command line), not remembered: only then is an existing wiki configuration changed
 if (-not $Wiki -and $previous -and $previous.wiki) { $Wiki = "$($previous.wiki)"; $fromPrevious += "wiki" }
+# 0.66.1: the dialog's label read "empty = as before, new: vi-wiki.org" - a typed (and remembered) "new" becomes the peer https://new/vi-p2p/wiki (most likely the reported case).
+# Such a word means the default server; the wiki service is then set up again so the broken start address is replaced.
+$wikiRepair = $false
+if (@("new", "default", "yes") -contains $Wiki.ToLower()) { $Wiki = "1"; $wikiRepair = $true }
 function Log([string]$m) { $line = "$(Get-Date -Format s) $m"; Add-Content -Path $Log -Value $line -Encoding UTF8; Write-Host $line }
 
 # Runs the private Python. PowerShell 5.1 turns stderr of a native program into a terminating error under "Stop", so stderr is
@@ -231,7 +235,8 @@ try {
             } elseif (-not $wikiExists) {
                 Log "wiki network not joined (WIKI=0); later, in an elevated shell: vi-mcp net wiki on [--start SERVER]"
             }
-        } elseif (-not $wikiExists -or -not $wikiTask -or ($wikiGiven -and $Wiki -ne "1")) {
+        } elseif (-not $wikiExists -or -not $wikiTask -or ($wikiGiven -and $Wiki -ne "1") -or $wikiRepair) {
+            # $wikiRepair: net wiki on without --start drops start addresses that name no host (vi-wiki.org if none is left)
             $netArgs = @("-I", "-X", "utf8", "-m", "vi_mcp", "net", "wiki", "on")
             if ($Wiki -and $Wiki -ne "1") { $netArgs += @("--start", $Wiki) }
             if ($Proxy) { $netArgs += @("--proxy", $Proxy) }

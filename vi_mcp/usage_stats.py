@@ -240,7 +240,7 @@ def _age(ts: str) -> str:
 
 def network_lines(days: float = 7) -> list[str]:
     """0.39.0: section W — the networks this memory takes part in, as their services reported them (snapshot with every outbox call).
-    Nothing is invented: without a snapshot a network shows 'not recorded'."""
+    Nothing is invented: without a snapshot a network shows why (0.66.1: not set up, never reported, no snapshot)."""
     from . import p2p
     from . import net_score
     nets, st = p2p.networks(), p2p.states()
@@ -285,7 +285,7 @@ def network_lines(days: float = 7) -> list[str]:
     for name, d in nets.items():
         s = st.get(name)
         if not s:
-            out.append(f"    {name} ({d['kind']}, instance {d['instance']}): not recorded — its network service has not reported (not running, or older than 0.39.0)")
+            out.append(f"    {name} ({d['kind']}, instance {d['instance']}): {p2p.state_report(name, d, None)}")  # 0.66.1: the reason, as vi_net_status
             continue
         x = s["daten"]
         peers = x.get("peers") or []

@@ -36,6 +36,8 @@ def _no_model_downloads(monkeypatch):
         return {"skipped": "tests download nothing"}
     stub.calls = calls
     monkeypatch.setattr(embed_service, "auto", stub)
+    from vi_mcp import p2p
+    monkeypatch.setattr(p2p, "service_instances", None)  # 0.66.1: set by server.build — must not leak from one test into the next
 
 
 @pytest.fixture(autouse=True)

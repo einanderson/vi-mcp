@@ -143,13 +143,19 @@ TOOLS = [
                     "release right.",
      "inputSchema": _schema({"id": _S, "reason": _S, "action": {"type": "string", "enum": ["approve", "discard"]}}, ["id", "reason"])},
     {"name": "vi_net_token",
-     "description": "VI network: create a token to recall own entries later. One-time and shown only once; without a token this instance "
-                    "shares nothing.",
+     "description": "VI network: create this instance's network token (once; without it the instance shares nothing). The memory keeps "
+                    "the token itself and never shows it — the result names only its id and where it is stored; vi_page_write, vi_ask and "
+                    "vi_net_forget use it from there.",
      "inputSchema": _schema({})},
     {"name": "vi_net_forget",
      "description": "VI network: right to be forgotten. Recall own entries from the network (ids or all=true). Receivers delete them; "
-                    "locally they stay but are no longer shared. Reason is required.",
-     "inputSchema": _schema({"token": _S, "ids": _TAGS, "all": {"type": "boolean"}, "reason": _S}, ["token", "reason"])},
+                    "locally they stay but are no longer shared. Reason is required; the network token comes from the memory.",
+     "inputSchema": _schema({"token": _S, "ids": _TAGS, "all": {"type": "boolean"}, "reason": _S}, ["reason"])},
+    {"name": "vi_net_peer_remove",
+     "description": "VI network: remove a peer address from a network's peer list on this server (e.g. one vi_net_status reports as "
+                    "invalid or paused). The network service drops it at its next round and does not take it back while it is removed. "
+                    "Reason is required.",
+     "inputSchema": _schema({"network": _S, "address": _S, "reason": _S}, ["network", "address", "reason"])},
     {"name": "vi_prompt_context",
      "description": "VI: knowledge that fits a user prompt — called by the hook before the model answers (Claude Code UserPromptSubmit, Hermes "
                     "pre_llm_call), so a follow-up question finds the memory too. The prompt is not stored. shown = ids already shown in this "
@@ -468,7 +474,7 @@ _PARAM_DOCS = {
     "name": "name: letters, digits, -",
     "code": "Python source",
     "prompt": "the user's prompt (masked by the hook, at most 4,000 characters; not stored)",
-    "token": "the instance's network token (vi_net_token) — proves the entries are its own",
+    "token": "optional, only for callers before 0.66.1: the instance's network token; without it the memory uses the one it keeps",
 }
 _TOOL_PARAM_DOCS = {
     ("vi_after", "ok"): "did the action succeed",
@@ -498,6 +504,7 @@ _TOOL_PARAM_DOCS = {
     ("vi_net_forget", "all"): "true: recall every own entry in this network",
     ("vi_prompt_context", "shown"): "ids already shown in this conversation (not repeated)",
     ("vi_net_switch", "on"): "true switches the network on, false off",
+    ("vi_net_peer_remove", "address"): "the peer address exactly as vi_net_status lists it, e.g. https://host.example/vi-p2p/wiki",
     ("vi_net_answer_search", "max"): "how many hits at most",
     ("vi_page_write", "text"): "the whole page text (Markdown)",
     ("vi_page_write", "base_rev"): "the revision you edited (from vi_page_read); not needed for a new page",
@@ -1166,18 +1173,28 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             raise Rejected(str(e)) from e
         return f"{o.id} released, mode test"
     if name == "vi_net_token":
-        try:
-            return f"Network token (shown only now, keep it safe):\n{p2p.generate_token(instance)}"
-        except ValueError as e:
-            raise Rejected(str(e)) from e
+        # 0.66.1: the token stays in the memory — a tool result lands in the agent's conversation (reported from Windows, 15.11.2026)
+        t = p2p.issue_token(instance)
+        return (f"Network token {t['id']} {'created' if t['new'] else 'exists since ' + str(t['since'])[:16]} for instance {instance}. "
+                f"It is stored by the memory itself ({t['location']}) and never shown; vi_page_write, vi_ask(to=\"netz\") and vi_net_forget "
+                f"use it from there. Recalling entries as an administrator: vi-mcp net-token {instance} --forget (--all | --ids ID,…) --reason R.")
     if name == "vi_net_forget":
         if bool(args.get("ids")) == bool(args.get("all")):
             raise Rejected("give either ids or all=true")
         try:
-            r = p2p.net_forget(instance, args.get("token", ""), None if args.get("all") else args["ids"], args.get("reason", ""))
+            r = p2p.net_forget(instance, args.get("token") or None, None if args.get("all") else args["ids"], args.get("reason", ""))
         except ValueError as e:
             raise Rejected(str(e)) from e
         return f"{r['zurueckgerufen']} entries recalled; the network learns of it at the next sync." + (f" Unknown: {len(r['unbekannt'])}." if r["unbekannt"] else "")
+    if name == "vi_net_peer_remove":  # 0.66.1
+        if instance == config.OPEN:
+            raise Rejected("removing a peer needs an own instance with a token")
+        try:
+            r = p2p.remove_peer(args.get("network") or "", args.get("address") or "", f"ki@{instance}", args.get("reason") or "")
+        except ValueError as e:
+            raise Rejected(str(e)) from e
+        return (f"peer {r['address']} removed from network {r['network']} on this server; the network service drops it at its next round "
+                "and does not take it back from the logbook, the start list or peer exchange while it stays removed.")
     if name == "vi_prompt_context":  # 0.44.0
         return json.dumps(intuition.prompt_hints(str(args.get("prompt") or "")[:4000], instance, args.get("shown") or []), ensure_ascii=False)
     if name == "vi_net_switch":  # 0.47.0

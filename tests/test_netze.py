@@ -65,12 +65,12 @@ def test_address_with_fields_of_a_newer_version():
 def test_version_tuple_and_peers_below(tmp_path):
     assert lb.version_tuple("0.39.0") > lb.version_tuple("0.38.12") and lb.version_tuple("?") == (0, 0, 0)
     a = _log(tmp_path, "a")
-    for addr, v in (("http://p1", "0.41.0"), ("http://p2", "0.38.2"), ("http://p3", None)):
+    for addr, v in (("http://p1.example", "0.41.0"), ("http://p2.example", "0.38.2"), ("http://p3.example", None)):
         a.peer_remember(addr, "start")
         a.peer_result(addr, True)
         if v:
             a.peer_state(addr, version=v)
-    assert a.peers_below("0.41.0") == ["http://p2", "http://p3"]
+    assert a.peers_below("0.41.0") == ["http://p2.example", "http://p3.example"]
 
 
 # ---- network service: version, backlog, snapshot ----
@@ -170,9 +170,9 @@ def test_tools_take_the_network_from_the_instance(nets):
         tools.call_tool("vi_net_outbox", {}, "a", False)
     st = p2p.status()["netze"]
     assert st["firma"]["kind"] == "company" and st["firma"]["stand"]["mitglieder"] == 3
-    assert st["standard"]["stand"].startswith("not recorded")
+    assert st["standard"]["stand"].startswith("never reported")  # 0.66.1: the reason instead of "not recorded"
     w = "\n".join(usage_stats.network_lines())
-    assert "standard (open" in w and "not recorded" in w
+    assert "standard (open" in w and "never reported" in w
     assert "firma (company): snapshot" in w and "peers 1 of 1 reachable" in w and "missing there 2" in w
     with pytest.raises(tools.Rejected, match="unknown network"):
         tools.call_tool("vi_net_preview", {"network": "gibtsnicht"}, "a", False)

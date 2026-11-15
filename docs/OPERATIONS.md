@@ -184,6 +184,21 @@ vi-mcp net --network firma join "$(head -1 code-file)" --mode peer --kind compan
   Another wiki server (0.54.1): `sudo vi-mcp net wiki on --start wiki.example.org` (host name or https address; replaces the start address).
 - The AI can switch the network off and on in the memory (`vi_net_switch`); the service keeps running but pauses. `vi_net_status`
   shows who switched, when and why.
+- Peer addresses (0.66.1). A peer is `http(s)://HOST[:PORT][/PATH]` with a fully qualified host name, an IP address or `localhost`;
+  `setup --start`, `wiki on --start`, the logbook and peer exchange refuse anything else (a single word such as `new` is no host).
+  Every peer has one state: `reachable`, `untried`, `failing`, `paused` (after 10 failures in a row, for 24 h, with the last error;
+  then one attempt) or `invalid` (an entry from before 0.66.1; never contacted). `sudo vi-mcp net [--network N] peers` lists them,
+  `vi_net_status` names invalid, paused and refused ones under `peer_problems`. Remove one: `sudo vi-mcp net [--network N] peers
+  remove ADDRESS` (peer list and start list), or in the memory `vi_net_peer_remove(network, address, reason)` — the service drops it at
+  its next round and keeps it out while the memory lists it.
+- Without a snapshot `vi_net_status` says why (0.66.1): `not set up` (the network's instance is not in the memory configuration — a
+  new installation, Linux or Windows, joins only `wiki`, so `standard` shows this), `never reported` (set up, service never called:
+  `systemctl status vi-p2p[@NET]`, Windows scheduled task `vi-p2p[-NET]`), `no snapshot` (it called without one), and on an old
+  snapshot `stale` with the time of the last report (older than 30 min; a service reports every round, at most 300 s apart).
+- Network token (0.66.1): `vi_net_token` stores it in table `netz_token` of the memory database (SQLite file 0600; Windows:
+  `%ProgramData%\vi-mcp`, SYSTEM and administrators only) and returns only its id. `sudo vi-mcp net-token NAME` shows id and
+  storage, `--forget (--all | --ids ID,…) --reason R` recalls entries, `--export FILE` writes a backup (0600; on Windows restrict the
+  file's ACL yourself). The token is never printed.
 - The start server: a peerhost of the network `wiki` on vi-wiki.org (443, `--public https://vi-wiki.org`, `vi-mcp web on`).
 
 ### Web page (0.46.0)

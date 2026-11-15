@@ -108,7 +108,7 @@ def default_runtime():
 #: The loop forbids them; a device naming one would reopen them to the model (review 14.11.2026). German aliases included
 #: (vi_mcp/api_en.TOOL_ALIASES); a test keeps this list in step with the server's tool names.
 OWNER_TOOLS = frozenset({"vi_machine", "vi_release", "vi_quarantine", "vi_set_visibility", "vi_net_token", "vi_net_switch",
-                         "vi_tools_register", "vi_freigabe", "vi_quarantaene", "vi_netz_token"})
+                         "vi_net_peer_remove", "vi_tools_register", "vi_freigabe", "vi_quarantaene", "vi_netz_token"})
 
 
 def validate_runtime(runtime):

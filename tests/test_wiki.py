@@ -200,11 +200,11 @@ def test_outbox_carries_own_revisions_and_the_service_writes_them_once(w, net):
 def test_old_peer_holds_pages_back(w, net):
     (sa, a_pub), = (net.key_(),)
     a = net.build(sa, [a_pub])
-    a.log.peer_remember("http://old", "start")
-    a.log.peer_result("http://old", True)
-    a.log.peer_state("http://old", version="0.38.2")
+    a.log.peer_remember("http://old.example", "start")
+    a.log.peer_result("http://old.example", True)
+    a.log.peer_state("http://old.example", version="0.38.2")
     wiki.write("a", "standard", "p", BASE, None)
-    assert a._pages(p2p.outbox("standard")["seiten"]) == 0 and a.usage_stats["seiten_sperre"] == ["http://old"]
+    assert a._pages(p2p.outbox("standard")["seiten"]) == 0 and a.usage_stats["seiten_sperre"] == ["http://old.example"]
 
 
 def test_page_rules():

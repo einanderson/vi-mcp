@@ -114,6 +114,66 @@ Linked from [README.md](README.md).
     `tests/test_kern.py::test_content_empty_auto_skill_is_withdrawn`.
   - The same tests pass on PostgreSQL 16 (`VI_MCP_TEST_PG`; 121 passed, 2 skipped: collective, core, philosophy, provenance, stop words).
 
+### What was fixed in the network (reported from a Windows installation of 0.66.0, 15.11.2026)
+
+- **The network token no longer enters an agent's conversation.** `vi_net_token` returned the token as its tool result, so it landed
+  in the agent's conversation. The agent may not store a token in the VI and could not write a file.
+  - The token was already kept in table `netz_token` of the memory database. The SQLite file is 0600 (`memory.open_db`); on Windows
+    `%ProgramData%\vi-mcp` is readable only by SYSTEM and administrators (`install.ps1`).
+  - Now the tool returns only the token's id (`nt-` and 12 hex characters of its SHA-256) and where it is stored. A second call names
+    the same token instead of refusing.
+  - `vi_net_forget` no longer needs `token`: it uses the stored one. The caller is already authenticated as the instance. A token
+    that is given must still match, so callers before 0.66.1 keep working. Tokens issued before stay valid; nothing to migrate.
+  - `vi-mcp net-token NAME` no longer prints the token. It shows id and storage. `--forget (--all | --ids ID,…) --reason R` recalls
+    entries as an administrator. `--export FILE` writes a backup (created 0600, never overwrites; on Windows restrict the ACL yourself).
+  - Evidence: `tests/test_net_fixes.py` — the token is not in the tool result, nor in the output of the CLI, and the export is 0600.
+    Before the fix the first test failed with the token in the result and the second with "required field missing: token".
+- **A peer address must name a real host; failing peers pause.** `vi_net_status` showed the wiki peer `https://new/vi-p2p/wiki`,
+  reachable false, "error 58". "error 58" was the count of failed attempts in a row; the peer was still asked every hour.
+  - Probable source (hypothesis, not checked on that host): the wiki field of the MSI dialog was labelled "empty = as before,
+    new: vi-wiki.org". Typing `new` there ran `vi-mcp net wiki on --start new`, and `wiki_start` accepted `new` as a host.
+  - Now `logbook.address_problem` decides what a peer address is: `http(s)://HOST[:PORT][/PATH]` with a fully qualified host name,
+    an IP address or `localhost`. `setup --start`, `wiki on --start`, the logbook's address entries and peer exchange refuse
+    anything else, with the reason. Refused addresses are listed in the service snapshot.
+  - The MSI label now reads "empty: unchanged / vi-wiki.org; 0: none". `install.ps1` reads a typed or remembered `new`
+    (also `default`, `yes`) as the default server and sets the wiki service up again. `net wiki on` drops stored start addresses
+    that name no host (vi-wiki.org if none is left).
+  - Every peer has exactly one named state: `reachable`, `untried`, `failing`, `paused`, `invalid`.
+    - After 10 failures in a row a peer is paused for 24 h, with the last error as reason and the resume time; then it gets one
+      attempt.
+    - An address stored before 0.66.1 that names no host is `invalid` and never contacted.
+  - `vi_net_status` lists invalid, paused and refused peers under `peer_problems`.
+  - Removing a peer:
+    - New tool `vi_net_peer_remove(network, address, reason)`. The memory keeps who, when and why (table `net_peer_removed`). The
+      service drops the address at its next round and does not take it back while it is removed.
+    - Or as administrator: `sudo vi-mcp net [--network N] peers remove ADDRESS`, which removes it from the peer list and the start
+      list.
+  - Evidence: `tests/test_net_fixes.py`: 11 refused and 7 accepted addresses, the start word not remembered, the pause with reason
+    and resume time, removal by tool and CLI. Before the fix `wiki_start("new")` returned `https://new/vi-p2p/wiki`.
+- **`vi_net_status` says why a network has no snapshot.** On that installation, `standard` read "not recorded (the network service
+  has not reported since 0.39.0)".
+  - Cause, in the code: `p2p.networks()` always lists `standard`, but no installer sets it up. The MSI sets up only the scheduled
+    task `vi-p2p-wiki` (`install.ps1`); the Linux packages only join `wiki` (`nach-installation.sh`). The status blamed a service
+    that never existed. Recording the snapshot itself works: `vi_net_outbox(state)` → `p2p.record_state`, tested.
+  - Now the status names one of:
+    - `not set up` (the network's instance is not in the memory configuration);
+    - `never reported` (set up, but the service never called);
+    - `no snapshot` (it called without one).
+  - A snapshot older than 30 min carries `stale` with the time of the last report and the service to check (systemd
+    `vi-p2p[@NET]`, Windows `vi-p2p[-NET]`).
+  - `vi_stats` section W uses the same text.
+  - Evidence: `tests/test_net_fixes.py::test_status_names_why_a_network_has_no_snapshot`.
+- The full suite with these fixes passes on SQLite (1126 passed, 6 skipped) and on PostgreSQL 16 (`VI_MCP_TEST_PG`: 1127 passed,
+  7 skipped, after one test fix: on PostgreSQL the token's storage is named as a table, never as a URL).
+
+### What has changed in the network (0.66.1)
+
+- A single-word host name (`http://old`, a container name) is no longer accepted as a peer address. Three older tests used such
+  addresses (`tests/test_netze.py`, `tests/test_wiki.py`, `tests/test_net_score.py`) and now use `*.example`. A company network that reaches its peers by short
+  names must use the fully qualified name.
+- New stored names use English (`net_peer_removed`; peer columns `paused_until`, `pause_reason`, `last_error`). The user decided on
+  15.11.2026 that the stored formats move to English as a whole; this avoids migrating these twice.
+
 ### What is missing
 
 - A quarantine discard (`p2p.discard`, a reviewer rejects foreign knowledge) still sets `widerlegt`. Strictly, that is a third thing:
@@ -140,6 +200,14 @@ Linked from [README.md](README.md).
   - `clingo_prose.vocab_program`: random rule sets over a philosophy's vocabulary, with generic prose. A seed rule never occurs, not even
     renamed or reordered (`normal_rule`, a canonical form).
   Evidence: `tests/test_philosophy.py::test_the_language_stage_covers_a_seeds_forms_and_crossed_vocabulary_never_leaks_a_seed_rule`.
+
+- Network fixes of 0.66.1, not yet verified on a real host:
+  - The cause of `https://new/vi-p2p/wiki` (the MSI field) is a hypothesis. The reporting host's `install.log` and `wiki.json` were
+    not seen. The MSI with the new label was not built or installed on Windows.
+  - A removal by `vi_net_peer_remove` cannot be undone with a tool. The row stays in `net_peer_removed`; undoing it needs SQL. A
+    restore action is open.
+  - On Windows, `vi-mcp net-token --export` writes the file without setting an ACL (only `os.open` mode 0600, which Windows ignores
+    except for read-only).
 
 ### What was fixed in the measurement
 

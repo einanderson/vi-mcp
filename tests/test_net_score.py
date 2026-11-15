@@ -145,11 +145,11 @@ def test_service_writes_ratings_only_when_every_peer_relays_them(net):
     (sa, a_pub), (sb, b_pub) = net.key_(), net.key_()
     a = net.build(sa, [a_pub])
     ish = "c" * 64
-    a.log.peer_remember("http://old-peer", "start")
-    a.log.peer_result("http://old-peer", True)
-    a.log.peer_state("http://old-peer", version="0.38.2")
-    assert a._ratings([_rating(ish, ja=2)]) == 0 and a.usage_stats["bewertung_sperre"] == ["http://old-peer"]
-    a.log.peer_state("http://old-peer", version="0.40.0")
+    a.log.peer_remember("http://old-peer.example", "start")
+    a.log.peer_result("http://old-peer.example", True)
+    a.log.peer_state("http://old-peer.example", version="0.38.2")
+    assert a._ratings([_rating(ish, ja=2)]) == 0 and a.usage_stats["bewertung_sperre"] == ["http://old-peer.example"]
+    a.log.peer_state("http://old-peer.example", version="0.40.0")
     assert a._ratings([_rating(ish, ja=2)]) == 1
     assert a._ratings([_rating(ish, ja=3)]) == 0  # at most one per content and day
     assert a.log.count_own("bewertung") == 1

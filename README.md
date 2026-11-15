@@ -642,7 +642,7 @@ Import rejects every object with a finding. `vi_net_preview` shows exactly what 
 
 **Credentials are never stored locally either**, as far as their form gives them away (`password=…`, `Bearer …`, key blocks, URLs with logins). Host names and IPs stay local and private because hints depend on them.
 
-**Right to be forgotten.** Without a network token (`vi_net_token`, issued once) an instance shares nothing. The token yields a separate deletion proof for each object. `vi_net_forget` recalls your own entries:
+**Right to be forgotten.** Without a network token (`vi_net_token`, issued once) an instance shares nothing. The memory keeps the token itself and shows only its id and where it is stored (0.66.1); it never enters an agent's conversation. The token yields a separate deletion proof for each object. `vi_net_forget` recalls your own entries (an administrator: `vi-mcp net-token NAME --forget …`):
 receivers delete them along with search index and vector, and keep only a tombstone so they cannot return. The network does not learn which instance it was, and one proof opens no other object.
 
 **Limits:** Patterns do not understand meaning. A free-standing proper name is only caught if it is on the list of known names (`p2p.interne_namen`). Deletion works with receivers that follow the protocol; nobody can force a peer to destroy a copy. Direct neighbours see each other's IP address, and every member knows the announced address of a `peerhost`.
@@ -667,6 +667,7 @@ receivers delete them along with search index and vector, and keep only a tombst
 | `vi_page_read` · `vi_page_write` · `vi_page_history` · `vi_page_forget` | network wiki: read, edit, history, revoke a revision |
 | `vi_net_search` | live search in a network; take a hit into review |
 | `vi_net_switch` | switch a network off or on, on the user's request (e.g. the public wiki network) |
+| `vi_net_peer_remove` | remove a peer address that `vi_net_status` reports as invalid or paused (0.66.1) |
 | `vi_prompt_context` | knowledge for a user prompt — called by the hook, follow-up questions included |
 
 ## Development

@@ -5,7 +5,9 @@
   python3 -m vi_mcp net …                 network: setup, invite, exclude, invitation, join, run, peers, id, status
   python3 -m vi_mcp setup [--help]        register vi-mcp in Claude Code, Codex CLI and Hermes Agent (ANSI menu)
   python3 -m vi_mcp p2p-key PATH          create an Ed25519 seed (0600), prints the public key
-  python3 -m vi_mcp net-token NAME        show an instance's network token if it was lost (needs access to the database)
+  python3 -m vi_mcp net-token NAME [--forget (--all|--ids ID,…) --reason R] [--export FILE]
+                                          an instance's network token: id and storage (never printed), recall entries,
+                                          backup into a 0600 file (needs access to the database)
   python3 -m vi_mcp quarantine [N]       what waits in quarantine, with the check results (as administrator / sudo)
   python3 -m vi_mcp release ID "REASON" [--discard]   release (or discard) a held entry as a person; uses the token in
                                          /etc/vi-mcp/freigabe-token (made on first use)
@@ -82,6 +84,59 @@ COMMANDS = {"setup": "einrichten", "image": "bild", "local": "lokal", "net": "ne
             "release": "freigeben", "delete-instance": "loesche-instanz", "web": "webseite", "quarantine": "quarantaene",
             "configure": "konfigurieren"}
 _ALIASES = {de: en for en, de in COMMANDS.items()}
+
+
+def _net_token(instance: str, opts: list[str]) -> int:
+    """0.66.1: an administrator's view of an instance's network token without printing it — before, `net-token NAME` printed the token,
+    and an agent running the command had it in its conversation. --forget recalls entries with the stored token; --export FILE writes
+    it into a file readable only by its owner (0600), for a backup kept outside the memory."""
+    import argparse
+    a = argparse.ArgumentParser(prog="vi-mcp net-token", description="network token of an instance: id and storage, recall, backup")
+    a.add_argument("--forget", action="store_true", help="recall own entries from the networks (with --all or --ids and --reason)")
+    a.add_argument("--all", action="store_true")
+    a.add_argument("--ids", default="", help="comma-separated object ids")
+    a.add_argument("--reason", default="")
+    a.add_argument("--export", metavar="FILE", help="write the token into FILE (created 0600; an existing file is not overwritten)")
+    o = a.parse_args(opts)
+    from . import memory as g, p2p
+    g.open_db(config.load().db)
+    try:
+        t = p2p.show_token(instance)
+        if not t:
+            print(f"Instance {instance} has no network token (vi_net_token creates it)", file=sys.stderr)
+            return 1
+        if o.forget:
+            ids = [i.strip() for i in o.ids.split(",") if i.strip()]
+            if bool(ids) == bool(o.all):
+                print("give either --all or --ids ID,…", file=sys.stderr)
+                return 2
+            try:
+                r = p2p.net_forget(instance, None, None if o.all else ids, o.reason)
+            except ValueError as e:
+                print(e, file=sys.stderr)
+                return 2
+            print(f"{r['zurueckgerufen']} entries recalled for instance {instance}; the networks learn of it at the next sync of their services."
+                  + (f" Unknown: {len(r['unbekannt'])}." if r["unbekannt"] else ""))
+            return 0
+        if o.export:
+            from pathlib import Path
+            f = Path(o.export)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                print(f"{f} exists; not overwritten", file=sys.stderr)
+                return 2
+            with os.fdopen(fd, "w") as out:
+                out.write(t + "\n")
+            print(f"Network token {p2p.token_id(t)} of instance {instance} written to {f} (0600). On Windows, restrict the file's ACL to "
+                  "administrators yourself.")
+            return 0
+        print(f"Network token {p2p.token_id(t)} of instance {instance} · stored in {p2p.token_location()}")
+        print(f"Recall entries: vi-mcp net-token {instance} --forget (--all | --ids ID,…) --reason R · backup: --export FILE")
+        return 0
+    finally:
+        g.close_db()
 
 
 def _approve(oid: str, reason: str, discard: bool = False) -> int:
@@ -219,15 +274,8 @@ def _cli(argv: list[str]) -> int:
         from . import p2p
         print(p2p.generate_keys(Path(argv[1])))
         return 0
-    if command == "net-token" and len(argv) == 2:
-        from . import memory as g, p2p
-        g.open_db(config.load().db)
-        try:
-            t = p2p.show_token(argv[1])
-        finally:
-            g.close_db()
-        print(t or f"Instance {argv[1]} has no network token")
-        return 0 if t else 1
+    if command == "net-token" and len(argv) >= 2:
+        return _net_token(argv[1], argv[2:])
     if command == "visibility" and len(argv) in (4, 5) and argv[2] in ("shared", "internal") and argv[4:] in ([], ["--apply"]):
         return _local_tool("vi_set_visibility", {"filter": argv[1], "visibility": argv[2], "reason": argv[3], "apply": "--apply" in argv})
     if command == "release" and len(argv) in (3, 4) and argv[3:] in ([], ["--discard"]):

@@ -251,7 +251,15 @@ def wiki_start(value: str | None) -> str:
         raise bad from None
     if u.scheme != "https" or not u.hostname or u.query or u.fragment or u.username or u.password:
         raise bad
-    return urllib.parse.urlunsplit(("https", u.netloc.lower(), u.path.rstrip("/") or f"/vi-p2p/{p2p.WIKI_NET}", "", ""))
+    out = urllib.parse.urlunsplit(("https", u.netloc.lower(), u.path.rstrip("/") or f"/vi-p2p/{p2p.WIKI_NET}", "", ""))
+    if why := lb.address_problem(out):  # 0.66.1: "new" (most likely typed into the MSI's wiki field) became https://new/vi-p2p/wiki
+        raise ValueError(f"wiki server {v!r}: {why}")
+    return out
+
+
+def start_problems(addresses) -> list[str]:
+    """0.66.1: the start addresses (setup --start) that name no real host, each with its reason. Empty = all usable."""
+    return [f"{a}: {why}" for a in addresses or [] if (why := lb.address_problem(a))]
 
 
 def _memory_config(o) -> Path | None:
@@ -520,7 +528,9 @@ def _parser() -> argparse.ArgumentParser:
     wk.add_argument("--start", default=None, help="the wiki server to start from instead of vi-wiki.org: a host name or https://HOST[:PORT][/PATH] "
                     "(no path: /vi-p2p/wiki); replaces the start address of an existing configuration (0.54.1)")
     wk.add_argument("--proxy", default=None, help="HTTP(S) proxy for the service's outgoing connections, e.g. http://proxy:3128 (0.54.0)")
-    cmd("peers")
+    pe = cmd("peers", help="list the peers with their state · remove ADDRESS: drop one from the peer list and the start list (0.66.1)")
+    pe.add_argument("action", nargs="?", choices=("list", "remove"), default="list")
+    pe.add_argument("address", nargs="?")
     for name, alias in (("block", "sperren"), ("unblock", "entsperren")):  # 0.45.0: local block list (public key or address)
         x = cmd(name, alias)
         x.add_argument("target", help="public key (64 hex) or address https://…")
@@ -562,11 +572,15 @@ def main(argv: list[str]) -> int:
         except ValueError as ex:
             print(ex, file=sys.stderr)
             return 2
-        known = (json.loads(p.read_text(encoding="utf-8-sig")).get("startpeers") or []) if p.exists() else []
+        stored = (json.loads(p.read_text(encoding="utf-8-sig")).get("startpeers") or []) if p.exists() else []
+        known = [x for x in stored if not lb.address_problem(x)]  # 0.66.1: a stored https://new/vi-p2p/wiki is dropped here
+        for bad in start_problems(stored):
+            print(f"start address dropped: {bad}", file=sys.stderr)
         if o.start is None and known:  # on again without --start: the server it was set up with, vi-wiki.org is not added
             start = known[0]
         e = argparse.Namespace(mode="peer", address=None, bind=None, port=None, tls_cert=None, tls_key=None, ca_file=None, found=False, founders=[],
-                               start=[] if o.start is None and known else [start], replace_start=o.start is not None, http_allowed=False, torrent=False, tls_self=False, proxy=o.proxy,
+                               start=[] if o.start is None and known and known == stored else (known if o.start is None and known else [start]),
+                               replace_start=o.start is not None or known != stored, http_allowed=False, torrent=False, tls_self=False, proxy=o.proxy,
                                no_proxy=[], quiet=True, kind="free", public=None)
         code = setup(e)
         if code == 0:
@@ -576,6 +590,9 @@ def main(argv: list[str]) -> int:
                 print(f"Hint: wiki server not recorded in the memory config: {ex}")
         return code
     if o.command == "setup":
+        if bad := start_problems(o.start):  # 0.66.1: refused when entered, not counted as failures forever
+            print("not a peer address — " + "; ".join(bad), file=sys.stderr)
+            return 2
         return setup(o)
     if o.command == "run":
         return nd.main()
@@ -584,6 +601,15 @@ def main(argv: list[str]) -> int:
     if o.command == "proxy-config":
         print(nginx_snippet(network_configs(nd.fpath().parent)))
         return 0
+    removed_from_start = []
+    if o.command == "peers" and o.action == "remove" and o.address and nd.fpath().exists():  # the config file before dropping root (0.66.1)
+        p = nd.fpath()
+        raw = nd.english_file(json.loads(p.read_text(encoding="utf-8-sig")))
+        starts = raw.get("startpeers") or []
+        removed_from_start = [x for x in starts if x.rstrip("/") == o.address.strip().rstrip("/")]
+        if removed_from_start:
+            raw["startpeers"] = [x for x in starts if x not in removed_from_start]
+            _write(p, raw)
     _as_service_user()
     k = nd.load()
     if not Path(k.seed).exists():
@@ -606,9 +632,26 @@ def main(argv: list[str]) -> int:
         print(nd.build_code(sorted(k.founders), k.address.rstrip("/"), pin, nonce, time.time() + o.hours * 3600))
         print(f"One-time, valid {o.hours:g} h. Treat it like a password: whoever has it becomes a member. On the new server:  sudo vi-mcp net join <code>", file=sys.stderr)
         return 0
+    if o.command == "peers" and o.action == "remove":  # 0.66.1
+        target = (o.address or "").strip().rstrip("/")
+        if not target:
+            print("give the address: vi-mcp net [--network N] peers remove ADDRESS", file=sys.stderr)
+            return 2
+        in_start = removed_from_start
+        dropped = log.peer_forget(target)
+        if not (dropped or in_start):
+            print(f"{target} is neither in the peer list nor in the start list of network {k.net}", file=sys.stderr)
+            return 1
+        if reason := _service("restart", SERVICE):
+            print(f"Hint: {reason}")
+        print(f"{target} removed from network {k.net}: " + ", ".join(x for x, y in (("peer list", dropped), ("start list", in_start)) if y)
+              + ". A peer exchange may name a valid address again — to keep it out: vi-mcp net block ADDRESS (or vi_net_peer_remove in the memory).")
+        return 0
     if o.command == "peers":
-        for p in log.peers():
-            progress = "reachable" if p["fehler"] == 0 and p["zuletzt"] else "never reached" if not p["zuletzt"] else f"{p['fehler']} errors in a row"
+        for p in log.peers():  # 0.66.1: the named state (logbook.PEER_STATES) with its reason
+            progress = p["state"] + (f" — {p['reason']}" if p["reason"] else "")
+            if p["paused_until"]:
+                progress += " · resumes " + datetime.datetime.fromtimestamp(p["paused_until"], datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             print(f"{p['adresse']:45} {p['quelle']:9} {'Pin ' + p['pin'][:12] if p['pin'] else 'CA':16} {progress}")
         return 0
     if o.command in ("block", "unblock"):

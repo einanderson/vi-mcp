@@ -22,12 +22,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
 import threading
 import time
 import urllib.parse
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 from . import memory as g
@@ -173,7 +175,7 @@ def generate_token(instance: str) -> str:
     t = secrets.token_urlsafe(32)
     with g.lock:
         if g.db().execute("SELECT 1 FROM netz_token WHERE instanz = ?", (instance,)).fetchone():
-            raise ValueError(f"instance {instance} already has a network token; it is not renewed, otherwise distributed entries could no longer be deleted (show it on the server: vi-mcp net-token {instance})")
+            raise ValueError(f"instance {instance} already has a network token; it is not renewed, otherwise distributed entries could no longer be deleted (its id: vi-mcp net-token {instance})")
         g.db().execute("INSERT INTO netz_token (instanz, token, zeit) VALUES (?,?,?)", (instance, t, g.now()))
         g.db().commit()
     return t
@@ -188,6 +190,36 @@ def _token(instance: str) -> str | None:
 
 def show_token(instance: str) -> str | None:
     return _token(instance)
+
+
+def token_id(token: str) -> str:
+    """0.66.1: the name of a network token that can be shown anywhere — the token itself never is (it proves every revocation)."""
+    return "nt-" + hashlib.sha256(token.encode()).hexdigest()[:12]
+
+
+def token_location() -> str:
+    """Where the memory keeps the network tokens: table netz_token of its database. Readable only by the service — the SQLite file
+    and its companions are 0600 (memory.open_db); on Windows %ProgramData%\\vi-mcp is readable by SYSTEM and administrators only
+    (install.ps1). A PostgreSQL URL is not repeated (it can carry a password)."""
+    from . import db as dbmod
+    where = g.fpath_active
+    if where is None or dbmod.is_url(where):
+        return "table netz_token of the memory's PostgreSQL database"
+    return f"table netz_token in {where} (file mode 0600, readable only by the vi-mcp service)"
+
+
+def issue_token(instance: str) -> dict:
+    """0.66.1: what vi_net_token does. The token is made once and stays in the memory; the caller gets its id and its location.
+    Reported from a Windows installation (15.11.2026): the token was the tool result, so it landed in the agent's conversation,
+    which may neither store it in the VI nor could write a file. vi_page_write, vi_ask(to="netz") and vi_net_forget take it from here."""
+    t = _token(instance)
+    new = t is None
+    if new:
+        t = generate_token(instance)
+    _tables()
+    with g.lock:
+        z = g.db().execute("SELECT zeit FROM netz_token WHERE instanz = ?", (instance,)).fetchone()
+    return {"id": token_id(t), "new": new, "since": z[0] if z else None, "location": token_location()}
 
 
 def _known() -> frozenset[str]:
@@ -315,12 +347,16 @@ def preview(instance: str, limit: int = 10, net: str = STANDARD) -> dict:
     return {"netz": net, "art": networks()[net]["kind"], "anzahl": len(mem_objects), "zurueckgehalten": withheld, "beispiele": [r for _o, r in mem_objects[:limit]]}
 
 
-def net_forget(instance: str, token: str, ids: list[str] | None, reason: str) -> dict:
-    """Revoke own entries from the network. ids=None means all. The local object stays but is no longer distributed."""
+def net_forget(instance: str, token: str | None, ids: list[str] | None, reason: str) -> dict:
+    """Revoke own entries from the network. ids=None means all. The local object stays but is no longer distributed.
+    0.66.1: token None = the one this memory keeps for the instance (the caller is already authenticated as that instance); a token
+    that is given must still match — the way of callers before 0.66.1."""
     if not (reason or "").strip():
         raise ValueError("reason is required")
     real = _token(instance)
-    if not real or not hmac.compare_digest(real.encode(), (token or "").encode()):
+    if not real:
+        raise ValueError(f"instance {instance} has no network token (vi_net_token): it never shared anything")
+    if token is not None and not hmac.compare_digest(real.encode(), token.encode()):
         raise ValueError("network token does not match this instance")
     if ids is None:
         with g.lock:
@@ -503,11 +539,49 @@ def search_stats(days: float = 7) -> dict:
 def outbox(net: str = STANDARD) -> dict:
     """What may go to the network, unsigned: signing is the network service's job, which keeps its key to itself."""
     if not is_on(net):  # 0.47.0: switched off in the memory — nothing goes out; the service pauses its rounds
-        return {"aus": True, "objekte": [], "widerrufe": [], "zurueckgehalten": {}, "bewertungen": [], "seiten": [], "beitraege": [], "vertrauen": trust()}
+        return {"aus": True, "objekte": [], "widerrufe": [], "zurueckgehalten": {}, "bewertungen": [], "seiten": [], "beitraege": [], "vertrauen": trust(),
+                "removed_peers": removed_peers(net)}
     mem_objects, withdrawn = _collect(None, net)
     from . import forum, wiki
     return {"vertrauen": trust(), "objekte": [r for _o, r in mem_objects], "widerrufe": _revocations(net) + wiki.revocations(net), "zurueckgehalten": withdrawn,
-            "bewertungen": net_score.outgoing(net) + _word_weights_out(net), "seiten": wiki.outgoing(net), "beitraege": forum.outgoing(net)}
+            "bewertungen": net_score.outgoing(net) + _word_weights_out(net), "seiten": wiki.outgoing(net), "beitraege": forum.outgoing(net),
+            "removed_peers": removed_peers(net)}
+
+
+# ---- Peer addresses decided in the memory (0.66.1) ----
+
+def _peer_table() -> None:
+    with g.lock:  # English names: the stored formats move to English (decided by the user, 15.11.2026)
+        g.db().execute("CREATE TABLE IF NOT EXISTS net_peer_removed (net TEXT NOT NULL, address TEXT NOT NULL, time TEXT NOT NULL, who TEXT NOT NULL, "
+                       "reason TEXT NOT NULL, PRIMARY KEY (net, address))")
+        g.db().commit()
+
+
+def remove_peer(net: str, address: str, who: str, reason: str) -> dict:
+    """0.66.1: remove a peer address from a network on this server. The memory keeps the decision with who and why (nothing disappears
+    silently); the network service gets the list with every outbox call, drops the address and does not take it back. Any address can
+    be removed — also one that names no host (that is what it is for: https://new/vi-p2p/wiki, reported from Windows, 15.11.2026)."""
+    if net not in networks():
+        raise ValueError(f"unknown network {net!r} — known: {', '.join(networks())}")
+    if not (reason or "").strip():
+        raise ValueError("reason is required")
+    a = str(address or "").strip().rstrip("/")
+    if not a or len(a) > 300 or any(c.isspace() for c in a):
+        raise ValueError("give the peer address as vi_net_status lists it")
+    _peer_table()
+    with g.lock:
+        g.db().execute("INSERT INTO net_peer_removed (net, address, time, who, reason) VALUES (?,?,?,?,?) ON CONFLICT(net, address) DO UPDATE SET "
+                       "time = excluded.time, who = excluded.who, reason = excluded.reason", (net, a, g.now(), who, reason.strip()[:300]))
+        g.db().commit()
+    from .log_output import log
+    log(f"network {net}: peer {a} removed by {who}: {reason.strip()[:200]}")
+    return {"network": net, "address": a}
+
+
+def removed_peers(net: str) -> list[str]:
+    _peer_table()
+    with g.lock:
+        return [r[0] for r in g.db().execute("SELECT address FROM net_peer_removed WHERE net = ? ORDER BY address", (net,))]
 
 
 def _word_weights_out(net: str) -> list[dict]:
@@ -791,10 +865,66 @@ def status() -> dict:
     nets = {}
     for n, d in networks().items():
         s = st.get(n)
-        nets[n] = {"kind": d["kind"], "instance": d["instance"], "an": is_on(n), "schalter": switch_state(n),
-                   "stand": ({"zeit": s["zeit"], **{k: s["daten"].get(k) for k in ("pseudonym", "version", "mitglieder", "peers", "transport", "unbekannte_typen", "wiki_sperre")}}
-                             if s else "not recorded (the network service has not reported since 0.39.0)")}
+        nets[n] = {"kind": d["kind"], "instance": d["instance"], "an": is_on(n), "schalter": switch_state(n), "stand": state_report(n, d, s)}
+        if s:  # 0.66.1: peers that cannot work, named with their reason (invalid address, paused after failures)
+            problems = [{"address": p.get("adresse"), "state": p.get("state"), "reason": p.get("reason"), "resume_at": p.get("resume_at")}
+                        for p in s["daten"].get("peers") or [] if isinstance(p, dict) and p.get("state") in ("invalid", "paused")]
+            if problems or s["daten"].get("rejected_addresses"):
+                nets[n]["peer_problems"] = problems + [{"address": r.get("address"), "state": "refused", "reason": r.get("reason"), "source": r.get("source")}
+                                                       for r in s["daten"].get("rejected_addresses") or [] if isinstance(r, dict)]
+                nets[n]["peer_problems_hint"] = (f"remove one: vi_net_peer_remove(network={n!r}, address, reason) or, as administrator, "
+                                                 f"vi-mcp net{'' if n == STANDARD else ' --network ' + n} peers remove ADDRESS")
     return {"netze": nets, "quarantaene": q, "grabsteine": gr, "herausgeber": publisher_value(fresh=True)}
+
+
+#: 0.66.1: the instance names of the memory's configuration (set by server.build); None = not known here (CLI, tests)
+service_instances: frozenset | None = None
+#: a snapshot older than this means the service stopped reporting (it reports every round, at most tick_s = 300 s apart)
+STATE_STALE_S = 1800
+
+
+def service_name(net: str, windows: bool | None = None) -> str:
+    """The network service of `net` as the operating system names it: systemd vi-p2p / vi-p2p@<net>, Windows scheduled tasks vi-p2p /
+    vi-p2p-<net> (net_cli.windows_task)."""
+    if windows is None:
+        windows = os.name == "nt"
+    return "vi-p2p" if net == STANDARD else (f"vi-p2p-{net}" if windows else f"vi-p2p@{net}")
+
+
+def _last_contact(instance: str) -> str | None:
+    """When the network service's instance last opened a conversation with this memory (every outbox call does)."""
+    with g.lock:
+        z = g.db().execute("SELECT MAX(zuletzt) FROM objekt WHERE art = 'gespraech' AND instanz = ?", (instance,)).fetchone()
+    return z[0] if z and z[0] else None
+
+
+def state_report(net: str, d: dict, s: dict | None):
+    """0.66.1: the snapshot of a network, or why there is none — one of: not set up, never reported, called without a snapshot; an old
+    snapshot carries `stale` with its time. Reported from Windows (15.11.2026): standard showed "not recorded (the network service has
+    not reported since 0.39.0)" on a server whose installer never sets up the standard network (it joins only the wiki network) —
+    networks() always lists standard, so the status blamed a service that never existed."""
+    svc = service_name(net)
+    inst = d["instance"]
+    if s:
+        out = {"zeit": s["zeit"], **{k: s["daten"].get(k) for k in ("pseudonym", "version", "mitglieder", "peers", "transport", "unbekannte_typen", "wiki_sperre",
+                                                                      "rejected_addresses", "removed_peers")}}
+        try:
+            age = time.time() - datetime.fromisoformat(s["zeit"]).timestamp()
+        except (TypeError, ValueError):
+            age = None
+        if age is not None and age > STATE_STALE_S:
+            out["stale"] = (f"last report at {s['zeit'][:16]} UTC, {age / 3600:.1f} h ago — the network service stopped reporting "
+                            f"(Linux: systemctl status {service_name(net, False)}; Windows: scheduled task {service_name(net, True)})")
+        return out
+    if service_instances is not None and inst not in service_instances:
+        how = "vi-mcp net setup --mode peer --start https://<a server of the network>" if net == STANDARD else f"vi-mcp net --network {net} setup …"
+        return (f"not set up: no network service for {net} on this server (its instance {inst} is not in the memory configuration)"
+                + (" — a new installation joins only the wiki network" if net == STANDARD else "") + f"; to take part: {how}")
+    if seen := _last_contact(inst):
+        return (f"no snapshot: the network service (instance {inst}) last called at {seen[:16]} UTC but sent no state — older than 0.39.0, "
+                f"or another program uses the instance")
+    return (f"never reported: instance {inst} is configured, but its network service has never called this memory — not started? "
+            f"(Linux: systemctl status {service_name(net, False)}; Windows: scheduled task {service_name(net, True)})")
 
 
 def sensitive(o: g.MemoryObject) -> list[str]:

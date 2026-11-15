@@ -20,6 +20,7 @@ import re
 import sqlite3
 import threading
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,6 +51,67 @@ _HEX32 = re.compile(r"^[0-9a-f]{32}$")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: behind a reverse proxy the service lives under a path, e.g. https://host/vi-p2p
 _ADDRESS = re.compile(r"^https?://[^/\s?#]+(?:/[A-Za-z0-9._~-]+)*$")
+_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
+#: 0.66.1: a peer that failed this many times in a row is paused (named, with reason and resume time) instead of being counted forever;
+#: after the pause it gets one attempt, and a failure pauses it again
+PEER_PAUSE_AFTER = 10
+PEER_PAUSE_S = 86400
+
+
+#: 0.66.1: every peer is in exactly one of these states (vi_net_status, vi-mcp net peers)
+PEER_STATES = ("reachable", "untried", "failing", "paused", "invalid")
+
+
+def peer_state_of(address: str, last_ok, errors, paused_until, pause_reason, last_error, now: float) -> tuple[str, str | None]:
+    """(state, reason) of one peer row. Pure."""
+    if why := address_problem(address):
+        return "invalid", why
+    if paused_until and paused_until > now:
+        return "paused", pause_reason
+    if errors:
+        return "failing", f"{errors} failed attempt(s) in a row" + (f", last: {last_error}" if last_error else "")
+    return ("reachable", None) if last_ok else ("untried", None)
+
+
+def address_problem(address) -> str | None:
+    """0.66.1: why `address` cannot be a peer, or None. A peer is http(s)://HOST[:PORT][/PATH] where HOST is a fully qualified name
+    (two labels or more, the last not numeric), an IP address or localhost. Reported from a Windows installation (15.11.2026): the wiki
+    peer https://new/vi-p2p/wiki — most likely "new" typed into the MSI's wiki field, whose label read "new: vi-wiki.org"."""
+    import ipaddress
+    a = str(address or "").strip()
+    if not a or len(a) > 300 or any(c.isspace() for c in a):
+        return "empty, too long or contains spaces"
+    if "://" not in a:
+        return "no scheme: an address starts with https:// (or http://)"
+    u = urllib.parse.urlsplit(a)
+    if u.scheme not in ("https", "http"):
+        return f"scheme {u.scheme!r}: only https or http"
+    if u.username or u.password or u.query or u.fragment:
+        return "user, query or fragment in the address"
+    try:
+        port = u.port
+    except ValueError:
+        return "port is not a number from 1 to 65535"
+    if port is not None and not 1 <= port <= 65535:
+        return "port is not a number from 1 to 65535"
+    if not _ADDRESS.match(a.rstrip("/")) and u.path not in ("", "/"):
+        return "path may only contain letters, digits and . _ ~ -"
+    host = (u.hostname or "").rstrip(".")
+    if not host:
+        return "no host"
+    if host == "localhost":
+        return None
+    try:
+        ipaddress.ip_address(host)
+        return None
+    except ValueError:
+        pass
+    labels = host.split(".")
+    if len(labels) < 2:
+        return f"{host!r} is not a host name: give a fully qualified name (host.example.org), an IP address or localhost"
+    if not all(_LABEL.match(x) for x in labels) or labels[-1].isdigit():
+        return f"{host!r} is not a valid host name"
+    return None
 
 
 def version_tuple(v: str) -> tuple:
@@ -228,9 +290,14 @@ class Logbook:
             CREATE TABLE IF NOT EXISTS segment (sha256 TEXT PRIMARY KEY, pub TEXT NOT NULL, von INTEGER NOT NULL, bis INTEGER NOT NULL, torrent TEXT NOT NULL, port INTEGER NOT NULL, datei TEXT NOT NULL);
         """)
         cols = [r[1] for r in self.db.execute("PRAGMA table_info(peer)")]
-        for col, typ in (("pin", "TEXT"), ("version", "TEXT"), ("version_zeit", "REAL"), ("fehlt_hier", "INTEGER"), ("fehlt_dort", "INTEGER")):
-            if col not in cols:  # 0.39.0: version and backlog per peer, for vi_net_status and vi_stats
+        for col, typ in (("pin", "TEXT"), ("version", "TEXT"), ("version_zeit", "REAL"), ("fehlt_hier", "INTEGER"), ("fehlt_dort", "INTEGER"),
+                         ("paused_until", "REAL"), ("pause_reason", "TEXT"), ("last_error", "TEXT")):
+            if col not in cols:  # 0.39.0: version and backlog per peer; 0.66.1: pause with reason (English names: the coming rename)
                 self.db.execute(f"ALTER TABLE peer ADD COLUMN {col} {typ}")
+        #: 0.66.1: addresses refused on the way in (start list, logbook, exchange): address → (source, reason), shown by vi_net_status
+        self.rejected_addresses: dict[str, tuple[str, str]] = {}
+        #: 0.66.1: addresses the memory removed (vi_net_peer_remove) — not taken back while it lists them
+        self.removed: set[str] = set()
         #: 0.39.0: a company network relays internal names (its members belong to one organisation); the open network rejects them
         self.internal_ok = internal_ok
         self.k = private(seed)
@@ -481,12 +548,28 @@ class Logbook:
 
     # ---- Peers ----
 
-    def peer_remember(self, address: str, source: str, pin: str | None = None) -> None:
-        """A pin only comes from a signed source: the peer's own adresse entry or a join code."""
+    def peer_remember(self, address: str, source: str, pin: str | None = None) -> str | None:
+        """A pin only comes from a signed source: the peer's own adresse entry or a join code.
+        0.66.1: an address that names no real host is not remembered — it is kept with its source and reason for vi_net_status — and
+        one the memory removed is not taken back. Returns the reason it was not remembered, or None."""
+        a = str(address or "").strip().rstrip("/")
+        if why := address_problem(a):
+            self.rejected_addresses[a[:300]] = (source, why)
+            return why
+        if a in self.removed:
+            return "removed on this server (vi_net_peer_remove)"
         with self.lock:
-            self.db.execute("INSERT OR IGNORE INTO peer (adresse, quelle) VALUES (?,?)", (address.rstrip("/"), source))
+            self.db.execute("INSERT OR IGNORE INTO peer (adresse, quelle) VALUES (?,?)", (a, source))
             if pin:
-                self.db.execute("UPDATE peer SET pin = ? WHERE adresse = ?", (pin, address.rstrip("/")))
+                self.db.execute("UPDATE peer SET pin = ? WHERE adresse = ?", (pin, a))
+        return None
+
+    def peer_forget(self, address: str) -> bool:
+        """0.66.1: drop a peer address (vi_net_peer_remove, vi-mcp net peers remove). True if it was there."""
+        a = str(address or "").strip().rstrip("/")
+        self.rejected_addresses.pop(a, None)
+        with self.lock:
+            return self.db.execute("DELETE FROM peer WHERE adresse = ?", (a,)).rowcount > 0
 
     def pin(self, address: str) -> str | None:
         with self.lock:
@@ -495,9 +578,15 @@ class Logbook:
 
     def peers(self) -> list[dict]:
         with self.lock:
-            lines = self.db.execute("SELECT adresse, quelle, pin, zuletzt, fehler, naechster, version, fehlt_hier, fehlt_dort FROM peer ORDER BY adresse").fetchall()
-        return [{"adresse": a, "quelle": q, "pin": p, "zuletzt": z, "fehler": f, "naechster": n, "version": v, "fehlt_hier": fh, "fehlt_dort": fd}
-                for a, q, p, z, f, n, v, fh, fd in lines]
+            lines = self.db.execute("SELECT adresse, quelle, pin, zuletzt, fehler, naechster, version, fehlt_hier, fehlt_dort, paused_until, pause_reason, "
+                                    "last_error FROM peer ORDER BY adresse").fetchall()
+        now = time.time()
+        out = []
+        for a, q, p, z, f, n, v, fh, fd, pu, pr, le in lines:
+            state, reason = peer_state_of(a, z, f, pu, pr, le, now)
+            out.append({"adresse": a, "quelle": q, "pin": p, "zuletzt": z, "fehler": f, "naechster": n, "version": v, "fehlt_hier": fh, "fehlt_dort": fd,
+                        "state": state, "reason": reason, "paused_until": pu if state == "paused" else None})
+        return out
 
     # ---- Joining with a code: one-time, time-limited, only the hash is stored here ----
 
@@ -550,7 +639,8 @@ class Logbook:
 
     def choose_peers(self, n: int, excluding: str | None = None) -> list[str]:
         with self.lock:
-            all_ = [r[0] for r in self.db.execute("SELECT adresse FROM peer WHERE naechster <= ?", (time.time(),)) if r[0] != excluding and r[0] not in self.blocked]
+            all_ = [r[0] for r in self.db.execute("SELECT adresse FROM peer WHERE naechster <= ?", (time.time(),))
+                    if r[0] != excluding and r[0] not in self.blocked and r[0] not in self.removed and not address_problem(r[0])]  # 0.66.1
         random.shuffle(all_)
         return all_[:n]
 
@@ -568,15 +658,26 @@ class Logbook:
             lines = self.db.execute("SELECT adresse, version FROM peer WHERE zuletzt >= ?", (time.time() - days * 86400,)).fetchall()
         return sorted(a for a, v in lines if not v or version_tuple(v) < version_tuple(minimum))
 
-    def peer_result(self, address: str, ok: bool) -> None:
+    def peer_result(self, address: str, ok: bool, error: str | None = None) -> None:
+        """0.66.1: from PEER_PAUSE_AFTER failures in a row the peer is paused for PEER_PAUSE_S with the reason (the error class, never
+        more than 160 characters); after the pause it gets one attempt, a failure pauses it again. Reported from Windows (15.11.2026): a
+        peer counted 58 errors and was still asked every hour."""
+        now = time.time()
         with self.lock:
             if ok:
-                self.db.execute("UPDATE peer SET zuletzt = ?, fehler = 0, naechster = 0 WHERE adresse = ?", (time.time(), address))
+                self.db.execute("UPDATE peer SET zuletzt = ?, fehler = 0, naechster = 0, paused_until = NULL, pause_reason = NULL, last_error = NULL "
+                                "WHERE adresse = ?", (now, address))
+                return
+            row = self.db.execute("SELECT fehler FROM peer WHERE adresse = ?", (address,)).fetchone()
+            errors = int(row[0] or 0) if row else 0  # backoff 30 s · 2^errors, at most an hour (computed here: portable SQL)
+            err = (error or "unknown error")[:160]
+            if errors + 1 >= PEER_PAUSE_AFTER:
+                until = now + PEER_PAUSE_S
+                self.db.execute("UPDATE peer SET fehler = fehler + 1, naechster = ?, paused_until = ?, pause_reason = ?, last_error = ? WHERE adresse = ?",
+                                (until, until, f"{errors + 1} failed attempts in a row, last: {err}", err, address))
             else:
-                row = self.db.execute("SELECT fehler FROM peer WHERE adresse = ?", (address,)).fetchone()
-                errors = int(row[0] or 0) if row else 0  # backoff 30 s · 2^errors, at most an hour (computed here: portable SQL)
-                self.db.execute("UPDATE peer SET fehler = fehler + 1, naechster = ? WHERE adresse = ?",
-                                (time.time() + min(3600, 30 * (1 << min(errors, 7))), address))
+                self.db.execute("UPDATE peer SET fehler = fehler + 1, naechster = ?, last_error = ? WHERE adresse = ?",
+                                (now + min(3600, 30 * (1 << min(errors, 7))), err, address))
 
     # ---- Segments: transport cache for torrent, without evidential value of their own ----
 
