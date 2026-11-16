@@ -1276,12 +1276,15 @@ def record(directory: str, who: str = "admin") -> g.MemoryObject:
 
 
 def main(argv: list[str]) -> int:
-    """vi-mcp finetune guide | plan [--index X] [--base M] | kit DIR [--index X] [--base M] [--force] [--philosophy NAME] | record DIR"""
+    """vi-mcp finetune guide | skill [--base M] [--file] | plan [--index X] [--base M] | kit DIR [--index X] [--base M] [--force] [--philosophy NAME] | record DIR"""
     import argparse
     from . import config
     a = argparse.ArgumentParser(prog="vi-mcp finetune", description="fine-tune an AI with what this VI learned (vi-mcp runs no training)")
     u = a.add_subparsers(dest="cmd", required=True)
     u.add_parser("guide", help="the handbook: what fine-tuning is, programs, hardware, llama.cpp, measuring")
+    sk = u.add_parser("skill", help="the step-by-step runbook to fine-tune any open model (also for small models)")
+    sk.add_argument("--base", help="fill in the base model")
+    sk.add_argument("--file", action="store_true", help="with the header of a skill file (SKILL.md)")
     p = u.add_parser("plan", help="readiness and the steps for this server")
     k = u.add_parser("kit", help="write the training data, test split and scripts into a directory")
     r = u.add_parser("record", help="record a finished run as a model object with its lineage")
@@ -1300,6 +1303,10 @@ def main(argv: list[str]) -> int:
     o = a.parse_args(argv)
     if o.cmd == "guide":
         print(GUIDE)
+        return 0
+    if o.cmd == "skill":
+        from . import finetune_skill
+        print((finetune_skill.SKILL_FILE_HEAD if o.file else "") + finetune_skill.skill(o.base), end="")
         return 0
     if o.cmd == "split":
         try:
