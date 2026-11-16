@@ -552,8 +552,33 @@ def feedback(instance: str, hint_id: str, value: int, before_id: str | None = No
     return None
 
 
+def declare_used(o: g.MemoryObject, used: list, ok: bool) -> dict:
+    """0.68.0: the agent says in its own vi_after which of the hints shown before this action it used — no extra call (explicit feedback
+    was given for 3 % of shown hints, production 16.11.2026). A used hint becomes direct feedback on this action, the same label as
+    vi_feedback: +1 when the action succeeded, −1 when it failed (followed and misled). A shown hint NOT named is recorded as declared
+    unused — that it was not needed here says nothing about whether it is right, so it is no label (scorer.label ignores it). An id
+    that was not shown before this action is ignored and counted; feedback already given (vi_feedback) is never overwritten.
+    Old experiences have no `declared` key — nothing to migrate."""
+    shown = list((o.data.get("before") or {}).get("shown") or [])
+    names_ = [str(x).strip() for x in (used or []) if str(x).strip()]
+    valid = [h for h in dict.fromkeys(names_) if h in shown]
+    ignored = [h for h in dict.fromkeys(names_) if h not in shown]
+
+    def write(d):
+        fb = d.setdefault("feedback", {})
+        for h in valid:
+            fb.setdefault(h, 1 if ok else -1)
+        d["declared"] = {"used": valid, "unused": [h for h in shown if h not in valid], "ignored": ignored}
+    if shown or ignored:
+        g.update_data(o.id, write)
+        with g.lock:
+            g.db().commit()
+    return {"booked": valid, "unused": [h for h in shown if h not in valid], "ignored": ignored}
+
+
 def after(tool: str, args: dict, ok: bool, duration_ms: int, error: str | None, result: str | None,
-            before_id: str | None = None, instance: str | None = None, is_read_only: bool | None = None) -> dict:
+            before_id: str | None = None, instance: str | None = None, is_read_only: bool | None = None,
+            used: list | None = None) -> dict:
     with _open_lock:
         open_ = _open.pop(before_id, None) if before_id else None
     access = open_[3] if open_ else names.data_keys({"reize": triggers(tool, args or {}), "gefunden": [], "suchen": [],
@@ -561,6 +586,7 @@ def after(tool: str, args: dict, ok: bool, duration_ms: int, error: str | None, 
     if before_id:  # 0.50.1: the experience knows its vi_before — vi_feedback(before_id=…) books exactly here, not on a parallel neighbour
         access = {**access, "id": before_id}
     o = experience(tool, args or {}, ok, duration_ms, error, result, access, instance, is_read_only)
+    declared = declare_used(o, used, ok) if used is not None else None
     from . import bandit
     rated = bandit.book_entry(access.get("shown", []), ok, tool)  # counter pair per shown hint (stage 2)
     reinforced = 0
@@ -571,7 +597,7 @@ def after(tool: str, args: dict, ok: bool, duration_ms: int, error: str | None, 
                 if h:
                     h.access()
                     reinforced += 1
-    used = adopted(o) if ok else []  # 0.59.0: implicit feedback — a hint whose command/path/option the agent took over
+    used_impl = adopted(o) if ok else []  # 0.59.0: implicit feedback — a hint whose command/path/option the agent took over
     hints = reflexes.after(tool, dict(args or {}), result or "") if ok else []
     if ok is False and error:  # 0.53.0: rule 3 by itself — what the memory knows about this error
         found_eh = error_hints(tool, args or {}, error, instance)
@@ -589,7 +615,7 @@ def after(tool: str, args: dict, ok: bool, duration_ms: int, error: str | None, 
         from . import on_demand
         on_demand.nudge("experience")
     return {"erfahrung": o.id, "hinweise": hints, "vorher_gefunden": bool(open_), "verstaerkt": reinforced, "bewertet": rated,
-            **({"genutzt": used} if used else {})}
+            **({"genutzt": used_impl} if used_impl else {}), **({"used": declared} if declared is not None else {})}
 
 
 #: 0.59.0: distinctive tokens of a hint — paths, options after a blank, file names with an extension. A hint counts as ADOPTED when such a

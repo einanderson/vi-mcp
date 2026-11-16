@@ -66,8 +66,9 @@ TOOLS = [
      "inputSchema": _schema({"tool": _S, "args": _O, "read_only": {"type": "boolean"}, "context_hashtags": _TAGS}, ["tool"])},
     {"name": "vi_after",
      "description": "VI hook for clients, AFTER an action: report the result → experience, remembered answer (if read-only), "
-                    "after-reflexes. ok=false with error; result only when ok.",
-     "inputSchema": _schema({"tool": _S, "args": _O, "ok": {"type": "boolean"}, "duration_ms": {"type": "integer"}, "error": _S, "result": _S, "before_id": _S, "read_only": {"type": "boolean"}}, ["tool", "ok"])},
+                    "after-reflexes. ok=false with error; result only when ok. used = ids of the hints shown before this action that "
+                    "you used ([] = none of them) — it is how the VI learns which hint helps, at no extra call.",
+     "inputSchema": _schema({"tool": _S, "args": _O, "ok": {"type": "boolean"}, "duration_ms": {"type": "integer"}, "error": _S, "result": _S, "before_id": _S, "read_only": {"type": "boolean"}, "used": _TAGS}, ["tool", "ok"])},
     {"name": "vi_ask",
      "description": "VI collective: ask another instance (or all). The question appears to the target instance at its next action "
                     "(vi_before); the answer arrives at your next action or via vi_questions. to = instance name, 'all', your own instance "
@@ -485,6 +486,7 @@ _TOOL_PARAM_DOCS = {
     ("vi_after", "error"): "error text when ok=false (secrets are masked)",
     ("vi_after", "result"): "result when ok=true — a remembered answer for read-only tools",
     ("vi_after", "before_id"): "the vorher_id vi_before returned for this action",
+    ("vi_after", "used"): "ids of the hints shown before this action that you used; [] = none used; leave out if you cannot say",
     ("vi_ask", "to"): "target: an instance name, alle (all instances here), netz or net:<name> (the AIs of the other servers)",
     ("vi_ask", "text"): "the question",
     ("vi_answer", "text"): "the answer",
@@ -991,6 +993,17 @@ def _pair_conversations(name: str, args: dict, instance: str) -> None:
         session.pair_on_call(instance, serial, name, args)
 
 
+def _used_arg(v) -> list | None:
+    """0.68.0: vi_after(used=…) — a list of hint ids, a comma-separated string, "none" or [] (none used); missing = not said."""
+    if v is None:
+        return None
+    if isinstance(v, str):
+        v = [] if v.strip().lower() in ("", "none", "-") else [x for x in v.replace(",", " ").split() if x]
+    if not isinstance(v, list):
+        raise Rejected("used must be a list of hint ids ([] = none used)")
+    return [str(x) for x in v][:20]
+
+
 def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, release_permission: bool = False, family: str | None = None) -> str:
     """Run a tool. Returns text; a domain refusal as Rejected(reason).
     Name and arguments may be English (public since 0.22.0) or German (alias) — translated to the internal form here."""
@@ -1080,7 +1093,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             raise Rejected("tool and ok (true/false) are required")
         return json.dumps(intuition.after(args["tool"].strip(), args.get("args") or {}, args["ok"], int(args.get("duration_ms") or 0),
                                             args.get("error"), args.get("result"), args.get("before_id"), instance,
-                                            args.get("read_only")), ensure_ascii=False)
+                                            args.get("read_only"), used=_used_arg(args.get("used"))), ensure_ascii=False)
     if name == "vi_self":
         k = self_model.core()
         z = [k.data.get("erzaehlung") or "", f"Version {k.data.get('version')} · actual state computed: {k.data.get('ist', {}).get('berechnet', '— (no sleep yet)')}"]

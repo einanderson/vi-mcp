@@ -3,6 +3,27 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What is new: more labels on shown hints
+
+Measured on production (`vi_stats`, 7 days to 16.11.2026): 13,679 hints shown, explicit feedback for 374 (3 %), adopted 1 %, opened 0 %;
+actions succeed in 98 % of cases without a hint, so the outcome alone hardly tells a helpful hint from a useless one. The user asked
+to raise the feedback (16.11.2026: "und wie können wir die rückmeldungen noch erhöhen?" → "ja dann setzte die punkte um"), with a
+migration path in mind ("denke immer an einen migrations pfad").
+
+- **`vi_after(used=[ids])`: the agent names the hints it used in the report it sends anyway.** No extra call. A used hint becomes
+  direct feedback on that action — the same label as `vi_feedback`: +1 when the action succeeded, −1 when it failed (followed and
+  misled), weight 2. A shown hint that is not named is recorded as *declared unused* (`data.declared.unused`); that it was not needed
+  here says nothing about whether it is right, so it is **no** label. `used=[]` or `"none"` = none used; an id that was not shown before
+  the action is ignored and reported back; feedback already given with `vi_feedback` is never overwritten.
+  - Clients whose hook reports the actions (Claude Code, Hermes) do not call `vi_after` themselves, so they cannot name hints there;
+    for them the language-model judge below fills the gap.
+  - Migration: none. The argument is optional; older clients do not send it and their experiences have no `declared` key — they are
+    labelled exactly as before.
+  - Evidence: `tests/test_feedback_labels.py` (used → feedback ±1, unnamed → declared unused and the label stays the action's
+    outcome, existing feedback wins, `none` vs. not said, argument forms).
+
 ## 0.67.0 — 2026-11-16
 
 ### What is new
