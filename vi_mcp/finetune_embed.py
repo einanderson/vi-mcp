@@ -43,14 +43,23 @@ Steps (each: run, then check the "OK if"):
    only if its hint ranks first for its own situation among all hints with the base model (round-trip filter).
    OK if: `synth_report.json` shows kept pairs for most hints.
 2. Train: `python train_embed.py --base BAAI/bge-m3 --epochs 1 --rank 16` — LoRA (only small low-rank matrices; the base model stays
-   unchanged), MultipleNegativesRankingLoss on `pairs_synth.jsonl` (+ confirmed negatives as hard negatives); the adapter is saved in
-   `out/adapter` and merged with strength alpha 0.5 into `out/merged` for serving.
-   OK if: `out/adapter` and `out/merged` exist and `train_report.json` shows a few percent trainable parameters.
+   unchanged), MultipleNegativesRankingLoss on `pairs_synth.jsonl` (+ confirmed negatives as hard negatives). The adapter alone is
+   saved in PEFT format in `out/peft`; base + 0.5 x adapter as a plain model in `out/merged` (for step 3).
+   OK if: `out/peft/adapter_config.json` and `out/merged` exist and `train_report.json` shows a few percent trainable parameters and
+   the pooling of the model (bge-m3: `cls`).
 3. Evaluate: `python eval_embed.py --model out/merged` — Recall@4 of the real used hint on the test window, base vs merged, paired;
-   plus a general retrieval check (a fixed set of the VI's own questions). Keep the merged model only if Recall@4 rises and the general
+   plus a general retrieval check (a fixed set of the VI's own questions). Keep the adapter only if Recall@4 rises and the general
    check does not fall.
-4. Only then serve it (llama.cpp GGUF of the merged model as the embed service) and let the router's offline gate decide with the
-   similarity features recomputed — with the person's approval.
+4. Serve the adapter NEXT TO the unchanged base model (llama.cpp; nothing is merged, the base GGUF stays as it is):
+   `python convert_lora_to_gguf.py out/peft --base PATH/TO/bge-m3 --outfile out/adapter.gguf --outtype f16` (script from the llama.cpp
+   repository, same version as the server), then start the embed server with
+   `llama-server -m bge-m3.gguf --embedding --pooling cls --lora-scaled out/adapter.gguf:0.5`.
+   The pooling MUST be the one the model was trained with (`train_report.json`, field `serve`); `--pooling mean` on a CLS model gives
+   different vectors. The strength changes at run time without a restart: `POST /lora-adapters` with `[{"id": 0, "scale": 0.5}]`;
+   scale 0 = the base model again (the way back).
+   Check: `python parity_gguf.py --url http://HOST:PORT` — OK if the server's vectors match `out/merged` (see the script).
+5. Only then let the router's offline gate decide with the similarity features recomputed — with the person's approval. Changing the
+   served embeddings changes every stored vector's meaning: re-embed the index with the same server settings before switching.
 
 No token caps in any language-model call (thinking off instead). Write every result down with `vi_learn`.
 """
@@ -142,13 +151,21 @@ print(len(kept), "of", tried, "kept")
 ''',
     "train_embed.py": r'''"""LoRA on the embedding model (the user, 16.11.2026: "dann nimm LoRA für das Embedding-Modell"): only small low-rank matrices are
 trained, the base model stays unchanged. MultipleNegativesRankingLoss on the synthetic pairs (+ confirmed negatives as hard negatives).
-For serving, the adapter is merged with strength alpha (W + alpha*dW; alpha 0.5 = halfway between base and tuned, as LM-Cocktail
-2311.13534 does against forgetting). Whether LoRA matches full fine-tuning for embedding models is not established (research 16.11.2026:
-not found) — eval_embed.py decides. usage: python train_embed.py [--base BAAI/bge-m3] [--epochs 1] [--rank 16] [--alpha 0.5]"""
+Two outputs:
+  out/peft    — the adapter alone in PEFT format (adapter_config.json + adapter_model.safetensors): llama.cpp's convert_lora_to_gguf.py
+                turns it into a GGUF that llama-server loads NEXT TO the unchanged base (--lora-scaled adapter.gguf:ALPHA) and whose
+                strength can be changed at run time (POST /lora-adapters, scale 0 = base model) — see README step 4;
+  out/merged  — base + alpha*dW as a plain model, for eval_embed.py in Python. Blending (1-a)*W + a*(W+dW) = W + a*dW is the same as
+                serving the adapter with scale a (LM-Cocktail 2311.13534 blends against forgetting).
+Pooling: the model's own (bge-m3: CLS, 1_Pooling/config.json). Training and serving must pool the same way; the report records it.
+Whether LoRA matches full fine-tuning for embedding models is not established (research 16.11.2026: not found) — eval_embed.py decides.
+usage: python train_embed.py [--base BAAI/bge-m3] [--epochs 1] [--rank 16] [--alpha 0.5] [--batch 16] [--lr 1e-4]"""
 import argparse, json
 a = argparse.ArgumentParser(); a.add_argument("--base", default="BAAI/bge-m3"); a.add_argument("--epochs", type=float, default=1)
-a.add_argument("--rank", type=int, default=16); a.add_argument("--alpha", type=float, default=0.5); o = a.parse_args()
-from peft import LoraConfig, TaskType
+a.add_argument("--rank", type=int, default=16); a.add_argument("--alpha", type=float, default=0.5); a.add_argument("--batch", type=int, default=16)
+a.add_argument("--lr", type=float, default=1e-4)   # LoRA needs a higher rate than full fine-tuning (2e-5 left B ~1e-9 in a test, 16.11.2026)
+o = a.parse_args()
+from peft import LoraConfig, PeftModel, TaskType
 from sentence_transformers import SentenceTransformer, InputExample, losses
 from torch.utils.data import DataLoader
 pairs = [json.loads(l) for l in open("pairs_synth.jsonl")]
@@ -157,18 +174,55 @@ for l in open("negatives.jsonl"):
     r = json.loads(l); neg.setdefault(r["situation"], r["hint"])
 ex = [InputExample(texts=[p["situation"], p["hint"]] + ([neg[p["situation"]]] if p["situation"] in neg else [])) for p in pairs]
 m = SentenceTransformer(o.base)
+pc = m[1].get_config_dict()   # sentence-transformers >= 6: {"pooling_mode": "cls"}; older: {"pooling_mode_cls_token": true, ...}
+pooling = pc.get("pooling_mode") or next((k[len("pooling_mode_"):].replace("_token", "").replace("_tokens", "") for k, v in pc.items()
+                                          if k.startswith("pooling_mode_") and v is True), "unknown")
 m.add_adapter(LoraConfig(task_type=TaskType.FEATURE_EXTRACTION, r=o.rank, lora_alpha=2 * o.rank, lora_dropout=0.05,
-                         target_modules=["query", "key", "value", "dense"]))
+                         target_modules=["query", "key", "value", "dense"]))   # sentence-transformers' own PEFT path
 trainable = sum(p.numel() for p in m.parameters() if p.requires_grad); total = sum(p.numel() for p in m.parameters())
-dl = DataLoader(ex, shuffle=True, batch_size=16)
-m.fit(train_objectives=[(dl, losses.MultipleNegativesRankingLoss(m))], epochs=int(max(1, o.epochs)), show_progress_bar=True)
-m.save("out/adapter")                                    # the LoRA adapter alone (small)
-hf = m[0].auto_model.merge_and_unload()                  # W + dW
-base = SentenceTransformer(o.base); sd_b = base[0].auto_model.state_dict(); sd_t = hf.state_dict()
+# pairs and triplets (with a confirmed hard negative) are separate objectives: one objective needs the same number of texts per example
+groups = [g for g in ([e for e in ex if len(e.texts) == 2], [e for e in ex if len(e.texts) == 3]) if g]
+loss = losses.MultipleNegativesRankingLoss(m)
+m.fit(train_objectives=[(DataLoader(g, shuffle=True, batch_size=o.batch), loss) for g in groups], epochs=int(max(1, o.epochs)),
+      optimizer_params={"lr": o.lr}, show_progress_bar=True,
+      # the legacy fit() warms up over 10,000 steps by default: with a few hundred steps the rate never leaves ~0 (test 16.11.2026)
+      warmup_steps=max(1, int(0.1 * int(max(1, o.epochs)) * sum(-(-len(g) // o.batch) for g in groups))))
+m[0].auto_model.save_pretrained("out/peft")              # with an adapter loaded: the adapter alone, PEFT format (convert_lora_to_gguf.py)
+base = SentenceTransformer(o.base)
+hf = PeftModel.from_pretrained(SentenceTransformer(o.base)[0].auto_model, "out/peft").merge_and_unload()   # W + dW
+sd_b = base[0].auto_model.state_dict(); sd_t = hf.state_dict()
 blended = {k: (o.alpha * sd_t[k] + (1 - o.alpha) * sd_b[k]) if k in sd_b and sd_t[k].dtype.is_floating_point else sd_t[k] for k in sd_t}
-base[0].auto_model.load_state_dict(blended, strict=False); base.save("out/merged")   # W + alpha*dW, for serving
-json.dump({"pairs": len(ex), "with_hard_negative": sum(len(e.texts) == 3 for e in ex), "lora_rank": o.rank, "alpha": o.alpha,
-           "trainable_parameters": trainable, "total_parameters": total}, open("train_report.json", "w"), indent=1)
+missing = [k for k in sd_b if k not in blended]
+assert not missing, f"merged model misses base weights: {missing[:5]}"
+base[0].auto_model.load_state_dict(blended, strict=True); base.save("out/merged")   # W + alpha*dW
+json.dump({"pairs": len(ex), "with_hard_negative": sum(len(e.texts) == 3 for e in ex), "lora_rank": o.rank, "lora_alpha": 2 * o.rank,
+           "alpha": o.alpha, "lr": o.lr, "pooling": pooling, "trainable_parameters": trainable, "total_parameters": total,
+           "serve": f"llama-server -m BASE.gguf --embedding --pooling {pooling} "
+                    f"--lora-scaled adapter.gguf:{o.alpha}"}, open("train_report.json", "w"), indent=1)
+''',
+    "parity_gguf.py": r'''"""Check that llama-server with the GGUF adapter embeds like out/merged: same texts, cosine per text. Run after README step 4.
+OK if: mean cosine(server with adapter, merged) >= 0.98 AND higher than cosine(server at scale 0, merged) — then the adapter is applied
+and the pooling matches. A quantized base (Q4) lowers both numbers a little; compare with an f16 base when in doubt. No token cap.
+usage: python parity_gguf.py --url http://HOST:PORT [--alpha 0.5] [--n 64]"""
+import argparse, json, urllib.request
+import numpy as np
+a = argparse.ArgumentParser(); a.add_argument("--url", required=True); a.add_argument("--alpha", type=float, default=0.5)
+a.add_argument("--n", type=int, default=64); o = a.parse_args()
+from sentence_transformers import SentenceTransformer
+op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+def post(path, body):
+    return json.load(op.open(urllib.request.Request(o.url.rstrip("/") + path, json.dumps(body).encode(), {"Content-Type": "application/json"}), timeout=600))
+def server(texts):
+    v = np.array([d["embedding"] for d in post("/v1/embeddings", {"input": texts})["data"]]); return v / np.linalg.norm(v, axis=1, keepdims=True)
+texts = [json.loads(l)["text"] for l in open("hints.jsonl")][: o.n]
+ref = SentenceTransformer("out/merged").encode(texts, normalize_embeddings=True)
+adapters = json.load(op.open(o.url.rstrip("/") + "/lora-adapters", timeout=60))
+post("/lora-adapters", [{"id": 0, "scale": o.alpha}]); tuned = (server(texts) * ref).sum(1)
+post("/lora-adapters", [{"id": 0, "scale": 0.0}]); base = (server(texts) * ref).sum(1)
+post("/lora-adapters", [{"id": 0, "scale": o.alpha}])
+r = {"adapters": adapters, "texts": len(texts), "cos_tuned_mean": float(tuned.mean()), "cos_tuned_min": float(tuned.min()),
+     "cos_base_mean": float(base.mean()), "ok": bool(tuned.mean() >= 0.98 and tuned.mean() > base.mean())}
+json.dump(r, open("parity_report.json", "w"), indent=1); print(json.dumps(r, indent=1))
 ''',
     "eval_embed.py": r'''"""Recall@4 of the real used hint on the test window: base vs tuned model, paired per pair. usage: python eval_embed.py --model out/merged [--base BAAI/bge-m3]"""
 import argparse, json

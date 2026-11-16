@@ -63,11 +63,19 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
   EVALUATION set — 302 over 128 hints on the production copy, far below the volumes of any published gain (GPL 2112.07577, Promptagator
   2209.11755); training volume comes from synthetic pairs with a round-trip filter (`gen_synth.py`). Negatives only when confirmed
   (feedback wrong, judge misleading): "shown but not used" is no negative (RocketQA 2010.08191: ~70 % of such passages were relevant).
-  Training is LoRA on the embedding model (the user, 16.11.2026: only small low-rank matrices, the base stays unchanged); for serving the
-  adapter is merged with strength 0.5 (LM-Cocktail 2311.13534 against forgetting) — whether LoRA matches full fine-tuning for embedding
-  models is not established, the evaluation decides; `eval_embed.py` compares Recall@4 on
-  the newest window. Privacy: an experience is never exported — the situation is its trigger tags without hosts, as the router sees it.
-  Written, never run by vi-mcp. Evidence: `tests/test_finetune_embed.py`.
+  Training is LoRA on the embedding model (the user, 16.11.2026: only small low-rank matrices, the base stays unchanged). The adapter
+  is saved alone in PEFT format and served NEXT TO the unchanged base by llama.cpp (`--lora-scaled adapter.gguf:0.5`, strength
+  changeable at run time via `POST /lora-adapters`, scale 0 = the base again); the BERT graph of llama.cpp applies LoRA to Q/K/V, the
+  attention output and the feed-forward matrices (`src/models/bert.cpp` → `build_qkv`/`build_ffn`/`build_lora_mm`). Strength 0.5 equals
+  blending base and tuned halfway (LM-Cocktail 2311.13534 against forgetting); `out/merged` holds that blend for the evaluation in
+  Python, `parity_gguf.py` checks the served vectors against it. Training and serving must pool alike (bge-m3: CLS); the report names
+  the pooling and the serve command. Whether LoRA matches full fine-tuning for embedding models is not established, the evaluation
+  decides; `eval_embed.py` compares Recall@4 on the newest window. Privacy: an experience is never exported — the situation is its
+  trigger tags without hosts, as the router sees it. Written, never run on real data by vi-mcp. Evidence: `tests/test_finetune_embed.py`;
+  the training script end to end on a tiny random XLM-RoBERTa with the bge-m3 tokenizer and CLS pooling (CPU, sentence-transformers
+  6.3.0, peft 0.21.3, 16.11.2026) — it found and fixed three faults: pairs and triplets in one objective (now two objectives), the
+  legacy 10,000-step warm-up that kept the rate at ~0 for a few hundred steps (now 10 % of the steps; LoRA B moved 1e-9 → 1.5e-3), and
+  the pooling not read under sentence-transformers 6. Not tested: the GGUF conversion of the adapter (`convert_lora_to_gguf.py`).
 
 ### What is missing (to do, proposals of 16.11.2026)
 
@@ -84,6 +92,16 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
    as more than a small weight.
 6. **Position bias of "used"**: weight positives by the logged offer probability (IPS) when "used" becomes a training label of the
    embedding model (Joachims et al. 1608.04468).
+7. **Serve the embedding model with the pooling it was built with** (decided by the user, 16.11.2026): bge-m3 defines CLS pooling
+   (`1_Pooling/config.json`: `pooling_mode_cls_token: true`), a llama.cpp embed service started with `--pooling mean` gives other
+   vectors. Migration path: measure Hit@4 on the fixed question set with both poolings on a copy; switch the service to `--pooling cls`
+   and re-embed every stored vector in the same step (vectors of two poolings are not comparable); keep the old vectors until the new
+   ones are complete, so the way back is a configuration change.
+8. **A query adapter as learned weights instead of LoRA** (proposal, waiting for the user's decision): a per-dimension weighting of
+   the similarity (logistic regression on query ⊙ hint, 1024 weights) or a low-rank matrix on the query vector only, stored like the
+   router's weights and switched by the same two-step gate. Stored vectors and the embed service stay unchanged, so no re-embedding.
+   Evidence: query-only linear adapters, up to +70 % NDCG from ~1,500 labelled pairs (Chroma technical report "Embedding Adapters",
+   2024, https://research.trychroma.com/embedding-adapters).
 
 ### What is new: more labels on shown hints
 
