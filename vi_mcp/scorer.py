@@ -239,7 +239,7 @@ def calibration() -> dict:
 #: 0.55.0: the weight of a label by its source (scikit-learn sample_weight). A human grade outweighs everything; direct feedback on a
 #: hint is a direct statement; code-stage and ok tag are the plentiful base. An uncalibrated model grade counts a little instead of not
 #: at all (human grades are optional — the user, 12.11.2026); its certainty scales it.
-WEIGHT = {"human": 3.0, "rueckmeldung": 2.0, "genutzt": 1.5, "model": 1.0, "code": 1.0, "ok": 1.0}
+WEIGHT = {"human": 3.0, "rueckmeldung": 2.0, "genutzt": 1.5, "model": 1.0, "judge": 1.0, "code": 1.0, "ok": 1.0}
 CERTAINTY = {"low": 0.3, "medium": 0.6, "high": 1.0}
 UNCALIBRATED = 0.3
 
@@ -258,6 +258,8 @@ def grade_details() -> dict[str, dict]:
                            "gewicht": round(WEIGHT["model"] * CERTAINTY.get(certainty or "", 0.6) * (1.0 if calibrated else UNCALIBRATED), 3)}
         elif who == "human":
             out[serial] = {"note": note, "quelle": "human", "gewicht": WEIGHT["human"]}
+    from . import hint_judge  # 0.68.0: the weight of a judge label — small until the judge agrees with the agents' own feedback
+    out["_judge"] = hint_judge.weight()
     return out
 
 
@@ -266,6 +268,8 @@ def label(data: dict, ok_tag: bool | None, serial: str | None, grades: dict[str,
     and the metrics ignored conversation grades and direct feedback, ARCHITECTURE "the grade"). Order, first that applies:
       rueckmeldung  direct feedback on this hint (vi_feedback / vi_confirm / vi_refute)
       genutzt       0.59.0: the agent took a distinctive token of the hint into a later successful action (implicit, intuition.adopted)
+      judge         0.68.0: a language model judged from the actions that the hint was used (after a success → 1) or misleading (→ 0);
+                    weight grades["_judge"] (small until calibrated, hint_judge.weight); not_used is no label
       mensch/modell a bad conversation grade (< BAD_BELOW) makes every action of it a failure, weighted by the grade's source
       code          the code stage of the scorer (ok, repeat, red test, user correction)
       ok            the tool's own outcome
@@ -275,6 +279,9 @@ def label(data: dict, ok_tag: bool | None, serial: str | None, grades: dict[str,
         return (1 if rm[hint] > 0 else 0), WEIGHT["rueckmeldung"], "rueckmeldung"
     if hint and hint in (data.get("used") or []):  # 0.59.0: the agent took a command/path/option of it over into a successful action
         return 1, WEIGHT["genutzt"], "genutzt"
+    verdict = ((data.get("judge") or {}).get("hints") or {}).get(hint) if hint else None
+    if verdict == "misleading" or (verdict == "used" and ok_tag):  # 0.68.0: hint_judge; data without "judge" is labelled as before
+        return (1 if verdict == "used" else 0), (grades.get("_judge") or {}).get("gewicht", WEIGHT["judge"] * UNCALIBRATED), "judge"
     gd = grades.get(serial) if serial else None
     if gd and gd["note"] is not None and gd["note"] < BAD_BELOW:
         return 0, gd["gewicht"], gd["quelle"]

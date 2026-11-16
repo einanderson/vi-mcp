@@ -375,6 +375,8 @@ def report(days: float = 7) -> str:
              + (", ".join(f"#{r} {n}" for r, n in ck["je_rang"].items()) or "—"))
     from . import relevance
     z.append(relevance.line(days))  # 0.62.0
+    from . import hint_judge  # 0.68.0
+    z.append(hint_judge.line(days))
     m = learning.model()
     z.append(f"F Cleanup: {a['schlaefe']} sleeps (median {a['schlaf_ms_median'] // 1000} s, {a['neue_erkenntnisse']} new insights, {a['fehler']} step errors) · "
              f"{on_demand.line()} · router AUC "

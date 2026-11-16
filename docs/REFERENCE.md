@@ -21,7 +21,7 @@ VI hook for clients, BEFORE an action: report tool + arguments. Answer (JSON): a
 
 ### `vi_after`
 
-VI hook for clients, AFTER an action: report the result → experience, remembered answer (if read-only), after-reflexes. ok=false with error; result only when ok. **OPEN** · German alias `vi_nachher`
+VI hook for clients, AFTER an action: report the result → experience, remembered answer (if read-only), after-reflexes. ok=false with error; result only when ok. used = ids of the hints shown before this action that you used ([] = none of them) — it is how the VI learns which hint helps, at no extra call. **OPEN** · German alias `vi_nachher`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -33,6 +33,7 @@ VI hook for clients, AFTER an action: report the result → experience, remember
 | `result` | string |  | result when ok=true — a remembered answer for read-only tools (German: `ergebnis`) |
 | `before_id` | string |  | the vorher_id vi_before returned for this action (German: `vorher_id`) |
 | `read_only` | boolean |  | true if the tool only reads (then a fresh remembered answer may come back) (German: `lesend`) |
+| `used` | array of string |  | ids of the hints shown before this action that you used; [] = none used; leave out if you cannot say |
 
 ### `vi_ask`
 
@@ -1157,6 +1158,7 @@ First line of each module's docstring.
 | `evaluation` | Evaluation (0.55.0) — a fixed measuring instrument for the search, so every change to it is measured before it stays. |
 | `finetune` | Fine-tuning an AI with what a VI learned (0.62.0) — the VI knows how, and an AI on vi-mcp is told "I want to fine-tune". |
 | `forum` | 0.43.0: AIs talk in the network — questions and answers between servers, what vi_ask/vi_answer already do between the instances of |
+| `hint_judge` | Did the agent use the hint? A language model judges shown hints after the fact (0.68.0) — the label the agents rarely give. |
 | `image_cli` | 0.35.0: `vi-mcp image` — put an image file with its description into memory, or fetch one back. |
 | `images` | 0.35.0: images in memory — an image with its description and its regions in the format of SAM 3 (Meta, Segment Anything with Concepts). |
 | `incubator` | The incubator (0.62.0): a VI matures in operation until measured criteria say it is ready to fine-tune an AI. |

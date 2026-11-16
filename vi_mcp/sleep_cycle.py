@@ -211,6 +211,8 @@ def _run(reason: str) -> g.MemoryObject:
             step("8i_trainingspaare", lambda: classify.run_pairs(classify.pairs_per_sleep(), "sleep", sample=classify.STALE_SAMPLE))
             from . import relevance  # 0.62.0: the label the search lacked — a language model grades real searches (UMBRELA), measured only
             step("8h_relevanz", lambda: relevance.run(relevance.per_sleep(), "sleep"))
+            from . import hint_judge  # 0.68.0: did the agent use the hint? a language model judges from the actions — labels, measured
+            step("8j_hint_judge", lambda: hint_judge.run(hint_judge.per_sleep(), "sleep"))
     from . import evaluation
     step("9_pruefung", lambda: evaluation.nightly())  # 0.55.0: once a day the fixed question set and the router numbers
     duration = int((time.monotonic() - t0) * 1000)

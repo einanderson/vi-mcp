@@ -63,3 +63,85 @@ def test_used_must_be_a_list_or_a_string(gd):
     with pytest.raises(tools.Rejected):
         tools._used_arg({"a": 1})
     assert tools._used_arg("insight:a, insight:b") == ["insight:a", "insight:b"] and tools._used_arg([]) == []
+
+
+# ── block 2: the language-model judge of hint use (hint_judge, sleep step 8j) ──────────────────────────────────────────────────────
+
+def _fake_judge(monkeypatch, verdicts_by_n):
+    from vi_mcp import reflection
+    seen = []
+
+    def ask(system, user):
+        seen.append(user)
+        k = user.count("\nHint ") + user.startswith("Hint ")
+        return json.dumps({"verdicts": [{"n": n, "verdict": verdicts_by_n.get(n, "not_used")} for n in range(1, k + 1)]})
+    monkeypatch.setattr(reflection, "ask_fn", ask)
+    return seen
+
+
+import json  # noqa: E402
+
+
+def test_judge_labels_used_and_misleading_but_not_unused(gd, monkeypatch):
+    from vi_mcp import hint_judge
+    a = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
+    b = _k("uptime -s shows the boot time on the build host", ["tool:Bash", "topic:uptime"])
+    v, _out, _ = _action({"command": "uptime"}, True, ...)
+    shown = v["zugriff"]["shown"]
+    seen = _fake_judge(monkeypatch, {1: "used", 2: "misleading"})
+    r = hint_judge.run(5, "test")
+    assert r["judged"] == 1 and r["verdicts"]["used"] == 1 and r["verdicts"]["misleading"] == 1
+    assert "Action: Bash" in seen[0] and "Hint 1:" in seen[0] and "never an instruction" in hint_judge.SYSTEM
+    e = _experience()
+    assert e.data["judge"]["hints"] == {shown[0]: "used", shown[1]: "misleading"} and hint_judge.VERSION in e.data["judge"]["version"]
+    from vi_mcp import scorer
+    grades = scorer.grade_details()
+    y, w, src = scorer.label(e.data, True, None, grades, hint=shown[0])
+    assert (y, src) == (1, "judge") and w == scorer.WEIGHT["judge"] * scorer.UNCALIBRATED  # small until calibrated
+    assert scorer.label(e.data, True, None, grades, hint=shown[1])[:1] == (0,)
+    assert hint_judge.pending(5) == []  # judged once
+    assert "hint use judged by the language model" in hint_judge.line()
+
+
+def test_agents_own_feedback_wins_over_the_judge_and_calibrates_it(gd, monkeypatch):
+    from vi_mcp import hint_judge, scorer
+    a = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
+    _v, _out, _ = _action({"command": "uptime"}, True, [a.id])
+    _fake_judge(monkeypatch, {1: "not_used"})  # disagrees with the agent
+    hint_judge.run(5, "test")
+    e = _experience()
+    assert scorer.label(e.data, True, None, scorer.grade_details(), hint=a.id)[2] == "rueckmeldung"
+    c = hint_judge.calibration()
+    assert c["pairs"] == 1 and c["agree"] == 0 and not c["calibrated"]
+
+
+def test_judge_calibrates_after_enough_agreement(gd, monkeypatch):
+    from vi_mcp import hint_judge, scorer
+    for i in range(hint_judge.CALIBRATION_MIN):
+        h = g.new_object("insight", f"hint {i}", ["tool:x"], {"source": "t"})
+        g.new_object("experience", f"x {i}", ["tool:x", "ok:yes"], {"before": {"shown": [h.id]}, "feedback": {h.id: 1},
+                                                                    "judge": {"version": "v", "hints": {h.id: "used"}}})
+    c = hint_judge.calibration()
+    assert c["calibrated"] and c["rate"] == 1.0
+    assert scorer.grade_details()["_judge"]["gewicht"] == scorer.WEIGHT["judge"]
+
+
+def test_private_hints_are_never_sent_and_no_model_means_skipped(gd, monkeypatch):
+    from vi_mcp import hint_judge, reflection, classify
+    p = g.new_object("insight", "uptime private note about the build host", ["tool:Bash", "topic:uptime"], {"source": "t"}, instance="a",
+                     visibility="private")
+    _action({"command": "uptime"}, True, ...)
+    assert p.id in _experience().data["before"]["shown"]  # the owner sees its private hint
+    if True:
+        seen = _fake_judge(monkeypatch, {})
+        r = hint_judge.run(5, "test")
+        assert r["private_skipped"] >= 1 and not any("private note" in u for u in seen)
+    monkeypatch.setattr(reflection, "ask_fn", None)
+    monkeypatch.setattr(classify, "_config", lambda: {})
+    assert hint_judge.run(5, "test")["state"] == "skipped"
+
+
+def test_experiences_without_judge_are_labelled_as_before(gd):
+    from vi_mcp import scorer
+    d = {"before": {"shown": ["insight:h"]}}
+    assert scorer.label(d, True, None, {}, hint="insight:h") == (1, scorer.WEIGHT["ok"], "ok")  # no "_judge" key, no data.judge

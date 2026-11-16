@@ -24,6 +24,22 @@ migration path in mind ("denke immer an einen migrations pfad").
   - Evidence: `tests/test_feedback_labels.py` (used → feedback ±1, unnamed → declared unused and the label stays the action's
     outcome, existing feedback wins, `none` vs. not said, argument forms).
 
+- **A language model judges whether a shown hint was used** (`vi_mcp/hint_judge.py`, sleep step `8j_hint_judge`, `vi-mcp hint-judge
+  run [N] | report [DAYS]`). Agent-memory systems judge the use of a memory from the trajectory, not by asking the agent (Reflexion
+  2303.11366, ExpeL 2308.10144, ReasoningBank 2509.25140); hook clients cannot name used hints at all. Per sleep a few recent actions
+  with shown hints go to the classify model — the action, the next three actions of the conversation and every shown hint — and each
+  hint gets *used*, *not_used* or *misleading* (`data.judge`, with model and prompt version).
+  - As a label (`scorer.label`, source `judge`) it comes after the agent's own word and after adoption: used after a successful action
+    → 1, misleading → 0, not_used → no label. Its weight is 0.3 until the judge agrees with the agents' own feedback on ≥ 30 pairs at
+    ≥ 75 % (`hint_judge.calibration`); then 1.0 — the same gate as the model grade of conversations. Half of the sample is taken from
+    actions that carry the agent's own feedback, so the agreement can be measured.
+  - Only with an explicit classify model (like 8h); `classify.hint_judge_per_sleep` (default 5). Private hints are never sent (counted).
+    The verdict never hides or deletes a hint. `vi_stats` C shows the verdicts and the agreement.
+  - Migration: none. Experiences without `data.judge` are labelled exactly as before; the judge only adds a key.
+  - Evidence: `tests/test_feedback_labels.py` (verdicts stored and labelled with the small weight, the agent's feedback wins and the
+    disagreement is counted, calibration after 30 agreeing pairs gives the full weight, private hints not sent, no model → skipped,
+    old data unchanged).
+
 ## 0.67.0 — 2026-11-16
 
 ### What is new
