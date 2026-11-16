@@ -7,6 +7,24 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **vi_recall collects by itself when a question wants everything about one entity.** The user said (16.11.2026): "Bei einer Recherche können
+  auch mehr als vier Werte von einem Objekt relevant sein. Z.B. welche Ausstattung hat ein Host." On the production copy, 20 % of all
+  objects are parts of longer pages (9,196 parts of 3,387 pages, up to 159 parts), and the facts about one host are spread over several
+  pages; ranked hits return only a fraction of such a set (QUEST 2305.11694, QAMPARI 2205.12665).
+  - **When:** the question names an entity that exists as a `host:` hashtag value and asks to collect ("Welche Ausstattung", "all",
+    "overview", …) or is little more than the name. Single-fact questions about the host ("backup failed on X since yesterday") stay
+    ordinary searches. `collect=false` switches it off, e.g. for an A/B measurement.
+  - **What:** the hits plus every visible object carrying the entity hashtag. Page parts are joined by `data.source` in their order and
+    chunked by the new `chunking` (structure-aware, heading path in front, ported from IT-AIKB). `context_budget` (also from IT-AIKB, where
+    ~10k selected tokens answered as well as the full context in 53 s instead of 137 s) chooses chunks under a budget of 1,500–8,000
+    tokens, with chunks naming the entity first. The output is in page order with […] for gaps, plus one line on why the mode switched
+    on and what was left out with its reason.
+  - **Measured on a production copy** (the hardware question about one production host): the host's own knowledge page first (CPU model, cores, RAM,
+    OS, addresses, purpose, services), 13 of 17 pages in 7,971 tokens; 10.9 s instead of 2.8 s, most of it the reranker over ~170 chunks.
+    The router was right on 4 of 4 probe questions. A completeness measurement with a multi-target question set is still open (below).
+  - **Fixed on the way, also present in the IT-AIKB original:** a table that is only an oversized header row lost all its text when
+    split. On the copy: 21,580 contents → 93,515 chunks, none losing text, none over the limit.
+  - Evidence: `tests/test_chunking.py`, `tests/test_context_budget.py`, `tests/test_collect.py`; full suite 1,166 passed / 8 skipped.
 - **Fine-tuning paper: eighteen runs that teach a 0.6B model to work by the seed** ([docs/FINETUNING_PAPER.md](docs/FINETUNING_PAPER.md)).
   The paper reports each run's design, the results scored by the solver, the findings with sources (33 references, each checked
   against the paper text or its arXiv entry), the status against the targets, the measurement errors corrected on the way, and the
@@ -295,6 +313,8 @@ done; step 4b follows in 0.68 (the user's decision, 16.11.2026: "4a now, 4b in 0
 
 ### What is missing
 
+- **Completeness of the collect mode is not measured yet.** A multi-target question set (entity profiles, lists, aggregation) with pooled,
+  graded gold sets is the next step; Hit@4 on the single-target set is the gate that must not drop. The router knows only `host:` entities.
 - **Step 4b of the English names follows in 0.68** (the user's decision, 16.11.2026). Three object kinds still carry German keys in
   their data: `sleep` (the sleep report: `schritte`, `fehler`, `dauer_ms`, …), `model` (router, student, fine-tuning records:
   `gewichte`, `zustand`, `pruefung`, `koepfe`, `versionen`, …) and `self` (the self model: `soll`, `ist`, `erzaehlung`, `satz`, and a

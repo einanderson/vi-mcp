@@ -468,13 +468,14 @@ VI: usage statistics — is the VI used and does it work as intended? Calls per 
 
 ### `vi_recall`
 
-VI: search memory. When: before starting any task, before changing actions on systems, on errors, for questions about internal systems (rules 1–4). Syntax: kind:value, !kind:value, (a OR b), prefix kind:value*, free text (full text). Or a VIL question: ask.how\|why\|what\|who\|where\|rule words — @host, #thema, since:30d (vi_vocabulary shows the words). Ranked by relevance, recency and importance; every hit is reinforced. semantic=true searches hybrid: meaning (embedding — takes a few seconds, is reported) plus full text, merged by rank fusion. reinforce=false for measurements and probes (benchmarks, evaluations): read only, the hits are not reinforced. **OPEN** · German alias `vi_erinnere`
+VI: search memory. When: before starting any task, before changing actions on systems, on errors, for questions about internal systems (rules 1–4). Syntax: kind:value, !kind:value, (a OR b), prefix kind:value*, free text (full text). Or a VIL question: ask.how\|why\|what\|who\|where\|rule words — @host, #thema, since:30d (vi_vocabulary shows the words). Ranked by relevance, recency and importance; every hit is reinforced. semantic=true searches hybrid: meaning (embedding — takes a few seconds, is reported) plus full text, merged by rank fusion. reinforce=false for measurements and probes (benchmarks, evaluations): read only, the hits are not reinforced. A question about everything of one entity ("hardware of host X", "which roles run on Y") switches to the collect mode by itself: the relevant chunks of every object about it under a token budget, page parts in order, with what was left out — not only ranked hits. **OPEN** · German alias `vi_erinnere`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `filter` | string | yes | e.g. (topic:oom OR topic:disk-full) !ok:yes |
 | `limit` | integer |  | how many hits at most (default 10) |
 | `semantic` | boolean |  | true: hybrid search — meaning (embedding) plus full text (German: `semantisch`) |
+| `collect` | boolean |  | default: automatic (a question about everything of one entity gets its chunks under a token budget); false switches the collect mode off, e.g. for an A/B measurement |
 | `reinforce` | boolean |  | default true; false = read only (access count and last use stay unchanged) |
 | `index` | string |  | optional: search only this index (a project or special VI); without it, hits from your project's index come first and everything else stays visible |
 | `project` | string |  | set by the hook: the name of your working directory (its index comes first) (German: `projekt`) |
@@ -1138,12 +1139,15 @@ First line of each module's docstring.
 | `bandit` | Bandit — Thompson sampling per hint (stage 2, docs/TRAINING.md 4b), measured by the advantage over the tool without a hint. |
 | `capabilities` | 0.53.0: which skills exist, which system each one serves, which tools it has, and where its manual is — at the start of a session. |
 | `checks` | Deterministic check of foreign content — always runs first; only it may reject for good. |
+| `chunking` | Structure-aware chunking of long content: the SEARCH unit of a large document (0.67.0). |
 | `classify` | Classify knowledge for the AI language (0.62.0): which question an object answers, what kind of memory it is. |
 | `code_facts` | Structure facts of code (Unreleased): what a Python file defines, calls, imports, writes, raises — read by clingo-object rules. |
 | `code_import` | Code in the index (0.61.0): `vi-mcp index import-code <repo> --index X` puts the code of a git repository into an index. |
+| `collect` | Collect mode of vi_recall (0.67.0): a question that wants many values about one entity ("what hardware does host X have") gets the |
 | `config` | Configuration — one file, readable by the owner only. |
 | `configure` | 0.48.0: configuring the server after installation — one catalogue of questions, two front ends. |
 | `content` | Content as a feature — the router weights hints not only by situation but also by meaning. |
+| `context_budget` | Context budget: which chunks of the result objects reach the reader (0.67.0, the collect mode). |
 | `dataset` | Training data from the memory (0.62.0) — the goal: a VI that comes out of the incubator fine-tunes an AI. |
 | `db` | Database access: SQLite (default, standard library) or PostgreSQL (optional, psycopg 3). |
 | `db_migrate` | Move a SQLite database to PostgreSQL (0.50.0): `vi-mcp db migrate`, `vi-mcp db status`. |

@@ -360,9 +360,12 @@ TOOLS = [
                     "text). Or a VIL question: ask.how|why|what|who|where|rule words — @host, #thema, since:30d (vi_vocabulary shows the words). "
                     "Ranked by relevance, recency and importance; every hit is reinforced. semantic=true searches hybrid: meaning "
                     "(embedding — takes a few seconds, is reported) plus full text, merged by rank fusion. reinforce=false for measurements "
-                    "and probes (benchmarks, evaluations): read only, the hits are not reinforced.",
+                    "and probes (benchmarks, evaluations): read only, the hits are not reinforced. A question about everything of one entity "
+                    "(\"hardware of host X\", \"which roles run on Y\") switches to the collect mode by itself: the relevant chunks of "
+                    "every object about it under a token budget, page parts in order, with what was left out — not only ranked hits.",
      "inputSchema": _schema({"filter": {"type": "string", "description": "e.g. (topic:oom OR topic:disk-full) !ok:yes"}, "limit": {"type": "integer"},
                              "semantic": {"type": "boolean"},
+                             "collect": {"type": "boolean", "description": "default: automatic (a question about everything of one entity gets its chunks under a token budget); false switches the collect mode off, e.g. for an A/B measurement"},
                              "reinforce": {"type": "boolean", "description": "default true; false = read only (access count and last use stay unchanged)"},
                              "index": {"type": "string", "description": "optional: search only this index (a project or special VI); without it, hits from your project's index come first and everything else stays visible"},
                              "project": {"type": "string", "description": "set by the hook: the name of your working directory (its index comes first)"},
@@ -922,9 +925,21 @@ def _recall(args: dict, instance: str, only: str | None, first: str | None) -> s
         from . import vil
         return f"{len(hits)} objects for “{f}” (VIL: tell.<memory> <id> \"text\" ev:<evidence> w:<weight>/<ratings> src:<source>):\n" + \
             "\n".join(vil.tell_line(o) for _, o, _gw in hits)
+    collected = ""
+    if args.get("collect") is not False:  # 0.67.0: questions about everything of one entity get its chunks under a token budget
+        from . import collect
+        decision = collect.detect(args.get("filter") or "")
+        if decision:
+            words = " ".join(g.parse_filter(args.get("filter") or "", g.known_kinds())[2]) or (args.get("filter") or "")
+            context, counts = collect.collect(words, hits, decision)
+            if context:
+                collected = f"\n\n{collect.note(counts)}\n\n{context}"
+                f += " · collect mode"
     if hits:
         return (f"{len(hits)} object{'' if len(hits) == 1 else 's'} for “{f}” (R relevance · A recency · W importance):\n"
-                + "\n".join(_line(o, gw) for _, o, gw in hits))
+                + "\n".join(_line(o, gw) for _, o, gw in hits)) + collected
+    if collected:
+        return f"no single hit for “{f}”, but the entity is known:{collected}"
     # 0.62.0: why nothing — a word the memory does not know ("nothing known" is the answer) or known words that do not meet
     from . import vocabulary
     reason, unknown = vocabulary.empty_reason(args.get("filter") or "", instance)  # suggestions only from what this instance may see
