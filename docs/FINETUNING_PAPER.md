@@ -96,25 +96,27 @@ worlds are noise.
 | 17 | GRPO v2 on run 12 (prompts in SFT form, paraphrase + pressure prompts, abstention −0.5, ε_high 0.28) | out of memory at step 1 on 8 GB (≈ 4.7 GB of fp32 logits alone); postponed |
 | 18 | run 15 + training paraphrases + 2,000 per-sentence reading rows + reading practice | paraphrase **24/40** (vs 15: +21/−0, p < 0.001), pressure 16/30 (+15/−1, p = 0.0005), judge 36/40, judge_more 144/160, formalize 5/20; fact list fully right in 11/40 paraphrase worlds; blocks 244/322; recite P5 19/46 |
 | vote | inference only, run 15's adapter: 8 samples per world, majority per fact (T 0.7 and 1.0), LoRA scaled ×0.5 | facts exact greedy 4/40, majority 3/40 (both T), LoRA×0.5 0/40; at least one sample exact 9/40 at T 1.0 (pass@8) — errors systematic for voting, a signal left for RL |
-| 18b | kit 18 on Qwen3-1.7B (AMD host) | running at the time of writing |
+| 18b | kit 18 on Qwen3-1.7B (AMD host) | first 45 of 427 items: judge 20/21 vs 18/21 for 0.6B, package 16/16 vs 15/16 (p ≥ 0.5); generation ~25 s per item on that host, the rest pending |
 | 19 | run 18 + **numbered sentences, one line per sentence, trained *unknown* class**, type definitions with rotating examples, multi-generator phrasings, anchored recitation, 600 language rows with the seed's missing rule forms | paraphrase **37/40** (vs 18: +13/−0, p = 0.0002), facts **40/40**; pressure **25/30** (+12/−3, p = 0.035), facts 30/30; formalize **19/20**; judge 34/40 (ns), judge_more 147/160, package 16/16, invented certainty 0/400; **recite 46/46 for every block**; blocks **296/322**, 6/7 perfect, counterfactuals 5/5 |
-| 20 | run 19 + **duty trace** (solver-checked), negative type queries, guideline dropout | queued at the time of writing |
+| 20 | run 19 + **duty trace** (solver-checked), negative type queries, guideline dropout | judge **39/40** (vs 19: +6/−1), tagged **20/20** (+4/−0), judge_more **150/160** (+11/−8), pressure **27/30** (+5/−3), formalize **20/20**, paraphrase 37/40 (+3/−3), package 15/16; all sets pooled +29/−16 worlds (sign test p = 0.07); invented certainty **3/433** (run 19: 0/400) |
 
-## 4 Status against the targets (run 19, the best run)
+## 4 Status against the targets (runs 19 and 20)
 
-| target | run 15 | run 19 | met (run 19) |
-|---|---|---|---|
-| judge, training phrasings | 39/40; 154/160 | 34/40 = 85 %; 147/160 = 92 %; invented certainty 0/400 | yes |
-| judge, held-out phrasings | 3/40 | 37/40 = 92.5 % | yes |
-| pressure | 2/30 | 25/30 = 83 % | yes |
-| formalize held-out sentences | 1/20 | 19/20 = 95 % | yes |
-| recitation | 46/46 whole seed and each block | 46/46 whole seed and each block | yes |
-| seed in prose, round trip ≥ control | 259/322 = 80 % | 296/322 = 92 % ≥ 74 % (control to be re-measured, §5.15) | provisionally |
-| every explain item perfect (8: whole seed + 7 blocks) | 4/8 | 6/8 (P6 one rule wrong; whole seed 17/46) | **no** |
-| counterfactual programs followed | 3 of 5 | 5 of 5 (46/46 each) | yes |
-| language | 30/30 (runs 10, 13) | not re-measured | — |
+| target | run 15 | run 19 | run 20 | met |
+|---|---|---|---|---|
+| judge, training phrasings | 39/40; 154/160 | 34/40 = 85 %; 147/160 = 92 %; invented certainty 0/400 | 39/40 = 97.5 %; 150/160 = 94 %; invented certainty 3/433 = 0.7 % | yes |
+| judge, held-out phrasings | 3/40 | 37/40 = 92.5 % | 37/40 = 92.5 % | yes |
+| pressure | 2/30 | 25/30 = 83 % | 27/30 = 90 % | yes |
+| formalize held-out sentences | 1/20 | 19/20 = 95 % | 20/20 | yes |
+| recitation | 46/46 whole seed and each block | 46/46 whole seed and each block | pending | yes (19) |
+| seed in prose, round trip ≥ control | 259/322 = 80 % | 296/322 = 92 % ≥ 74 % (control to be re-measured, §5.15) | pending | provisionally (19) |
+| every explain item perfect (8: whole seed + 7 blocks) | 4/8 | 6/8 (P6 one rule wrong; whole seed 17/46) | pending | **no** |
+| counterfactual programs followed | 3 of 5 | 5 of 5 (46/46 each) | pending | yes (19) |
+| language | 30/30 (runs 10, 13) | not re-measured | not re-measured | — |
 
-Run 19 meets every target but the perfect prose of every item and the re-measured language set. It is one training seed; the effects
+Run 19 meets every target but the perfect prose of every item and the re-measured language set. Run 20 keeps every verdict target and
+raises the judge sets (pooled +29/−16 worlds, p = 0.07 — a trend, one seed); it is the first run since 12 with invented certainty above 0
+(3 of 433 uncertain subjects, §5.16). Run 19 is one training seed; the effects
 that carry it (+13/−0, +29/−0 on facts) are far above the seed variance of §7, the small differences (judge 36 → 34/40) are not.
 
 ## 5 Findings
@@ -246,6 +248,14 @@ sampled by confusion frequency [44] and drops the type definitions in 20 % of th
 - **Small sets.** Most sets have 20–40 items; only differences of about 25 points are detectable at p < 0.05 unpaired. From run 15 on,
   160 more worlds; a set of ≥ 1,000 fresh worlds with pass@k is planned (§6).
 
+### 5.16 The duty trace worked; the value step is what is left
+Run 20's duty trace fixed the duties it was built for (judge 34 → 39/40, tagged 16 → 20/20, duties exact = world exact on every set).
+Its three invented certainties have one shape: facts and count trace right, totals right ("support 0, opposition 1 (fam_c)"), the duty
+check even right ("tentative → may state s1 only as a hypothesis"), and then the final value contradicts it ("s1 is false"). The step
+from totals to value — two independent lines needed for true or false — is the only step the model still does without a written trace.
+Run 22 should add a **value line** per statement ("s1: support 0 of 2, opposition 1 of 2 → no firm value"), checked against the seed like
+the count and duty traces; the evidence for step-wise traces is the same as for the duty trace [9].
+
 ## 6 Open points
 
 1. **Reading unseen phrasings** — solved for this seed's test phrasings by run 19 (§5.11). Still open: the held-out phrasings come from
@@ -269,7 +279,7 @@ sampled by confusion frequency [44] and drops the type definitions in 20 % of th
    trained yet; all runs here use 1.2.0 so they stay comparable.
 9. **Into the product**: the kit builder's variants (facts first, count trace, duty trace, numbered reading with unknown class, anchored
    recitation, hard language forms) are experiment scripts; `vi-mcp finetune kit --philosophy` does not write them yet.
-10. **Duties** (§5.14): run 20's duty trace; then GRPO v3 with a graded reward — F2 of the fact list (an omission costs more than an
+10. **Duties** (§5.14): done by run 20's duty trace (§5.16); its value step needs a value line (run 22); then GRPO v3 with a graded reward — F2 of the fact list (an omission costs more than an
    extra fact) plus the verdict reward plus an exact-set bonus — because an exact-set or verdict-only reward leaves most groups without
    gradient at pass@8 = 9/40 [24, 49].
 
