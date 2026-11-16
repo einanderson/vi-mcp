@@ -361,11 +361,11 @@ VI: the words you can search with — before a search when you are unsure which 
 
 ### `vi_finetune`
 
-VI: fine-tune an AI with the knowledge of this VI. When the user says they want to fine-tune (or train, adapt, teach a model with this knowledge), call this first. action plan (default): is this VI mature (incubator), and the steps with commands for this server; guide: the handbook — what fine-tuning is (LoRA/QLoRA, SFT/KTO/DPO), which program (TRL, Unsloth), which hardware, how back into llama.cpp, how to measure; record: a finished run (path on the server) becomes a model object with its lineage. vi-mcp runs no training: a person runs the kit's scripts on a GPU host.
+VI: fine-tune an AI with the knowledge of this VI. When the user says they want to fine-tune (or train, adapt, teach a model with this knowledge), call this first. action plan (default): is this VI mature (incubator), and the steps with commands for this server; guide: the handbook — what fine-tuning is (LoRA/QLoRA, SFT/KTO/DPO), which program (TRL, Unsloth), which hardware, how back into llama.cpp, how to measure; record: a finished run (path on the server) becomes a model object with its lineage; skill: the step-by-step runbook to fine-tune ANY open model (exact commands, checks after each step, tables for GPU memory and settings) — follow it step by step. vi-mcp runs no training: a person runs the kit's scripts on a GPU host.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string (plan, guide, record) |  | plan (default), guide or record (German: `aktion`) |
+| `action` | string (plan, guide, record, skill) |  | plan (default), guide, record or skill (the step-by-step runbook) (German: `aktion`) |
 | `index` | string |  | optional: one index (a project or special VI) |
 | `base_model` | string |  | optional: the model to fine-tune (Hugging Face id or directory) |
 | `directory` | string |  | record: the kit directory on the server |
@@ -1160,6 +1160,7 @@ First line of each module's docstring.
 | `feature_writer` | The feature writer (0.68.0) — weight-space programming turned around: the language model READS the router's weights and its errors and |
 | `finetune` | Fine-tuning an AI with what a VI learned (0.62.0) — the VI knows how, and an AI on vi-mcp is told "I want to fine-tune". |
 | `finetune_embed` | Embedding fine-tuning kit (0.68.0): train the embedding model on this VI's own (situation, hint) pairs, so the router's similarity |
+| `finetune_skill` | The fine-tuning skill (0.68.0): a step-by-step runbook any AI on vi-mcp can follow to fine-tune ANY open model — written for small models. |
 | `forum` | 0.43.0: AIs talk in the network — questions and answers between servers, what vi_ask/vi_answer already do between the instances of |
 | `hint_judge` | Did the agent use the hint? A language model judges shown hints after the fact (0.68.0) — the label the agents rarely give. |
 | `hint_prior` | LLM prior for NEW hints (0.68.0) — prior knowledge where the router has no data, switched off by the data where it does not help. |

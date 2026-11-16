@@ -244,8 +244,10 @@ TOOLS = [
                     "model with this knowledge), call this first. action plan (default): is this VI mature (incubator), and the steps with "
                     "commands for this server; guide: the handbook — what fine-tuning is (LoRA/QLoRA, SFT/KTO/DPO), which program (TRL, "
                     "Unsloth), which hardware, how back into llama.cpp, how to measure; record: a finished run (path on the server) "
-                    "becomes a model object with its lineage. vi-mcp runs no training: a person runs the kit's scripts on a GPU host.",
-     "inputSchema": _schema({"action": {"type": "string", "enum": ["plan", "guide", "record"], "description": "plan (default), guide or record"},
+                    "becomes a model object with its lineage; skill: the step-by-step runbook to fine-tune ANY open model (exact commands, "
+                    "checks after each step, tables for GPU memory and settings) — follow it step by step. vi-mcp runs no training: a person "
+                    "runs the kit's scripts on a GPU host.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["plan", "guide", "record", "skill"], "description": "plan (default), guide, record or skill (the step-by-step runbook)"},
                              "index": {"type": "string", "description": "optional: one index (a project or special VI)"},
                              "base_model": {"type": "string", "description": "optional: the model to fine-tune (Hugging Face id or directory)"},
                              "directory": {"type": "string", "description": "record: the kit directory on the server"}})},
@@ -1468,6 +1470,9 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         try:
             if action == "guide":
                 return finetune.GUIDE
+            if action == "skill":  # 0.68.0: the runbook any AI can follow, for any open model
+                from . import finetune_skill
+                return finetune_skill.skill(args.get("base_model"))
             if action == "record":
                 if not args.get("directory"):
                     raise ValueError("record needs directory — the kit directory on the server")

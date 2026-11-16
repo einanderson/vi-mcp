@@ -5,6 +5,27 @@ Linked from [README.md](README.md).
 
 ## Unreleased
 
+### What is new: the fine-tuning skill and the paper
+
+- **A fine-tuning skill any AI can follow, for any open model** (`vi_finetune(action="skill")`, `vi-mcp finetune skill [--base M]
+  [--file]`, [docs/FINETUNING_SKILL.md](docs/FINETUNING_SKILL.md); one source, `vi_mcp/finetune_skill.py`). The user (16.11.2026): the
+  server should be able to fine-tune any model with a skill, written so that a small model (Qwen 3.8) can follow it. So the runbook
+  puts the rules first (no run and no stopped service without the person's yes, no token caps, never train on the evaluation data, write
+  every result down), then thirteen steps with one command each and an "OK if" check after it, decision tables for precision and memory
+  (model size × GPU memory) and training settings, the commands of the product kit (tokenizer-only, preflight, the stages, probe or
+  solver scoring, record), and a table of known failures with what to do. "Any model" = a Hugging Face causal LM with a chat template and
+  no remote code — the kit trains LoRA on all linear layers; step 1 checks this and stops otherwise. With `base_model` the model id is
+  filled in. The section "what made a philosophy model better" lists the measured lessons of the 19 runs of the fine-tuning paper.
+  - Evidence: `tests/test_finetune_skill.py` (tool, CLI and docs are the one source; every step has a check; the rules come first; the
+    flags and scripts named exist in the kit).
+  - Tried with the small model it is written for (qwen3.8-flash, IQ4_XS, on the project's shared server, 16.11.2026, thinking off,
+    temperature 0): it asked exactly the five questions of step 0, filled the model into step 1's command and waited for its output, chose
+    fp32 / rank 64 / 4 epochs from the tables for a 1.7B model on 24 GB, and stopped on a model without a chat template. It first invented
+    model names when it stopped; the skill now forbids that, and the re-test asked the person instead.
+- **Fine-tuning paper: runs 18, 19 and the vote test** ([docs/FINETUNING_PAPER.md](docs/FINETUNING_PAPER.md)): reading was omission and
+  sentence-aligned output with an unknown class fixed it (held-out phrasings 37/40, facts 40/40, pressure 25/30, formalize 19/20); the
+  language stage decides which seed forms can be explained (prose round trip 296/322, 6 of 7 blocks perfect); duties are what is left.
+
 ### What is new: the feature writer — weight-space programming turned around
 
 The user (16.11.2026): bring weight-space programming in "so that the connected model only reads the weights". The LLM weight layer of
@@ -110,6 +131,7 @@ migration path in mind ("denke immer an einen migrations pfad").
   0.57.0/0.62.0 — one slot is filled at random with probability ε, the offer probability of every shown hint is logged
   (`before.offer`) and the router weights by its inverse (IPS). A model grade of conversations exists since 0.55.0 (weight 0.3 until
   calibrated).
+
 
 ## 0.67.0 — 2026-11-16
 
