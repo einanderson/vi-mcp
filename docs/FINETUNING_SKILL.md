@@ -15,6 +15,19 @@ Version 2026-11-16a. Follow the steps in order. Do one step at a time.
 6. Never copy the live database. The kit is built from a read-only copy (step 3 does this).
 7. Write every result down: `vi_learn` with the numbers, the command and the host. A result that is not written down is lost.
 
+## This skill and the skill vi-entwickeln
+
+This skill fine-tunes a LANGUAGE MODEL (a LoRA adapter on a GPU host, started by a person). The learned parts of the VI itself — router,
+bandit, scorer, classification student, and the language-model weight layer on the router (weight-space programming) — are trained
+by the VI server with scikit-learn, continuously; for those use the skill `vi-entwickeln`. The two never write into each other: a
+fine-tuned model changes no router weight, and the router changes no model weight. Both follow the same measurement rules:
+1. Never train on what you test.
+2. Measure the baseline first, then the change, on the same items (paired). 2–3 items out of 40 are noise.
+3. A plausible reason is not evidence; only the measurement decides.
+4. Record every result with its evidence, also a rejected change.
+5. No change to production without the person's yes; work on a copy of the database.
+6. No token cap in any language-model call.
+
 Words used below:
 - MODEL = the Hugging Face id of the base model, for example `Qwen/Qwen3-0.6B`.
 - KIT = the kit directory, for example `/srv/ft/kit1`.
