@@ -115,7 +115,7 @@ worlds are noise.
 | seed in prose, round trip ≥ control | 259/322 = 80 % | 296/322 = 92 % ≥ 74 % (control to be re-measured, §5.15) | **322/322** (run 22) | yes |
 | every explain item perfect (8: whole seed + 7 blocks) | 4/8 | 6/8 (P6 one rule wrong; whole seed 17/46) | 7/8 (run 22: all blocks 46/46; whole seed in one answer 15/46, block by block 46/46) | yes, block-wise |
 | counterfactual programs followed | 3 of 5 | 5 of 5 (46/46 each) | 5 of 5 (46/46 each, run 22) | yes |
-| language | 30/30 (runs 10, 13) | not re-measured | not re-measured | — |
+| language (30 held-out rule sets) | 30/30 (runs 10, 13) | not re-measured | 28/30 = 93 % (run 22; both misses a constant inside a ternary body: "sends up X to") | **no** (by one item) |
 
 Run 19 meets every target but the perfect prose of every item and the re-measured language set. Run 20 keeps every verdict target and
 raises the judge sets (pooled +29/−16 worlds, p = 0.07 — a trend, one seed); it is the first run since 12 with invented certainty above 0
