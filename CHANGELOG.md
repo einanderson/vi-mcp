@@ -28,6 +28,40 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
     and a useless one dropped, run with a fake model storing every rule and turning the kept one into a router feature, card numbers from
     the training part only, no model → skipped).
 
+### What is new: LLM prior for new hints, and the embedding fine-tuning kit
+
+- **LLM prior for new hints** (`vi_mcp/hint_prior.py`, sleep step `8l_hint_prior`, `vi-mcp hint-prior run|label|gate|report`). New hints
+  help less than old ones (+27 against +48 points over the tool's base rate, production 16.11.2026) — they have no weight yet. The
+  classify model names, once per new hint, the situation tags it should help in (tool/topic/error from the memory's own vocabulary, never
+  a number; `data.prior`). Features `prior:match` / `prior:miss` for NEW hints only; ON only while the two-step gate (selected inside the
+  training part, tested once on the holdout, better by > 2 SE) says so (table `hint_prior_state`, re-checked each sleep). Research:
+  language-model priors help only at very small n (AutoElicit 2411.17284) and must be switchable by the data (LLM-Lasso 2502.10648).
+  Migration: none — hints without a prior get no feature, the state starts off. Evidence: `tests/test_hint_prior.py`.
+- **Embedding fine-tuning kit** (`vi-mcp finetune embed-kit DIR [--days N]`, `vi_mcp/finetune_embed.py`): the embedding model, not a
+  chat model, learns this VI's (situation → hint) pairs. Real positives (feedback helped, adopted, judge used after success) are the
+  EVALUATION set — 302 over 128 hints on the production copy, far below the volumes of any published gain (GPL 2112.07577, Promptagator
+  2209.11755); training volume comes from synthetic pairs with a round-trip filter (`gen_synth.py`). Negatives only when confirmed
+  (feedback wrong, judge misleading): "shown but not used" is no negative (RocketQA 2010.08191: ~70 % of such passages were relevant).
+  The tuned model is merged with the base (alpha 0.5, LM-Cocktail 2311.13534) against forgetting; `eval_embed.py` compares Recall@4 on
+  the newest window. Privacy: an experience is never exported — the situation is its trigger tags without hosts, as the router sees it.
+  Written, never run by vi-mcp. Evidence: `tests/test_finetune_embed.py`.
+
+### What is missing (to do, proposals of 16.11.2026)
+
+1. **External AIs propose feature rules** (`vi_feature_propose`): Claude or Codex read the router's weights (`vi_model`) and its errors and
+   submit rules in the feature writer's language; the same gate decides; author and measurement stored. Waiting for the user's decision —
+   no instance writes a weight directly (AGENTS.md: no instance rates itself).
+2. **Re-run the measurements once hint labels have accumulated** (vi_after used, hint judge): the ablation of the embedding features,
+   the feature writer, the hint prior — with today's outcome labels the hint signal is too weak (hint-pair AUC 0.52).
+3. **Decide on the content features** `naehe` / `content:<n>`: they worsen paired log loss (+0.0042 ± 0.0005; new hints +0.0174 ±
+   0.0018, production copy 16.11.2026); measure the ranking utility too, then remove or keep.
+4. **Run the embedding kit** once synthetic pairs exist and the real labels are enough for an evaluation (a few hundred in the test
+   window); then the router's offline gate with the recomputed similarity features. GPU run only with the person's approval.
+5. **Calibrate the hint judge** against the agents' own feedback (≥ 30 pairs at ≥ 75 % for the full weight) before reading its labels
+   as more than a small weight.
+6. **Position bias of "used"**: weight positives by the logged offer probability (IPS) when "used" becomes a training label of the
+   embedding model (Joachims et al. 1608.04468).
+
 ### What is new: more labels on shown hints
 
 Measured on production (`vi_stats`, 7 days to 16.11.2026): 13,679 hints shown, explicit feedback for 374 (3 %), adopted 1 %, opened 0 %;

@@ -215,6 +215,8 @@ def _run(reason: str) -> g.MemoryObject:
             step("8j_hint_judge", lambda: hint_judge.run(hint_judge.per_sleep(), "sleep"))
             from . import feature_writer  # 0.68.0: the language model reads the router's weights and errors and writes feature rules
             step("8k_feature_writer", lambda: feature_writer.run("sleep"))
+            from . import hint_prior  # 0.68.0: priors for new hints, switched on or off by the offline gate
+            step("8l_hint_prior", lambda: hint_prior.run("sleep"))
     from . import evaluation
     step("9_pruefung", lambda: evaluation.nightly())  # 0.55.0: once a day the fixed question set and the router numbers
     duration = int((time.monotonic() - t0) * 1000)

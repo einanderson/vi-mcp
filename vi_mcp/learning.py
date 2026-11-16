@@ -83,8 +83,9 @@ def hint_features(hid: str, triggers: list[str] | None = None, ts: str | None = 
             m[f"content:{c}"] = 1.0
         if triggers and (n := content.proximity(hid, [r for r in triggers if r.startswith(TRIGGER_KINDS)])) is not None:
             m["naehe"] = n
-    from . import feature_writer  # 0.68.0: rules a language model proposed and the offline gate kept; the fit weighs them
+    from . import feature_writer, hint_prior  # 0.68.0: rules a language model proposed and the offline gate kept; the fit weighs them
     m.update(feature_writer.rule_features(hid, triggers or []))
+    m.update(hint_prior.features(hid, triggers or [], "age:new" in m))  # 0.68.0: LLM prior for new hints, only while the gate says on
     return m
 
 

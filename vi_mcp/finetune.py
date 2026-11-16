@@ -1285,6 +1285,9 @@ def main(argv: list[str]) -> int:
     p = u.add_parser("plan", help="readiness and the steps for this server")
     k = u.add_parser("kit", help="write the training data, test split and scripts into a directory")
     r = u.add_parser("record", help="record a finished run as a model object with its lineage")
+    ek = u.add_parser("embed-kit", help="write the embedding fine-tuning kit: real pairs (evaluation), confirmed negatives, scripts")
+    ek.add_argument("directory")
+    ek.add_argument("--days", type=float, default=60)
     s = u.add_parser("split", help="redo the kit's shared split after synth_qa.py wrote dataset/qa_synth.jsonl (needs no database)")
     s.add_argument("directory")
     for x in (p, k):
@@ -1312,6 +1315,9 @@ def main(argv: list[str]) -> int:
     try:
         if o.cmd == "plan":
             print("\n".join(plan_lines(plan(o.index, o.base))))
+        elif o.cmd == "embed-kit":  # 0.68.0
+            from . import finetune_embed
+            print(json.dumps(finetune_embed.kit(o.directory, o.days), indent=2, ensure_ascii=False))
         elif o.cmd == "kit":
             print(json.dumps(kit(o.directory, o.index, o.base, o.force, o.philosophy, o.philosophy_prompts, o.language_rows,
                                  o.philosophy_rows), indent=2, ensure_ascii=False))

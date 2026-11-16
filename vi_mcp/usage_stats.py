@@ -381,6 +381,8 @@ def report(days: float = 7) -> str:
     z.append(hint_judge.line(days))
     from . import feature_writer  # 0.68.0
     z.append(feature_writer.line())
+    from . import hint_prior  # 0.68.0
+    z.append(hint_prior.line())
     m = learning.model()
     z.append(f"F Cleanup: {a['schlaefe']} sleeps (median {a['schlaf_ms_median'] // 1000} s, {a['neue_erkenntnisse']} new insights, {a['fehler']} step errors) · "
              f"{on_demand.line()} · router AUC "

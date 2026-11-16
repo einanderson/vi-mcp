@@ -1159,8 +1159,10 @@ First line of each module's docstring.
 | `evaluation` | Evaluation (0.55.0) — a fixed measuring instrument for the search, so every change to it is measured before it stays. |
 | `feature_writer` | The feature writer (0.68.0) — weight-space programming turned around: the language model READS the router's weights and its errors and |
 | `finetune` | Fine-tuning an AI with what a VI learned (0.62.0) — the VI knows how, and an AI on vi-mcp is told "I want to fine-tune". |
+| `finetune_embed` | Embedding fine-tuning kit (0.68.0): train the embedding model on this VI's own (situation, hint) pairs, so the router's similarity |
 | `forum` | 0.43.0: AIs talk in the network — questions and answers between servers, what vi_ask/vi_answer already do between the instances of |
 | `hint_judge` | Did the agent use the hint? A language model judges shown hints after the fact (0.68.0) — the label the agents rarely give. |
+| `hint_prior` | LLM prior for NEW hints (0.68.0) — prior knowledge where the router has no data, switched off by the data where it does not help. |
 | `image_cli` | 0.35.0: `vi-mcp image` — put an image file with its description into memory, or fetch one back. |
 | `images` | 0.35.0: images in memory — an image with its description and its regions in the format of SAM 3 (Meta, Segment Anything with Concepts). |
 | `incubator` | The incubator (0.62.0): a VI matures in operation until measured criteria say it is ready to fine-tune an AI. |

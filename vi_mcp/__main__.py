@@ -373,6 +373,9 @@ def _cli(argv: list[str]) -> int:
     if command == "relevance":  # 0.62.0: a language model grades real searches (UMBRELA) — the relevance label
         from . import relevance
         return relevance.main(argv[1:])
+    if command == "hint-prior":  # 0.68.0: LLM prior for new hints
+        from . import hint_prior
+        return hint_prior.main(argv[1:])
     if command == "feature-writer":  # 0.68.0: the language model writes feature rules, the fit writes the numbers
         from . import feature_writer
         return feature_writer.main(argv[1:])
