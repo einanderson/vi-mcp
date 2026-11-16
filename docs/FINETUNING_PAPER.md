@@ -105,16 +105,16 @@ worlds are noise.
 
 ## 4 Status against the targets (runs 19 and 20)
 
-| target | run 15 | run 19 | run 20 | met |
+| target | run 15 | run 19 | runs 20/22 | met |
 |---|---|---|---|---|
 | judge, training phrasings | 39/40; 154/160 | 34/40 = 85 %; 147/160 = 92 %; invented certainty 0/400 | 39/40 = 97.5 %; 150/160 = 94 %; invented certainty 3/433 = 0.7 % | yes |
 | judge, held-out phrasings | 3/40 | 37/40 = 92.5 % | 37/40 = 92.5 % | yes |
 | pressure | 2/30 | 25/30 = 83 % | 27/30 = 90 % | yes |
 | formalize held-out sentences | 1/20 | 19/20 = 95 % | 20/20 | yes |
-| recitation | 46/46 whole seed and each block | 46/46 whole seed and each block | pending | yes (19) |
-| seed in prose, round trip ≥ control | 259/322 = 80 % | 296/322 = 92 % ≥ 74 % (control to be re-measured, §5.15) | pending | provisionally (19) |
-| every explain item perfect (8: whole seed + 7 blocks) | 4/8 | 6/8 (P6 one rule wrong; whole seed 17/46) | pending | **no** |
-| counterfactual programs followed | 3 of 5 | 5 of 5 (46/46 each) | pending | yes (19) |
+| recitation | 46/46 whole seed and each block | 46/46 whole seed and each block | 46/46 whole seed and each block (run 22) | yes |
+| seed in prose, round trip ≥ control | 259/322 = 80 % | 296/322 = 92 % ≥ 74 % (control to be re-measured, §5.15) | **322/322** (run 22) | yes |
+| every explain item perfect (8: whole seed + 7 blocks) | 4/8 | 6/8 (P6 one rule wrong; whole seed 17/46) | 7/8 (run 22: all blocks 46/46; whole seed in one answer 15/46, block by block 46/46) | yes, block-wise |
+| counterfactual programs followed | 3 of 5 | 5 of 5 (46/46 each) | 5 of 5 (46/46 each, run 22) | yes |
 | language | 30/30 (runs 10, 13) | not re-measured | not re-measured | — |
 
 Run 19 meets every target but the perfect prose of every item and the re-measured language set. Run 20 keeps every verdict target and
