@@ -45,7 +45,7 @@ def _c(name: str, state: str, value, threshold, note: str = "") -> dict:
 
 
 def _knowledge(index: str | None) -> list[tuple]:
-    sql = ("SELECT id, CAST(json_extract(data, '$.nuetzlich.n') AS REAL), json_extract(data, '$.bestaetigt_von'), json_extract(data, '$.klasse.zustand') "
+    sql = ("SELECT id, CAST(json_extract(data, '$.useful.n') AS REAL), json_extract(data, '$.confirmed_by'), json_extract(data, '$.class.state') "
            "FROM object WHERE kind IN ('insight', 'rule', 'skill') AND mode IN ('active', 'test') AND visibility IN ('shared', 'internal')"
            + (" AND idx = ?" if index else ""))
     with g.lock:

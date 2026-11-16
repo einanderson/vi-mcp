@@ -29,7 +29,7 @@ EXPIRY_DAYS = 7
 
 def _set_state(o: g.MemoryObject, state: str) -> None:
     state = names.english(names.STATES, state)  # 0.67.0
-    o.data["zustand"] = state
+    o.data["state"] = state
     o.hashtags = [t for t in o.hashtags if not t.startswith("state:")] + [f"state:{state}"]
 
 
@@ -72,9 +72,9 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str, conver
         raise ValueError(f"a question has at most {ANSWER_MAX} characters — put longer material into an object (vi_learn) and name its id")
     # 14.11.2026: the question used to be cut to 1000 characters without notice; the whole text is now kept in inhalt
     o = g.new_object("question", text[:1000], tags + [f"to:{to}", f"from:{from_}", "state:open"],
-                       {"von": from_, "an": to, "zustand": "open", "quelle": (source or "").strip()[:500],
-                        "zugestellt_an": [], "antworten": [], "gemeldet": 0, **({"inhalt": text} if len(text) > 1000 else {}),
-                        **({"von_gespraech": conversation} if conversation else {}), **({"an_gespraech": target} if target else {}),
+                       {"from": from_, "to": to, "state": "open", "source": (source or "").strip()[:500],
+                        "delivered_to": [], "answers": [], "reported": 0, **({"inhalt": text} if len(text) > 1000 else {}),
+                        **({"from_conversation": conversation} if conversation else {}), **({"to_conversation": target} if target else {}),
                         **({"zugestellt_gespraeche": []} if to == from_ or target else {})},
                        importance=2, who=f"ki@{from_}", reason="vi_ask", instance=from_)
     return o
@@ -82,36 +82,36 @@ def ask(from_: str, to: str, text: str, triggers: list[str], source: str, conver
 
 def _per_conversation(d: dict) -> bool:
     """Delivered per conversation (a question within one instance, or one aimed at a conversation) — else once per instance."""
-    return d["von"] == d["an"] or bool(d.get("an_gespraech"))
+    return d["from"] == d["to"] or bool(d.get("to_conversation"))
 
 
 def _who(d: dict, a: dict | None = None) -> str:
     if a is not None:
-        return a["instanz"] + (f"#{a['gespraech']}" if a.get("gespraech") else "")
-    return d["von"] + (f"#{d['von_gespraech']}" if d.get("von_gespraech") else "")
+        return a["instance"] + (f"#{a['conversation']}" if a.get("conversation") else "")
+    return d["from"] + (f"#{d['from_conversation']}" if d.get("from_conversation") else "")
 
 
 def _due_here(d: dict, instance: str, conv: str | None) -> bool:
     """Is this question to be shown in this conversation now? Exhaustive over the two delivery kinds."""
-    if d["zustand"] == "expired" or d["an"] not in (instance, "all"):
+    if d["state"] == "expired" or d["to"] not in (instance, "all"):
         return False
     if _per_conversation(d):
-        if not conv or (d["von"] == instance and d.get("von_gespraech") == conv):
+        if not conv or (d["from"] == instance and d.get("from_conversation") == conv):
             return False  # no conversation to deliver to, or the asker's own
-        if d.get("an_gespraech") and d["an_gespraech"] != conv:
+        if d.get("to_conversation") and d["to_conversation"] != conv:
             return False
         from . import session
         done = set(d.get("zugestellt_gespraeche", []))
         return conv not in done and session._hook_of.get(conv) not in done  # shown to its hook before the pairing: shown
-    return d["von"] != instance and instance not in d["zugestellt_an"]
+    return d["from"] != instance and instance not in d["delivered_to"]
 
 
 def _answers_due_here(d: dict, instance: str, conv: str | None) -> bool:
     """New answers go to the asking conversation; to any of the instance's conversations only once it has ended (or never had one)."""
     from . import session
-    if d["von"] != instance or len(d["antworten"]) <= d.get("gemeldet", 0):
+    if d["from"] != instance or len(d["answers"]) <= d.get("reported", 0):
         return False
-    asker = d.get("von_gespraech")
+    asker = d.get("from_conversation")
     return not asker or asker == conv or not session.is_open(asker)
 
 
@@ -124,34 +124,34 @@ def deliver(instance: str | None, conversation: str | None = None) -> list[str]:
     hints = []
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('open', 'delivered', 'answered') "
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.state') IN ('open', 'delivered', 'answered') "
             "AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "  # 0.43.0: a question from the network only after review
-            "AND (json_extract(data, '$.an') IN (?, 'all') OR json_extract(data, '$.von') = ?) ORDER BY ts", (instance, instance))]
+            "AND (json_extract(data, '$.to') IN (?, 'all') OR json_extract(data, '$.from') = ?) ORDER BY ts", (instance, instance))]
         for oid in ids:
             o = g.load(oid)
             d = o.data
             if _due_here(d, instance, conv):
-                full = str(d.get("inhalt") or o.text)
+                full = str(d.get("content") or o.text)
                 more = f" … (complete: vi_questions(id={o.id}))" if len(full) > 400 else ""
                 hints.append(f"Question from {_who(d)} [{o.id}]: {full[:400]}{more} — answer with vi_answer(id, text, belege)")
                 if _per_conversation(d):
                     d["zugestellt_gespraeche"] = d.get("zugestellt_gespraeche", []) + [conv]
                     where = f"{instance}#{conv}"
                 else:
-                    d["zugestellt_an"] = d["zugestellt_an"] + [instance]
+                    d["delivered_to"] = d["delivered_to"] + [instance]
                     where = instance
-                if d["zustand"] == "open":
+                if d["state"] == "open":
                     _set_state(o, "delivered")
                 o.change("vi", f"delivered to {where}", "next vi_before of the target")
                 g.save(o)
             if _answers_due_here(d, instance, conv):  # not elif: another conversation of the asker may get the question and its answers
-                new = d["antworten"][d.get("gemeldet", 0):]
-                ended = (f" (the asking conversation {d['von_gespraech']} has ended — shown here so it is not lost)"
-                         if d.get("von_gespraech") and d["von_gespraech"] != conv else "")
+                new = d["answers"][d.get("reported", 0):]
+                ended = (f" (the asking conversation {d['from_conversation']} has ended — shown here so it is not lost)"
+                         if d.get("from_conversation") and d["from_conversation"] != conv else "")
                 hints += [f"Answer from {_who(d, a)} to your question [{o.id}] \"{o.text[:80]}\"{ended}: {a['text'][:400]}"
-                          + (f" … (complete: vi_questions(id={o.id}))" if len(a["text"]) > 400 or len(a.get("belege") or "") > 160 else "")
-                             + (f" [Evidence: {a['belege'][:160]}]" if a.get("belege") else "") for a in new]
-                d["gemeldet"] = len(d["antworten"])
+                          + (f" … (complete: vi_questions(id={o.id}))" if len(a["text"]) > 400 or len(a.get("evidence") or "") > 160 else "")
+                             + (f" [Evidence: {a['evidence'][:160]}]" if a.get("evidence") else "") for a in new]
+                d["reported"] = len(d["answers"])
                 g.save(o)
     return hints
 
@@ -161,14 +161,14 @@ def answer_question(oid: str, instance: str, text: str, evidence_list: str, conv
     if not o or o.kind != "question":
         raise ValueError(f"question {oid} unknown")
     d = o.data
-    if d["zustand"] == "expired":
+    if d["state"] == "expired":
         raise ValueError(f"question {oid} has expired ({EXPIRY_DAYS} days without an answer)")
-    if d["von"] == instance and (not d.get("von_gespraech") or d["von_gespraech"] == conversation):
+    if d["from"] == instance and (not d.get("from_conversation") or d["from_conversation"] == conversation):
         raise ValueError("you do not answer your own question — use vi_learn if you found it out yourself")
-    if d["an"] not in (instance, "all"):
-        raise ValueError(f"the question went to {d['an']}, not to {instance}")
-    if d.get("an_gespraech") and d["an_gespraech"] != conversation:
-        raise ValueError(f"the question went to conversation {d['an']}#{d['an_gespraech']}, not to this one ({conversation or 'none'})")
+    if d["to"] not in (instance, "all"):
+        raise ValueError(f"the question went to {d['to']}, not to {instance}")
+    if d.get("to_conversation") and d["to_conversation"] != conversation:
+        raise ValueError(f"the question went to conversation {d['to']}#{d['to_conversation']}, not to this one ({conversation or 'none'})")
     if len((text or "").strip()) < 10 or len((evidence_list or "").strip()) < 8:
         raise ValueError("text (the answer) and belege (command/URL/measurement) are required")
     # 14.11.2026: answers were cut to 2000 and evidence to 500 characters without notice (a review ended mid-sentence). Stored whole
@@ -176,14 +176,14 @@ def answer_question(oid: str, instance: str, text: str, evidence_list: str, conv
     if len(text.strip()) > ANSWER_MAX or len(evidence_list.strip()) > EVIDENCE_MAX:
         raise ValueError(f"an answer has at most {ANSWER_MAX} characters and its evidence at most {EVIDENCE_MAX} — put longer material "
                          "into an object (vi_learn) and name its id in the answer")
-    entry = {"instanz": instance, "text": text.strip(), "belege": evidence_list.strip(), "zeit": g.now(),
-             **({"gespraech": conversation} if conversation else {})}
+    entry = {"instance": instance, "text": text.strip(), "evidence": evidence_list.strip(), "ts": g.now(),
+             **({"conversation": conversation} if conversation else {})}
     # The object's data has a size limit, past which the generic shortening drops the oldest half of the longest list — here the
     # answers (Codex's review, 14.11.2026). Refuse before that happens; nothing already answered may vanish.
-    if len(json.dumps({**d, "antworten": d["antworten"] + [entry]}, ensure_ascii=False)) > g.DATA_MAX - 2000:
-        raise ValueError(f"this answer does not fit: the question already holds {len(d['antworten'])} answers near the size limit "
+    if len(json.dumps({**d, "antworten": d["answers"] + [entry]}, ensure_ascii=False)) > g.DATA_MAX - 2000:
+        raise ValueError(f"this answer does not fit: the question already holds {len(d['answers'])} answers near the size limit "
                          f"({g.DATA_MAX} characters) — ask a new question or put the material into an object (vi_learn) and name its id")
-    d["antworten"] = d["antworten"] + [entry]
+    d["answers"] = d["answers"] + [entry]
     _set_state(o, "answered")
     o.change(f"ki@{instance}", "answered", "vi_answer")
     return g.save(o)
@@ -194,20 +194,20 @@ def listing(instance: str, conversation: str | None = None) -> tuple[list[g.Memo
     the instance's other conversations are to me, and my own are those this conversation asked (and questions asked without one)."""
     with g.lock:
         to_me = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.zustand') IN ('open', 'delivered') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "
-            "AND json_extract(data, '$.an') IN (?, 'all') ORDER BY ts DESC LIMIT 200", (instance,))]
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.state') IN ('open', 'delivered') AND mode NOT IN ('quarantine', 'refuted', 'withdrawn') "
+            "AND json_extract(data, '$.to') IN (?, 'all') ORDER BY ts DESC LIMIT 200", (instance,))]
         mine = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? ORDER BY ts DESC LIMIT 200", (instance,))]
+            "SELECT id FROM object WHERE kind = 'question' AND json_extract(data, '$.from') = ? ORDER BY ts DESC LIMIT 200", (instance,))]
 
     def to_this(d: dict) -> bool:
-        if d.get("an_gespraech") and d["an_gespraech"] != conversation:
+        if d.get("to_conversation") and d["to_conversation"] != conversation:
             return False
-        if d["von"] != instance:
+        if d["from"] != instance:
             return True
-        return bool(d.get("von_gespraech")) and d["von_gespraech"] != conversation and bool(conversation)
+        return bool(d.get("from_conversation")) and d["from_conversation"] != conversation and bool(conversation)
 
     def from_this(d: dict) -> bool:
-        return not d.get("von_gespraech") or not conversation or d["von_gespraech"] == conversation
+        return not d.get("from_conversation") or not conversation or d["from_conversation"] == conversation
 
     return ([o for o in (g.load(i) for i in to_me) if o and to_this(o.data)][:50],
             [o for o in (g.load(i) for i in mine) if o and from_this(o.data)][:50])
@@ -217,7 +217,7 @@ def let_expire() -> int:
     bound = (datetime.now(timezone.utc) - timedelta(days=EXPIRY_DAYS)).isoformat(timespec="seconds")
     with g.lock:
         ids = [r[0] for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'question' AND ts < ? AND json_extract(data, '$.zustand') IN ('open', 'delivered')", (bound,))]
+            "SELECT id FROM object WHERE kind = 'question' AND ts < ? AND json_extract(data, '$.state') IN ('open', 'delivered')", (bound,))]
         for oid in ids:
             o = g.load(oid)
             _set_state(o, "expired")

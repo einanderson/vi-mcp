@@ -170,13 +170,13 @@ def refuted_mode(author: str, mode: str, data: dict, latest: str | None = None) 
     """The mode after a refutation (one definition for refute() and the migration): ≥ 2 foreign families → refuted; the author
     refuted (now or before) → withdrawn; else disputed. Families as in MemoryObject._lines (author and server excluded)."""
     own = (author, SERVER_INSTANCE)
-    entries = data.get("widerlegungen") or []
-    covered = {e.get("instanz") for e in entries}
-    lines = {e.get("familie") or e.get("instanz") for e in entries if e.get("instanz") not in own}
-    lines |= {i for i in (data.get("widerlegt_von") or {}) if i not in own and i not in covered}
+    entries = data.get("refutations") or []
+    covered = {e.get("instance") for e in entries}
+    lines = {e.get("family") or e.get("instance") for e in entries if e.get("instance") not in own}
+    lines |= {i for i in (data.get("refuted_by") or {}) if i not in own and i not in covered}
     if len(lines) >= 2:
         return "refuted"
-    if latest == author or mode == "withdrawn" or author in (data.get("widerlegt_von") or {}):
+    if latest == author or mode == "withdrawn" or author in (data.get("refuted_by") or {}):
         return "withdrawn"
     return "disputed"
 
@@ -211,7 +211,7 @@ def _migrate(con: Any) -> None:
     con.execute("INSERT OR IGNORE INTO vi_index (name, created) SELECT DISTINCT idx, ? FROM object WHERE idx <> 'global'", (now(),))
     # 0.37.0: an image is its own kind (bild); 0.35.x stored it as an insight with medium:bild. The id stays (edges, history, hints
     # refer to it); kind, art: hashtag and the now redundant medium:bild change.
-    old = [r[0] for r in con.execute("SELECT id FROM object WHERE kind = 'insight' AND json_extract(data, '$.bild') IS NOT NULL")]
+    old = [r[0] for r in con.execute("SELECT id FROM object WHERE kind = 'insight' AND json_extract(data, '$.image') IS NOT NULL")]
     for oid in old:
         con.execute("UPDATE object SET kind = 'image' WHERE id = ?", (oid,))
         con.execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('kind:insight', 'medium:bild')", (oid,))
@@ -228,11 +228,11 @@ def _migrate(con: Any) -> None:
             data = json.loads(raw or "{}")
         except ValueError:
             continue
-        by_server = author == SERVER_INSTANCE and not (data.get("widerlegt_von") or {})  # the server discarded its own (sleep: empty skill)
-        if not by_server and (author not in (data.get("widerlegt_von") or {}) or refuted_mode(author, "refuted", data) != "withdrawn"):
+        by_server = author == SERVER_INSTANCE and not (data.get("refuted_by") or {})  # the server discarded its own (sleep: empty skill)
+        if not by_server and (author not in (data.get("refuted_by") or {}) or refuted_mode(author, "refuted", data) != "withdrawn"):
             continue
-        changes = json.loads(hist or "[]") + [{"zeit": now(), "wer": "vi", "was": "withdrawn",
-                                              "grund": "0.67.0: refuted only by its author — a withdrawal, not a refutation (kollektiv P13)"}]
+        changes = json.loads(hist or "[]") + [{"ts": now(), "who": "vi", "what": "withdrawn",
+                                              "reason": "0.67.0: refuted only by its author — a withdrawal, not a refutation (kollektiv P13)"}]
         con.execute("UPDATE object SET mode = 'withdrawn', changes = ? WHERE id = ?", (json.dumps(changes, ensure_ascii=False), oid))
         moved += 1
     if moved:
@@ -244,20 +244,21 @@ def _migrate(con: Any) -> None:
         else:
             log("table archiv contains entries and is kept — please check")
     # flat view of observations (docs/TRAINING.md 4a): one source of truth (objekt/tag/daten), only read differently
-    con.execute("DROP VIEW IF EXISTS beobachtung")
-    con.execute("""CREATE VIEW beobachtung AS
-        SELECT o.id AS erfahrung_id, o.ts, o.instance,
+    con.execute("DROP VIEW IF EXISTS beobachtung")  # the name up to 0.66; 0.67.0: observation, with English column names
+    con.execute("DROP VIEW IF EXISTS observation")
+    con.execute("""CREATE VIEW observation AS
+        SELECT o.id AS experience_id, o.ts, o.instance,
                (SELECT substr(tag, 6) FROM tag WHERE object_id = o.id AND tag LIKE 'tool:%') AS tool,
                CASE WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:yes') THEN 1
                     WHEN EXISTS (SELECT 1 FROM tag WHERE object_id = o.id AND tag = 'ok:no') THEN 0 END AS ok,
-               json_array_length(COALESCE(json_extract(o.data, '$.vorher.gezeigt'), json_extract(o.data, '$.vorher.gefunden'), '[]')) AS hinweise_n,
-               json_extract(o.data, '$.ueberraschung.stufe') AS ueberraschung,
-               json_extract(o.data, '$.vorher.router') AS router,
-               json_extract(o.data, '$.vorher.exploration') AS exploration,
-               json_extract(o.data, '$.vorher.reize') AS reize_json,
-               json_extract(o.data, '$.vorher.gezeigt') AS gezeigt_json,
-               json_extract(o.data, '$.vorher.kandidaten') AS kandidaten_json,
-               json_extract(o.data, '$.vorher.aus_gedaechtnis') AS aus_gedaechtnis
+               json_array_length(COALESCE(json_extract(o.data, '$.before.shown'), json_extract(o.data, '$.before.found'), '[]')) AS hint_n,
+               json_extract(o.data, '$.surprise.level') AS surprise,
+               json_extract(o.data, '$.before.router') AS router,
+               json_extract(o.data, '$.before.exploration') AS exploration,
+               json_extract(o.data, '$.before.triggers') AS triggers_json,
+               json_extract(o.data, '$.before.shown') AS shown_json,
+               json_extract(o.data, '$.before.candidates') AS candidates_json,
+               json_extract(o.data, '$.before.from_memory') AS from_memory
         FROM object o WHERE o.kind = 'experience'""")
     con.commit()
 
@@ -315,9 +316,9 @@ class MemoryObject:
 
     def change(self, who: str, what: str, reason: str) -> None:
         self._require_reason(reason)
-        all_ = self.changes + [{"zeit": now(), "wer": who, "was": what, "grund": reason.strip()[:300]}]
+        all_ = self.changes + [{"ts": now(), "who": who, "what": what, "reason": reason.strip()[:300]}]
         if len(all_) > HISTORY_MAX:  # nothing vanishes silently: the trimming is counted and named in vi_object
-            self.data["aenderungen_gekuerzt"] = self.data.get("aenderungen_gekuerzt", 0) + len(all_) - HISTORY_MAX
+            self.data["changes_trimmed"] = self.data.get("changes_trimmed", 0) + len(all_) - HISTORY_MAX
             all_ = all_[-HISTORY_MAX:]
         self.changes = all_
         self.last_at = now()
@@ -338,12 +339,12 @@ class MemoryObject:
         """Confirm. Counts per instance (daten.bestaetigt_von); weight bonus only for independent lines (0.33.0, see independent_lines)."""
         self._require_reason(reason)  # check first, then change — a rejection leaves the object unchanged
         i = instance or SERVER_INSTANCE
-        from_ = dict(self.data.get("bestaetigt_von") or {})
+        from_ = dict(self.data.get("confirmed_by") or {})
         from_[i] = from_.get(i, 0) + 1
-        self.data["bestaetigt_von"] = from_
-        same_source = bool(source) and _norm_source(source) == _norm_source(self.data.get("quelle"))
-        self.data["bestaetigungen"] = (list(self.data.get("bestaetigungen") or []) + [
-            {"instanz": i, "familie": family or i, **({"quelle": source.strip()[:300]} if source else {}), "zeit": now()}])[-100:]
+        self.data["confirmed_by"] = from_
+        same_source = bool(source) and _norm_source(source) == _norm_source(self.data.get("source"))
+        self.data["confirmations"] = (list(self.data.get("confirmations") or []) + [
+            {"instance": i, "family": family or i, **({"source": source.strip()[:300]} if source else {}), "ts": now()}])[-100:]
         self.confirmed += 1
         if self.mode == "disputed" and i != self.instance:
             self.mode = "active"  # a foreign confirmation settles the dispute — with history
@@ -359,10 +360,10 @@ class MemoryObject:
         A withdrawn object stays withdrawn when one foreign family refutes it too; two foreign families make it widerlegt."""
         self._require_reason(reason)
         i = instance or SERVER_INSTANCE
-        from_ = dict(self.data.get("widerlegt_von") or {})
+        from_ = dict(self.data.get("refuted_by") or {})
         from_[i] = from_.get(i, 0) + 1
-        self.data["widerlegt_von"] = from_
-        self.data["widerlegungen"] = (list(self.data.get("widerlegungen") or []) + [{"instanz": i, "familie": family or i, "zeit": now()}])[-100:]
+        self.data["refuted_by"] = from_
+        self.data["refutations"] = (list(self.data.get("refutations") or []) + [{"instance": i, "family": family or i, "ts": now()}])[-100:]
         self.refuted += 1
         self.mode = refuted_mode(self.instance, self.mode, self.data, latest=i)
         self.change(who, self.mode, reason)
@@ -371,20 +372,20 @@ class MemoryObject:
     def _lines(self, entries_key: str, legacy_key: str, skip_same_source: bool = False) -> set[str]:
         """Families of foreign instances (author and server excluded). Entries before 0.33.0 have no family: each instance is its own."""
         own = (self.instance, SERVER_INSTANCE)
-        src = _norm_source(self.data.get("quelle"))
+        src = _norm_source(self.data.get("source"))
         lines, covered = set(), set()
         for e in self.data.get(entries_key) or []:
-            covered.add(e.get("instanz"))
-            if e.get("instanz") in own or (skip_same_source and e.get("quelle") and _norm_source(e["quelle"]) == src):
+            covered.add(e.get("instance"))
+            if e.get("instance") in own or (skip_same_source and e.get("source") and _norm_source(e["source"]) == src):
                 continue
-            lines.add(e.get("familie") or e.get("instanz"))
+            lines.add(e.get("family") or e.get("instance"))
         lines |= {i for i in (self.data.get(legacy_key) or {}) if i not in own and i not in covered}
         return lines
 
     def independent_lines(self) -> set[str]:
         """0.33.0 (Condorcet's independence condition): foreign confirmations grouped by model family; a confirmation citing the object's
         own source is no independent line (a common cause). What counts as one family is declared per instance (config "familie")."""
-        return self._lines("bestaetigungen", "bestaetigt_von", skip_same_source=True)
+        return self._lines("confirmations", "confirmed_by", skip_same_source=True)
 
     def foreign_confirmations(self) -> int:
         """Independent lines that confirmed (0.33.0; before: different foreign instances). The server (`vi`, sleep) never counts —
@@ -464,14 +465,14 @@ def _data_json(o: MemoryObject) -> str:
             break
         drop = len(lst) // 2
         del lst[:drop]
-        cut = o.data.setdefault("gekuerzt", {})
+        cut = o.data.setdefault("trimmed", {})
         cut[path] = int(cut.get(path) or 0) + drop
         js = json.dumps(o.data, ensure_ascii=False)
         if len(js) <= DATA_MAX:
             log(f"{o.id}: daten with {size_before} chars over limit {DATA_MAX} — oldest entries of long lists dropped ({cut})")
             return js
     log(f"{o.id}: daten with {size_before} chars over limit {DATA_MAX} — replaced")
-    return json.dumps({"gekuerzt_zeichen": size_before, "grund": f"daten over {DATA_MAX} chars"})
+    return json.dumps({"trimmed_chars": size_before, "reason": f"daten over {DATA_MAX} chars"})
 
 
 def load_keyed(kind: str, key: str) -> MemoryObject | None:
@@ -514,6 +515,11 @@ _known_indexes: set[str] = set()
 
 
 def save(o: MemoryObject, *, commit: bool = True) -> MemoryObject:
+    # 0.67.0: one form of stored data — the English keys of names.DATA_KEYS, whatever the caller wrote (and the history keys likewise);
+    # the reports of sleep and model objects keep their keys until step 4b (names.REPORT_KINDS)
+    if o.kind in names.DOMAIN_KINDS:
+        o.data = names.data_keys(o.data)
+    o.changes = names.history_keys(o.changes)
     tags = sorted(set(o.hashtags) | {f"kind:{o.kind}", f"instance:{o.instance}"})
     if o.idx not in _known_indexes:  # 0.61.0: every index an object refers to has its row (the primary key of vi_index)
         with lock:
@@ -529,8 +535,8 @@ def save(o: MemoryObject, *, commit: bool = True) -> MemoryObject:
         db().executemany("INSERT OR IGNORE INTO tag (object_id, tag) VALUES (?, ?)", [(o.id, t) for t in tags])
         if fts:
             db().execute("DELETE FROM object_fts WHERE id = ?", (o.id,))
-            db().execute("INSERT INTO object_fts (id, text) VALUES (?, ?)", (o.id, (o.text + "\n" + str(o.data.get("inhalt") or "")
-                                                                                + "".join("\n" + r.get("begriff", "") for r in o.data.get("regionen") or []))[:300000]))
+            db().execute("INSERT INTO object_fts (id, text) VALUES (?, ?)", (o.id, (o.text + "\n" + str(o.data.get("content") or "")
+                                                                                + "".join("\n" + r.get("term", "") for r in o.data.get("regions") or []))[:300000]))
         if commit:
             db().commit()
     o.hashtags = tags
@@ -545,11 +551,13 @@ def update_data(oid: str, change) -> int:
     """Change the JSON field daten of one object in place: change(dict) edits it. Read and write under the lock, so counters do not get
     lost (one process writes the memory). Portable instead of SQLite's json_set/json_remove (0.50.0). Returns 1 if the object exists."""
     with lock:
-        row = db().execute("SELECT data FROM object WHERE id = ?", (oid,)).fetchone()
+        row = db().execute("SELECT data, kind FROM object WHERE id = ?", (oid,)).fetchone()
         if row is None:
             return 0
         d = json.loads(row[0] or "{}")
         change(d)
+        if row[1] in names.DOMAIN_KINDS:  # 0.67.0: one form of stored data, as in save()
+            names.data_keys(d)
         return db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d, ensure_ascii=False), oid)).rowcount
 
 
@@ -604,7 +612,7 @@ def new_object(kind: str, text: str, hashtags: list[str], data: dict | None = No
                mode=mode, conversation=conversation or current_conversation.get(),
                instance=instance or current_instance.get() or SERVER_INSTANCE, visibility=visibility or VISIBILITY_PER_KIND[kind],
                idx=_index_of(index),
-               changes=[{"zeit": ts, "wer": who, "was": "created", "grund": (reason or "created")[:300]}])
+               changes=[{"ts": ts, "who": who, "what": "created", "reason": (reason or "created")[:300]}])
     save(o) if commit else save(o, commit=False)
     if mode != "quarantine" and link:  # unreviewed content gets no link to own knowledge; code pieces (0.61.0) none either
         link_similar(o)
@@ -636,14 +644,14 @@ def _push_history(o: MemoryObject, entries: list[dict]) -> None:
 
 def _state(o: MemoryObject) -> dict:
     """The current state of an object as a history entry (text, source, content, time)."""
-    return {"ts": o.last_at or o.ts, "text": o.text, **{k: o.data[k] for k in ("quelle", "inhalt", "ausgang") if k in o.data}}
+    return {"ts": o.last_at or o.ts, "text": o.text, **{k: o.data[k] for k in ("source", "content", "outcome") if k in o.data}}
 
 
 def repeat(o: MemoryObject, text: str, hashtags: list[str], data: dict, importance: int, who: str) -> MemoryObject:
     """The same finding again: o keeps its id; its previous state goes into the history, the new text becomes the current one."""
     text, data = anonymize.without_secrets(text), anonymize.without_secrets(data)
     _push_history(o, [_state(o)])
-    for k in ("quelle", "inhalt", "ausgang"):
+    for k in ("source", "content", "outcome"):
         o.data.pop(k, None)
     o.data.update(data)
     o.data["repeats"] = int(o.data.get("repeats") or 1) + 1
@@ -704,7 +712,7 @@ def merge_by_key(instance: str, key_of, who: str, reason: str, apply: bool = Fal
         newest = rest[-1]
         main.data["key"] = k
         _push_history(main, [_state(x) for x in objs[:-1]])  # every state except the newest, oldest first
-        for f in ("quelle", "inhalt", "ausgang"):
+        for f in ("source", "content", "outcome"):
             main.data.pop(f, None)
             if f in newest.data:
                 main.data[f] = newest.data[f]

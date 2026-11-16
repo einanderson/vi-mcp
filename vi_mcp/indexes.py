@@ -78,7 +78,7 @@ def from_project(project: str | None, cfg: dict | None = None) -> str:
 def first(o, index: str | None) -> bool:
     """Does object o come first in this project? Its index, unless an index comparison found it good only at its origin (0.62.0,
     daten.vorrang_aus — it stays visible as general knowledge)."""
-    return index is not None and o.idx == index and not (o.data or {}).get("vorrang_aus")
+    return index is not None and o.idx == index and not (o.data or {}).get("priority_off")
 
 
 def index_for(explicit: str | None, project: str | None, cfg: dict | None = None) -> str:
@@ -156,7 +156,7 @@ def summary() -> list[dict]:
         m = g.load(learning.model_id(idx)) if idx != GLOBAL else learning.model()
         e["modell"] = "—" if m is None else f"{m.mode}" + (f", AUC {m.data.get('auc_holdout')}" if m.data.get("auc_holdout") is not None else "")
         if m is not None and idx != GLOBAL:
-            e["modell_urteil"] = str(m.data.get("urteil") or "")[:200]
+            e["modell_urteil"] = str(m.data.get("verdict") or "")[:200]
     return sorted(per.values(), key=lambda e: (e["index"] != GLOBAL, -e["objekte"]))
 
 

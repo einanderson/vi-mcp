@@ -38,10 +38,10 @@ def test_web_episode_becomes_a_solution_with_command_and_source(gd, monkeypatch)
     r = sleep_cycle.run("Test").data["schritte"]["4c_skills"]
     assert r["neu"] == 1 and r["mit_web"] == 1
     sk = [o for _, o, _g in g.recall("kind:skill origin:web", viewer=None)][0]
-    content = str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
+    content = str(sk.data.get("content") or sk.data["solution"]["text"])
     assert "borg break-lock /repo" in content and "https://borgbackup.readthedocs.io" in content and "stale lock" in content
     assert sk.visibility == "internal" and sk.mode == "test" and "origin:episode" in sk.hashtags
-    assert any(t.startswith("error:") for t in sk.hashtags) and sk.data["geschrieben_von"] == "sprachmodell"
+    assert any(t.startswith("error:") for t in sk.hashtags) and sk.data["written_by"] == "sprachmodell"
     assert "break the repository and cache locks" in seen["prompt"]  # the web excerpt reached the write-up
     # the same error later: the solution is the first hint after it
     s = session.begin("b", "t")
@@ -58,7 +58,7 @@ def test_without_language_model_a_template_and_the_same_fix_evolves(gd, monkeypa
     r = sleep_cycle.run("Test 2").data["schritte"]["4c_skills"]
     assert r["neu"] == 0 and r["weiterentwickelt"] == 1
     sk = [o for _, o, _g in g.recall("kind:skill origin:web", viewer=None)][0]
-    assert sk.data["geschrieben_von"] == "vorlage" and "borg break-lock /repo" in str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
+    assert sk.data["written_by"] == "vorlage" and "borg break-lock /repo" in str(sk.data.get("content") or sk.data["solution"]["text"])
 
 
 def test_the_same_call_repeated_is_counted_not_stored(gd):
@@ -135,7 +135,7 @@ def test_an_unproven_cause_is_a_hypothesis_and_the_lesson_leads(gd, monkeypatch)
     web_episode()
     assert sleep_cycle.run("Test").data["schritte"]["4c_skills"]["neu"] == 1
     sk = [o for _, o, _g in g.recall("kind:skill origin:episode", viewer=None)][0]
-    content = str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
+    content = str(sk.data.get("content") or sk.data["solution"]["text"])
     assert "Cause: not determined from the evidence — hypothesis of the language model: a cron job ran twice" in content
     assert content.index("Lesson:") < content.index("Cause:") and "Lesson: when borg reports a held lock" in sk.text
 
@@ -147,4 +147,4 @@ def test_a_proven_cause_stays_as_written(gd, monkeypatch):
     web_episode()
     sleep_cycle.run("Test")
     sk = [o for _, o, _g in g.recall("kind:skill origin:episode", viewer=None)][0]
-    assert "Cause: a stale lock from an aborted run" in str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
+    assert "Cause: a stale lock from an aborted run" in str(sk.data.get("content") or sk.data["solution"]["text"])

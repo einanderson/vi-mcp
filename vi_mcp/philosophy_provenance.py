@@ -58,9 +58,9 @@ def _norm(s: str) -> str:
 
 
 def _origin(e: dict) -> str:
-    src = str(e.get("quelle") or "").strip()
+    src = str(e.get("source") or "").strip()
     if not src:
-        return f"i:{e.get('instanz')}"
+        return f"i:{e.get('instance')}"
     ref = OBJ_REF.search(src)
     if ref and not URL.search(src):
         return f"obj:{ref.group(1)}"
@@ -75,19 +75,19 @@ def facts_for(o: g.MemoryObject, load=g.load) -> tuple[list[str], dict]:
     info: Counter = Counter()
     origins: dict[str, dict] = {}  # origin -> {"camp": family or None}
     complete = True
-    for key, legacy, pol, counter in (("bestaetigungen", "bestaetigt_von", "pos", o.confirmed), ("widerlegungen", "widerlegt_von", "neg", o.refuted)):
+    for key, legacy, pol, counter in (("confirmations", "confirmed_by", "pos", o.confirmed), ("refutations", "refuted_by", "neg", o.refuted)):
         entries = list(d.get(key) or [])
         counts = dict(d.get(legacy) or {})
         for e in entries:
             org = _origin(e)
-            out.append(f"line({s}, {pol}, {_q(org)}, {_q(e.get('instanz'))})")
-            origins.setdefault(org, {"camp": e.get("familie"), "entry": e})
+            out.append(f"line({s}, {pol}, {_q(org)}, {_q(e.get('instance'))})")
+            origins.setdefault(org, {"camp": e.get("family"), "entry": e})
             info[f"line_{pol}"] += 1
         if not entries and counts and sum(counts.values()) == counter:  # an object from before the entries: instance counts only
             for inst in counts:
                 org = f"i:{inst}"
                 out.append(f"line({s}, {pol}, {_q(org)}, {_q(inst)})")
-                origins.setdefault(org, {"camp": None, "entry": {"instanz": inst}})
+                origins.setdefault(org, {"camp": None, "entry": {"instance": inst}})
                 info[f"line_{pol}_legacy"] += 1
         elif counter != len(entries):  # entries dropped at the cap, or calls without an entry: origins unknown
             complete = False
@@ -107,16 +107,16 @@ def facts_for(o: g.MemoryObject, load=g.load) -> tuple[list[str], dict]:
     for org, x in origins.items():
         e = x["entry"]
         if org.startswith("q:"):
-            if URL.search(str(e.get("quelle") or "")):
+            if URL.search(str(e.get("source") or "")):
                 out.append(f"evidence_kind({_q(org)}, document)")
                 info["kind_document"] += 1
         elif org.startswith("i:"):
-            if e.get("instanz") == g.SERVER_INSTANCE:
+            if e.get("instance") == g.SERVER_INSTANCE:
                 out.append(f"machine_made({_q(org)})")
                 info["machine_made"] += 1
         else:
             out += _object_origin(org, load, info, set())
-    src = str(d.get("quelle") or "")
+    src = str(d.get("source") or "")
     url = URL.search(src)
     if url:
         out.append(f"source({s}, pos, {_q('url:' + url.group(0)[:300])}, web)")
@@ -142,7 +142,7 @@ def _object_origin(org: str, load, info: Counter, seen: set) -> list[str]:
     if kind:
         out.append(f"evidence_kind({_q(org)}, {kind})")
         info[f"kind_{kind}"] += 1
-    src = str(o.data.get("quelle") or "")
+    src = str(o.data.get("source") or "")
     if "origin:sleep-llm" in o.hashtags and not URL.search(src):
         out.append(f"machine_made({_q(org)})")
         info["machine_made"] += 1
@@ -158,7 +158,7 @@ def _object_origin(org: str, load, info: Counter, seen: set) -> list[str]:
 # ── shadow comparison ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def _refuters(o: g.MemoryObject) -> set[str]:
-    return {e.get("instanz") for e in o.data.get("widerlegungen") or []} | set(o.data.get("widerlegt_von") or {})
+    return {e.get("instance") for e in o.data.get("refutations") or []} | set(o.data.get("refuted_by") or {})
 
 
 def today(o: g.MemoryObject) -> str:
@@ -168,7 +168,7 @@ def today(o: g.MemoryObject) -> str:
     if o.mode == "withdrawn":
         return "withdrawn"
     if o.mode == "refuted":
-        return "refuted_by_author" if o.instance in _refuters(o) and len(o._lines("widerlegungen", "widerlegt_von")) < 2 else "refuted"
+        return "refuted_by_author" if o.instance in _refuters(o) and len(o._lines("refutations", "refuted_by")) < 2 else "refuted"
     if o.mode == "disputed":
         return "disputed"
     if o.mode != "active":

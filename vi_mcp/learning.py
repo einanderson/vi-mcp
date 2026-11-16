@@ -117,21 +117,21 @@ def weighted_observations(since: str | None = None, index: str | None = None, ip
         if oid not in labeled:
             continue
         d = json.loads(data)
-        v = d.get("vorher") or {}
-        if v.get("aus_gedaechtnis"):
+        v = d.get("before") or {}
+        if v.get("from_memory"):
             continue
         y, w, _src = scorer.label(d, oid in ok_yes, serial, grades)
-        base = action_features(v.get("reize", []), ts)
-        shown = [h for h in v.get("gezeigt", v.get("gefunden", [])) if not names.id_has_kind(h, "answer")]
+        base = action_features(v.get("triggers", []), ts)
+        shown = [h for h in v.get("shown", v.get("found", [])) if not names.id_has_kind(h, "answer")]
         base[f"hint_n:{min(4, len(shown))}"] = 1.0
-        offer = v.get("angebot") or {}
+        offer = v.get("offer") or {}
         if not shown:
             outputs.append((base, y, oid, w))
             if ips_out is not None:
                 ips_out.append(1.0)
         for h in shown:  # 0.20.9: direct feedback on this hint replaces the pair's indirect label (scorer.label)
             yh, wh, _s = scorer.label(d, oid in ok_yes, serial, grades, hint=h)
-            outputs.append(({**base, **hint_features(h, v.get("reize", []), ts, born)}, yh, oid, wh))
+            outputs.append(({**base, **hint_features(h, v.get("triggers", []), ts, born)}, yh, oid, wh))
             if ips_out is not None:
                 p = offer.get(h)
                 ips_out.append(min(IPS_CLIP, 1.0 / p) if isinstance(p, (int, float)) and 0.0 < p < 1.0 else 1.0)

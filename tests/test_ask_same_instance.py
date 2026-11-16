@@ -49,7 +49,7 @@ def test_two_conversations_ask_deliver_answer_and_back(gd):
     qid = _qid(r)
     assert f"from conversation {a.serial}" in r and "other conversations of this instance" in r
     d = g.load(qid).data
-    assert d["von_gespraech"] == a.serial and d["an"] == I and d["zugestellt_gespraeche"] == []
+    assert d["from_conversation"] == a.serial and d["to"] == I and d["zugestellt_gespraeche"] == []
     assert not asked(a)  # never to the asker
     got = asked(b)
     assert len(got) == 1 and f"Question from {I}#{a.serial}" in got[0] and qid in got[0]
@@ -74,7 +74,7 @@ def test_the_hook_of_the_asker_never_gets_its_own_question(gd):
     ans = {"id": qid, "text": "Session b holds the file open in its worktree", "evidence": "lsof on the file"}
     call(b_hook, "vi_before", {"tool": "vi_answer", "args": ans})
     call(b, "vi_answer", ans)
-    assert g.load(qid).data["antworten"][0]["gespraech"] == b.serial
+    assert g.load(qid).data["answers"][0]["conversation"] == b.serial
     assert not asked(b)  # b was shown it through its hook before the pairing: shown
     assert any("lsof" in h for h in answered(a_hook))  # the answer reaches the asker through its hook
 
@@ -82,7 +82,7 @@ def test_the_hook_of_the_asker_never_gets_its_own_question(gd):
 def test_one_conversation_can_be_targeted(gd):
     a, b, c = (session.begin(I, "claude-code 1") for _ in range(3))
     qid = _qid(call(a, "vi_ask", {**ASK, "to": f"{I}#{c.serial}"}))
-    assert g.load(qid).data["an_gespraech"] == c.serial
+    assert g.load(qid).data["to_conversation"] == c.serial
     assert not asked(b) and not asked(a)
     assert len(asked(c)) == 1
     with pytest.raises(tools.Rejected, match="not to this one"):

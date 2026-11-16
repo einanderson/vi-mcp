@@ -30,7 +30,7 @@ _ID = re.compile(r"\[([a-z]+:[0-9a-z][0-9a-z_-]*)\]")
 
 def group_of(o: g.MemoryObject) -> str:
     """The source page of an object: its source URL without the version suffix (" · Version 3 …"), else the object itself."""
-    q = str(o.data.get("quelle") or "").strip()
+    q = str(o.data.get("source") or "").strip()
     return q.split(" · ")[0] if q.startswith("http") else o.id
 
 
@@ -164,7 +164,7 @@ def eval_dir() -> Path:
 def stratum(o: g.MemoryObject) -> str:
     """Where an object comes from: the host of its source URL (an import), else the instance that wrote it. Pure."""
     import urllib.parse
-    q = str(o.data.get("quelle") or "")
+    q = str(o.data.get("source") or "")
     if q.startswith("http"):
         return "web:" + (urllib.parse.urlsplit(q.split(" · ")[0]).hostname or "?")
     return "own:" + (o.instance or "?")
@@ -203,7 +203,7 @@ def generate(budget_s: float = GEN_BUDGET_S) -> dict:
     for o in sample_targets(EVAL_N - len(have), {q["target"] for q in have}, seed=len(have) + 1):
         if time.monotonic() - t0 > budget_s:
             break
-        content = str(o.data.get("inhalt") or "")[:3000]
+        content = str(o.data.get("content") or "")[:3000]
         try:
             m = reflection._json_from(reflection.question(GEN_PROMPT, f"{o.text}\n\n{content}",
                                                           response_format={"type": "json_schema", "json_schema": {"name": "frage", "schema": GEN_SCHEMA}}))

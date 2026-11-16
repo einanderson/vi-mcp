@@ -239,7 +239,7 @@ def _triage(new_items: list[g.MemoryObject], report: dict) -> int:
             "AND (t.tag LIKE 'host:%' OR t.tag LIKE 'tool:%' OR t.tag LIKE 'skill:%')")}
     rated = []
     for o in new_items:
-        level = (o.data.get("ueberraschung") or {}).get("stufe", "keine")
+        level = (o.data.get("surprise") or {}).get("level", "keine")
         future = 1.0 if (_content(o) & (frequent_hosts | triggers_active)) else 0.0
         rated.append((_WEIGHT.get(level, 0) + o.importance / 3 + future, o))
     rated.sort(key=lambda x: -x[0])
@@ -284,24 +284,24 @@ def _schema(report: dict) -> dict:
         outbox, q = _outcome(c["neue"])  # the new against the schema — the old formed the schema in the first place
         c["ausgang_neu"] = outbox
         c["ausgang"] = _outcome(c["erfahrungen"])[0]
-        schemata = [o for _, o, _g in g.recall(f"{host} {skill}", limit=5, kinds=("insight",), viewer=None) if o.data.get("ausgang")]
+        schemata = [o for _, o, _g in g.recall(f"{host} {skill}", limit=5, kinds=("insight",), viewer=None) if o.data.get("outcome")]
         c["schema"] = schemata[0].id if schemata else None
         for s in schemata:
             if outbox == "gemischt":
                 continue
-            if s.data.get("ausgang") == outbox:
+            if s.data.get("outcome") == outbox:
                 for o in c["neue"]:
                     s.link(o.id, "Beleg (sleep: same outcome)")
-                s.data["belege_n"] = s.data.get("belege_n", 0) + len(c["neue"])
+                s.data["evidence_n"] = s.data.get("evidence_n", 0) + len(c["neue"])
                 s.change("vi", f"+{len(c['neue'])} evidence", "sleep: new experiences with the same outcome")
                 g.save(s)
                 evidenced += 1
             else:
-                s.data.setdefault("konflikte", []).append({"zeit": g.now(), "ausgang": outbox, "quote": round(q, 2),
-                                                             "erfahrungen": [o.id for o in c["neue"]][:20]})
+                s.data.setdefault("conflicts", []).append({"ts": g.now(), "outcome": outbox, "ratio": round(q, 2),
+                                                             "experiences": [o.id for o in c["neue"]][:20]})
                 if "conflict:open" not in s.hashtags:
                     s.hashtags = s.hashtags + ["conflict:open"]
-                s.change("vi", "conflict:open", f"sleep: cluster with outcome {outbox} ({q * 100:.0f} % ok) contradicts {s.data.get('ausgang')}")
+                s.change("vi", "conflict:open", f"sleep: cluster with outcome {outbox} ({q * 100:.0f} % ok) contradicts {s.data.get('outcome')}")
                 g.save(s)
                 report["geaendert"].append(s.id)
                 conflicts += 1
@@ -351,8 +351,8 @@ def _abstraction(report: dict) -> int:
         if g.load(rid):
             continue
         e = g.new_object("insight", text, [host, skill, "mode:test", "origin:sleep"],
-                           {"quelle": f"sleep: {len(c['erfahrungen'])} experiences, evidence edges", "ausgang": c["ausgang"],
-                            "quote": round(q, 2), "belege_n": len(c["erfahrungen"])},
+                           {"source": f"sleep: {len(c['erfahrungen'])} experiences, evidence edges", "outcome": c["ausgang"],
+                            "ratio": round(q, 2), "evidence_n": len(c["erfahrungen"])},
                            importance=1, who="vi", oid=rid, mode="test", reason="sleep: abstraction from a cluster without schema",
                            instance=g.SERVER_INSTANCE)
         for o in c["erfahrungen"]:

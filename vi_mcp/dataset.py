@@ -72,8 +72,8 @@ def _clean(text: str, audit: Counter, field: str) -> str:
 
 
 def _answer(o: g.MemoryObject, audit: Counter) -> str:
-    body = str(o.data.get("inhalt") or "").strip()
-    src = str(o.data.get("quelle") or "").strip()
+    body = str(o.data.get("content") or "").strip()
+    src = str(o.data.get("source") or "").strip()
     text = o.text.strip() + (f"\n\n{body[:ANSWER_CHARS]}" if body else "") + (f"\n\nSource: {src}" if src else "")
     return _clean(text, audit, "answer")
 
@@ -86,7 +86,7 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
     targets, eval_qs, eval_groups = _eval_hold_out()
     eval_objects = g.load_many(list(targets))
     eval_groups |= {evaluation.group_of(o) for o in eval_objects.values()}
-    eval_bodies = {_norm(str(o.data.get("inhalt") or "")) for o in eval_objects.values() if o.data.get("inhalt")}
+    eval_bodies = {_norm(str(o.data.get("content") or "")) for o in eval_objects.values() if o.data.get("content")}
     skipped, audit, pair_states = Counter(), Counter(), Counter()
     qa, rated, qa_objects, documents, probes = [], [], [], [], []
     for o in _objects(index):
@@ -99,22 +99,22 @@ def build(index: str | None = None, agentic: bool = True) -> dict:
         if o.id in targets:
             skipped["target of the fixed question set (held out for evaluation)"] += 1
             continue
-        if evaluation.group_of(o) in eval_groups or (o.data.get("inhalt") and _norm(str(o.data["inhalt"])) in eval_bodies):
+        if evaluation.group_of(o) in eval_groups or (o.data.get("content") and _norm(str(o.data["content"])) in eval_bodies):
             skipped["evaluation source page or duplicate content (held out)"] += 1
             continue
-        k = o.data.get("klasse") or {}
-        questions = [q for q in (k.get("fragen") or []) if isinstance(q, str) and q.strip()]
+        k = o.data.get("class") or {}
+        questions = [q for q in (k.get("questions") or []) if isinstance(q, str) and q.strip()]
         meta = {"id": o.id, "kind": o.kind, "index": o.idx, "answers": k.get("answers"), "memory": vil.memory_of(o),
                 "evidence": vil.evidence_of(o), "weight": vil.weight_of(o)[0], "ratings": vil.weight_of(o)[1],
                 "question_source": "doc2query", "group": evaluation.group_of(o),
-                "content_hash": hashlib.sha256(_norm(str(o.data.get("inhalt") or o.text)).encode()).hexdigest()}
+                "content_hash": hashlib.sha256(_norm(str(o.data.get("content") or o.text)).encode()).hexdigest()}
         answer = _answer(o, audit)
         w, n = vil.weight_of(o)
         if n >= MIN_RATINGS:  # hint ratings (KTO/DPO) do not depend on a question
             rated.append((o, w, n))
         # the source line goes into every answer: scrubbed like the answer itself (Codex's review 15.11.2026: a credential the scrubber
         # removed from the answer came back through the raw source line of pairs, probes and documents)
-        source = _clean(str(o.data.get("quelle") or o.id), audit, "source")
+        source = _clean(str(o.data.get("source") or o.id), audit, "source")
         stored, why = stored_pairs(o, answer)
         pair_states[why or "stored pairs used"] += 1  # not "left out": an object without pairs may still train its doc2query rows
         if stored:
@@ -220,13 +220,13 @@ def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None
     sft, kto = [], []
     verified = {}
     for _s, o, _p in g.recall("kind:rule topic:logik", limit=5000, viewer=None):
-        if o.visibility == "private" or o.mode not in ("active", "test") or "logik" not in o.data or (index and o.idx != index):
+        if o.visibility == "private" or o.mode not in ("active", "test") or "logic" not in o.data or (index and o.idx != index):
             continue
         if o.id in targets or evaluation.group_of(o) in eval_groups:
             skipped["logic: evaluation target or source page (held out)"] += 1
             continue
-        src = str(o.data["logik"].get("quelle") or "")
-        name = o.data["logik"].get("name") or o.id
+        src = str(o.data["logic"].get("source") or "")
+        name = o.data["logic"].get("name") or o.id
         task = o.text.split(": ", 1)[1] if ": " in o.text else o.text
         try:
             r = logic.check(src, viewer=LOGIC_VIEWER)
@@ -236,7 +236,7 @@ def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None
         if r["zustand"] in ("zeitlimit", "widerspruch", "unloesbar") or not r.get("vollstaendig", False) or (r.get("importiert") or {}).get("abgeschnitten"):
             skipped[f"logic: rule set in state {r['zustand']}"] += 1
             continue
-        proof = o.data["logik"].get("pruefung") or {}
+        proof = o.data["logic"].get("review") or {}
         if proof.get("richtig") and proof.get("ausfuehrung_hash") == r.get("ausfuehrung_hash"):
             verified[logic.program_hash(src)] = proof
         lines = "\n".join(logic.lines(r))
@@ -288,7 +288,7 @@ def logic_examples(index: str | None, audit: Counter, targets=None, eval_qs=None
                 skipped[f"logic: asked program does not solve ({type(e).__name__})"] += 1
                 continue
             proof = verified.get(q["programm_hash"])
-            if not proof or proof.get("frage") != q["frage"] or proof.get("ausfuehrung_hash") != r.get("ausfuehrung_hash"):
+            if not proof or proof.get("question") != q["frage"] or proof.get("ausfuehrung_hash") != r.get("ausfuehrung_hash"):
                 skipped["logic: partial ratings do not verify the whole question and program"] += 1
                 continue
             sft.append({"messages": [{"role": "user", "content": _clean(q["frage"], audit, "question")},
@@ -430,7 +430,7 @@ def agentic_examples(items: list[tuple], eval_qs: set[str], audit: Counter) -> t
         q = questions[0]
         if _norm(q) in eval_qs:
             continue
-        qtype = (o.data.get("klasse") or {}).get("answers")
+        qtype = (o.data.get("class") or {}).get("answers")
         qtype = qtype if qtype in vil.QTYPES else "what"
         host = next((t[5:] for t in o.hashtags if t.startswith("host:")), None)
         topic = next((t[6:] for t in o.hashtags if t.startswith("topic:")), None)
@@ -453,7 +453,7 @@ def agentic_examples(items: list[tuple], eval_qs: set[str], audit: Counter) -> t
         messages.append({"role": "assistant", "content": _answer(o, audit) + f"\n\n(from {o.id})"})
         from . import evaluation
         out.append({"messages": messages, "tools": [tool], "meta": {"id": o.id, "steps": (len(messages) - 2) // 2, "answers": qtype,
-                    "group": evaluation.group_of(o), "content_hash": hashlib.sha256(_norm(str(o.data.get("inhalt") or o.text)).encode()).hexdigest()}})
+                    "group": evaluation.group_of(o), "content_hash": hashlib.sha256(_norm(str(o.data.get("content") or o.text)).encode()).hexdigest()}})
     return out, skipped
 
 

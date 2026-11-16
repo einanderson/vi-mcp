@@ -93,7 +93,7 @@ def decode(data: str) -> bytes:
 
 
 def regions(raw: list | None, width: int, height: int) -> list[dict]:
-    """Regions in SAM 3 form → stored form {begriff, box, score, maske?}; ValueError names the first bad region and why."""
+    """Regions in SAM 3 form → stored form {term, box, score, mask?}; ValueError names the first bad region and why."""
     if raw is None:
         return []
     if not isinstance(raw, list):
@@ -117,7 +117,7 @@ def regions(raw: list | None, width: int, height: int) -> list[dict]:
         score = r.get("score")
         if not isinstance(score, (int, float)) or isinstance(score, bool) or not 0 <= score <= 1:
             raise ValueError(f"{where}: score must be a number 0–1")
-        item = {"begriff": concept, "box": [x0, y0, x1, y1], "score": round(float(score), 4)}
+        item = {"term": concept, "box": [x0, y0, x1, y1], "score": round(float(score), 4)}
         mask = r.get("mask", r.get("maske"))
         if mask is not None:
             if not isinstance(mask, dict) or list(mask.get("size") or []) != [height, width]:
@@ -127,7 +127,7 @@ def regions(raw: list | None, width: int, height: int) -> list[dict]:
                 isinstance(counts, list) and 0 < len(counts) <= MASK_MAX and all(isinstance(c, int) and c >= 0 for c in counts))
             if not ok:
                 raise ValueError(f"{where}: mask counts must be an RLE string or a list of non-negative integers (at most {MASK_MAX})")
-            item["maske"] = {"size": [height, width], "counts": counts}
+            item["mask"] = {"size": [height, width], "counts": counts}
         out.append(item)
     return out
 
@@ -151,7 +151,7 @@ def store(raw: bytes) -> dict:
             g.db().execute("INSERT INTO image (sha, mime, width, height, bytes, ts, raw) VALUES (?, ?, ?, ?, ?, ?, ?)",
                            (sha, mime, w, h, len(raw), g.now(), raw))
             g.db().commit()
-    return {"sha": sha, "mime": mime, "breite": w, "hoehe": h, "bytes": len(raw)}
+    return {"sha": sha, "mime": mime, "width": w, "height": h, "bytes": len(raw)}
 
 
 def load(sha: str) -> bytes | None:
@@ -178,7 +178,7 @@ def concept_tags(stored_regions: list[dict]) -> list[str]:
     """shows:<concept> per distinct concept (lower case, blanks and brackets → "-"), so vi_recall shows:stecker finds the images showing it."""
     seen = []
     for r in stored_regions:
-        value = re.sub(r"[\s()]+", "-", r["begriff"].strip().lower()).strip("-")  # a hashtag value has no blanks or brackets (memory.TAG)
+        value = re.sub(r"[\s()]+", "-", r["term"].strip().lower()).strip("-")  # a hashtag value has no blanks or brackets (memory.TAG)
         t = "shows:" + value
         if value and t not in seen:
             seen.append(t)
@@ -187,13 +187,13 @@ def concept_tags(stored_regions: list[dict]) -> list[str]:
 
 def summary(o) -> str | None:
     """One line for vi_object/vi_recall: 'image png 1024×768, 213 KiB, 3 regions (plug ×2, cable)' — None without an image."""
-    b = o.data.get("bild")
+    b = o.data.get("image")
     if not b:
         return None
-    rs = o.data.get("regionen") or []
+    rs = o.data.get("regions") or []
     counts: dict[str, int] = {}
     for r in rs:
-        counts[r["begriff"]] = counts.get(r["begriff"], 0) + 1
+        counts[r["term"]] = counts.get(r["term"], 0) + 1
     names = ", ".join(f"{k} ×{v}" if v > 1 else k for k, v in list(counts.items())[:8])
-    return (f"image {b['mime'].split('/')[1]} {b['breite']}×{b['hoehe']}, {b['bytes'] // 1024} KiB"
+    return (f"image {b['mime'].split('/')[1]} {b['width']}×{b['height']}, {b['bytes'] // 1024} KiB"
             + (f", {len(rs)} region{'' if len(rs) == 1 else 's'} ({names}{', …' if len(counts) > 8 else ''})" if rs else ", no regions"))

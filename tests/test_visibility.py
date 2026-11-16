@@ -8,7 +8,7 @@ from vi_mcp import memory as g
 
 
 def _manual(text, instance="a", visibility="shared"):
-    return g.new_object("insight", text, ["knowledge_kind:manual", "skill:x"], {"quelle": "SKILL.md"}, reason="T", instance=instance,
+    return g.new_object("insight", text, ["knowledge_kind:manual", "skill:x"], {"source": "SKILL.md"}, reason="T", instance=instance,
                         visibility=visibility)
 
 
@@ -24,7 +24,7 @@ def test_dry_run_then_apply_with_history(gd):
                                                 "apply": True}, "a", False)
     assert "1 switched to internal" in out and "vi_net_forget" in out
     o = g.load(own.id)
-    assert o.visibility == "internal" and o.changes[-1]["was"] == "visibility shared → internal" and o.changes[-1]["grund"] == "company host names"
+    assert o.visibility == "internal" and o.changes[-1]["what"] == "visibility shared → internal" and o.changes[-1]["reason"] == "company host names"
     assert g.load(other.id).visibility == "shared" and g.load(mine_private.id).visibility == "private" and g.load(done.id).visibility == "internal"
     # with the release right also objects of other instances
     out = tools.call_tool("vi_set_visibility", {"filter": "knowledge_kind:manual", "visibility": "internal", "reason": "operator", "apply": True},

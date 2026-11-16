@@ -88,7 +88,7 @@ def evidence(ep: list[g.MemoryObject]) -> dict:
             continue
         if t in WEB_TOOLS:
             web.append({"tool": t, "query": a.get("query") or a.get("prompt"), "url": a.get("url"),
-                        "auszug": str(x.data.get("auszug") or "")[:EXCERPT_MAX]})
+                        "auszug": str(x.data.get("excerpt") or "")[:EXCERPT_MAX]})
         elif t in READ_TOOLS or t.startswith("vi_"):
             docs.append(a.get("file_path") or a.get("id") or a.get("filter") or a.get("page"))
         elif t not in QUIET_TOOLS and not (t == _tool(fix) and _norm(a) in (_norm(_args(failed)), _norm(_args(fix)))):  # a retry is no measure
@@ -103,7 +103,7 @@ def evidence(ep: list[g.MemoryObject]) -> dict:
         programs = [b for b in intuition._commands(cmd) if b not in intuition.SHELL_EVERYDAY and b not in intuition.GENERIC_SHELL_WORDS
                     and re.fullmatch(r"[a-z][a-z0-9._+-]{1,40}", b)][:3]
     generic_sig = bool(sig) and sig.lower().startswith("error:exit_code")
-    return {"tool": _tool(fix), "signatur": sig, "fehlgeschlagen": {"args": _args(failed), "fehler": str(failed.data.get("fehler") or "")[:2000]},
+    return {"tool": _tool(fix), "signatur": sig, "fehlgeschlagen": {"args": _args(failed), "fehler": str(failed.data.get("error") or "")[:2000]},
             "web": web, "dokumente": [d for d in docs if d][:10], "massnahmen": actions[:10], "loesung": {"args": _args(fix)}, "schritte": steps,
             "kontext": sorted({t for x in ep for t in x.hashtags if t.startswith(("host:", "topic:"))} | {f"topic:{b}" for b in programs}),
             "spezifisch": bool((sig and not generic_sig) or programs or any(t.startswith("host:") for x in ep for t in x.hashtags)),
@@ -217,7 +217,7 @@ def store(ev: dict) -> tuple[g.MemoryObject | None, str]:
                    g.SERVER_INSTANCE, source="; ".join(urls(ev))[:300] or f"conversation {ev['gespraech']}", who="vi")
     tags = ["origin:episode"] + (["origin:web"] if ev["web"] else [])
     o.hashtags = o.hashtags + [t for t in tags if t not in o.hashtags]
-    o.data = {**o.data, "befunde": f.reasons[:10], "geschrieben_von": w["von"]}
+    o.data = {**o.data, "befunde": f.reasons[:10], "written_by": w["von"]}
     g.save(o)
     if o.visibility != "internal":
         g.set_visibility(o, "internal", "vi", "company knowledge from an episode (0.56.0)")

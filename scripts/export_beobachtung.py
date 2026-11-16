@@ -11,11 +11,11 @@ def load_observations(db_path):
         tags, d = set(tags.split()), json.loads(data)
         ok = "ok:yes" in tags
         if "ok:unknown" in tags: continue                       # no label → no example
-        before = d.get("vorher") or {}
+        before = d.get("before") or {}  # 0.67.0: English data keys
         features = {t for t in tags if t.startswith(("tool:", "skill:", "host:"))}
-        features |= {t for t in before.get("reize", []) if t.startswith("topic:")}   # only in the JSON, not in tag
-        features |= {f"hint:{h.split(':')[0]}" for h in before.get("gefunden", []) if not h.startswith("antwort:")}
-        features.add(f"hint_n:{min(4, sum(1 for h in before.get('gefunden', []) if not h.startswith('antwort:')))}")
+        features |= {t for t in before.get("triggers", []) if t.startswith("topic:")}   # only in the JSON, not in tag
+        features |= {f"hint:{h.split(':')[0]}" for h in before.get("found", []) if not h.startswith(("antwort:", "answer:"))}
+        features.add(f"hint_n:{min(4, sum(1 for h in before.get('found', []) if not h.startswith(('antwort:', 'answer:'))))}")
         features.add(f"hour:{ts[11:13]}")                        # time of day (UTC) from ISO time
         yield oid, sorted(features), int(ok)
 

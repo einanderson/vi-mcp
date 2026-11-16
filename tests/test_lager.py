@@ -27,7 +27,7 @@ def _exp(host, ok=True):
 
 
 def _knowledge(text, tags, kind="insight", instance="a"):
-    return g.new_object(kind, text, tags, {"quelle": "Test"}, reason="T", instance=instance)
+    return g.new_object(kind, text, tags, {"source": "Test"}, reason="T", instance=instance)
 
 
 def test_old_experience_archived_with_stub(gd):
@@ -36,13 +36,13 @@ def test_old_experience_archived_with_stub(gd):
     b = sleep_cycle.run("Test").data["schritte"]["5_lager"]
     assert b["eingelagert"] == 1 and b["je_art"] == {"experience": 1}
     s = g.load(old)
-    assert s.mode == "archived" and "mode:archived" in s.hashtags and s.data["lager"] and "args" not in s.data
+    assert s.mode == "archived" and "mode:archived" in s.hashtags and s.data["archive"] and "args" not in s.data
     assert g.load(young).mode == "active"
     if g.backend() == "sqlite":  # PostgreSQL: the archive is a schema, no file
         assert stat.S_IMODE(os.stat(g.archive_path).st_mode) == 0o600 and g.archive_path != gd
     assert not [o for _, o, _g in g.recall("host:h1", viewer=None)]  # not in the foreground
     assert [o.id for _, o, _g in g.recall("host:h1 mode:archived", viewer=None)] == [old]  # but findable
-    assert archive.content(old)["daten"]["args"]["host"] == "h1"
+    assert archive.content(old)["data"]["args"]["host"] == "h1"
     assert sleep_cycle.run("Test 2").data["schritte"]["5_lager"]["eingelagert"] == 0  # idempotent
 
 
@@ -73,7 +73,7 @@ def test_knowledge_only_after_long_disuse(gd):
 def test_never_automatic(gd):
     ids = []
     for kind, tags in (("reflex", ["reflex:r"]), ("frage", ["to:b"]), ("modell", ["modell:m"])):
-        d = {"name": "r", "art": "nachher", "code": "def run(t, a, e):\n    return None"} if kind == "reflex" else {"von": "a", "an": "b", "zustand": "offen", "zugestellt_an": [], "antworten": []}
+        d = {"name": "r", "art": "nachher", "code": "def run(t, a, e):\n    return None"} if kind == "reflex" else {"von": "a", "an": "b", "zustand": "offen", "delivered_to": [], "antworten": []}
         o = g.new_object(kind, "bleibt im aktiven Speicher", tags, d, reason="T")
         _age(o.id, 2000)
         ids.append(o.id)
@@ -163,6 +163,6 @@ def test_evidence_replaces_automatic_edge_not_vice_versa(gd):
 
 def test_learn_with_outcome(gd):
     r = tools.call_tool("vi_lerne", {"text": "web7 ist nachts gestört", "hashtags": ["host:web7"], "quelle": "Befund 4711", "ausgang": "schlecht"}, "a", True)
-    assert g.load(r.split()[1]).data["ausgang"] == "schlecht"
+    assert g.load(r.split()[1]).data["outcome"] == "schlecht"
     with pytest.raises(tools.Rejected, match="outcome"):
         tools.call_tool("vi_lerne", {"text": "web7 ist nachts gestört", "hashtags": ["host:web7"], "quelle": "Befund 4711", "ausgang": "egal"}, "a", True)

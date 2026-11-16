@@ -203,8 +203,8 @@ def begin(instance: str, client: str, project: str | None = None, family: str | 
     tag = serial[:8]
     g.new_object("conversation", f"Conversation {serial} started ({client}, instance {instance})",
                    [f"serial:{serial}", f"tag:{tag}"],
-                   {"serial": serial, "aufrufe": 0, "client": client, **({"project": project} if project else {}),
-                    **({"familie": family, "familie_quelle": family_source} if family else {})},
+                   {"serial": serial, "calls": 0, "client": client, **({"project": project} if project else {}),
+                    **({"family": family, "family_source": family_source} if family else {})},
                    oid=names.new_id("conversation", serial), reason="session started", conversation=serial, instance=instance)
     s = Session(id=secrets.token_urlsafe(24), serial=serial, instance=instance, client=client, project=project, family=family)
     with _reg_lock:
@@ -239,15 +239,15 @@ def persist(s: Session, state: str = "open") -> None:
     error = without_result = 0
     for z in turns:
         tools[z["tool"]] = tools.get(z["tool"], 0) + 1
-        hosts |= {t[5:] for t in z.get("vorher", {}).get("reize", []) if t.startswith("host:")}
+        hosts |= {t[5:] for t in (z.get("vorher") or {}).get("triggers", (z.get("vorher") or {}).get("reize", [])) if t.startswith("host:")}  # the turn keeps its German keys (conversation_raw); its access dict is English (0.67.0)
         error += 1 if z["ok"] is False else 0
         without_result += 1 if z["ok"] is None else 0
     o.text = (f"Conversation {s.serial} ({s.client}, instance {s.instance}, {state}): {len(turns)} calls, {error} errors"
               + (f", {without_result} without reported result" if without_result else "")
               + (" · Tools: " + ", ".join(f"{k} ({v})" for k, v in sorted(tools.items(), key=lambda kv: -kv[1])[:12]) if tools else "")
               + (f" · Hosts: {', '.join(sorted(hosts)[:12])}" if hosts else ""))
-    o.data = {**o.data, "aufrufe": len(turns), "fehler": error, "ohne_ergebnis": without_result, "signale": list(s.signals), "werkzeuge": tools, "zustand": state,
-               "gesichert": g.now()}
+    o.data = {**o.data, "calls": len(turns), "error": error, "without_result": without_result, "signals": list(s.signals), "tools": tools, "state": state,
+               "saved": g.now()}
     o.hashtags = sorted({t for t in o.hashtags if not t.startswith("state:")} | {f"state:{state}"}
                         | {f"tool:{k}" for k in tools} | {f"skill:{k.split('_')[0]}" for k in tools}
                         | {f"host:{h}" for h in hosts} | ({"ok:no"} if error else {"ok:yes"} if turns else set()))
@@ -305,8 +305,8 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
         raise ValueError(f"conversation {serial} belongs to instance {o.instance}, not {instance}")
     if any(s.serial == serial for s in open_items()):
         raise ValueError(f"conversation {serial} is still open — end it first (DELETE)")
-    if o.data.get("zustand") == "deleted":
-        raise ValueError(f"conversation {serial} is already deleted ({o.data['geloescht']['zeit']})")
+    if o.data.get("state") == "deleted":
+        raise ValueError(f"conversation {serial} is already deleted ({o.data['deleted']['ts']})")
     with g.lock:
         ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE conversation = ? AND visibility = 'private'", (serial,))]
         g.db().execute("DELETE FROM conversation_raw WHERE serial = ?", (serial,))
@@ -315,8 +315,8 @@ def delete_conversation(serial: str, instance: str, reason: str) -> dict:
     archive.delete_raw(serial)
     g.delete(ids)
     o.text = f"Conversation {serial} ({o.data.get('client', '?')}, instance {o.instance}): content deleted on {g.now()[:16]} — {reason.strip()[:200]}"
-    o.data = {"serial": serial, "client": o.data.get("client"), "zustand": "deleted",
-               "geloescht": {"zeit": g.now(), "wer": f"ki@{instance}", "grund": reason.strip()[:300], "objekte": len(ids)}}
+    o.data = {"serial": serial, "client": o.data.get("client"), "state": "deleted",
+               "deleted": {"ts": g.now(), "who": f"ki@{instance}", "reason": reason.strip()[:300], "objekte": len(ids)}}
     o.hashtags = [t for t in o.hashtags if t.startswith(("serial:", "tag:"))] + ["state:deleted"]
     o.change(f"ki@{instance}", "deleted", reason)
     g.save(o)
@@ -327,7 +327,7 @@ def delete_instance_data(instance: str, reason: str) -> dict:
     """Admin (CLI, not via MCP): all private data of an instance — each of its conversations gets a tombstone."""
     with g.lock:
         serials = [names.id_key(r[0]) for r in g.db().execute(
-            "SELECT id FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.zustand') <> 'deleted'", (instance,))]
+            "SELECT id FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.state') <> 'deleted'", (instance,))]
     n = 0
     for s in serials:
         n += delete_conversation(s, instance, reason)["objekte"]

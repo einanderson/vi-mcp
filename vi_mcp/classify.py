@@ -65,7 +65,7 @@ def prompt(variant: str, o: g.MemoryObject) -> tuple[list[str], str, str]:
                     "entry's own language. JSON only.")
     from . import checks
     tags = ", ".join(t for t in o.hashtags if not t.startswith(checks.LOCAL_FIXED) and not t.startswith(("answers:", "memory:")))
-    user = (f"Entry kind: {o.kind}\nHashtags: {tags}\nTitle: {o.text}\n\nContent:\n{str(o.data.get('inhalt') or '(none)')[:CONTENT_CHARS]}")
+    user = (f"Entry kind: {o.kind}\nHashtags: {tags}\nTitle: {o.text}\n\nContent:\n{str(o.data.get('content') or '(none)')[:CONTENT_CHARS]}")
     return order, system, user
 
 
@@ -180,7 +180,7 @@ def apply(o: g.MemoryObject, lab: dict, who: str = "vi") -> bool:
     tags = [f"answers:{lab['answers']}", f"memory:{lab['memory']}"] + ([f"answers:{lab['zweite']}"] if lab.get("zweite") not in (None, "none", lab["answers"]) else [])
     old = [t for t in o.hashtags if t.startswith(("answers:", "memory:"))]
     o.hashtags = sorted((set(o.hashtags) - set(old)) | set(tags))
-    o.data = {**o.data, "klasse": {**lab, "zeit": g.now()}}
+    o.data = {**o.data, "class": {**lab, "ts": g.now()}}
     o.change(who, "classified " + " ".join(tags), f"labels {lab['zustand']} ({lab['version']['schema']}, prompt {lab['version']['prompt']})")
     g.save(o)
     _queue_table()
@@ -208,7 +208,7 @@ def on_search(objs) -> dict:
     try:
         ph = prompt_hash()
         todo = [o for o in objs if o is not None and o.kind in KINDS and o.visibility != "private" and o.mode not in ("quarantine", "refuted", "withdrawn")
-                and (o.data.get("klasse") or {}).get("version", {}).get("prompt") != ph]
+                and (o.data.get("class") or {}).get("version", {}).get("prompt") != ph]
         if not todo:
             return out
         _queue_table()
@@ -244,7 +244,7 @@ def pending(limit: int = 20) -> list[str]:
     first = []
     for oid in q:
         o = g.load(oid)
-        if o is None or (o.data.get("klasse") or {}).get("version", {}).get("prompt") == ph or o.kind not in KINDS or o.visibility == "private":
+        if o is None or (o.data.get("class") or {}).get("version", {}).get("prompt") == ph or o.kind not in KINDS or o.visibility == "private":
             with g.lock:  # labelled meanwhile, gone or not knowledge: off the queue
                 g.db().execute("DELETE FROM class_queue WHERE id = ?", (oid,))
                 g.db().commit()
@@ -257,7 +257,7 @@ def pending(limit: int = 20) -> list[str]:
 def _pending_rest(n: int, ph: str) -> list[str]:
     with g.lock:
         rows = g.db().execute(
-            "SELECT id, json_extract(data, '$.klasse.version.prompt') FROM object WHERE kind IN ('insight', 'rule', 'skill') "
+            "SELECT id, json_extract(data, '$.class.version.prompt') FROM object WHERE kind IN ('insight', 'rule', 'skill') "
             "AND mode NOT IN ('quarantine', 'refuted', 'withdrawn', 'merged', 'archived') AND visibility <> 'private' ORDER BY ts DESC LIMIT ?",
             (int(n),)).fetchall()
     return [oid for oid, p in rows if p != ph]
@@ -336,8 +336,8 @@ def _labelled() -> tuple[list[str], list[str], list[str]]:
     """(ids, answers, memory) of objects the LLM labelled with both variants agreeing — the student learns only from those."""
     with g.lock:
         rows = g.db().execute(
-            "SELECT id, json_extract(data, '$.klasse.answers'), json_extract(data, '$.klasse.memory') FROM object "
-            "WHERE json_extract(data, '$.klasse.zustand') = 'einig' AND mode NOT IN ('refuted', 'withdrawn', 'archived')").fetchall()
+            "SELECT id, json_extract(data, '$.class.answers'), json_extract(data, '$.class.memory') FROM object "
+            "WHERE json_extract(data, '$.class.state') = 'einig' AND mode NOT IN ('refuted', 'withdrawn', 'archived')").fetchall()
     rows = [r for r in rows if r[1] in ANSWERS and r[2] in MEMORY]
     return [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
 
@@ -482,7 +482,7 @@ def set_gold(oid: str, answers: str, memory: str, who: str, human: bool) -> g.Me
     o = g.load(oid)
     if o is None or o.kind not in KINDS:
         raise ValueError(f"{oid}: no knowledge object")
-    o.data = {**o.data, "gold": {"answers": answers, "memory": memory, "wer": who, "zeit": g.now()}}
+    o.data = {**o.data, "gold": {"answers": answers, "memory": memory, "who": who, "ts": g.now()}}
     o.change(who, f"gold label {answers}/{memory}", "set by a person")
     g.save(o)
     return o
@@ -499,8 +499,8 @@ def gold_report() -> dict:
         o = g.load(oid)
         if o is None:
             continue
-        gold, k = o.data["gold"], o.data.get("klasse") or {}
-        if k.get("zustand") in ("einig", "uneinig"):
+        gold, k = o.data["gold"], o.data.get("class") or {}
+        if k.get("state") in ("einig", "uneinig"):
             llm["n"] += 1
             if k["answers"] == "unsure":
                 llm["unsure"] += 1
@@ -509,7 +509,7 @@ def gold_report() -> dict:
             per.setdefault(gold["answers"], [0, 0])
             per[gold["answers"]][0] += 1
             per[gold["answers"]][1] += hit
-        elif k.get("zustand") == "schueler":
+        elif k.get("state") == "schueler":
             student["n"] += 1
             student["richtig"] += int(k["answers"] == gold["answers"])
     return {"gold": len(rows), "llm": {**llm, "genauigkeit": round(llm["richtig"] / llm["n"], 3) if llm["n"] else None},
@@ -529,8 +529,8 @@ def truth_check(humans: set[str] | None = None) -> dict:
     if not humans:
         return {"zustand": "keine_menschen", "grund": "no instance with human: true in the config"}
     with g.lock:
-        rows = g.db().execute("SELECT id FROM object WHERE kind IN ('insight', 'rule', 'skill') AND (json_extract(data, '$.bestaetigt_von') IS NOT NULL "
-                              "OR json_extract(data, '$.widerlegt_von') IS NOT NULL)").fetchall()
+        rows = g.db().execute("SELECT id FROM object WHERE kind IN ('insight', 'rule', 'skill') AND (json_extract(data, '$.confirmed_by') IS NOT NULL "
+                              "OR json_extract(data, '$.refuted_by') IS NOT NULL)").fetchall()
     conf, ref = [], []
     for (oid,) in rows:
         o = g.load(oid)
@@ -539,8 +539,8 @@ def truth_check(humans: set[str] | None = None) -> dict:
         w, n = vil.weight_of(o)
         if n == 0:
             continue
-        by_c = set((o.data.get("bestaetigt_von") or {})) & humans
-        by_r = set((o.data.get("widerlegt_von") or {})) & humans
+        by_c = set((o.data.get("confirmed_by") or {})) & humans
+        by_r = set((o.data.get("refuted_by") or {})) & humans
         if by_c and not by_r:
             conf.append(w)
         elif by_r and not by_c:

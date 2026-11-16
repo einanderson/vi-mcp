@@ -16,8 +16,8 @@ AT_LEAST = 10
 
 
 def _with_hint(o: g.MemoryObject) -> bool:
-    v = o.data.get("vorher") or {}
-    return any(not names.id_has_kind(oid, "answer") for oid in v.get("gefunden", []))
+    v = o.data.get("before") or {}
+    return any(not names.id_has_kind(oid, "answer") for oid in v.get("found", []))
 
 
 _GRADES: dict = {"t": 0.0, "v": {}, "db": None}
@@ -40,7 +40,7 @@ def hint_lift(hours: float = 24, tool: str | None = None, viewer: str | None = N
     per_tool: dict[str, dict] = {}
     total = {"mit": {"n": 0, "ok": 0}, "ohne": {"n": 0, "ok": 0}}
     for _, o, _g in g.recall(filt, limit=5000, viewer=viewer):
-        if o.ts < since or (o.data.get("vorher") or {}).get("aus_gedaechtnis"):
+        if o.ts < since or (o.data.get("before") or {}).get("from_memory"):
             continue
         t = next((x[5:] for x in o.hashtags if x.startswith("tool:")), "?")
         page = "mit" if _with_hint(o) else "ohne"
@@ -59,9 +59,9 @@ def hint_lift_matched(hours: float = 24, viewer: str | None = None) -> dict:
     strata: dict[tuple[str, str], dict] = {}
     warned = 0
     for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=20000, viewer=viewer):
-        if o.ts < since or (o.data.get("vorher") or {}).get("aus_gedaechtnis"):
+        if o.ts < since or (o.data.get("before") or {}).get("from_memory"):
             continue
-        if (o.data.get("vorher") or {}).get("warnung"):
+        if (o.data.get("before") or {}).get("warning"):
             # 0.62.2: a warning is another intervention, given by construction before risky actions, with its own line in vi_stats.
             # Found on production (13.11.2026): all 335 hinted `analyse` actions of a day had a warning; mixed in, they made "hints"
             # look harmful (−7.1 ± 2.9 points); without them −2.8 ± 2.5.
@@ -150,10 +150,10 @@ def lift_by_age(hours: float = 24 * 7, viewer: str | None = None, new_days: floa
     acc = {k: {"n": 0, "ok": 0, "vorteil": 0.0} for k in ("neu", "alt", "unbekannt")}
     born: dict[str, str | None] = {}
     for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=5000, viewer=viewer):
-        v = o.data.get("vorher") or {}
-        if o.ts < since or v.get("aus_gedaechtnis"):
+        v = o.data.get("before") or {}
+        if o.ts < since or v.get("from_memory"):
             continue
-        shown = [h for h in v.get("gezeigt", []) if h.startswith(bandit.HINT_KINDS)]
+        shown = [h for h in v.get("shown", []) if h.startswith(bandit.HINT_KINDS)]
         if not shown:
             continue
         tool = next((x[5:] for x in o.hashtags if x.startswith("tool:")), "?")
@@ -195,8 +195,8 @@ def _randomized(hours: float, viewer: str | None):
     """Actions in which the ε-exploration could have happened (a candidate further back existed), with their label. Pure apart from reading."""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
     for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=50000, viewer=viewer):
-        v = o.data.get("vorher") or {}
-        if o.ts < since or v.get("aus_gedaechtnis") or not v.get("rest_n") or not v.get("gezeigt"):
+        v = o.data.get("before") or {}
+        if o.ts < since or v.get("from_memory") or not v.get("rest_n") or not v.get("shown"):
             continue
         yield o, v, _ok(o)
 
@@ -240,10 +240,10 @@ def holdback_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
     strata: dict[tuple, dict] = {}
     for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=50000, viewer=viewer):
-        v = o.data.get("vorher") or {}
-        if o.ts < since or v.get("aus_gedaechtnis") or "haltewahrscheinlichkeit" not in v:
+        v = o.data.get("before") or {}
+        if o.ts < since or v.get("from_memory") or "hold_probability" not in v:
             continue
-        held = bool(v.get("zurueckgehalten"))
+        held = bool(v.get("held_back"))
         t = next((x[5:] for x in o.hashtags if x.startswith("tool:")), "?")
         c = strata.setdefault((o.instance or "?", t), {True: [0, 0], False: [0, 0]})[not held]
         c[0] += _ok(o)
@@ -293,8 +293,8 @@ def ips_lift(hours: float = 24 * 30, viewer: str | None = None, min_shown: int =
     minus when not shown (weight 1/(1 − p)). Only the randomized offers count — a hint that was always shown has no counterfactual."""
     acc: dict[str, list[float]] = {}
     for _o, v, ok in _randomized(hours, viewer):
-        shown = set(v.get("gezeigt") or [])
-        for h, p in (v.get("angebot") or {}).items():
+        shown = set(v.get("shown") or [])
+        for h, p in (v.get("offer") or {}).items():
             if not 0.0 < p < 1.0:
                 continue
             a = acc.setdefault(h, [0.0, 0.0, 0.0, 0.0, 0])  # yes-weighted shown, weight shown, yes-weighted not shown, weight not, n shown
@@ -317,9 +317,9 @@ def arm_effect(since: str | None = None, viewer: str | None = None) -> dict:
     Haenszel within (instance, tool). Which arm an action is in is a coin flip (weight_writer.AB_SHARE), so the difference is causal."""
     strata: dict[tuple, dict] = {}
     for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=50000, viewer=viewer):
-        v = o.data.get("vorher") or {}
+        v = o.data.get("before") or {}
         a = v.get("arm")
-        if a not in ("llm", "basis") or (since and o.ts < since) or v.get("aus_gedaechtnis"):
+        if a not in ("llm", "basis") or (since and o.ts < since) or v.get("from_memory"):
             continue
         t = next((x[5:] for x in o.hashtags if x.startswith("tool:")), "?")
         c = strata.setdefault((o.instance or "?", t), {"llm": [0, 0], "basis": [0, 0]})[a]
@@ -363,15 +363,15 @@ def error_hint_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict
     for acts in convs.values():
         acts.sort(key=lambda x: x.ts)
         for i, o in enumerate(acts):
-            if "fehler_hinweise" not in o.data or "fehler_haltewahrscheinlichkeit" not in o.data:
+            if "error_hints" not in o.data or "error_hold_probability" not in o.data:
                 continue
             t = next((x for x in o.hashtags if x.startswith("tool:")), "tool:?")
-            later = [a for a in acts[i + 1:] if not (a.data.get("vorher") or {}).get("aus_gedaechtnis")][:RECOVER_WINDOW]  # answered from memory: no action
+            later = [a for a in acts[i + 1:] if not (a.data.get("before") or {}).get("from_memory")][:RECOVER_WINDOW]  # answered from memory: no action
             nxt = next((a for a in later if t in a.hashtags and ("ok:yes" in a.hashtags or "ok:no" in a.hashtags)), None)
             if nxt is None:
                 no_retry += 1
                 continue
-            c = strata.setdefault((o.instance or "?", t), {True: [0, 0], False: [0, 0]})[not o.data.get("fehler_zurueckgehalten")]
+            c = strata.setdefault((o.instance or "?", t), {True: [0, 0], False: [0, 0]})[not o.data.get("error_held_back")]
             c[0] += "ok:yes" in nxt.hashtags
             c[1] += 1
     num = den = var = 0.0

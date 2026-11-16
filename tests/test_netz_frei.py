@@ -151,7 +151,7 @@ def test_memory_tells_whom_it_trusts(gd, monkeypatch):
     for pub, ja, nein in ((good_pub, 30, 2), (bad_pub, 1, 30)):
         name = lb.pseudonym(pub)
         o = g.new_object("insight", f"knowledge from {name} about backups", ["topic:backup", "origin:p2p", f"publisher:{name}"],
-                         {"quelle": "import", "herkunft": {"herausgeber": name, "pubkey": pub}, "nuetzlich": {"ja": ja, "nein": nein, "n": ja + nein}}, instance=f"p2p-{name}")
+                         {"source": "import", "origin": {"publisher": name, "pubkey": pub}, "useful": {"yes": ja, "no": nein, "n": ja + nein}}, instance=f"p2p-{name}")
         g.save(o)
     t = p2p.trust()
     assert t == {"bewaehrt": [good_pub], "gesperrt": [bad_pub]}

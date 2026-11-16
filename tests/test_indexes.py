@@ -23,11 +23,11 @@ def test_names_are_checked_and_projects_map_to_indexes():
 
 
 def test_new_objects_land_in_global_or_the_given_index(gd):
-    a = g.new_object("insight", "general knowledge", ["topic:a"], {"quelle": "t"})
-    b = g.new_object("insight", "project knowledge", ["topic:a"], {"quelle": "t"}, index="Cue-Print")
+    a = g.new_object("insight", "general knowledge", ["topic:a"], {"source": "t"})
+    b = g.new_object("insight", "project knowledge", ["topic:a"], {"source": "t"}, index="Cue-Print")
     token = g.current_index.set("ansible")
     try:
-        c = g.new_object("insight", "special knowledge", ["topic:a"], {"quelle": "t"})
+        c = g.new_object("insight", "special knowledge", ["topic:a"], {"source": "t"})
     finally:
         g.current_index.reset(token)
     assert (g.load(a.id).idx, g.load(b.id).idx, g.load(c.id).idx) == ("global", "cue-print", "ansible")
@@ -61,12 +61,12 @@ def test_a_project_session_puts_its_experiences_and_knowledge_into_its_index(gd,
     with session.on_behalf(s):
         r = intuition.before("Bash", {"command": "ls"}, "a", False)
         intuition.after("Bash", {"command": "ls"}, True, 5, None, "ok", r["vorher_id"], "a", False)
-        k = g.new_object("insight", "learned in the project", ["topic:a"], {"quelle": "t"}, instance="a")
+        k = g.new_object("insight", "learned in the project", ["topic:a"], {"source": "t"}, instance="a")
     e = [o for _, o, _g in g.recall("kind:experience", limit=5, viewer=None)][0]
     assert e.idx == "cue-print" and g.load(k.id).idx == "cue-print"
     t = session.begin("a", "claude-code-hook 1", "scratch")
     with session.on_behalf(t):
-        assert g.new_object("insight", "learned in an ignored dir", ["topic:a"], {"quelle": "t"}, instance="a").idx == "global"
+        assert g.new_object("insight", "learned in an ignored dir", ["topic:a"], {"source": "t"}, instance="a").idx == "global"
 
 
 def test_vi_learn_takes_index_or_the_project_the_hook_sent(gd, monkeypatch):
@@ -83,8 +83,8 @@ def test_vi_learn_takes_index_or_the_project_the_hook_sent(gd, monkeypatch):
 
 
 def test_search_restricts_to_an_index_or_puts_the_project_first(gd):
-    a = g.new_object("insight", "rsync resume with partial transfers", ["tool:rsync"], {"quelle": "t"}, index="global")
-    b = g.new_object("insight", "rsync resume in the cue project needs partial", ["tool:rsync"], {"quelle": "t"}, index="cue-print")
+    a = g.new_object("insight", "rsync resume with partial transfers", ["tool:rsync"], {"source": "t"}, index="global")
+    b = g.new_object("insight", "rsync resume in the cue project needs partial", ["tool:rsync"], {"source": "t"}, index="cue-print")
     only = tools.call_tool("vi_recall", {"filter": "rsync resume", "index": "cue-print", "semantic": False}, "a", False)
     assert b.id in only and a.id not in only and "only index cue-print" in only
     mixed = tools.call_tool("vi_recall", {"filter": "rsync resume", "project": "cue-print", "semantic": False}, "a", False)
@@ -96,13 +96,13 @@ def test_search_restricts_to_an_index_or_puts_the_project_first(gd):
 def test_hints_before_an_action_put_the_project_first_and_record_it(gd, monkeypatch):
     from vi_mcp import intuition, session
     monkeypatch.setattr(indexes, "_config", lambda: {})
-    gen = g.new_object("insight", "rsync over ssh needs the key file", ["tool:rsync", "topic:ssh"], {"quelle": "t"}, index="global")
-    own = g.new_object("insight", "rsync in cue-print goes through the jump host", ["tool:rsync"], {"quelle": "t"}, index="cue-print")
+    gen = g.new_object("insight", "rsync over ssh needs the key file", ["tool:rsync", "topic:ssh"], {"source": "t"}, index="global")
+    own = g.new_object("insight", "rsync in cue-print goes through the jump host", ["tool:rsync"], {"source": "t"}, index="cue-print")
     s = session.begin("a", "claude-code-hook 1", "cue-print")
     with session.on_behalf(s):
         z = intuition.before("rsync", {"src": "a"}, "a", False)["zugriff"]
-    assert z["gezeigt"][0] == own.id and gen.id in z["gezeigt"]  # first, not alone
-    assert z["idx"] == "cue-print" and z["idx_vorrang"] == 1
+    assert z["shown"][0] == own.id and gen.id in z["shown"]  # first, not alone
+    assert z["idx"] == "cue-print" and z["idx_priority"] == 1
 
 
 def test_the_agent_session_gets_the_project_the_hook_noted_just_before(gd, monkeypatch):
@@ -131,7 +131,7 @@ def _actions(index, n, hint_helps, h_id, rng):
         p = 0.9 if (shown and hint_helps) else 0.45 if shown else 0.7
         ok = rng.random() < p
         o = g.new_object("experience", f"rsync {index} {i}", ["tool:rsync", f"ok:{'ja' if ok else 'nein'}"],
-                         {"vorher": {"reize": ["tool:rsync"], "gezeigt": [h_id] if shown else []}}, instance="a", index=index)
+                         {"before": {"triggers": ["tool:rsync"], "shown": [h_id] if shown else []}}, instance="a", index=index)
         assert o.idx == index
 
 
@@ -140,7 +140,7 @@ def test_an_index_gets_its_own_model_only_when_it_beats_the_shared_one(gd):
     import random
     from vi_mcp import learning
     rng = random.Random(3)
-    h = g.new_object("insight", "use the jump host for rsync", ["tool:rsync"], {"quelle": "t"}, instance="x")
+    h = g.new_object("insight", "use the jump host for rsync", ["tool:rsync"], {"source": "t"}, instance="x")
     _actions("global", 3000, False, h.id, rng)   # elsewhere the hint hurts
     _actions("cue-print", 1200, True, h.id, rng)  # in cue-print it helps
     r = learning.train_index("cue-print", "test")
@@ -158,7 +158,7 @@ def test_an_index_like_all_others_keeps_the_shared_model_and_the_project_ranks_w
     from vi_mcp import intuition, learning, session
     monkeypatch.setattr(indexes, "_config", lambda: {})
     rng = random.Random(5)
-    h = g.new_object("insight", "use the jump host for rsync", ["tool:rsync"], {"quelle": "t"}, instance="x")
+    h = g.new_object("insight", "use the jump host for rsync", ["tool:rsync"], {"source": "t"}, instance="x")
     _actions("global", 3000, True, h.id, rng)
     _actions("same", 1200, True, h.id, rng)  # behaves like everything else: nothing to gain from an own model
     r = learning.train_index("same", "test")
@@ -177,7 +177,7 @@ def test_backfill_puts_old_project_data_into_its_index_and_rename_merges(gd, mon
     s = session.begin("a", "claude-code-hook 1", "cue-print")  # before 0.61.0 the session recorded its project, objects stayed global
     t = session.begin("a", "claude-code-hook 1", "scratch")
     e1 = g.new_object("experience", "rsync 1", ["tool:rsync", "ok:yes"], {}, instance="a", conversation=s.serial, index="global")
-    k1 = g.new_object("insight", "learned in cue-print", ["topic:a"], {"quelle": "t"}, instance="a", conversation=s.serial, index="global")
+    k1 = g.new_object("insight", "learned in cue-print", ["topic:a"], {"source": "t"}, instance="a", conversation=s.serial, index="global")
     e2 = g.new_object("experience", "rsync 2", ["tool:rsync", "ok:yes"], {}, instance="a", conversation=t.serial, index="global")
     dry = indexes.backfill()
     assert dry == {"angewendet": False, "objekte": 2, "je_index": {"cue-print": {"experience": 1, "insight": 1}}}
@@ -194,7 +194,7 @@ def test_backfill_puts_old_project_data_into_its_index_and_rename_merges(gd, mon
 
 def test_the_index_table_has_a_row_for_every_index_with_description_and_tags(gd):
     # the user (13.11.2026): a primary key for the index, one index per object, and a table that gives each index tags and a description
-    g.new_object("insight", "project knowledge", ["topic:a"], {"quelle": "t"}, index="cue-print")
+    g.new_object("insight", "project knowledge", ["topic:a"], {"source": "t"}, index="cue-print")
     reg = indexes.registry()
     assert reg["global"]["art"] == "global" and reg["cue-print"]["art"] == "project"
     with g.lock:

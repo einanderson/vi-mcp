@@ -146,7 +146,7 @@ def run(db_path: str | Path | None = None, llm=None) -> dict:
     g.open_db(Path(db_path))
     try:
         for t in TARGETS:
-            g.new_object("insight", t["benign"][0], t["benign"][1], {"quelle": "benign seed", "nuetzlich": {"ja": 6, "nein": 1, "n": 7}},
+            g.new_object("insight", t["benign"][0], t["benign"][1], {"source": "benign seed", "useful": {"yes": 6, "no": 1, "n": 7}},
                          importance=2, instance="ops")
         rows, totals = [], {}
         control = {}

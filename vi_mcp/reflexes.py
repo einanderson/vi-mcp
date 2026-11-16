@@ -68,13 +68,13 @@ def load_all() -> dict[str, dict]:
         if o.mode not in ("active", "test"):
             continue
         schema = None
-        if o.data["art"] == "werkzeug":
+        if o.data["kind"] == "werkzeug":
             res = sandbox.run(o.data["code"], [], schema_only=True)
             if "fehler" in res:
                 log(f"reflex {o.data['name']} does not load ({res['isolation']}): {res['fehler']}")
                 continue
             schema = res.get("schema")
-        new[o.data["name"]] = {"objekt": o, "name": o.data["name"], "art": o.data["art"], "modus": o.mode, "code": o.data["code"],
+        new[o.data["name"]] = {"objekt": o, "name": o.data["name"], "art": o.data["kind"], "modus": o.mode, "code": o.data["code"],
                                 "schema": schema}
     with _lock:
         loaded.clear()
@@ -93,17 +93,17 @@ def tool_schemas() -> list[dict]:
 def run(r: dict, *args) -> dict:
     res = sandbox.run(r["code"], list(args), wallclock_s=REFLEX_TIME_S + 2)
     o = g.load(r["objekt"].id) or r["objekt"]
-    o.data["laeufe"] = o.data.get("laeufe", 0) + 1
+    o.data["runs"] = o.data.get("runs", 0) + 1
     o.data["isolation"] = res.get("isolation")
     if res.get("isolation") == "keine":  # the environment, not the reflex: named, but no error point against it
-        o.data["letzter_fehler"] = res.get("fehler", "")[:300]
+        o.data["last_error"] = res.get("fehler", "")[:300]
     elif "fehler" in res:
-        o.data["fehler"] = o.data.get("fehler", 0) + 1
-        o.data["letzter_fehler"] = res["fehler"][:300]
-        if o.data["fehler"] >= REFLEX_ERRORS_MIN:
+        o.data["error"] = o.data.get("error", 0) + 1
+        o.data["last_error"] = res["fehler"][:300]
+        if o.data["error"] >= REFLEX_ERRORS_MIN:
             o.mode = r["modus"] = "broken"
             o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:broken"]
-            o.change("vi", "defective", f"{o.data['fehler']} errors: {res['fehler'][:120]}")
+            o.change("vi", "defective", f"{o.data['error']} errors: {res['fehler'][:120]}")
             log(f"reflex {r['name']} defective: {res['fehler']}")
             with _lock:
                 loaded.pop(r["name"], None)

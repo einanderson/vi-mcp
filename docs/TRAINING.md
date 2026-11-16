@@ -213,6 +213,10 @@ SELECT o.id AS erfahrung_id, o.zeit, o.instanz,
 FROM objekt o WHERE o.art = 'erfahrung';
 ```
 
+> Stand 0.67.0: Die View ist umgesetzt (`memory._migrate`) und heißt jetzt `observation`, mit englischen Tabellen-, Spalten- und
+> Datenschlüsselnamen (`experience_id`, `hint_n`, `surprise`, `$.before.shown`, …). Der Export oben ist historisch; das gepflegte
+> Skript `scripts/export_beobachtung.py` liest die englischen Namen.
+
 (SQLite-JSON1 `json_extract`/`json_array_length` sind in Python 3.12s sqlite3 enthalten — **Hypothese**, heute nicht
 gesondert geprüft; der getestete Export braucht sie nicht.) Eine echte Tabelle lohnt erst, wenn die View zu langsam
 wird; dann `beobachtung` als Schreib-Nebenprodukt in `intuition.erfahrung`, nicht als Nachlauf.

@@ -126,7 +126,8 @@ Linked from [README.md](README.md).
 ### What has changed in the stored names (0.67.0: German → English, migrated in place)
 
 The user, 15.11.2026: "die deutschen wörter aus memory müssen auch ins englische übersetzt werden. Ohne das der bestehende datesatz
-unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert werden". Steps 1, 2, 3a and 3b of the migration are done:
+unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert werden". Steps 1, 2, 3a, 3b and 4a of the migration are
+done; step 4b follows in 0.68 (the user's decision, 16.11.2026: "4a now, 4b in 0.68"):
 
 - **Tables, columns and indexes are English.** 37 tables of the memory (`objekt` → `object`, `kante` → `edge`, `netz_stand` →
   `net_state`, …), 8 of a network logbook (`eintrag` → `entry`, `grab` → `tombstone`, …), the archive's two. The columns of `object` are
@@ -155,6 +156,17 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
   `topic:requirement`, `knowledge_kind:handbuch` → `knowledge_kind:manual`, … (`names.TAG_VALUES`, `DATA_VALUES`). A question's
   addressee: `alle` → `all`, `netz`/`netz:<n>` → `net`/`net:<n>`; `vi_ask` still takes the German forms. A model's German certainty
   (`mittel`) is read as `medium`.
+- **Step 4a: the keys inside the data of the memory's own objects are English.** Knowledge, experiences, conversations, questions,
+  skills, ratings, images, pages, proposals, searches, reflexes and machine objects: `quelle` → `source`, `inhalt` → `content`,
+  `vorher` → `before` (`gezeigt` → `shown`, `reize` → `triggers`, `angebot` → `offer`, …), `nuetzlich` → `useful` (`ja`/`nein` →
+  `yes`/`no`), `antworten` → `answers`, `bestaetigt_von` → `confirmed_by`, `loesung.schritte` → `solution.steps`, `regionen` → `regions`
+  (`begriff` → `term`, `maske` → `mask`), … (about 150 keys, `names.DATA_KEYS`). Every change-history entry is `{ts, who, what, reason}`.
+  The flat view `beobachtung` is now `observation` with English column names (`experience_id`, `hint_n`, `surprise`, …). Subtrees whose
+  keys are data stay as they are: recorded tool arguments, tool names, feature weights, the user's signals, and an installed philosophy
+  package with its translation (its `package_hash` covers those keys). One form of stored data: `memory.save` and `memory.update_data`
+  write the English keys whatever a caller passed, renaming in place, so a caller that holds `o.data` across a save still writes into
+  the object (found while building it: a question's delivery state was written into a stale dict after the first save and lost).
+  An entry archived before 0.67.0 is read in the English form.
 - **The router keeps its quality across the migration.** Its stored weights are keyed by feature names, and the features are hashtags
   (`hint:<id>`, `hour:HH`, `topic:…`); without care the router would have seen English names it never trained on. The migration renames
   the keys of the weights and of the LLM layer's deltas with the tags. Measured on the production copy, 22,828 stored observations,
@@ -199,6 +211,16 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
     values, the router's weights; afterwards no German table, column, enum value, hashtag kind or hashtag system value, and no German
     mirrored data value (test helper); `thema:vorgabe` and `topic:requirement` find the same 22 objects; second start 0.21 s. Full suite
     1138 passed / 8 skipped on SQLite, 1139 / 7 on PostgreSQL 16; code-check ok.
+  - Step 4a on a fresh copy: all steps in 12.6 s with the backup; data keys of 46,175 objects and the history entries of 46,279
+    rewritten; afterwards 0 of 46,175 domain objects carry a German data key and 0 histories a German entry key; the 104 report
+    objects keep theirs (99 sleep, 3 model, 2 self: see "What is missing"). Values unchanged under the new keys, compared with the
+    untouched copy: `quelle`→`source` 24,827 of 24,827, `inhalt`→`content` 21,580/21,580, `vorher.gezeigt`→`before.shown`
+    11,828/11,828, `vorher.angebot`→`before.offer` 5,133/5,133, `dauer_ms`→`duration_ms` 12,099/12,099, `nuetzlich`→`useful` 629/629 and
+    `antworten`→`answers` 12/12 (nested keys renamed, values equal). Router scores over the 22,828 stored observations identical to
+    step 3b (22,828 of 22,828 equal, max difference 0). `thema:vorgabe`/`topic:requirement` 22, `thema:backup`/`topic:backup` 15;
+    second start 0.41 s. `tests/test_names.py`: the 0.66.1 fixture has no German data key left in a domain object and no German
+    history key; a save keeps the caller's dict; `update_data` writes English keys; a sleep report keeps its keys. Full suite 1140
+    passed / 8 skipped on SQLite, 1141 / 7 on PostgreSQL 16; code-check ok.
   - Step 2: full suite 1133 passed on SQLite, the 3 failing tests (expecting German values) corrected and rerun green; PostgreSQL 16
     1137 passed / 7 skipped; code-check ok.
   - Full suite 1134 passed / 8 skipped on SQLite; code-check ok. On PostgreSQL 16: 1132 passed, 3 failed, all in `tests/test_db.py`
@@ -266,12 +288,18 @@ unbrauchbar wird", and "die deutschen Bezeichnungen müssen in der DB migriert w
 
 ### What is missing
 
-- **Step 4 of the English names is not done yet:** the keys inside `object.data` (`quelle`, `inhalt`, `vorher`, …), the values of data
-  fields that mirror no hashtag (the states of learned models, sleep steps, …), the view `beobachtung` and its column names. They follow
-  in the same migration, with the same backup and counts.
+- **Step 4b of the English names follows in 0.68** (the user's decision, 16.11.2026). Three object kinds still carry German keys in
+  their data: `sleep` (the sleep report: `schritte`, `fehler`, `dauer_ms`, …), `model` (router, student, fine-tuning records:
+  `gewichte`, `zustand`, `pruefung`, `koepfe`, `versionen`, …) and `self` (the self model: `soll`, `ist`, `erzaehlung`, `satz`, and a
+  self proposal's `bereich`/`satz`). Why not in 0.67.0: the modules that write these reports (`sleep_cycle`, `learning`,
+  `weight_writer`, `scorer`, `classify`, `self_model`) read them both freshly built and stored, so renaming at save time alone leaves
+  one of the two forms wrong (tried: about 50 tests failed). 0.68 renames them at the source together with every reader, one module per
+  commit, measured on the production copy like the other steps. Measured now: 104 such objects in the production copy (99 sleep,
+  3 model, 2 self). The values inside those reports (`aktiv`, `uebersprungen`, …) follow with them.
 - **Old object ids stay German, new ones are English** — the user's decision (15.11.2026), not an oversight: renaming existing ids would
   break every reference to them. A memory therefore holds both kinds of prefix; `vi_object` shows ids as they are.
-- The change log of an object (`changes`: who, what, why) keeps its entries as written; a mode named in an old entry stays German there.
+- The change log of an object has English entry keys since step 4a (`ts`, `who`, `what`, `reason`), but its texts stay as written: a mode
+  named in an old entry stays German there.
 
 - A quarantine discard (`p2p.discard`, a reviewer rejects foreign knowledge) still sets `widerlegt`. Strictly, that is a third thing:
   rejected in review, not refuted by two families. It stays `widerlegt` until there is a decision.

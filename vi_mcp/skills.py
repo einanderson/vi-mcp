@@ -30,8 +30,8 @@ VERSIONS_MAX = 30
 
 def usable(o: g.MemoryObject) -> bool:
     """A skill whose problem and solution are readable. A damaged one (e.g. data replaced for size before 0.53.1) is skipped, named."""
-    p, s = o.data.get("problem"), o.data.get("loesung")
-    return isinstance(p, dict) and isinstance(p.get("reize"), list) and isinstance(s, dict) and isinstance(s.get("schritte"), list)
+    p, s = o.data.get("problem"), o.data.get("solution")
+    return isinstance(p, dict) and isinstance(p.get("triggers"), list) and isinstance(s, dict) and isinstance(s.get("steps"), list)
 BAD_RATIO = 0.3
 
 #: Tools that occur in almost every conversation. A solution path made only of them says nothing about what solved the problem.
@@ -83,10 +83,10 @@ def new(name: str, triggers: list[str], steps, instructions: str, reason: str, e
     if old and old.kind == "skill":
         return evolve(old, st, instructions, reason, evidence_list, instance, who, triggers=rz)
     o = g.new_object("skill", instructions.strip()[:600], rz + [f"skill:{n}", "mode:test"],
-                       {"name": n, "problem": {"reize": rz}, "loesung": {"schritte": st, "text": instructions.strip()[:600]}, **_content(instructions),
-                        "version": 1, "versionen": [{"version": 1, "zeit": g.now(), "wer": who or f"ki@{instance}", "grund": reason.strip()[:300],
-                                                     "belege": list(evidence_list or [])[:50]}],
-                        "belege": list(evidence_list or [])[:200], "quelle": (source or reason).strip()[:300]},
+                       {"name": n, "problem": {"triggers": rz}, "solution": {"steps": st, "text": instructions.strip()[:600]}, **_content(instructions),
+                        "version": 1, "versions": [{"version": 1, "ts": g.now(), "who": who or f"ki@{instance}", "reason": reason.strip()[:300],
+                                                     "evidence": list(evidence_list or [])[:50]}],
+                        "evidence": list(evidence_list or [])[:200], "source": (source or reason).strip()[:300]},
                        importance=2, who=who or f"ki@{instance}", oid=oid, mode="test", reason=reason, instance=instance)
     for b in evidence_list or []:
         o.link(b, "Beleg (solution)")
@@ -101,37 +101,37 @@ def evolve(o: g.MemoryObject, steps, instructions: str, reason: str, evidence_li
     st = _steps_ok(steps)
     if not usable(o):
         raise ValueError(f"{o.id} is damaged (no readable problem or solution) — not evolved")
-    triggers_before = list(o.data["problem"]["reize"])
-    present = {s["tool"] for s in o.data["loesung"]["schritte"]}
+    triggers_before = list(o.data["problem"]["triggers"])
+    present = {s["tool"] for s in o.data["solution"]["steps"]}
     new_steps = [s for s in st if s["tool"] not in present]
     new_text = (instructions or "").strip()[:600]
-    same_reason = any(v.get("grund") == (reason or "").strip()[:300] for v in o.data.get("versionen", []))
-    if same_reason and not new_steps and (not triggers or sorted(triggers) == sorted(triggers_before)) and (not new_text or new_text == o.data["loesung"]["text"]):
+    same_reason = any(v.get("reason") == (reason or "").strip()[:300] for v in o.data.get("versions", []))
+    if same_reason and not new_steps and (not triggers or sorted(triggers) == sorted(triggers_before)) and (not new_text or new_text == o.data["solution"]["text"]):
         # 0.53.1: nothing changed and this reason (for a recovery: the same conversation) is already a version — the evidence counts, but no
         # new version. One version per recovery made 221 versions in one conversation. Another conversation is independent: a version.
-        o.data["belege"] = (o.data.get("belege", []) + [b for b in evidence_list or [] if b not in o.data.get("belege", [])])[-200:]
-        o.data["bestaetigt_ohne_aenderung"] = int(o.data.get("bestaetigt_ohne_aenderung") or 0) + 1
+        o.data["evidence"] = (o.data.get("evidence", []) + [b for b in evidence_list or [] if b not in o.data.get("evidence", [])])[-200:]
+        o.data["confirmed_unchanged"] = int(o.data.get("confirmed_unchanged") or 0) + 1
         g.save(o)
         return o
     if triggers and sorted(triggers) != sorted(triggers_before):
         base = [t for t in o.hashtags if t not in triggers_before]
         o.hashtags = base + [t for t in triggers if t not in base]  # check against the cleaned list, otherwise remaining triggers get lost (0.20.12)
-        o.data["problem"]["reize"] = list(triggers)
-    o.data["loesung"]["schritte"] += new_steps
-    o.data["versionen"].append({"version": o.data["version"] + 1, "zeit": g.now(), "wer": who or f"ki@{instance}", "grund": reason.strip()[:300],
-                                 "belege": list(evidence_list or [])[:50], "vorher_text": o.data["loesung"]["text"],
-                                 **({"reize_vorher": triggers_before} if o.data["problem"]["reize"] != triggers_before else {})})
+        o.data["problem"]["triggers"] = list(triggers)
+    o.data["solution"]["steps"] += new_steps
+    o.data["versions"].append({"version": o.data["version"] + 1, "ts": g.now(), "who": who or f"ki@{instance}", "reason": reason.strip()[:300],
+                                 "belege": list(evidence_list or [])[:50], "text_before": o.data["solution"]["text"],
+                                 **({"triggers_before": triggers_before} if o.data["problem"]["triggers"] != triggers_before else {})})
     o.data["version"] += 1
-    if len(o.data["versionen"]) > VERSIONS_MAX:  # the first version and the newest stay; how many went is named
-        cut = len(o.data["versionen"]) - VERSIONS_MAX
-        o.data["versionen"] = o.data["versionen"][:1] + o.data["versionen"][1 + cut:]
-        o.data["versionen_gekuerzt"] = int(o.data.get("versionen_gekuerzt") or 0) + cut
+    if len(o.data["versions"]) > VERSIONS_MAX:  # the first version and the newest stay; how many went is named
+        cut = len(o.data["versions"]) - VERSIONS_MAX
+        o.data["versions"] = o.data["versions"][:1] + o.data["versions"][1 + cut:]
+        o.data["versions_trimmed"] = int(o.data.get("versions_trimmed") or 0) + cut
     if (instructions or "").strip():
-        o.data["loesung"]["text"] = instructions.strip()[:600]
-        o.text = o.data["loesung"]["text"]
-        o.data.pop("inhalt", None)
+        o.data["solution"]["text"] = instructions.strip()[:600]
+        o.text = o.data["solution"]["text"]
+        o.data.pop("content", None)
         o.data.update(_content(instructions))
-    o.data["belege"] = (o.data.get("belege", []) + [b for b in evidence_list or [] if b not in o.data.get("belege", [])])[:200]
+    o.data["evidence"] = (o.data.get("evidence", []) + [b for b in evidence_list or [] if b not in o.data.get("evidence", [])])[:200]
     o.change(who or f"ki@{instance}", f"Version {o.data['version']}", reason)
     g.save(o)
     for b in evidence_list or []:
@@ -145,24 +145,24 @@ def fusion(a_id: str, b_id: str, name: str, reason: str, instance: str) -> g.Mem
         if not x or x.kind != "skill":
             raise ValueError(f"{xid} is not a skill")
         if x.mode == "merged":
-            raise ValueError(f"{xid} is already merged into {x.data.get('aufgegangen_in')}")
+            raise ValueError(f"{xid} is already merged into {x.data.get('merged_into')}")
         if x.mode == "quarantine":
             raise ValueError(f"{xid} is in quarantine")
     if a.id == b.id:
         raise ValueError("a skill cannot be merged with itself")
-    triggers = sorted(set(a.data["problem"]["reize"]) | set(b.data["problem"]["reize"]))
-    steps = list(a.data["loesung"]["schritte"]) + [s for s in b.data["loesung"]["schritte"] if s["tool"] not in {x["tool"] for x in a.data["loesung"]["schritte"]}]
-    instructions = f"{a.data['loesung']['text']} — {b.data['loesung']['text']}"[:600]
-    evidence_list = sorted(set(a.data.get("belege", [])) | set(b.data.get("belege", [])))
+    triggers = sorted(set(a.data["problem"]["triggers"]) | set(b.data["problem"]["triggers"]))
+    steps = list(a.data["solution"]["steps"]) + [s for s in b.data["solution"]["steps"] if s["tool"] not in {x["tool"] for x in a.data["solution"]["steps"]}]
+    instructions = f"{a.data['solution']['text']} — {b.data['solution']['text']}"[:600]
+    evidence_list = sorted(set(a.data.get("evidence", [])) | set(b.data.get("evidence", [])))
     new_o = new(name, triggers, steps, instructions, f"merge of {a.id} and {b.id}: {reason}", evidence_list, instance,
                 source=f"merge {a.id} + {b.id}")
-    new_o.data["fusion_aus"] = [a.id, b.id]
+    new_o.data["merged_from"] = [a.id, b.id]
     if "origin:p2p" in a.hashtags or "origin:p2p" in b.hashtags:  # the origin survives the merge
         new_o.hashtags = sorted(set(new_o.hashtags) | {"origin:p2p"})
     g.save(new_o)
     for x in (a, b):
         x.mode = "merged"
-        x.data["aufgegangen_in"] = new_o.id
+        x.data["merged_into"] = new_o.id
         x.hashtags = [t for t in x.hashtags if not t.startswith(("mode:", "fusion:"))] + ["mode:merged"]
         x.change(f"ki@{instance}", f"merged into {new_o.id}", reason)
         g.save(x)
@@ -172,7 +172,7 @@ def fusion(a_id: str, b_id: str, name: str, reason: str, instance: str) -> g.Mem
 
 def line(o: g.MemoryObject) -> str:
     from . import bandit
-    steps = " → ".join(s["tool"] for s in o.data["loesung"]["schritte"][:6])
+    steps = " → ".join(s["tool"] for s in o.data["solution"]["steps"][:6])
     return (f"Skill \"{o.data['name']}\" v{o.data['version']} ({o.mode}, from {o.instance}, {bandit.line(o)}): {o.text[:200]}"
             f" — steps: {steps}")
 
@@ -236,8 +236,8 @@ def content_empty(o: g.MemoryObject) -> bool:
     """An automatic recovery skill without a meaningful step."""
     if not o.data.get("name", "").startswith("auto-"):
         return False
-    tool = next((r[5:] for r in (o.data.get("problem") or {}).get("reize", []) if r.startswith("tool:")), "")
-    return not _has_content(tool, [s.get("tool") for s in (o.data.get("loesung") or {}).get("schritte", [])])
+    tool = next((r[5:] for r in (o.data.get("problem") or {}).get("triggers", []) if r.startswith("tool:")), "")
+    return not _has_content(tool, [s.get("tool") for s in (o.data.get("solution") or {}).get("steps", [])])
 
 
 def rate() -> dict:
@@ -269,8 +269,8 @@ def fusion_proposals() -> dict:
     for o in skills:
         if not usable(o):
             continue
-        tools = tuple(sorted(t for t in o.data["problem"]["reize"] if t.startswith("tool:")))
-        error = tuple(sorted(t for t in o.data["problem"]["reize"] if t.startswith("error:")))
+        tools = tuple(sorted(t for t in o.data["problem"]["triggers"] if t.startswith("tool:")))
+        error = tuple(sorted(t for t in o.data["problem"]["triggers"] if t.startswith("error:")))
         if tools:
             by_key.setdefault((tools, error), []).append(o)
     n = 0

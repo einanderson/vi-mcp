@@ -24,7 +24,7 @@ def knowledge(gd, monkeypatch):
     ids = {}
     for topic, direction in (("tls", 0), ("disk", 1), ("netz", 2)):
         for i in range(8):
-            o = g.new_object("insight", f"Wissen {topic} Nummer {i} ausführlich", [f"topic:{topic}", "tool:Bash"], {"quelle": "Test 2.11."}, reason="T", instance="a")
+            o = g.new_object("insight", f"Wissen {topic} Nummer {i} ausführlich", [f"topic:{topic}", "tool:Bash"], {"source": "Test 2.11."}, reason="T", instance="a")
             vector.save(o.id, _vec(direction), "m")
             ids.setdefault(topic, []).append(o.id)
     content.forget_cache()
@@ -44,10 +44,10 @@ def test_compute_and_proximity(knowledge):
 
 def test_self_excluded_from_count(gd, monkeypatch):
     monkeypatch.setattr(vector, "config", {"modell": "fake"})
-    a = g.new_object("insight", "Einziger Hinweis zum Thema A hier", ["topic:a"], {"quelle": "x"}, reason="T")
+    a = g.new_object("insight", "Einziger Hinweis zum Thema A hier", ["topic:a"], {"source": "x"}, reason="T")
     vector.save(a.id, _vec(0), "m")
     for i in range(3):
-        o = g.new_object("insight", f"Anderer Inhalt {i} zum Thema A", ["topic:a"], {"quelle": "x"}, reason="T")
+        o = g.new_object("insight", f"Anderer Inhalt {i} zum Thema A", ["topic:a"], {"source": "x"}, reason="T")
         vector.save(o.id, _vec(5), "m")
     content.forget_cache()
     content.compute()
@@ -73,13 +73,13 @@ def test_model_learns_the_content(knowledge, monkeypatch):
         hid = rng.choice(knowledge[topic])
         ok = rng.random() < (0.9 if topic == "tls" else 0.2)
         g.new_object("experience", "Bash", ["tool:Bash", f"topic:{topic}", "ok:yes" if ok else "ok:no"],
-                       {"vorher": {"reize": ["tool:Bash", f"topic:{topic}"], "gezeigt": [hid]}, "args": {"n": n}}, reason="T", instance="a")
+                       {"before": {"triggers": ["tool:Bash", f"topic:{topic}"], "shown": [hid]}, "args": {"n": n}}, reason="T", instance="a")
     b = learning.train("Test")
     w = learning.model().data["gewichte"]
     assert b["zustand"] == "aktiv", b
     gt, gd_ = content.group(knowledge["tls"][0]), content.group(knowledge["disk"][0])
     assert w.get(f"content:{gt}", 0) > w.get(f"content:{gd_}", 0)
-    new = g.new_object("insight", "Ganz neuer Hinweis zu Zertifikaten", ["topic:tls", "tool:Bash"], {"quelle": "x"}, reason="T")
+    new = g.new_object("insight", "Ganz neuer Hinweis zu Zertifikaten", ["topic:tls", "tool:Bash"], {"source": "x"}, reason="T")
     vector.save(new.id, _vec(0), "m")
     old_disk = knowledge["disk"][0]
     content.compute()

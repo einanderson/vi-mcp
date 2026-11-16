@@ -83,6 +83,38 @@ def _assert_no_german_values(con) -> None:
     for (raw,) in con.execute("SELECT data FROM object WHERE kind = 'self'"):
         assert not set(json.loads(raw).get("soll") or {}) & {"werte", "ziele", "stil", "grenzen"}
     assert not left, left
+    _assert_no_german_data_keys(con)
+
+
+def _german_keys(d, found: set, depth: int = 0) -> set:
+    """German keys of names.DATA_KEYS anywhere in a data value, opaque subtrees left out (as names.data_keys leaves them)."""
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if k in names.DATA_KEYS and names.DATA_KEYS[k] != k:
+                found.add(k)
+            if k not in names.OPAQUE_DATA:
+                _german_keys(v, found, depth + 1)
+    elif isinstance(d, list):
+        for x in d:
+            _german_keys(x, found, depth + 1)
+    return found
+
+
+def _assert_no_german_data_keys(con) -> None:
+    """Step 4a: no German key in the data of a domain object, none in any change history; the reports of sleep and model objects
+    keep theirs until 0.68 (names.REPORT_KINDS) — named, not silently skipped."""
+    import json
+    left: dict[str, set] = {}
+    domain = 0
+    for oid, kind, raw, hist in con.execute("SELECT id, kind, data, changes FROM object"):
+        if kind in names.DOMAIN_KINDS:
+            domain += 1
+            found = _german_keys(json.loads(raw or "{}"), set())
+            if found:
+                left[oid] = found
+        for e in json.loads(hist or "[]"):
+            assert set(e) <= {"ts", "who", "what", "reason"}, (oid, sorted(e))
+    assert domain and not left, left
 
 
 def test_the_mapping_is_one_to_one():
@@ -128,6 +160,31 @@ def test_a_0_66_1_memory_is_migrated_in_place_with_a_backup(tmp_path):
             assert names.report(g.db())[0][4] == backup and not names._pending_schema(g.db(), names.TABLES)
     finally:
         g.close_db()
+
+
+def test_data_keys_are_english_at_save_and_keep_the_callers_dict(gd):
+    """Step 4a: whatever keys a caller writes, the stored data of a domain object has the English ones — renamed in place, so a caller
+    that holds o.data (or a nested part of it) across save still writes into the object. Sleep and model reports are left as built."""
+    o = g.new_object("insight", "keys at save", ["topic:keys"], {"quelle": "t", "nuetzlich": {"ja": 1, "nein": 0, "n": 1}}, reason="T")
+    d, inner = o.data, o.data["useful"]
+    assert set(d) >= {"source", "useful"} and "quelle" not in d and inner == {"yes": 1, "no": 0, "n": 1}
+    d["vorher"] = {"gezeigt": ["x"], "args": {"quelle": "stays: a tool argument"}}
+    g.save(o)
+    assert o.data is d and o.data["before"] == {"shown": ["x"], "args": {"quelle": "stays: a tool argument"}}
+    d["after_save"] = 1  # the same dict: still the object's
+    g.save(o)
+    stored = g.load(o.id)
+    assert stored.data["after_save"] == 1 and stored.changes[0].keys() == {"ts", "who", "what", "reason"}
+    s = g.new_object("sleep", "a sleep report", [], {"schritte": {"1": {"zustand": "fertig"}}}, reason="T")
+    assert g.load(s.id).data == {"schritte": {"1": {"zustand": "fertig"}}}  # 0.68 (step 4b) renames the reports with their readers
+
+
+def test_update_data_writes_english_keys_too(gd):
+    o = g.new_object("insight", "counter", ["topic:keys"], {"source": "t"}, reason="T")
+    with g.lock:
+        g.update_data(o.id, lambda d: d.__setitem__("nuetzlich", {"ja": 2}))
+        g.db().commit()
+    assert g.load(o.id).data["useful"] == {"yes": 2}
 
 
 def test_a_new_memory_needs_no_migration(gd):

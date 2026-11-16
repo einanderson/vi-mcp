@@ -4,7 +4,7 @@ from vi_mcp import memory as g
 
 
 def _model(weights):
-    return g.new_object("model", "Testmodell", ["modell:router"], {"zustand": "aktiv", "gewichte": weights, "achsenabschnitt": 0.0},
+    return g.new_object("model", "Testmodell", ["modell:router"], {"state": "aktiv", "gewichte": weights, "achsenabschnitt": 0.0},
                         oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
 
 
@@ -20,9 +20,9 @@ def test_clean_weights_are_ok(gd):
 
 
 def test_each_class_is_found(gd):
-    good = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x", "nuetzlich": {"ja": 2, "nein": 20, "n": 30, "ok": 6, "erwartet": 15}},
+    good = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"source": "x", "useful": {"yes": 2, "no": 20, "n": 30, "ok": 6, "expected": 15}},
                         reason="T", instance="b")  # measured: −30 points
-    net = g.new_object("insight", "aus dem Netz", ["host:web2", "origin:p2p", "publisher:peer1"], {"quelle": "y"}, reason="T", instance="p2p")
+    net = g.new_object("insight", "aus dem Netz", ["host:web2", "origin:p2p", "publisher:peer1"], {"source": "y"}, reason="T", instance="p2p")
     m = _model({f"hint:{good.id}": 1.2, f"hint:{net.id}": 0.8, "hour:14": -5.0, "tool:a": 0.3, "tool:b": 0.2, "tool:c": 0.2, "tool:d": 0.1})
     r = weight_audit.audit()
     assert r["je_klasse"] == {"dominant": 1, "contradicts": 1, "network": 1, "hour": 1}
@@ -41,9 +41,9 @@ def test_sleep_runs_the_audit_after_learning(gd):
 def test_group_weight_against_measured_hints(gd, monkeypatch):
     """0.30.0: a meaning-group weight that pushes down hints which are measured as good is a contradiction, too."""
     from vi_mcp import content
-    a = g.new_object("insight", "nginx -t vor reload", ["tool:Bash"], {"quelle": "x", "nuetzlich": {"ja": 9, "nein": 1, "n": 15, "ok": 14, "erwartet": 10}},
+    a = g.new_object("insight", "nginx -t vor reload", ["tool:Bash"], {"source": "x", "useful": {"yes": 9, "no": 1, "n": 15, "ok": 14, "expected": 10}},
                      reason="T", instance="b")
-    b = g.new_object("rule", "certbot dry-run", ["tool:Bash"], {"quelle": "y", "nuetzlich": {"ja": 8, "nein": 2, "n": 15, "ok": 13, "erwartet": 10}},
+    b = g.new_object("rule", "certbot dry-run", ["tool:Bash"], {"source": "y", "useful": {"yes": 8, "no": 2, "n": 15, "ok": 13, "expected": 10}},
                      reason="T", instance="b")
     monkeypatch.setattr(content, "_progress", lambda: {"gruppe": {a.id: 21, b.id: 21, "gespraech:x": 21}})
     _model({"content:21": -0.72, "tool:a": 0.3, "tool:b": 0.2})

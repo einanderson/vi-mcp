@@ -76,7 +76,7 @@ def _entry(o: g.MemoryObject) -> tuple[dict | None, str | None]:
     if "knowledge_kind:code" in o.hashtags:
         return None, "code piece (index import-code brings code)"
     imported = str(o.instance or "").startswith("p2p-")
-    if imported and (o.kind not in ("insight", "rule") or "fremd_text" not in o.data):
+    if imported and (o.kind not in ("insight", "rule") or "foreign_text" not in o.data):
         return None, "imported search or skill (renamed on import, its content hash cannot be rebuilt)"
     form, why = p2p.internal_form(o, {"netz_id": "0" * 32, "loesch_hash": "0" * 64})  # the fixed rules want the ids; the importer makes its own
     if form is None:
@@ -84,8 +84,8 @@ def _entry(o: g.MemoryObject) -> tuple[dict | None, str | None]:
     form = {k: v for k, v in form.items() if k not in ("netz_id", "loesch_hash")}
     if imported:  # the meaning as its author published it — the same content hash on both sides
         from . import checks
-        form["text"] = o.data["fremd_text"]
-        form["hashtags"] = sorted({t for t in o.data.get("fremd_hashtags") or [] if not t.startswith(checks.FIXED_HASHTAGS)})
+        form["text"] = o.data["foreign_text"]
+        form["hashtags"] = sorted({t for t in o.data.get("foreign_hashtags") or [] if not t.startswith(checks.FIXED_HASHTAGS)})
     return {"form": form, "inhalt_sha": net_score.content_hash(form), "eigen": not imported, "messung": net_score.own_measurement(o)}, None
 
 
@@ -271,7 +271,7 @@ def compare(index: str, apply: bool = True, who: str = "vi") -> dict:
         with g.lock:
             foreign = g.db().execute("SELECT pub, yes, no, confirmed, refuted FROM p2p_rating WHERE content_sha = ? AND net = ?",
                                      (ish, p2p.FILE_NET)).fetchall()
-        author = (o.data.get("herkunft") or {}).get("pubkey") if str(o.instance or "").startswith("p2p-") else None
+        author = (o.data.get("origin") or {}).get("pubkey") if str(o.instance or "").startswith("p2p-") else None
         verdict_here = None  # for an import: is its author's measurement good where ours is bad?
         for pub, ja, nein, b, w in foreign:
             theirs = (ja + b, nein + w)
@@ -283,14 +283,14 @@ def compare(index: str, apply: bool = True, who: str = "vi") -> dict:
                 verdict_here = c
         if not apply or author is None or verdict_here is None:
             continue
-        flagged = bool(o.data.get("vorrang_aus"))
+        flagged = bool(o.data.get("priority_off"))
         if verdict_here == "nur_ursprung" and not flagged:
-            o.data = {**o.data, "vorrang_aus": {"grund": "good only at its origin (index comparison)", "zeit": g.now(), "gegen": lb.pseudonym(author)}}
+            o.data = {**o.data, "priority_off": {"reason": "good only at its origin (index comparison)", "ts": g.now(), "gegen": lb.pseudonym(author)}}
             o.change(who, "project priority off", "index comparison: good only at its origin")
             g.save(o)
             switched_off += 1
         elif flagged and verdict_here not in ("nur_ursprung", "zu_wenig"):
-            o.data = {k: v for k, v in o.data.items() if k != "vorrang_aus"}
+            o.data = {k: v for k, v in o.data.items() if k != "priority_off"}
             o.change(who, "project priority on again", f"index comparison: now {verdict_here}")
             g.save(o)
             switched_on += 1
@@ -331,8 +331,8 @@ def lines(index: str) -> list[str]:
     """For vi_indexes and the CLI: imports from files and the comparison classes of one index (without changing anything)."""
     from . import p2p
     with g.lock:
-        n = g.db().execute("SELECT COUNT(*) FROM object WHERE idx = ? AND json_extract(data, '$.herkunft.netz') = ?", (index, p2p.FILE_NET)).fetchone()[0]
-        off = g.db().execute("SELECT COUNT(*) FROM object WHERE idx = ? AND json_extract(data, '$.vorrang_aus') IS NOT NULL", (index,)).fetchone()[0]
+        n = g.db().execute("SELECT COUNT(*) FROM object WHERE idx = ? AND json_extract(data, '$.origin.net') = ?", (index, p2p.FILE_NET)).fetchone()[0]
+        off = g.db().execute("SELECT COUNT(*) FROM object WHERE idx = ? AND json_extract(data, '$.priority_off') IS NOT NULL", (index,)).fetchone()[0]
     r = compare(index, apply=False)
     if not n and not r["inhalte"]:
         return []

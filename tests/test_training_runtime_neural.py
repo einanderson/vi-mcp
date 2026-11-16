@@ -39,7 +39,7 @@ def kit(gd, tmp_path, monkeypatch):
     monkeypatch.setattr(evaluation, "EVAL_DIR", tmp_path / "eval")
     for i in range(20):
         g.new_object("insight", f"service{i} deployment", [f"topic:service{i}"],
-            {"quelle": f"fixture-page-{i}", "inhalt": f"service{i} uses port {8000+i}", "klasse": {"fragen": [f"How to deploy service{i}?"]}},
+            {"source": f"fixture-page-{i}", "content": f"service{i} uses port {8000+i}", "class": {"questions": [f"How to deploy service{i}?"]}},
             visibility="internal", oid=f"erkenntnis:fixture-{i}")
     def call(action, **kw):
         return machine.call("preflight", {"action": action, "name": "test", **kw})

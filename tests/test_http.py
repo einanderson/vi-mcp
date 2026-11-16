@@ -114,7 +114,7 @@ def test_two_sessions_two_conversations(srv):
     assert request(port, "POST", {"jsonrpc": "2.0", "id": 9, "method": "ping"}, tok_a, sa)[0] == 404
     gs = g.load_keyed("conversation", serial_a)
     # 2 actions: one with after, one only with before → ok:unbekannt, not vanished
-    assert gs.data["zustand"] == "ended" and gs.data["aufrufe"] == 2 and gs.data["ohne_ergebnis"] == 1
+    assert gs.data["state"] == "ended" and gs.data["calls"] == 2 and gs.data["without_result"] == 1
     assert [o.text for _, o, _g in g.recall("tool:checkmk_get_host ok:unknown")][0].endswith("(vi_after missing)")
     assert "instance:laptop" in gs.hashtags and "host:web1" in gs.hashtags
 

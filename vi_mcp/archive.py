@@ -86,12 +86,12 @@ def store_in_archive(o: g.MemoryObject, reason: str) -> None:
     if o.mode == "archived":
         return
     from . import vector
-    raw = zlib.compress(json.dumps({"text": o.text, "daten": o.data, "hashtags": o.hashtags}, ensure_ascii=False).encode())
+    raw = zlib.compress(json.dumps({"text": o.text, "data": o.data, "hashtags": o.hashtags}, ensure_ascii=False).encode())
     with g.lock:
         db().execute("INSERT OR REPLACE INTO object (id, kind, instance, visibility, archived, mode_before, reason, raw) VALUES (?,?,?,?,?,?,?,?)",
                      (o.id, o.kind, o.instance, o.visibility, g.now(), o.mode, reason[:300], raw))
         db().commit()
-    o.data = {"lager": True, "eingelagert": g.now(), "grund": reason[:300], "bytes": len(raw)}
+    o.data = {"archive": True, "archived": g.now(), "reason": reason[:300], "bytes": len(raw)}
     o.text = o.text[:STUB_CHARS]
     o.mode = "archived"
     o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:archived"]
@@ -105,8 +105,12 @@ def content(oid: str) -> dict | None:
         row = db().execute("SELECT kind, instance, visibility, archived, mode_before, reason, raw FROM object WHERE id = ?", (oid,)).fetchone()
     if not row:
         return None
-    return {"art": row[0], "instanz": row[1], "sicht": row[2], "eingelagert": row[3], "modus_vorher": row[4], "grund": row[5],
-            **json.loads(zlib.decompress(row[6]))}
+    blob = json.loads(zlib.decompress(row[6]))
+    # 0.67.0: an entry archived before carries the German keys and values of 0.66 — read in their English form
+    data = blob.get("data", blob.get("daten")) or {}
+    return {"kind": row[0], "instance": row[1], "visibility": row[2], "archived": row[3], "mode_before": names.english(names.MODES, row[4]),
+            "reason": row[5], "text": blob.get("text", ""), "hashtags": [names.canonical_tag(t) for t in blob.get("hashtags") or []],
+            "data": names.data_keys(data) if row[0] in names.DOMAIN_KINDS else data}
 
 
 def retrieve(oid: str, who: str, reason: str) -> g.MemoryObject:
@@ -117,7 +121,7 @@ def retrieve(oid: str, who: str, reason: str) -> g.MemoryObject:
     o = g.load(oid)
     if not d or not o or o.mode != "archived":
         raise ValueError(f"{oid} is not in the long-term archive")
-    o.text, o.data, o.hashtags, o.mode = d["text"], d["daten"], d["hashtags"], d["modus_vorher"]
+    o.text, o.data, o.hashtags, o.mode = d["text"], d["data"], d["hashtags"], d["mode_before"]
     o.change(who, "restored from the long-term archive", reason)
     g.save(o)
     with g.lock:
@@ -165,7 +169,7 @@ def _unused() -> list[tuple[str, str]]:
             bound = _bound(DAYS[kind])
             outputs += [(r[0], f"housekeeping: {kind}, {DAYS[kind]} days neither recalled, changed nor shown") for r in g.db().execute(
                 "SELECT id FROM object o WHERE kind = ? AND mode NOT IN ('archived', 'quarantine') AND last_at < ? "
-                "AND COALESCE(json_extract(data, '$.zuletzt_gezeigt'), '') < ? "
+                "AND COALESCE(json_extract(data, '$.last_shown'), '') < ? "
                 "AND NOT EXISTS (SELECT 1 FROM edge k WHERE k.a = o.id AND (k.b LIKE 'selbst:%' OR k.b LIKE 'self:%'))", (kind, bound, bound))]
     return outputs
 

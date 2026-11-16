@@ -100,7 +100,7 @@ def publisher(net, monkeypatch):  # noqa: F811
 
 
 def _mk_obj(text, tags=("topic:a",), instance="a", proven=True, **d):
-    o = g.new_object("insight", text, list(tags), {"quelle": "Messung vom 2.11.", **d}, reason="T", instance=instance)
+    o = g.new_object("insight", text, list(tags), {"source": "Messung vom 2.11.", **d}, reason="T", instance=instance)
     if proven:
         o.confirm("ki@andere", "stimmt", "andere")
         g.save(o)
@@ -142,7 +142,7 @@ def test_withheld_is_named(publisher):
 def test_proven_by_measured_benefit(publisher):
     p2p.generate_token("a")
     o = _mk_obj("Dieser Hinweis hat sich in der Praxis bewährt", proven=False)
-    o.data["nuetzlich"] = {"ja": 3, "nein": 0}
+    o.data["useful"] = {"yes": 3, "no": 0}
     g.save(o)
     assert p2p.preview("a")["anzahl"] == 1
 
@@ -204,7 +204,7 @@ def _publisher_with(k, yes, no):
     a = {**GOOD, "netz_id": "b" * 32}
     p2p.inbox(_bundle(k, [a]), in_background=False)
     o = g.recall("mode:quarantine", viewer=None)[0][1]
-    o.data["nuetzlich"] = {"ja": yes, "nein": no, "n": yes + no}
+    o.data["useful"] = {"yes": yes, "no": no, "n": yes + no}
     g.save(o)
     return o
 
@@ -264,7 +264,7 @@ def test_tools(publisher):
 
 
 def test_credentials_are_never_stored(gd):
-    o = g.new_object("insight", "Login mit password=abc123 und Bearer abcdefghijkl", ["topic:a"], {"quelle": "x", "args": {"cmd": "curl https://u:p4ss@h/x", "liste": ["api_key: 77"]}}, reason="T", instance="a")
+    o = g.new_object("insight", "Login mit password=abc123 und Bearer abcdefghijkl", ["topic:a"], {"source": "x", "args": {"cmd": "curl https://u:p4ss@h/x", "liste": ["api_key: 77"]}}, reason="T", instance="a")
     raw = json.dumps([o.text, o.data])
     for v in ("abc123", "abcdefghijkl", "p4ss", "77"):
         assert v not in raw, v
@@ -299,7 +299,7 @@ def test_content_goes_to_net_anonymized(publisher):
     a = p2p.outbox()["objekte"][0]
     assert a["inhalt"].startswith("| GET | https://<host>/api | Liste |") and "requests.get(ziel)" in a["inhalt"]
     r = p2p.inbox(_bundle(publisher, [a]), in_background=False)
-    assert r["quarantaene"] == 1 and g.recall("mode:quarantine", viewer=None)[0][1].data["inhalt"] == a["inhalt"]
+    assert r["quarantaene"] == 1 and g.recall("mode:quarantine", viewer=None)[0][1].data["content"] == a["inhalt"]
 
 
 def test_import_rejects_internals_in_content():
@@ -309,13 +309,13 @@ def test_import_rejects_internals_in_content():
 
 def test_long_content_is_sensitive(publisher):
     o = _publisher_with(publisher, 0, 0)
-    o.data["inhalt"] = "Wissen " * 3000
+    o.data["content"] = "Wissen " * 3000
     assert any("longer" in h for h in p2p.sensitive(o))
 
 
 def test_code_examples_stay_locally_readable(gd):
-    o = g.new_object("insight", "Beispiel für den Aufruf", ["topic:a"], {"quelle": "x", "inhalt": 'token = lese_token()\npassword: ${PW}\nheaders = {"Authorization": f"Bearer {token}"}\npassword=abc123\n'}, reason="T", instance="a")
-    i = o.data["inhalt"]
+    o = g.new_object("insight", "Beispiel für den Aufruf", ["topic:a"], {"source": "x", "content": 'token = lese_token()\npassword: ${PW}\nheaders = {"Authorization": f"Bearer {token}"}\npassword=abc123\n'}, reason="T", instance="a")
+    i = o.data["content"]
     assert "token = lese_token()" in i and "${PW}" in i and "Bearer {token}" in i and "abc123" not in i
 
 
@@ -376,7 +376,7 @@ def test_ratings_carry_only_a_hash_and_numbers(publisher):
     p2p.inbox(_bundle(publisher, [GOOD]), in_background=False)
     o = g.recall("mode:quarantine", viewer=None)[0][1]
     o.mode = "test"
-    o.data["nuetzlich"] = {"ja": 1.0, "nein": 0.0, "n": 1}
+    o.data["useful"] = {"yes": 1.0, "no": 0.0, "n": 1}
     o.confirm("ki@alice-laptop", "half bei srv-alpha", "alice-laptop")
     out = p2p.outbox()["bewertungen"]
     assert out and all(set(r) == {"ziel", *lb.RATING_FIELDS} and lb.valid_rating(r) for r in out)
@@ -391,7 +391,7 @@ def test_index_file_names_no_instance_conversation_or_index_internals(gd, tmp_pa
     users and history stays home: instance, conversation, object id, the exporting index's position in other indexes."""
     from vi_mcp import index_transfer
     monkeypatch.setenv("VI_MCP_EXPORT_KEY", str(tmp_path / "k.key"))
-    o = g.new_object("insight", "deploy: back up the database before the package update", ["topic:deploy"], {"quelle": "test run"},
+    o = g.new_object("insight", "deploy: back up the database before the package update", ["topic:deploy"], {"source": "test run"},
                      index="kunde-x", visibility="internal", instance="alice-laptop", conversation="20261113042")
     index_transfer.export("kunde-x", tmp_path / "x.json")
     raw = (tmp_path / "x.json").read_text()
@@ -445,7 +445,7 @@ def test_training_kit_bundles_source_only_not_package_local_configuration(gd, tm
     (package / "private-settings.json").write_text("PRIVATE-PACKAGE-MARKER")
     (package / ".credential").write_text("PRIVATE-CREDENTIAL-MARKER")
     monkeypatch.setattr(clingo_object, "__file__", str(package / "__init__.py"))
-    g.new_object("insight", "Public training fixture", [], {"quelle": "fixture", "inhalt": "checked knowledge"}, visibility="internal")
+    g.new_object("insight", "Public training fixture", [], {"source": "fixture", "content": "checked knowledge"}, visibility="internal")
     directory = tmp_path / "kit"
     finetune.kit(str(directory), base_model="fixture", force=True)
     assert [p.name for p in (directory / "clingo_object").iterdir()] == ["__init__.py"]

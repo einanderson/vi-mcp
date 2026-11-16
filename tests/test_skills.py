@@ -20,7 +20,7 @@ def test_solved_skill_appears_and_evolves(gd):
                                       "grund": "dreimal so gelöst"}, "a", True)
     assert 'Skill "graylog-timeout" v1 (test' in r
     sk = g.load("skill:graylog-timeout")
-    assert sk.visibility == "shared" and sk.data["problem"]["reize"] == ["error:timeout", "tool:graylog_search"]
+    assert sk.visibility == "shared" and sk.data["problem"]["triggers"] == ["error:timeout", "tool:graylog_search"]
     v = intuition.before("graylog_search", {"q": 1}, "b")
     assert any('Skill "graylog-timeout"' in h and "graylog_system_status → graylog_search" in h for h in v["hinweise"])
     intuition.after("graylog_search", {"q": 1}, True, 1, None, "ok", v["vorher_id"], "b")
@@ -28,8 +28,8 @@ def test_solved_skill_appears_and_evolves(gd):
     r = tools.call_tool("vi_geloest", {"name": "graylog-timeout", "reize": ["tool:graylog_search"], "schritte": ["graylog_search", "graylog_count"],
                                       "anleitung": "Statusprüfung, dann Zeitraum halbieren, dann zählen statt suchen", "grund": "schneller"}, "b", True)
     sk = g.load(sk.id)
-    assert sk.data["version"] == 2 and [s["tool"] for s in sk.data["loesung"]["schritte"]] == ["graylog_system_status", "graylog_search", "graylog_count"]
-    assert sk.data["versionen"][1]["wer"] == "ki@b" and "Statusprüfung" in sk.text
+    assert sk.data["version"] == 2 and [s["tool"] for s in sk.data["solution"]["steps"]] == ["graylog_system_status", "graylog_search", "graylog_count"]
+    assert sk.data["versions"][1]["who"] == "ki@b" and "Statusprüfung" in sk.text
     with pytest.raises(tools.Rejected, match="trigger"):
         tools.call_tool("vi_geloest", {"name": "x-test", "reize": ["kein-tag"], "schritte": ["t"], "anleitung": "lange genug anleitung", "grund": "g"}, "a", True)
     assert "v2" in tools.call_tool("vi_skill", {"id": sk.id}, "a", True)
@@ -46,10 +46,10 @@ def test_skill_from_recovery_in_sleep(gd):
     assert b.data["schritte"]["4c_skills"]["neu"] == 1
     sk = [o for _, o, _g in g.recall("kind:skill", viewer=None)][0]
     assert sk.instance == g.SERVER_INSTANCE and sk.mode == "test"
-    assert [x["tool"] for x in sk.data["loesung"]["schritte"]] == ["checkmk_get_host", "Bash", "checkmk_get_host"]
-    assert {"tool:checkmk_get_host", "host:cue1"} <= set(sk.data["problem"]["reize"]) and any(t.startswith("error:") for t in sk.data["problem"]["reize"])
+    assert [x["tool"] for x in sk.data["solution"]["steps"]] == ["checkmk_get_host", "Bash", "checkmk_get_host"]
+    assert {"tool:checkmk_get_host", "host:cue1"} <= set(sk.data["problem"]["triggers"]) and any(t.startswith("error:") for t in sk.data["problem"]["triggers"])
     assert len(sk.edges()) >= 4
-    assert "origin:episode" in sk.hashtags and sk.visibility == "internal" and "Then this call worked" in str(sk.data.get("inhalt") or sk.data["loesung"]["text"])
+    assert "origin:episode" in sk.hashtags and sk.visibility == "internal" and "Then this call worked" in str(sk.data.get("content") or sk.data["solution"]["text"])
     # 0.56.0: a second recovery of the same problem with another measure is another solution (the helper's arguments differ) —
     # same problem key, so sleep proposes merging them; the same measure evolves the solution (tests/test_solutions.py)
     s2 = session.begin("b", "t")
@@ -77,9 +77,9 @@ def test_merge_with_reference_and_proposal(gd):
     assert "merged into" in r
     new_o = [o for _, o, _g in g.recall("kind:skill", viewer=None)][0]  # the only one not merged
     assert new_o.id == "skill:t_x-st-rung"  # slug: underscore stays, umlaut becomes a hyphen
-    assert [s["tool"] for s in new_o.data["loesung"]["schritte"]] == ["t_a", "t_x", "t_b"]
-    assert new_o.data["problem"]["reize"] == ["error:f_1", "host:h9", "tool:t_x"] and new_o.data["fusion_aus"] == [a.id, b.id]
-    assert g.load(a.id).mode == "merged" and g.load(a.id).data["aufgegangen_in"] == new_o.id
+    assert [s["tool"] for s in new_o.data["solution"]["steps"]] == ["t_a", "t_x", "t_b"]
+    assert new_o.data["problem"]["triggers"] == ["error:f_1", "host:h9", "tool:t_x"] and new_o.data["merged_from"] == [a.id, b.id]
+    assert g.load(a.id).mode == "merged" and g.load(a.id).data["merged_into"] == new_o.id
     assert [o.id for _, o, _g in g.recall("kind:skill", viewer=None)] == [new_o.id]  # merged ones no longer appear in searches
     assert g.load(a.id).id in [o.id for _, o, _g in g.recall("kind:skill mode:merged", viewer=None)]  # but on request
     assert "MERGED into" in tools.call_tool("vi_skill", {"id": a.id}, "a", True)
@@ -98,6 +98,6 @@ def test_evolve_replaces_the_triggers(gd):
     o = g.load(s2.id)
     assert o.data["version"] == 2 and "tool:Bash" not in o.hashtags and "topic:yamllint" in o.hashtags
     assert "topic:ansible-lint" in o.hashtags  # 0.20.12: a trigger present in both versions must not vanish
-    assert o.data["problem"]["reize"] == ["topic:ansible-lint", "topic:yamllint"]
-    assert o.data["versionen"][-1]["reize_vorher"] == ["tool:Bash", "topic:ansible-lint"]  # sorted: tool: before topic:
+    assert o.data["problem"]["triggers"] == ["topic:ansible-lint", "topic:yamllint"]
+    assert o.data["versions"][-1]["triggers_before"] == ["tool:Bash", "topic:ansible-lint"]  # sorted: tool: before topic:
     assert [x.id for _, x, _g in g.recall("tool:Bash", kinds=("skill",), viewer=None)] == []

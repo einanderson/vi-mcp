@@ -89,7 +89,7 @@ def mem(gd, monkeypatch):
 
 
 def _o(text, tags, vis, instance="a", mode="active"):
-    o = g.new_object("insight", text, tags, {"quelle": "Messung 11.11.2026 am Host"}, instance=instance, visibility=vis)
+    o = g.new_object("insight", text, tags, {"source": "Messung 11.11.2026 am Host"}, instance=instance, visibility=vis)
     if mode != "active":
         o.mode = mode
         g.save(o)

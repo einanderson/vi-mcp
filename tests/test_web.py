@@ -31,12 +31,12 @@ def site(gd, monkeypatch):
                                  ("welt", None, "quarantaene", "Borg quarantined claim not yet reviewed")):
         name = lb.pseudonym(pk)
         g.new_object("insight", text, ["tool:borg", "origin:p2p", f"publisher:{name}", f"net:{net}"],
-                     {"quelle": "other server", "herkunft": {"herausgeber": name, "pubkey": pk, "netz": net, "netz_id": hashlib.md5(text.encode()).hexdigest()},
-                      "pruefung": {"regeln": [], "pruefer": None}}, instance=f"p2p-{name}", mode=mode, visibility=vis,
+                     {"source": "other server", "origin": {"publisher": name, "pubkey": pk, "net": net, "net_id": hashlib.md5(text.encode()).hexdigest()},
+                      "review": {"rules": [], "reviewer": None}}, instance=f"p2p-{name}", mode=mode, visibility=vis,
                      oid=f"erkenntnis:p2p-{name}-{hashlib.md5(text.encode()).hexdigest()[:16]}")
-    own = g.new_object("insight", f"Borg needs BORG_PASSCOMMAND for unattended runs, noted by {LOCAL}", ["tool:borg"], {"quelle": "own test"}, instance=LOCAL)
+    own = g.new_object("insight", f"Borg needs BORG_PASSCOMMAND for unattended runs, noted by {LOCAL}", ["tool:borg"], {"source": "own test"}, instance=LOCAL)
     own.confirm("ki@other", "worked", "other", family="gpt")
-    internal = g.new_object("insight", "Borg internal runbook for the NAS cluster", ["tool:borg"], {"quelle": "own"}, instance=LOCAL, visibility="internal")
+    internal = g.new_object("insight", "Borg internal runbook for the NAS cluster", ["tool:borg"], {"source": "own"}, instance=LOCAL, visibility="internal")
     internal.confirm("ki@other", "worked", "other", family="gpt")
 
 

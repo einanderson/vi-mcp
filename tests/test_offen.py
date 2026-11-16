@@ -77,7 +77,7 @@ def test_proposal_lands_in_quarantine(open_):
     harmless = _call(port, sid, "vi_lerne", {"text": "Der Neustart des Dienstes dauert etwa dreißig Sekunden", "hashtags": ["topic:neustart"], "quelle": "Beobachtung 8.11."})[1]
     hid = harmless.split()[1]
     o = g.load(hid)
-    o.data["pruefung"]["pruefer"] = {"status": "zulassen", "gruende": []}
+    o.data["review"]["reviewer"] = {"status": "zulassen", "gruende": []}
     o.hashtags = [t for t in o.hashtags if t != "reviewer:pending"] + ["reviewer:zulassen"]
     g.save(o)
     error, text = _call(port, sa, "vi_freigabe", {"id": hid, "grund": "geprüft"}, tok)
@@ -151,7 +151,7 @@ def test_internal_visible_only_with_token(open_):
     assert error and "VPN" not in text
     assert oid in _call(port, sa, "vi_erinnere", {"filter": "topic:vpn"}, tok)[1]  # visible with a token
     o = g.load(oid)
-    o.confirmed, o.data["nuetzlich"] = 9, {"ja": 9, "nein": 0, "n": 9}
+    o.confirmed, o.data["useful"] = 9, {"ja": 9, "nein": 0, "n": 9}
     g.save(o)
     assert oid not in [x.id for x, _ in p2p._collect()[0]]  # never onto the network, even when proven
 

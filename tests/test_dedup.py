@@ -24,7 +24,7 @@ def test_same_key_updates_one_object(gd):
     assert {"topic:sinkhole", "topic:dns", "host:web1"} <= set(o.hashtags)  # hashtags are united
     hits = [x for _, x, _g in g.recall("host:web1", viewer=None)]
     assert [x.id for x in hits] == [oid]  # one object, not two
-    assert any("repeated (2×)" in c["was"] for c in o.changes)
+    assert any("repeated (2×)" in c["what"] for c in o.changes)
 
 
 def test_key_is_per_instance_and_without_key_nothing_changes(gd):
@@ -64,9 +64,9 @@ def test_merge_by_key_merges_repetitions_and_keeps_every_state(gd):
              "Known error (relevance 2, 9 repeats): smtp01: NTP unreachable — Filter: host:smtp01 rule:2903",
              "Known error (relevance 3, 42 repeats): www2: exploit series — Filter: host:www2 threat:rce",
              "Known error (relevance 3, 85 repeats): www2: ssh brute force — Filter: host:www2 threat:rce"]
-    ids = [g.new_object("insight", t, ["host:www2" if "www2" in t else "host:smtp01"], {"quelle": f"cs {i}"}, instance="cs").id
+    ids = [g.new_object("insight", t, ["host:www2" if "www2" in t else "host:smtp01"], {"source": f"cs {i}"}, instance="cs").id
            for i, t in enumerate(texts)]
-    foreign = g.new_object("insight", texts[0], ["host:www2"], {"quelle": "x"}, instance="other").id
+    foreign = g.new_object("insight", texts[0], ["host:www2"], {"source": "x"}, instance="other").id
     key_of = lambda t: (m.group(1).strip() if (m := re.search(r"— Filter:\s*(.+)$", t)) else None)
     dry = g.merge_by_key("cs", key_of, who="admin", reason="test")
     assert dry == {"objects": 4, "with_key": 4, "keys": 2, "keys_repeated": 1, "merged": 2, "applied": False}
@@ -75,7 +75,7 @@ def test_merge_by_key_merges_repetitions_and_keeps_every_state(gd):
     assert r["merged"] == 2 and r["applied"]
     main = g.load(ids[0])
     assert main.text == texts[3] and main.data["repeats"] == 3 and main.data["key"] == "host:www2 threat:rce"
-    assert [h["text"] for h in main.data["history"]] == [texts[0], texts[2]] and main.data["quelle"] == "cs 3"
+    assert [h["text"] for h in main.data["history"]] == [texts[0], texts[2]] and main.data["source"] == "cs 3"
     for x in (ids[2], ids[3]):
         o = g.load(x)
         assert o.mode == g.MERGED and o.data["merged_into"] == ids[0] and "mode:merged" in o.hashtags  # nothing deleted

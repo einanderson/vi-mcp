@@ -119,7 +119,7 @@ def code_run() -> dict:
             ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND mode = 'active' AND conversation IS ? ORDER BY ts, rowid", (serial,))]
         mem_objects = g.load_many(ids)
         entry_batch = [mem_objects[i] for i in ids if i in mem_objects]
-        signals = list(open_[serial].signals) if serial in open_ else ((getattr(g.load_keyed("conversation", serial) if serial else None, "data", None) or {}).get("signale", []))
+        signals = list(open_[serial].signals) if serial in open_ else ((getattr(g.load_keyed("conversation", serial) if serial else None, "data", None) or {}).get("signals", []))
         grades = rate_conversation([_form(o) for o in entry_batch], signals)
         changes = []
         for o in entry_batch:
@@ -132,7 +132,7 @@ def code_run() -> dict:
             if s["note"] < GOOD_FROM:
                 bad += 1
                 if "ok:yes" in o.hashtags and not old:  # the counter assumed "succeeded"; the scorer knows better now
-                    rebooked += bandit.rebook((o.data.get("vorher") or {}).get("gezeigt", []), next((t[5:] for t in o.hashtags if t.startswith("tool:")), None))
+                    rebooked += bandit.rebook((o.data.get("before") or {}).get("shown", []), next((t[5:] for t in o.hashtags if t.startswith("tool:")), None))
         if changes:
             with g.lock:
                 for score_json, oid in changes:
@@ -144,7 +144,7 @@ def code_run() -> dict:
 def _create_rating(scorer: str, version: int, serial: str, instance: str, grade: float, justification: str, data: dict, oid: str, who: str) -> g.MemoryObject:
     level = "good" if grade >= 0.75 else "medium" if grade >= GOOD_FROM else "bad"
     return g.new_object("rating", f"{scorer}: {grade:.2f} — {justification}"[:500], [f"scorer:{scorer}", f"target:{serial}", f"grade:{level}"],
-                          {"scorer": scorer, "version": version, "ziel": serial, "note": grade, "begruendung": justification[:500], **data},
+                          {"scorer": scorer, "version": version, "target": serial, "note": grade, "justification": justification[:500], **data},
                           importance=1, who=who, oid=oid, reason=f"rating by {scorer}", conversation=serial, instance=instance)
 
 
@@ -201,13 +201,13 @@ def model_run(limit: int = MODEL_PER_RUN) -> dict:
             break
         d, serial = o.data, o.data.get("serial")
         oid = g.keyed_id("rating", f"modell-{serial}-v{MODEL_VERSION}")
-        if d.get("zustand") not in ("ended", "expired", "interrupted") or d.get("aufrufe", 0) < MIN_TURNS_MODEL or g.load(oid):
+        if d.get("state") not in ("ended", "expired", "interrupted") or d.get("calls", 0) < MIN_TURNS_MODEL or g.load(oid):
             continue
         turns = _log_output(serial)
         if not turns:
             continue
         try:
-            raw = reflection.question(MODEL_SYSTEM, log_text(turns, d.get("signale", [])), temperature=0, seed=7,
+            raw = reflection.question(MODEL_SYSTEM, log_text(turns, d.get("signals", [])), temperature=0, seed=7,
                                   response_format={"type": "json_schema", "json_schema": {"name": "bewertung", "schema": MODEL_SCHEMA}})
             a = check_answer(reflection._json_from(raw), min(len(turns), 200))
         except (urllib.error.URLError, OSError, ValueError, KeyError, json.JSONDecodeError, TypeError) as e:
@@ -222,7 +222,7 @@ def model_run(limit: int = MODEL_PER_RUN) -> dict:
 def _grades(scorer: str) -> dict[str, float]:
     """{serial: grade}; if there are several, the most recent counts."""
     with g.lock:
-        lines = g.db().execute("SELECT json_extract(data, '$.ziel'), CAST(json_extract(data, '$.note') AS REAL) FROM object WHERE kind = 'rating' AND "
+        lines = g.db().execute("SELECT json_extract(data, '$.target'), CAST(json_extract(data, '$.note') AS REAL) FROM object WHERE kind = 'rating' AND "
                                 "json_extract(data, '$.scorer') = ? ORDER BY ts", (scorer,)).fetchall()
     return {z: n for z, n in lines}
 
@@ -248,8 +248,8 @@ def grade_details() -> dict[str, dict]:
     """{serial: {note, quelle, gewicht}} per conversation: a human grade (weight 3) beats a model grade (weight × certainty, × 0.3 while
     the model is not calibrated against humans). The most recent grade of a source counts."""
     with g.lock:
-        rows = g.db().execute("SELECT json_extract(data, '$.ziel'), CAST(json_extract(data, '$.note') AS REAL), json_extract(data, '$.scorer'), "
-                              "json_extract(data, '$.sicherheit') FROM object WHERE kind = 'rating' ORDER BY ts").fetchall()
+        rows = g.db().execute("SELECT json_extract(data, '$.target'), CAST(json_extract(data, '$.note') AS REAL), json_extract(data, '$.scorer'), "
+                              "json_extract(data, '$.certainty') FROM object WHERE kind = 'rating' ORDER BY ts").fetchall()
     calibrated = calibration()["geeicht"]
     out: dict[str, dict] = {}
     for serial, note, who, certainty in rows:
@@ -270,10 +270,10 @@ def label(data: dict, ok_tag: bool | None, serial: str | None, grades: dict[str,
       code          the code stage of the scorer (ok, repeat, red test, user correction)
       ok            the tool's own outcome
     Returns (y, weight, source) or None for an action without outcome. Pure."""
-    rm = (data.get("rueckmeldung") or {}) if hint else {}
+    rm = (data.get("feedback") or {}) if hint else {}
     if hint in rm:
         return (1 if rm[hint] > 0 else 0), WEIGHT["rueckmeldung"], "rueckmeldung"
-    if hint and hint in (data.get("genutzt") or []):  # 0.59.0: the agent took a command/path/option of it over into a successful action
+    if hint and hint in (data.get("used") or []):  # 0.59.0: the agent took a command/path/option of it over into a successful action
         return 1, WEIGHT["genutzt"], "genutzt"
     gd = grades.get(serial) if serial else None
     if gd and gd["note"] is not None and gd["note"] < BAD_BELOW:
@@ -305,12 +305,12 @@ def report() -> str:
     z = ["Scorer: " + line()]
     with g.lock:
         tally: dict[str, int] = {}
-        for (merkmale,) in g.db().execute("SELECT json_extract(data, '$.score.merkmale') FROM object WHERE kind = 'experience' "
-                                          "AND json_extract(data, '$.score.merkmale') IS NOT NULL"):
+        for (merkmale,) in g.db().execute("SELECT json_extract(data, '$.score.features') FROM object WHERE kind = 'experience' "
+                                          "AND json_extract(data, '$.score.features') IS NOT NULL"):
             for m in json.loads(merkmale) if isinstance(merkmale, str) else []:
                 tally[str(m)] = tally.get(str(m), 0) + 1
         features = sorted(tally.items(), key=lambda kv: -kv[1])
     z.append("Features: " + (", ".join(f"{m} {n}" for m, n in features) or "—"))
     for _, o, _g in g.recall("kind:rating scorer:model", limit=5, viewer=None):
-        z.append(f"  {o.data['ziel']}: {o.data['note']:.2f} ({o.data.get('sicherheit')}) — {o.data['begruendung'][:140]}")
+        z.append(f"  {o.data['target']}: {o.data['note']:.2f} ({o.data.get('certainty')}) — {o.data['justification'][:140]}")
     return "\n".join(z)

@@ -29,9 +29,9 @@ def _ans(p, s="none", m="procedure", q=("how do I deploy?",)):
 
 def test_agreement_labels_disagreement_is_unsure_and_the_schema_is_checked_here(gd, llm):
     table, calls = llm
-    a = g.new_object("insight", "deploy web1: stop, copy, start", ["topic:deploy"], {"quelle": "t", "inhalt": "1. stop 2. copy 3. start"})
-    b = g.new_object("insight", "web1 runs nginx 1.24", ["topic:nginx"], {"quelle": "t"})
-    c = g.new_object("insight", "broken answer", ["topic:x"], {"quelle": "t"})
+    a = g.new_object("insight", "deploy web1: stop, copy, start", ["topic:deploy"], {"source": "t", "content": "1. stop 2. copy 3. start"})
+    b = g.new_object("insight", "web1 runs nginx 1.24", ["topic:nginx"], {"source": "t"})
+    c = g.new_object("insight", "broken answer", ["topic:x"], {"source": "t"})
     table[("A", a.text)] = _ans("how", "where")
     table[("B", a.text)] = _ans("how", "where")
     table[("A", b.text)] = _ans("what", m="fact")
@@ -44,8 +44,8 @@ def test_agreement_labels_disagreement_is_unsure_and_the_schema_is_checked_here(
     assert {"answers:how", "answers:where", "memory:procedure"} <= set(a.hashtags)
     assert {"answers:unsure", "memory:fact"} <= set(b.hashtags)
     assert not any(t.startswith("answers:") for t in c.hashtags)  # an error is not a label: it stays pending, named
-    assert a.data["klasse"]["version"]["prompt"] == classify.prompt_hash() and a.data["klasse"]["fragen"] == ["how do I deploy?"]
-    assert a.changes[-1]["was"].startswith("classified")
+    assert a.data["class"]["version"]["prompt"] == classify.prompt_hash() and a.data["class"]["questions"] == ["how do I deploy?"]
+    assert a.changes[-1]["what"].startswith("classified")
     calls.clear()
     table[("A", c.text)] = _ans("what", m="fact")
     classify.run(10, "test")
@@ -54,8 +54,8 @@ def test_agreement_labels_disagreement_is_unsure_and_the_schema_is_checked_here(
 
 def test_labels_name_the_tell_memory_kind_and_can_lift_when_measured(gd, llm):
     table, _calls = llm
-    plain = g.new_object("insight", "web1 deploy log of last week", ["host:web1.example", "topic:deploy"], {"quelle": "t"}, importance=3)
-    how = g.new_object("insight", "web1 deploy: the steps", ["host:web1.example", "topic:deploy"], {"quelle": "t"})
+    plain = g.new_object("insight", "web1 deploy log of last week", ["host:web1.example", "topic:deploy"], {"source": "t"}, importance=3)
+    how = g.new_object("insight", "web1 deploy: the steps", ["host:web1.example", "topic:deploy"], {"source": "t"})
     for v in ("A", "B"):
         table[(v, plain.text)] = _ans("what", m="episode")
         table[(v, how.text)] = _ans("how")
@@ -72,7 +72,7 @@ def test_labels_name_the_tell_memory_kind_and_can_lift_when_measured(gd, llm):
 def test_without_a_model_nothing_runs_and_sleep_needs_an_explicit_classify_model(gd, monkeypatch):
     monkeypatch.setattr(reflection, "ask_fn", None)
     monkeypatch.setattr(reflection, "config", {})
-    g.new_object("insight", "x", ["topic:x"], {"quelle": "t"})
+    g.new_object("insight", "x", ["topic:x"], {"source": "t"})
     assert classify.run(5)["zustand"] == "uebersprungen"
     assert classify.configured() is False and classify.per_sleep() == 10
 
@@ -85,7 +85,7 @@ def _clustered(n_per, rng, dim=16):
     out = []
     for (a, m), c in centers.items():
         for i in range(n_per):
-            o = g.new_object("insight", f"{a} object {i}", ["topic:x"], {"quelle": "t"})
+            o = g.new_object("insight", f"{a} object {i}", ["topic:x"], {"source": "t"})
             v = rng.normal(0, 0.3, dim)
             v[c:c + 3] += 3.0
             vector.save(o.id, v, "test")
@@ -113,9 +113,9 @@ def test_student_learns_the_labels_labels_new_objects_and_is_audited(gd, llm):
     assert out["schueler"] + out["einig"] == 12 and out["schueler"] >= 8
     for o, (_x, a, m) in zip(labelled, new):
         assert f"answers:{a}" in o.hashtags and f"memory:{m}" in o.hashtags
-    students = [o for o in labelled if o.data["klasse"]["zustand"] == "schueler"]
-    assert students and all(o.data["klasse"]["version"]["modell"].startswith("student@") for o in students)
-    by_llm = [o for o in labelled if o.data["klasse"]["zustand"] == "einig"]
+    students = [o for o in labelled if o.data["class"]["state"] == "schueler"]
+    assert students and all(o.data["class"]["version"]["model"].startswith("student@") for o in students)
+    by_llm = [o for o in labelled if o.data["class"]["state"] == "einig"]
     assert len(calls) == 2 * len(by_llm) == 2 * out["einig"]  # the LLM was asked only for the objects it labelled (audits or unsure)
     assert out["geprueft"] == out["einig"] and out["gleich"] == out["geprueft"]  # every LLM call here audited a sure student label
     assert g.load(classify.student_id()).data["pruefung"] == {"geprueft": out["geprueft"], "gleich": out["gleich"]}
@@ -137,8 +137,8 @@ def test_student_needs_enough_agreed_labels_and_stays_test_below_the_gate(gd, ll
 def test_gold_from_people_only_measures_the_labels_and_the_truth_of_the_measurement(gd, llm):
     from vi_mcp import vil
     table, _calls = llm
-    a = g.new_object("insight", "deploy steps", ["topic:deploy"], {"quelle": "t", "nuetzlich": {"ja": 9, "nein": 1, "n": 10}})
-    b = g.new_object("insight", "web1 runs nginx", ["topic:nginx"], {"quelle": "t", "nuetzlich": {"ja": 1, "nein": 9, "n": 10}})
+    a = g.new_object("insight", "deploy steps", ["topic:deploy"], {"source": "t", "useful": {"yes": 9, "no": 1, "n": 10}})
+    b = g.new_object("insight", "web1 runs nginx", ["topic:nginx"], {"source": "t", "useful": {"yes": 1, "no": 9, "n": 10}})
     for v in ("A", "B"):
         table[(v, a.text)] = _ans("how")
         table[(v, b.text)] = _ans("how", m="fact")  # the model is wrong about b
@@ -164,8 +164,8 @@ def test_gold_from_people_only_measures_the_labels_and_the_truth_of_the_measurem
 def test_unlabelled_search_hits_migrate_first(gd, llm):
     """The user: unlabelled data a search returns is classified automatically — the old database migrates where it is used."""
     table, calls = llm
-    old = [g.new_object("insight", f"old note {i} about nginx", ["tool:nginx"], {"quelle": "t"}) for i in range(3)]
-    newer = g.new_object("insight", "a newer note nobody searched for", ["topic:x"], {"quelle": "t"})
+    old = [g.new_object("insight", f"old note {i} about nginx", ["tool:nginx"], {"source": "t"}) for i in range(3)]
+    newer = g.new_object("insight", "a newer note nobody searched for", ["topic:x"], {"source": "t"})
     out = tools.call_tool("vi_recall", {"filter": "tool:nginx", "semantic": False, "reinforce": False}, "a", False)
     assert old[0].id in out and classify.queued() == 0  # a measurement (reinforce=false) changes nothing
     tools.call_tool("vi_recall", {"filter": "tool:nginx", "semantic": False}, "a", False)
@@ -181,7 +181,7 @@ def test_unlabelled_search_hits_migrate_first(gd, llm):
 
 
 def test_on_search_lets_an_active_student_label_at_once(gd, llm, monkeypatch):
-    o = g.new_object("insight", "deploy steps", ["topic:deploy"], {"quelle": "t"})
+    o = g.new_object("insight", "deploy steps", ["topic:deploy"], {"source": "t"})
     lab = {"zustand": "schueler", "answers": "how", "zweite": "none", "memory": "procedure", "fragen": [],
            "version": {"modell": "student@x", "prompt": classify.prompt_hash(), "schema": classify.SCHEMA_VERSION}}
     monkeypatch.setattr(classify, "student_label", lambda obj: lab)

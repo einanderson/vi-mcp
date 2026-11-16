@@ -81,7 +81,7 @@ def run(batch: int = BATCH) -> dict:
     too_common_t: set[str] = set()
     if ids:  # document frequency over all documentation: what fits too much of it is no specific trigger
         with g.lock:
-            rows = g.db().execute(f"SELECT text, json_extract(data, '$.inhalt') FROM object WHERE id IN ({_doc_ids_sql()})", DOC_TAGS).fetchall()
+            rows = g.db().execute(f"SELECT text, json_extract(data, '$.content') FROM object WHERE id IN ({_doc_ids_sql()})", DOC_TAGS).fetchall()
         hdf: dict[str, int] = {}
         tdf: dict[str, int] = {}
         for text, content in rows:
@@ -102,7 +102,7 @@ def run(batch: int = BATCH) -> dict:
         if o is None:
             continue
         report["geprueft"] += 1
-        hosts, topics = derive(o.text, str(o.data.get("inhalt") or ""), names, themen)
+        hosts, topics = derive(o.text, str(o.data.get("content") or ""), names, themen)
         new = [f"host:{h}" for h in hosts] + [f"topic:{t}" for t in topics]
         new = [t for t in new if t not in o.hashtags and g.TAG.match(t)]
         o.data["derived_triggers"] = {"version": VERSION, "host": hosts, "topic": topics}

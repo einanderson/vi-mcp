@@ -612,7 +612,7 @@ def _logic_set(ref: str, instance: str | None):
             rows = g.db().execute("SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag = ? AND o.kind = 'rule' "
                                   "AND o.mode IN ('active', 'test') ORDER BY o.ts DESC", (f"logic:{ref}",)).fetchall()
         o = next((x for x in (g.load(r[0]) for r in rows) if x is not None and g.visible_to(x, instance)), None)
-    if o is None or not g.visible_to(o, instance) or "logik" not in o.data:
+    if o is None or not g.visible_to(o, instance) or "logic" not in o.data:
         raise Rejected(f"no rule set {ref!r} visible to you — vi_recall topic:logik lists the saved ones")
     return o
 
@@ -656,7 +656,7 @@ def _logic(args: dict, instance: str | None) -> str:
     base = None
     if args.get("rule_set"):
         base = _logic_set(str(args["rule_set"]), instance)
-        src = base.data["logik"]["quelle"] + ("\n" + src if src else "")
+        src = base.data["logic"]["source"] + ("\n" + src if src else "")
     if not src.strip():
         raise Rejected("source or rule_set is required")
     try:
@@ -687,7 +687,7 @@ def _logic(args: dict, instance: str | None) -> str:
                 f"  rule #{c['nr']} {c['regel']} · now p {c['p']} · weight {c['gewicht']} · measured {c['eigen'][0]:g} right / {c['eigen'][1]:g} wrong"
                 for c in r["gutgeschrieben"]])
         if action == "propose":  # 0.63.0: derived here, held in quarantine, applied only when someone else releases it
-            r = logic.store_proposals(src, instance, base.data["logik"]["name"] if base is not None else None)
+            r = logic.store_proposals(src, instance, base.data["logic"]["name"] if base is not None else None)
             out = [f"held for review: {oid}" for oid in r["gespeichert"]]
             out += [f"already waiting (counted again): {oid}" for oid in r["wiederholt"]]
             out += [f"already decided ({x['zustand']}): {x['id']}" for x in r["erledigt"]]
@@ -722,7 +722,7 @@ def _logic(args: dict, instance: str | None) -> str:
             desc = str(args.get("description") or "").strip()
             vis = args.get("visibility") or None  # api_en already turned shared/internal/private into the stored value
             o = logic.save_rule_set(nm, src, desc, vis, instance)
-            stmts = o.data["logik"]["aussagen"]
+            stmts = o.data["logic"]["statements"]
             return f"saved {o.id} as rule set {nm} ({stmts} statements) — use rule_set=\"{nm}\""
         raise Rejected(f"unknown action {action!r}: check, ask, rate, save, objects, propose, learn, answer")
     except logic.LogicError as e:
@@ -732,8 +732,8 @@ def _logic(args: dict, instance: str | None) -> str:
 def _proposal(text: str, tags: list[str], data: dict, importance: int) -> str:
     """Knowledge without a token: takes effect only after review and release, like an import from the network (p2p.approve, reviewer during sleep)."""
     from . import reviewer, checks
-    rules = [f"{field_name}: {t}" for field_name in ("text", "inhalt", "quelle") for t in checks.directives(str(data.get(field_name, text if field_name == "text" else "")))]
-    data = {**data, "herkunft": {"herausgeber": config.OPEN}, "pruefung": {"regeln": rules, "pruefer": None}, "fremd_text": text, "fremd_hashtags": tags}
+    rules = [f"{field_name}: {t}" for field_name in ("text", "content", "source") for t in checks.directives(str(data.get(field_name, text if field_name == "text" else "")))]
+    data = {**data, "origin": {"publisher": config.OPEN}, "review": {"rules": rules, "reviewer": None}, "foreign_text": text, "foreign_hashtags": tags}
     o = g.new_object("insight", text, sorted(set(tags + ["origin:offen", "reviewer:pending", "mode:quarantine"])), data, importance=max(0, min(3, importance)),
                        who=f"ki@{config.OPEN}", reason="proposal without token", mode="quarantine", instance=config.OPEN)
     if reviewer.available():
@@ -746,7 +746,7 @@ def _proposal(text: str, tags: list[str], data: dict, importance: int) -> str:
 def _line(o: g.MemoryObject, gw: dict | None = None) -> str:
     wt = f" · R{gw['relevanz']} A{gw['aktualitaet']} W{gw['wichtigkeit']}" if gw else ""
     tags = " ".join(t for t in o.hashtags if not t.startswith(("kind:", "frage:")))[:160]
-    pic = f" [{images.summary(o)} — vi_object shows it]" if o.data.get("bild") else ""
+    pic = f" [{images.summary(o)} — vi_object shows it]" if o.data.get("image") else ""
     if "origin:p2p" in o.hashtags and (ish := net_score.hash_of(o.id)):  # 0.40.0
         s = net_score.score(ish, o)
         pic += f" [network score {s['score']} from {s['bewerter']} rater(s), held by {s['halter']}]" if s["bewerter"] else f" [held by {s['halter']} server(s)]"
@@ -769,7 +769,7 @@ def _readable(oid: str, instance: str, release_permission: bool) -> g.MemoryObje
     """_visible plus the quarantine rule — the one read path for vi_object and vi_questions(id) (Codex found the second way on
     14.11.2026). An entry held by the fixed rules is readable before release only by its author, the release right or a person."""
     o = _visible(oid, instance)
-    if o.mode == "quarantine" and (o.data.get("pruefung") or {}).get("verdacht") and o.instance != instance and not release_permission:
+    if o.mode == "quarantine" and (o.data.get("review") or {}).get("suspicion") and o.instance != instance and not release_permission:
         raise Rejected(f"object {o.id} is held in quarantine by the fixed rules — before release only its author, an instance with "
                        "the release right or a person on the server (vi-mcp quarantine) can read it")
     return o
@@ -847,7 +847,7 @@ def search(args: dict, only: str | None, first: str | None) -> tuple[list, str, 
             if vector.rerank_available() and ranked:  # 0.57.0: the cross-encoder judges the best ones against the query alone
                 t1 = time.monotonic()
                 try:
-                    sc = vector.rerank_scores(" ".join(words), [f"{by[i].text}\n{by[i].data.get('inhalt') or ''}" for i in ranked])
+                    sc = vector.rerank_scores(" ".join(words), [f"{by[i].text}\n{by[i].data.get('content') or ''}" for i in ranked])
                     ranked = [i for _s, i in sorted(zip(sc, ranked), key=lambda x: -x[0])]
                     note = f"; reranked {len(sc)} in {int((time.monotonic() - t1) * 1000)} ms"
                     reranked = True
@@ -997,15 +997,15 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             if to == "net" or to.startswith("net:"):  # 0.43.0: a question to the network
                 from . import forum
                 o = forum.ask(instance, to.split(":", 1)[1] if ":" in to else p2p.STANDARD, args.get("text") or "", args.get("triggers") or [], args.get("source") or "")
-                return (f"Question {o.id} sent to network {o.data['beitrag']['netz']} — it goes out with the next round of the network service; members "
+                return (f"Question {o.id} sent to network {o.data['post']['net']} — it goes out with the next round of the network service; members "
                         "review it before their AIs see it, answers come back reviewed at your next action or via vi_questions")
             conv = questions.own_conversation()
             o = questions.ask(instance, to, args.get("text") or "", args.get("triggers") or [], args.get("source") or "", conv)
         except ValueError as e:
             raise Rejected(str(e)) from e
-        target = o.data["an"] + (f"#{o.data['an_gespraech']}" if o.data.get("an_gespraech") else "")
-        same = o.data["an"] == instance
-        return (f"Question {o.id} sent to {target}" + (" (the other conversations of this instance)" if same and not o.data.get("an_gespraech") else "")
+        target = o.data["to"] + (f"#{o.data['to_conversation']}" if o.data.get("to_conversation") else "")
+        same = o.data["to"] == instance
+        return (f"Question {o.id} sent to {target}" + (" (the other conversations of this instance)" if same and not o.data.get("to_conversation") else "")
                 + f" from conversation {conv or '—'} — appears there at the next action; the answer comes back to this conversation at its "
                 "next action or via vi_questions"
                 + ("" if not same or session.pairing_of(g.current_conversation.get()) else
@@ -1018,7 +1018,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             post = forum.reply(instance, o, args.get("text") or "", args.get("evidence") or "")  # 0.43.0: a question from the network
         except ValueError as e:
             raise Rejected(str(e)) from e
-        asker = o.data["von"] + (f"#{o.data['von_gespraech']}" if o.data.get("von_gespraech") else "")
+        asker = o.data["from"] + (f"#{o.data['from_conversation']}" if o.data.get("from_conversation") else "")
         return f"Answer to {o.id} stored — {asker} sees it " + ("after the network carried it and its server reviewed it" if post else "at the next action")
     if name == "vi_questions":
         if args.get("id"):
@@ -1027,33 +1027,33 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 # A question in quarantine is not delivered yet (network questions are released after review) — Codex's review.
                 raise Rejected(f"{o.id} waits in quarantine for review and is not delivered yet — readable after its release")
             d = o.data
-            if o.kind != "question" or instance not in (d.get("von"), d.get("an")) and d.get("an") != "all" and instance not in d.get("zugestellt_an", []):
+            if o.kind != "question" or instance not in (d.get("from"), d.get("to")) and d.get("to") != "all" and instance not in d.get("delivered_to", []):
                 raise Rejected(f"{args['id']} is not a question to or from {instance}")
-            frm = d["von"] + (f"#{d['von_gespraech']}" if d.get("von_gespraech") else "")
-            to_ = d["an"] + (f"#{d['an_gespraech']}" if d.get("an_gespraech") else "")
-            z = [f"[{o.id}] from {frm} to {to_} · {d['zustand']} · {o.ts[:16]}", "Question:", str(d.get("inhalt") or o.text),
-                 f"Source: {d.get('quelle') or '—'}", f"Answers: {len(d['antworten'])}"]
-            for a in d["antworten"]:
-                z += [f"--- {a['instanz']}{'#' + a['gespraech'] if a.get('gespraech') else ''} {a['zeit'][:16]}", a["text"],
-                      f"Evidence: {a.get('belege') or '—'}"]
+            frm = d["from"] + (f"#{d['from_conversation']}" if d.get("from_conversation") else "")
+            to_ = d["to"] + (f"#{d['to_conversation']}" if d.get("to_conversation") else "")
+            z = [f"[{o.id}] from {frm} to {to_} · {d['state']} · {o.ts[:16]}", "Question:", str(d.get("content") or o.text),
+                 f"Source: {d.get('source') or '—'}", f"Answers: {len(d['answers'])}"]
+            for a in d["answers"]:
+                z += [f"--- {a['instance']}{'#' + a['conversation'] if a.get('conversation') else ''} {a['ts'][:16]}", a["text"],
+                      f"Evidence: {a.get('evidence') or '—'}"]
             return "\n".join(z)
         conv = questions.own_conversation()
         to_me, mine = questions.listing(instance, conv)
         z = [f"This conversation: {instance}#{conv or '—'} — other sessions ask it with vi_ask(to=\"{instance}#{conv or '<conversation>'}\"); "
              f"to=\"{instance}\" asks every other conversation of {instance}.",
              f"Questions to {instance}{'#' + conv if conv else ''} (open/delivered): {len(to_me)}"]
-        z += [f"  [{o.id}] from {o.data['von']}{'#' + o.data['von_gespraech'] if o.data.get('von_gespraech') else ''} {o.ts[:16]}: {o.text[:200]}"
-              + (f" … (complete: vi_questions(id={o.id}))" if len(str(o.data.get("inhalt") or o.text)) > 200 else "") for o in to_me]
+        z += [f"  [{o.id}] from {o.data['from']}{'#' + o.data['from_conversation'] if o.data.get('from_conversation') else ''} {o.ts[:16]}: {o.text[:200]}"
+              + (f" … (complete: vi_questions(id={o.id}))" if len(str(o.data.get("content") or o.text)) > 200 else "") for o in to_me]
         z.append(f"Own questions: {len(mine)}")
         for o in mine:
-            z.append(f"  [{o.id}] to {o.data['an']}{'#' + o.data['an_gespraech'] if o.data.get('an_gespraech') else ''} · {o.data['zustand']} · {o.text[:160]}")
-            for a in o.data["antworten"]:
+            z.append(f"  [{o.id}] to {o.data['to']}{'#' + o.data['to_conversation'] if o.data.get('to_conversation') else ''} · {o.data['state']} · {o.text[:160]}")
+            for a in o.data["answers"]:
                 extra = ""
-                if a.get("objekt") and (ao := g.load(a["objekt"])):  # 0.43.0: an answer from the network is an object: rate it with vi_confirm / vi_refute
+                if a.get("object") and (ao := g.load(a["object"])):  # 0.43.0: an answer from the network is an object: rate it with vi_confirm / vi_refute
                     nl = net_score.line(ao)
                     extra = f" [{ao.id}{' · accepted' if ao.confirmed else ''}{' · ' + nl if nl else ''}]"
-                cut = len(a["text"]) > 300 or len(a.get("belege") or "") > 120
-                z.append(f"     ↳ {a['instanz']}{'#' + a['gespraech'] if a.get('gespraech') else ''} {a['zeit'][:16]}: {a['text'][:300]} [evidence: {a['belege'][:120]}]{extra}"
+                cut = len(a["text"]) > 300 or len(a.get("evidence") or "") > 120
+                z.append(f"     ↳ {a['instance']}{'#' + a['conversation'] if a.get('conversation') else ''} {a['ts'][:16]}: {a['text'][:300]} [evidence: {a['evidence'][:120]}]{extra}"
                          + (f" … (complete: vi_questions(id={o.id}))" if cut else ""))
         return "\n".join(z)
     if name == "vi_after":
@@ -1131,13 +1131,13 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         if not skills.usable(o):  # 0.53.1
             raise Rejected(f"{o.id} is damaged: its problem and solution are no longer readable ({', '.join(sorted(o.data))})")
         d = o.data
-        z = [skills.line(o), f"  Problem: {' '.join(d['problem']['reize'])}", "  Steps: " + " → ".join(f"{s['tool']}" + (f" ({s['hinweis']})" if s.get("hinweis") else "") for s in d["loesung"]["schritte"])]
-        if d.get("fusion_aus"):
-            z.append(f"  merged from: {', '.join(d['fusion_aus'])}")
-        if d.get("aufgegangen_in"):
-            z.append(f"  MERGED into {d['aufgegangen_in']}")
-        z.append(f"  Evidence: {len(d.get('belege', []))} · edges: {len(o.edges())}")
-        z += [f"  v{v['version']} {v['zeit'][:16]} {v['wer']}: {v['grund'][:120]} ({len(v.get('belege', []))} evidence)" for v in d["versionen"][-8:]]
+        z = [skills.line(o), f"  Problem: {' '.join(d['problem']['triggers'])}", "  Steps: " + " → ".join(f"{s['tool']}" + (f" ({s['hinweis']})" if s.get("hinweis") else "") for s in d["solution"]["steps"])]
+        if d.get("merged_from"):
+            z.append(f"  merged from: {', '.join(d['merged_from'])}")
+        if d.get("merged_into"):
+            z.append(f"  MERGED into {d['merged_into']}")
+        z.append(f"  Evidence: {len(d.get('evidence', []))} · edges: {len(o.edges())}")
+        z += [f"  v{v['version']} {v['ts'][:16]} {v['who']}: {v['reason'][:120]} ({len(v.get('evidence', []))} evidence)" for v in d["versions"][-8:]]
         return "\n".join(z)
     if name == "vi_skill_merge":
         try:
@@ -1314,7 +1314,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             per_inst = g.db().execute("SELECT instance, COUNT(*) FROM object WHERE visibility = 'shared' AND kind IN "
                                      "('insight', 'rule', 'search', 'reflex', 'image') GROUP BY instance ORDER BY 2 DESC").fetchall()
             open_questions = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND "
-                                          "json_extract(data, '$.zustand') IN ('open', 'delivered')").fetchone()[0]
+                                          "json_extract(data, '$.state') IN ('open', 'delivered')").fetchone()[0]
         s = session.current()
         open_ = session.open_items()
         ls = loop_progress
@@ -1333,7 +1333,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 f"Router: {(learning.model().text if learning.model() else 'no model')[:160]} · ranking without a model: Thompson sampling (bandit), once hints are rated\n"
                 f"{__import__('vi_mcp.on_demand', fromlist=['x']).line()}\n"
                 f"Loop: every {LOOP_S} s, {ls['laeufe']} runs, last {ls['zuletzt'] or '—'}, {ls['regeln_neu']} rules from it, "
-                f"{ls['fehler']} errors{(' (last: ' + ls['letzter_fehler'] + ')') if ls['letzter_fehler'] else ''}")
+                f"{ls['fehler']} errors{(' (last: ' + ls['last_error'] + ')') if ls['last_error'] else ''}")
     if name == "vi_stats":
         from . import usage_stats
         return usage_stats.report(float(args.get("days") or 7))
@@ -1353,7 +1353,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 text, content = text[:TEXT_MAX], text
             if len(content) > g.CONTENT_MAX:
                 raise ValueError(f"content has {len(content)} characters, {g.CONTENT_MAX} are allowed; please split it into several objects")
-            data = {"quelle": args["source"].strip()[:500], **({"ausgang": args["outcome"]} if args.get("outcome") else {}), **({"inhalt": content} if content else {})}
+            data = {"source": args["source"].strip()[:500], **({"outcome": args["outcome"]} if args.get("outcome") else {}), **({"content": content} if content else {})}
             if args.get("regions") is not None and not args.get("image"):
                 raise ValueError("regions belong to an image: give image as well")
             if args.get("image"):  # 0.35.0
@@ -1365,7 +1365,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 _mime, w, h = images.sniff(raw)
                 regs = images.regions(args.get("regions"), w, h)  # checked before storing: a refused image leaves nothing behind
                 ref = images.store(raw)
-                data.update(bild=ref, **({"regionen": regs} if regs else {}))
+                data.update(image=ref, **({"regions": regs} if regs else {}))
                 tags = tags + [t for t in images.concept_tags(regs) if t not in tags]
             if instance == config.OPEN:
                 return _proposal(text, tags, data, int(args.get("importance") or 1))
@@ -1387,9 +1387,9 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 # 0.62.0: the poisoning test planted 10 of 10 entries of a token instance into search or hints — fixed rules now hold a
                 # suspicious entry in quarantine with its reasons; another instance with the release right (or a person) releases it
                 from . import checks
-                held = checks.suspicion("\n".join([text, str(data.get("inhalt") or ""), str(data.get("quelle") or "")]))
-                extra = {"pruefung": {"regeln": held, "pruefer": None, "verdacht": True}} if held else {}
-                o = g.new_object("image" if data.get("bild") else "insight", text,
+                held = checks.suspicion("\n".join([text, str(data.get("content") or ""), str(data.get("source") or "")]))
+                extra = {"review": {"rules": held, "reviewer": None, "suspicion": True}} if held else {}
+                o = g.new_object("image" if data.get("image") else "insight", text,
                                  tags + (["reviewer:pending", "mode:quarantine"] if held else []),
                                  {**data, **({"key": key, "repeats": 1} if key else {}), **extra},
                                  importance=int(args.get("importance") or 1), who=f"ki@{instance}", reason="vi_learn",
@@ -1405,7 +1405,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             return (f"updated {o.id} (key {key!r}, {o.data['repeats']}×) — the previous text is in its history ({len(o.data.get('history') or [])} entries); "
                     "no new object")
         return (f"learned {o.id} with {', '.join(o.hashtags)} — {len(o.edges())} edges to objects with shared hashtags"
-                + (f" · {images.summary(o)} (sha256 {o.data['bild']['sha'][:12]}…)" if o.data.get("bild") else "")
+                + (f" · {images.summary(o)} (sha256 {o.data['image']['sha'][:12]}…)" if o.data.get("image") else "")
                 + (" · visibility internal (instances with a token only; never an open network, only a company network)" if o.visibility == "internal" else ""))
     if name == "vi_code_sync":  # 0.61.0
         from . import code_import, indexes
@@ -1516,16 +1516,16 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             z.append(f"  as a hint: {bandit.line(o)}")
         if (nl := net_score.line(o)):  # 0.40.0
             z.append(f"  {nl}")
-        d = {k: v for k, v in o.data.items() if k not in ("ergebnis", "code", "inhalt", "bild", "regionen")}
+        d = {k: v for k, v in o.data.items() if k not in ("result", "code", "content", "image", "regions", "ergebnis", "inhalt")}  # the reports of sleep/model keep German keys until 0.68
         z.append("  data: " + json.dumps(d, ensure_ascii=False)[:800])
         pics = []
-        if o.data.get("bild"):  # 0.35.0
-            b = o.data["bild"]
+        if o.data.get("image"):  # 0.35.0
+            b = o.data["image"]
             z.append(f"  {images.summary(o)} · sha256 {b['sha']}")
-            for n, r in enumerate(o.data.get("regionen") or [], 1):
-                z.append(f"  region {n}: {r['begriff']} · box {r['box']} (px, xyxy) · score {r['score']}" + (" · mask (COCO RLE)" if r.get("maske") else ""))
-            if o.data.get("regionen") and any(r.get("maske") for r in o.data["regionen"]):
-                z.append("  masks: " + json.dumps([r.get("maske") for r in o.data["regionen"]], ensure_ascii=False)[:20000])
+            for n, r in enumerate(o.data.get("regions") or [], 1):
+                z.append(f"  region {n}: {r['term']} · box {r['box']} (px, xyxy) · score {r['score']}" + (" · mask (COCO RLE)" if r.get("mask") else ""))
+            if o.data.get("regions") and any(r.get("mask") for r in o.data["regions"]):
+                z.append("  masks: " + json.dumps([r.get("mask") for r in o.data["regions"]], ensure_ascii=False)[:20000])
             raw = images.load(b["sha"])
             if raw is None:
                 z.append("  image bytes missing from the store (reference without data)")
@@ -1534,12 +1534,12 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 pics.append((b["mime"], base64.b64encode(raw).decode()))
             else:
                 z.append("  image not attached (image=false)")
-        if o.data.get("inhalt"):
-            z.append(f"  content ({len(o.data['inhalt'])} characters, complete):\n{o.data['inhalt']}")
+        if o.data.get("content"):
+            z.append(f"  content ({len(o.data['content'])} characters, complete):\n{o.data['content']}")
         z += [f"  edge → {b} ({gr})" for b, gr in o.edges()[:15]]
-        if o.data.get("aenderungen_gekuerzt"):
-            z.append(f"  ({o.data['aenderungen_gekuerzt']} older changes truncated — the history keeps {g.HISTORY_MAX} entries)")
-        z += [f"  change {a['zeit'][:16]} {a['wer']}: {a['was']} — {a['grund']}" for a in o.changes[-10:]]
+        if o.data.get("changes_trimmed"):
+            z.append(f"  ({o.data['changes_trimmed']} older changes truncated — the history keeps {g.HISTORY_MAX} entries)")
+        z += [f"  change {a['ts'][:16]} {a['who']}: {a['what']} — {a['reason']}" for a in o.changes[-10:]]
         return WithImages(held_note + "\n".join(z), pics) if pics else held_note + "\n".join(z)
     if name in ("vi_tag", "vi_confirm", "vi_refute"):
         o = _visible(args.get("id"), instance)
@@ -1582,13 +1582,13 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         z = [metrics.line(lift), "  " + metrics.matched_line(metrics.hint_lift_matched(h, viewer=instance))]
         for t, d in sorted(lift["je_tool"].items(), key=lambda kv: -(kv[1]["mit"]["n"] + kv[1]["ohne"]["n"]))[:10]:
             if d["mit"]["n"] and d["ohne"]["n"]:
-                z.append(f"  {t:42} with {d['mit']['ok']}/{d['mit']['n']} · without {d['ohne']['ok']}/{d['ohne']['n']} → {d['urteil']}")
+                z.append(f"  {t:42} with {d['mit']['ok']}/{d['mit']['n']} · without {d['ohne']['ok']}/{d['ohne']['n']} → {d['verdict']}")
         z.append(f"Experience, last {h:g} h (calls / errors / from memory / median ms):")
         for t, os_ in sorted(per_tool_rate.items(), key=lambda kv: -len(kv[1])):
-            d = sorted(o.data.get("dauer_ms", 0) for o in os_)
-            z.append(f"  {t:42} {len(os_):>5} / {sum(1 for o in os_ if o.data.get('fehler')):>4} / "
-                     f"{sum(1 for o in os_ if o.data.get('vorher', {}).get('aus_gedaechtnis')):>4} / {d[len(d) // 2] if d else 0:>6}")
-        z += ["Last errors:"] + [f"  {o.ts[:16]} {o.text[:140]}" for o in hits if o.data.get("fehler")][:8]
+            d = sorted(o.data.get("duration_ms", 0) for o in os_)
+            z.append(f"  {t:42} {len(os_):>5} / {sum(1 for o in os_ if o.data.get('error')):>4} / "
+                     f"{sum(1 for o in os_ if o.data.get('before', {}).get('from_memory')):>4} / {d[len(d) // 2] if d else 0:>6}")
+        z += ["Last errors:"] + [f"  {o.ts[:16]} {o.text[:140]}" for o in hits if o.data.get("error")][:8]
         return "\n".join(z)
     if name == "vi_delete_conversation":
         try:
@@ -1612,7 +1612,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             raw = row[0] if row else archive.raw(args["serial"])  # old logs live in the long-term archive
             turns = json.loads(zlib.decompress(raw)) if raw else []
             z = [_line(o), f"  {len(turns)} turns (compressed {len(raw) if raw else 0} bytes):"]
-            z += [f"  {x['zeit'][11:19]} {x['tool']} ok={x['ok']} {x['dauer_ms']} ms triggers={','.join(x.get('vorher', {}).get('reize', []))[:80]}"
+            z += [f"  {x['zeit'][11:19]} {x['tool']} ok={x['ok']} {x['dauer_ms']} ms triggers={','.join((x.get('vorher') or {}).get('triggers', (x.get('vorher') or {}).get('reize', [])))[:80]}"
                   for x in turns[-40:]]
             return "\n".join(z)
         hits = g.recall("kind:conversation " + (args.get("search") or ""), limit=min(int(args.get("limit") or 20), 100))
@@ -1631,7 +1631,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         oid = g.keyed_id("search", slug)
         try:
             o = g.new_object("search", args["story"].strip()[:500], rz + [f"search:{slug}"],
-                               {"name": n, "filter": args["filter"].strip(), "quelle": args["source"].strip()[:500]},
+                               {"name": n, "filter": args["filter"].strip(), "source": args["source"].strip()[:500]},
                                importance=2, who=f"ki@{instance}", oid=oid, reason="vi_learn_search")
         except ValueError as e:
             raise Rejected(str(e)) from e
@@ -1711,7 +1711,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         rid = f"reflex:{n}"
         old = g.load(rid)
         o = g.new_object("reflex", args["description"].strip()[:500], [f"reflex:{n}", f"reflex_kind:{args['kind']}", "mode:test"],
-                           {"name": n, "art": args["kind"], "code": args["code"], "quelle": args["source"].strip()[:500], "laeufe": 0, "fehler": 0},
+                           {"name": n, "kind": args["kind"], "code": args["code"], "source": args["source"].strip()[:500], "runs": 0, "error": 0},
                            importance=2, who=f"ki@{instance}", oid=rid, mode="test", reason="vi_reflex_learn" + (" (replaced)" if old else ""))
         if n not in reflexes.load_all():
             raise Rejected("stored but not loadable — see the server log (journalctl --user -u vi-mcp)")
@@ -1721,8 +1721,8 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         z = ["Reflexes (code in memory):"]
         for _, o, _g in g.recall("kind:reflex", limit=200):
             d = o.data
-            z.append(f"  {d['name']} [{d['art']}, {o.mode}] {d.get('laeufe', 0)} runs, {d.get('fehler', 0)} errors"
-                     f"{(' — ' + d['letzter_fehler']) if d.get('letzter_fehler') else ''} · {o.text} · source: {d.get('quelle')} · {o.ts[:16]}")
+            z.append(f"  {d['name']} [{d['kind']}, {o.mode}] {d.get('runs', 0)} runs, {d.get('error', 0)} errors"
+                     f"{(' — ' + d['last_error']) if d.get('last_error') else ''} · {o.text} · source: {d.get('source')} · {o.ts[:16]}")
             if args.get("code"):
                 z.append("    " + d["code"].replace("\n", "\n    "))
         return "\n".join(z) if len(z) > 1 else "no reflexes"
@@ -1735,7 +1735,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             raise Rejected(f"reflex {args.get('name')} unknown")
         o.mode = m
         if m == "test":
-            o.data["fehler"] = 0
+            o.data["error"] = 0
         o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + [f"mode:{m}"]
         o.change(f"ki@{instance}", f"mode {m}", "vi_reflex_switch")
         g.save(o)

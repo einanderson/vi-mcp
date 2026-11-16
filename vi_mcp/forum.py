@@ -83,14 +83,14 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
         raise ValueError(f"unknown network {net!r} — known: {', '.join(p2p.networks())}")
     _tables()
     with g.lock:
-        n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND json_extract(data, '$.von') = ? AND json_extract(data, '$.an') LIKE 'net:%' "
-                           "AND json_extract(data, '$.zustand') IN ('open', 'delivered')", (instance,)).fetchone()[0]
+        n = g.db().execute("SELECT COUNT(*) FROM object WHERE kind = 'question' AND json_extract(data, '$.from') = ? AND json_extract(data, '$.to') LIKE 'net:%' "
+                           "AND json_extract(data, '$.state') IN ('open', 'delivered')", (instance,)).fetchone()[0]
     if n >= MAX_OPEN_PER_INSTANCE:
         raise ValueError(f"{n} questions of {instance} to the network are still open (at most {MAX_OPEN_PER_INSTANCE}); they expire after {questions.EXPIRY_DAYS} days")
     content = _post(instance, net, "frage", text, source, [], triggers, None, None, f"beitrag|frage|{instance}|{g.now()}|{text[:40]}")
     o = questions.ask(instance, f"net:{net}", text, triggers, source)
     pid = sha256(content)
-    o.data["beitrag"] = {"netz": net, "id": pid, "richtung": "aus"}
+    o.data["post"] = {"net": net, "id": pid, "direction": "aus"}
     g.save(o)
     with g.lock:
         g.db().execute("INSERT INTO post_out (net, id, kind, thread, parent, instance, data, ts, oid) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -102,18 +102,18 @@ def ask(instance: str, net: str, text: str, triggers: list, source: str) -> g.Me
 
 def reply(instance: str, question: g.MemoryObject, text: str, evidence: str) -> str | None:
     """An answer of a local instance to a question that came from the network → a post. None if the question is not from the network."""
-    b = question.data.get("beitrag") or {}
-    if b.get("richtung") != "ein":
+    b = question.data.get("post") or {}
+    if b.get("direction") != "ein":
         return None
-    content = _post(instance, b["netz"], "antwort", text, evidence, [], [], b.get("faden") or b["id"], b["id"], f"beitrag|antwort|{instance}|{g.now()}|{b['id']}")
+    content = _post(instance, b["net"], "antwort", text, evidence, [], [], b.get("thread") or b["id"], b["id"], f"beitrag|antwort|{instance}|{g.now()}|{b['id']}")
     pid = sha256(content)
     _tables()
     with g.lock:
         g.db().execute("INSERT INTO post_out (net, id, kind, thread, parent, instance, data, ts, oid) VALUES (?,?,?,?,?,?,?,?,?)",
-                       (b["netz"], pid, "answer", content["faden"], b["id"], instance, json.dumps(content, ensure_ascii=False), g.now(), question.id))
+                       (b["net"], pid, "answer", content["faden"], b["id"], instance, json.dumps(content, ensure_ascii=False), g.now(), question.id))
         g.db().commit()
     from . import p2p
-    p2p.nudge_service(b["netz"])  # 0.52.0
+    p2p.nudge_service(b["net"])  # 0.52.0
     return pid
 
 
@@ -145,17 +145,17 @@ def ingest(raw: dict, header: dict, net: str) -> str:
     name = pseudonym(header["pub"])
     company = p2p.is_company(net)
     herkunft = {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": pid, "netz_id": raw["netz_id"], "netz": net}
-    common = {"herkunft": herkunft, "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": raw["text"], "fremd_hashtags": raw["hashtags"] + raw["reize"],
+    common = {"herkunft": herkunft, "pruefung": {"regeln": b.reasons, "pruefer": None}, "foreign_text": raw["text"], "foreign_hashtags": raw["hashtags"] + raw["reize"],
               "beitrag": {"netz": net, "id": pid, "faden": raw["faden"] or pid, "art": raw["art"], "autor": raw["autor"], "richtung": "ein"}}
     tags = ["origin:p2p", "origin:conversation", f"publisher:{name}", "reviewer:pending", "mode:quarantine", f"net:{net}"]
     if raw["art"] == "frage":
-        data = {**common, "von": f"{raw['autor']}@{net}", "an": "all", "zustand": "open", "quelle": raw["inhalt"] or f"question in network {net}",
-                "zugestellt_an": [], "antworten": [], "gemeldet": 0}
+        data = {**common, "from": f"{raw['autor']}@{net}", "to": "all", "state": "open", "source": raw["inhalt"] or f"question in network {net}",
+                "delivered_to": [], "answers": [], "reported": 0}
         o = g.new_object("question", raw["text"], sorted(set(raw["reize"] + raw["hashtags"] + tags + ["to:all", "state:open"])), data, importance=2,
                          who=f"import@{name}", reason=f"question from {raw['autor']} in {net}", oid=g.keyed_id("question", f"post-{pid[:32]}"), mode="quarantine",
                          instance=f"p2p-{name}", visibility="internal" if company else None)
     else:
-        data = {**common, "quelle": (raw["inhalt"] or f"answer in network {net}")[:500], "inhalt": raw["inhalt"], "frage": mine[0]}
+        data = {**common, "source": (raw["inhalt"] or f"answer in network {net}")[:500], "content": raw["inhalt"], "question": mine[0]}
         o = g.new_object("insight", raw["text"], sorted(set(raw["hashtags"] + tags)), data, who=f"import@{name}", reason=f"answer from {raw['autor']} in {net}",
                          oid=g.keyed_id("insight", f"post-{pid[:32]}"), mode="quarantine", instance=f"p2p-{name}", visibility="internal" if company else None)
         form = {"art": "erkenntnis", "text": raw["text"], "inhalt": raw["inhalt"], "hashtags": raw["hashtags"]}
@@ -178,10 +178,10 @@ def release_questions() -> int:
     n = 0
     value = p2p.publisher_value(fresh=True)
     for _, o, _g in g.recall("kind:question mode:quarantine origin:conversation", limit=200, viewer=None):
-        b = o.data.get("beitrag") or {}
-        if b.get("richtung") != "ein" or b.get("art") != "frage" or "reviewer:pending" in o.hashtags:
+        b = o.data.get("post") or {}
+        if b.get("direction") != "ein" or b.get("kind") != "frage" or "reviewer:pending" in o.hashtags:
             continue
-        if p2p.sensitive(o) or value.get(o.data["herkunft"]["herausgeber"], {}).get("gesperrt"):
+        if p2p.sensitive(o) or value.get(o.data["origin"]["publisher"], {}).get("gesperrt"):
             continue  # a rule finding, a reviewer doubt or a blocked publisher: a person decides
         p2p.approve(o, "vi", True, False, "automatic: a question carries no claim — fixed rules found nothing, the reviewer admits it")
         n += 1
@@ -190,26 +190,26 @@ def release_questions() -> int:
 
 def on_release(o: g.MemoryObject, accepted: bool) -> None:
     from . import questions
-    b = o.data.get("beitrag") or {}
-    if b.get("richtung") != "ein":
+    b = o.data.get("post") or {}
+    if b.get("direction") != "ein":
         return
     _tables()
     with g.lock:
-        g.db().execute("UPDATE post_in SET status = ?, decided = ? WHERE net = ? AND id = ?", ("released" if accepted else "discarded", g.now(), b["netz"], b["id"]))
+        g.db().execute("UPDATE post_in SET status = ?, decided = ? WHERE net = ? AND id = ?", ("released" if accepted else "discarded", g.now(), b["net"], b["id"]))
         g.db().commit()
     if not accepted:
         return
-    if b["art"] == "frage":  # a question carries no claim: once reviewed it is delivered like a local one
+    if b["kind"] == "frage":  # a question carries no claim: once reviewed it is delivered like a local one
         o.mode = "active"
         o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:active"]
         g.save(o)
         return
-    q = g.load(o.data.get("frage") or "")
+    q = g.load(o.data.get("question") or "")
     if q and q.kind == "question":
-        q.data["antworten"] = q.data["antworten"] + [{"instanz": f"{b['autor']}@{b['netz']}", "text": o.text[:2000], "belege": str(o.data.get("inhalt") or "")[:500],
-                                                        "zeit": g.now(), "objekt": o.id}]
+        q.data["answers"] = q.data["answers"] + [{"instance": f"{b['author']}@{b['net']}", "text": o.text[:2000], "evidence": str(o.data.get("content") or "")[:500],
+                                                        "ts": g.now(), "object": o.id}]
         questions._set_state(q, "answered")
-        q.change("vi", f"answer from the network ({b['autor']})", "released after review")
+        q.change("vi", f"answer from the network ({b['author']})", "released after review")
         g.save(q)
 
 
@@ -242,14 +242,14 @@ def stats(days: float = 7) -> dict:
         q = g.load(oid)
         if not q:
             continue
-        net_answers = [a for a in q.data.get("antworten") or [] if a.get("objekt")]
-        expired += q.data.get("zustand") == "expired"
+        net_answers = [a for a in q.data.get("answers") or [] if a.get("object")]
+        expired += q.data.get("state") == "expired"
         per_q.append(len(net_answers))
         if net_answers:
             answered += 1
-            first = min(a["zeit"] for a in net_answers)
+            first = min(a["ts"] for a in net_answers)
             firsts.append((datetime.fromisoformat(first.replace("Z", "+00:00")) - datetime.fromisoformat(t0.replace("Z", "+00:00"))).total_seconds() / 3600)
-            accepted += any((o := g.load(a["objekt"])) and o.confirmed > 0 for a in net_answers)
+            accepted += any((o := g.load(a["object"])) and o.confirmed > 0 for a in net_answers)
     firsts.sort()
     per_q.sort()
     q = lambda xs, p: round(xs[min(len(xs) - 1, int(p * len(xs)))], 1) if xs else None  # noqa: E731

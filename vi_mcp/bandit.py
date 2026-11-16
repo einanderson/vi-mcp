@@ -31,12 +31,12 @@ _reason: dict = {"zeit": 0.0, "je": {}, "alle": 0.5}
 
 
 def counter(o: g.MemoryObject) -> tuple[float, float]:
-    n = o.data.get("nuetzlich") or {}
-    return round(float(n.get("ja", 0)), 3), round(float(n.get("nein", 0)), 3)
+    n = o.data.get("useful") or {}
+    return round(float(n.get("yes", 0)), 3), round(float(n.get("no", 0)), 3)
 
 
 def shown(o: g.MemoryObject) -> int:
-    return int((o.data.get("nuetzlich") or {}).get("n", 0))
+    return int((o.data.get("useful") or {}).get("n", 0))
 
 
 def _observations(since: str | None = None):
@@ -50,15 +50,15 @@ def _observations(since: str | None = None):
     for data, serial, tags in lines:
         tags = (tags or "").split()
         d = json.loads(data)
-        v = d.get("vorher") or {}
-        if v.get("aus_gedaechtnis"):
+        v = d.get("before") or {}
+        if v.get("from_memory"):
             continue
         ok_tag = True if "ok:yes" in tags else False if "ok:no" in tags else None
         lab = scorer.label(d, ok_tag, serial, grades)
         tool = next((t[5:] for t in tags if t.startswith("tool:")), None)
         if lab is None or not tool:
             continue
-        shown = [h for h in v.get("gezeigt", []) if h.startswith(HINT_KINDS)]
+        shown = [h for h in v.get("shown", []) if h.startswith(HINT_KINDS)]
         per = {h: scorer.label(d, ok_tag, serial, grades, hint=h)[:2] for h in shown}
         yield tool, bool(lab[0]), shown, per
 
@@ -102,12 +102,12 @@ def recompute() -> dict:
             z[3] += y
             z[4] += p
     with g.lock:
-        old = [r[0] for r in g.db().execute("SELECT id FROM object WHERE json_extract(data, '$.nuetzlich') IS NOT NULL")]
+        old = [r[0] for r in g.db().execute("SELECT id FROM object WHERE json_extract(data, '$.useful') IS NOT NULL")]
         for i in old:
             if i not in sum_total:
-                g.update_data(i, lambda d: d.pop("nuetzlich", None))
+                g.update_data(i, lambda d: d.pop("useful", None))
         for h, (a, b, n, k, e) in sum_total.items():
-            g.update_data(h, lambda d, v={"ja": round(a, 4), "nein": round(b, 4), "n": n, "ok": k, "erwartet": round(e, 4), "verfahren": METHOD_ID}: d.__setitem__("nuetzlich", v))
+            g.update_data(h, lambda d, v={"yes": round(a, 4), "no": round(b, 4), "n": n, "ok": k, "expected": round(e, 4), "method": METHOD_ID}: d.__setitem__("useful", v))
         g.db().commit()
     return {"hinweise": len(sum_total), "zurueckgesetzt": len([i for i in old if i not in sum_total]), "grundraten": {t: round(p, 3) for t, p in sorted(per_tool_rate.items(), key=lambda x: -x[1])[:8]}}
 
@@ -137,7 +137,7 @@ def book_entry(shown: list[str], ok: bool | None, tool: str | None = None) -> in
     if ok is None:
         return 0
     p = base_rate(tool) if tool else _reason["alle"]
-    field_name, value = ("ja", 1 - p) if ok else ("nein", p)
+    field_name, value = ("yes", 1 - p) if ok else ("no", p)
     n = 0
     plus_ok = 1 if ok else 0
     with g.lock:
@@ -145,16 +145,16 @@ def book_entry(shown: list[str], ok: bool | None, tool: str | None = None) -> in
             if not oid.startswith(HINT_KINDS):
                 continue
             # increase the JSON counters in daten in place under the lock — not via the object class (no lost counter)
-            # zuletzt_gezeigt counts as use for housekeeping but does not change recency (no Matthew effect)
+            # last_shown counts as use for housekeeping but does not change recency (no Matthew effect)
             def add(d, now=g.now()):
-                c = d.get("nuetzlich")
+                c = d.get("useful")
                 if not isinstance(c, dict):
-                    c = d["nuetzlich"] = {}
+                    c = d["useful"] = {}
                 c[field_name] = (c.get(field_name) or 0) + value
                 c["n"] = (c.get("n") or 0) + 1
                 c["ok"] = (c.get("ok") or 0) + plus_ok
-                c["erwartet"] = (c.get("erwartet") or 0) + p
-                d["zuletzt_gezeigt"] = now
+                c["expected"] = (c.get("expected") or 0) + p
+                d["last_shown"] = now
             n += g.update_data(oid, add)
         g.db().commit()
     return n
@@ -168,11 +168,11 @@ def rebook(shown: list[str], tool: str | None = None) -> int:
         for oid in shown:
             if oid.startswith(HINT_KINDS):
                 def back(d):
-                    c = d.get("nuetzlich")
+                    c = d.get("useful")
                     if not isinstance(c, dict):
-                        c = d["nuetzlich"] = {}
-                    c["ja"] = max((c.get("ja") or 0) - (1 - p), 0)
-                    c["nein"] = (c.get("nein") or 0) + p
+                        c = d["useful"] = {}
+                    c["yes"] = max((c.get("yes") or 0) - (1 - p), 0)
+                    c["no"] = (c.get("no") or 0) + p
                 n += g.update_data(oid, back)
         g.db().commit()
     return n
@@ -180,26 +180,26 @@ def rebook(shown: list[str], tool: str | None = None) -> int:
 
 def lift(o: g.MemoryObject) -> float | None:
     """Success rate after showing minus the expected rate of the tool, as a fraction; None without data."""
-    z = o.data.get("nuetzlich") or {}
+    z = o.data.get("useful") or {}
     n = int(z.get("n", 0))
-    return (z.get("ok", 0) - z.get("erwartet", 0)) / n if n and "erwartet" in z else None
+    return (z.get("ok", 0) - z.get("expected", 0)) / n if n and "expected" in z else None
 
 
 def mark(o: g.MemoryObject) -> str:
     """0.57.0: the compact marker on every hint line — what the VI has measured about this hint, so the reading AI can weigh it:
     "measured +12 pts/40×" (success after showing over the tool's base rate, N showings) or "unmeasured". Pure apart from the object."""
-    z = o.data.get("nuetzlich") or {}
+    z = o.data.get("useful") or {}
     n = int(z.get("n", 0))
-    if not n or "erwartet" not in z:
+    if not n or "expected" not in z:
         return "unmeasured"
     return f"measured {lift(o) * 100:+.0f} pts/{n}×"
 
 
 def line(o: g.MemoryObject) -> str:
-    z = o.data.get("nuetzlich") or {}
+    z = o.data.get("useful") or {}
     n = int(z.get("n", 0))
     if not n:
         return "never rated after being shown"
-    if "erwartet" not in z:
+    if "expected" not in z:
         return f"{n}× shown, effect not computed yet"
-    return f"{n}× shown, success afterwards {z['ok'] / n * 100:.0f} % instead of expected {z['erwartet'] / n * 100:.0f} % ({lift(o) * 100:+.0f} points)"
+    return f"{n}× shown, success afterwards {z['ok'] / n * 100:.0f} % instead of expected {z['expected'] / n * 100:.0f} % ({lift(o) * 100:+.0f} points)"

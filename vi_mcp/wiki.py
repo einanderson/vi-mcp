@@ -167,12 +167,12 @@ def ingest(raw: dict, header: dict, net: str) -> str:
     slug, name = raw["seite"], pseudonym(header["pub"])
     revs, _acc, _meta = _revs(net, slug)
     oid = g.keyed_id("page", f"rev-{rev[:32]}")
-    data = {"quelle": raw["quelle"] or f"wiki page {slug} in network {net}", "inhalt": _diff(revs, raw["eltern"], raw["text"]),
-            "herkunft": {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": rev, "netz_id": raw["netz_id"], "netz": net},
-            "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": f"{raw['titel']} — {raw['notiz'] or 'edit of the page'}"[:1000],
-            "fremd_hashtags": raw["hashtags"], "wiki": {"netz": net, "seite": slug, "rev": rev, "geloescht": raw["geloescht"]}}
+    data = {"source": raw["quelle"] or f"wiki page {slug} in network {net}", "content": _diff(revs, raw["eltern"], raw["text"]),
+            "origin": {"publisher": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": rev, "net_id": raw["netz_id"], "net": net},
+            "review": {"rules": b.reasons, "reviewer": None}, "foreign_text": f"{raw['titel']} — {raw['notiz'] or 'edit of the page'}"[:1000],
+            "foreign_hashtags": raw["hashtags"], "wiki": {"net": net, "page": slug, "rev": rev, "deleted": raw["geloescht"]}}
     tags = sorted(set(raw["hashtags"] + ["origin:p2p", f"publisher:{name}", "reviewer:pending", "mode:quarantine", f"net:{net}", "origin:wiki"]))
-    g.new_object("page", data["fremd_text"], tags, data, who=f"import@{name}", reason=f"wiki revision from {name}", oid=oid, mode="quarantine",
+    g.new_object("page", data["foreign_text"], tags, data, who=f"import@{name}", reason=f"wiki revision from {name}", oid=oid, mode="quarantine",
                  instance=f"p2p-{name}", visibility="internal" if p2p.is_company(net) else None)
     with g.lock:
         g.db().execute("INSERT INTO page_rev (net, rev, page, parents, pub, instance, seq, status, data, net_id, delete_hash, received, own, oid) "
@@ -191,14 +191,14 @@ def on_release(o: g.MemoryObject, accepted: bool) -> None:
     _tables()
     with g.lock:
         g.db().execute("UPDATE page_rev SET status = ?, decided = ?, reviewed = COALESCE(reviewed, ?) WHERE net = ? AND rev = ?",
-                       ("released" if accepted else "discarded", g.now(), g.now(), w["netz"], w["rev"]))
+                       ("released" if accepted else "discarded", g.now(), g.now(), w["net"], w["rev"]))
         g.db().commit()
     if accepted:  # the revision lives on in the page; the quarantine object is merged into it
         o.mode = "merged"
         o.hashtags = [t for t in o.hashtags if not t.startswith("mode:")] + ["mode:merged"]
-        o.data["merged_into"] = page_id(w["netz"], w["seite"])
+        o.data["merged_into"] = page_id(w["net"], w["page"])
         g.save(o)
-    materialize(w["netz"], w["seite"])
+    materialize(w["net"], w["page"])
 
 
 def reviewed(o: g.MemoryObject) -> None:
@@ -206,7 +206,7 @@ def reviewed(o: g.MemoryObject) -> None:
     w = o.data.get("wiki") or {}
     if w:
         with g.lock:
-            g.db().execute("UPDATE page_rev SET reviewed = COALESCE(reviewed, ?) WHERE net = ? AND rev = ?", (g.now(), w["netz"], w["rev"]))
+            g.db().execute("UPDATE page_rev SET reviewed = COALESCE(reviewed, ?) WHERE net = ? AND rev = ?", (g.now(), w["net"], w["rev"]))
             g.db().commit()
 
 
@@ -254,9 +254,9 @@ def materialize(net: str, slug: str) -> wm.View:
     authors = sorted({m["autor"] for m in meta if m["status"] == "released"})
     foreign = any(not m["eigen"] for m in meta if m["rev"] in v.heads)
     tags = sorted({t for h in v.heads for t in revs[h].hashtags} | {"origin:wiki", f"net:{net}"} | ({"origin:p2p"} if foreign else set()))
-    data = {"quelle": f"network wiki {net}, page {slug}", "inhalt": render(v, meta),
-            "wiki": {"netz": net, "seite": slug, "koepfe": v.heads, "zustand": v.state, "konflikte": len(v.conflicts), "autoren": authors,
-                     "ausstehend": sum(1 for m in meta if m["status"] == "pending"), "revisionen": len(meta)}}
+    data = {"source": f"network wiki {net}, page {slug}", "content": render(v, meta),
+            "wiki": {"net": net, "page": slug, "heads": v.heads, "state": v.state, "conflicts": len(v.conflicts), "authors": authors,
+                     "ausstehend": sum(1 for m in meta if m["status"] == "pending"), "revisions": len(meta)}}
     mode = "test" if foreign else "active"
     if o:
         o.text, o.hashtags, o.mode = text, tags, mode

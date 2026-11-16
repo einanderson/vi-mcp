@@ -80,9 +80,9 @@ def test_import_is_incremental_internal_and_archives_what_is_gone(gd, repo):
     r2 = ci.run(repo, "toolbox", _call)
     assert r2["geaendert"] == 1 and r2["entfernt"] == 1
     syms = {o.data["symbol"]: o for o in ci._held("toolbox", "toolbox") if not ci._is_fact(o)}
-    assert set(syms) == {"(module)", "decode_name", "Archive"} and "name.upper()" in syms["decode_name"].data["inhalt"]
+    assert set(syms) == {"(module)", "decode_name", "Archive"} and "name.upper()" in syms["decode_name"].data["content"]
     gone = g.load(ci.piece_id("toolbox", "toolbox", "pkg/msi.py", "Compound"))
-    assert gone.mode == "archived" and "removed in commit" in gone.data["grund"]  # nothing vanishes silently
+    assert gone.mode == "archived" and "removed in commit" in gone.data["reason"]  # nothing vanishes silently
     gone_fact = g.load(ci.piece_id("toolbox", "toolbox", "pkg/msi.py", "#function:Compound.read"))
     assert gone_fact.mode == "archived"  # a removed function's facts go to the archive like its piece
     with pytest.raises(ValueError, match="project index"):
@@ -104,7 +104,7 @@ def test_search_and_the_file_line(gd, repo, monkeypatch):
         r = intuition.before("Edit", {"file_path": f"{repo}/pkg/msi.py", "old_string": "x", "new_string": "y"}, "a", False)
     line = [h for h in r["hinweise"] if h.startswith("Code index toolbox:")]
     assert line and "pkg/msi.py holds decode_name, Compound" in line[0]
-    assert r["zugriff"]["code_datei"] == "pkg/msi.py" and not any(i.startswith("erkenntnis:code-") for i in r["zugriff"]["gezeigt"])
+    assert r["zugriff"]["code_datei"] == "pkg/msi.py" and not any(i.startswith("erkenntnis:code-") for i in r["zugriff"]["shown"])
 
 
 def test_code_needs_a_token_and_never_reaches_an_open_network(gd, repo, monkeypatch):

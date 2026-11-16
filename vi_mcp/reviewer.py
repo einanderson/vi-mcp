@@ -44,16 +44,16 @@ def available() -> bool:
 
 def user_input(o: g.MemoryObject, candidates: list[dict]) -> str:
     d = o.data
-    lines = [f"text: {_protection(d.get('fremd_text', o.text))}", f"hashtags: {_protection(', '.join(d.get('fremd_hashtags', [])))}", f"quelle: {_protection(d.get('quelle', ''))}"]
-    if d.get("inhalt"):
-        lines.append("content: " + _protection(d["inhalt"][:CONTENT_READ]))
-    if d.get("schritte"):
-        lines.append("schritte: " + _protection(", ".join(d["schritte"])))
+    lines = [f"text: {_protection(d.get('foreign_text', o.text))}", f"hashtags: {_protection(', '.join(d.get('foreign_hashtags', [])))}", f"quelle: {_protection(d.get('source', ''))}"]
+    if d.get("content"):
+        lines.append("content: " + _protection(d["content"][:CONTENT_READ]))
+    if d.get("steps"):
+        lines.append("schritte: " + _protection(", ".join(d["steps"])))
     if d.get("code"):
         lines.append("code: " + _protection(d["code"]))
-    lines.append("regelbefunde: " + _protection(json.dumps(d["pruefung"]["regeln"], ensure_ascii=False)))
+    lines.append("regelbefunde: " + _protection(json.dumps(d["review"]["rules"], ensure_ascii=False)))
     lines.append("lokale_kandidaten: " + _protection(json.dumps(candidates, ensure_ascii=False)))
-    header = f'<objekt art="{o.kind}" herausgeber="{_protection(d["herkunft"]["herausgeber"])}" signatur="gueltig">'
+    header = f'<objekt art="{o.kind}" herausgeber="{_protection(d["origin"]["publisher"])}" signatur="gueltig">'
     return "Review this object. Answer only with the JSON.\n" + header + "\n" + "\n".join(lines) + "\n</objekt>"
 
 
@@ -85,7 +85,7 @@ def _candidates(o: g.MemoryObject) -> list[dict]:
 
 
 def _set(o: g.MemoryObject, result: dict) -> None:
-    o.data["pruefung"]["pruefer"] = result
+    o.data["review"]["reviewer"] = result
     o.hashtags = [t for t in o.hashtags if not t.startswith("reviewer:")] + [f"reviewer:{result['status']}"]
     o.change("vi", f"reviewer: {result['status']}", "; ".join(result["gruende"])[:280] or "no findings")
     g.save(o)

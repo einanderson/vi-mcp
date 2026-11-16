@@ -597,6 +597,130 @@ def migrate_values(con: Any, columns) -> dict[str, int]:
     return counts
 
 
+# ---------------------------------------------------------------- data keys (step 4a)
+
+#: keys inside object.data of the memory's own objects (knowledge, experience, conversation, question, skill, rating, self, page, import)
+#: and of the change history (object.changes). One English name for each; the wire form keeps its German keys (checks.py).
+DATA_KEYS: dict[str, str] = {
+    "quelle": "source", "inhalt": "content", "fehler": "error", "grund": "reason", "dauer_ms": "duration_ms", "reize": "triggers",
+    "vorher": "before", "gefunden": "found", "suchen": "searches", "aus_gedaechtnis": "from_memory", "ueberraschung": "surprise",
+    "stufe": "level", "gezeigt": "shown", "kandidaten": "candidates", "zustand": "state", "warnung": "warning", "aufrufe": "calls",
+    "ohne_ergebnis": "without_result", "werkzeuge": "tools", "gesichert": "saved", "signale": "signals", "angebot": "offer",
+    "ausgang": "outcome", "zeit": "ts", "haltewahrscheinlichkeit": "hold_probability", "zurueckgehalten": "held_back",
+    "nuetzlich": "useful", "ja": "yes", "nein": "no", "erwartet": "expected", "verfahren": "method", "zuletzt_gezeigt": "last_shown",
+    "idx_vorrang": "idx_priority", "idx_vorrang_aus": "idx_priority_off", "ohne_nachher": "without_after", "ohne_vorher": "without_before",
+    "auszug": "excerpt", "herkunft": "origin", "familie": "family", "familie_quelle": "family_source", "belege": "evidence",
+    "belege_n": "evidence_n", "urteil": "verdict", "rueckmeldung": "feedback", "ziel": "target", "begruendung": "justification",
+    "sicherheit": "certainty", "wer": "who", "was": "what", "instanz": "instance", "instanzen": "instances", "versionen": "versions",
+    "versionen_gekuerzt": "versions_trimmed", "loesung": "solution", "schritte": "steps", "widerlegt_von": "refuted_by",
+    "bestaetigt_von": "confirmed_by", "widerlegungen": "refutations", "bestaetigungen": "confirmations",
+    "bestaetigt_ohne_aenderung": "confirmed_unchanged", "geschrieben_von": "written_by", "bereich": "area", "reize_vorher": "triggers_before",
+    "vorher_text": "text_before", "von": "from", "an": "to", "zugestellt_an": "delivered_to", "antworten": "answers", "gemeldet": "reported",
+    "satz": "sentence", "soll": "desired", "ist": "actual", "erzaehlung": "narrative", "begriff": "term", "regionen": "regions",
+    "bild": "image", "breite": "width", "hoehe": "height", "pruefung": "review", "regeln": "rules", "pruefer": "reviewer",
+    "verdacht": "suspicion", "aenderungen_gekuerzt": "changes_trimmed", "gekuerzt": "trimmed", "gekuerzt_zeichen": "trimmed_chars",
+    "fremd_text": "foreign_text", "fremd_hashtags": "foreign_hashtags", "herausgeber": "publisher", "netz_id": "net_id", "netz": "net",
+    "beitrag": "post", "faden": "thread", "richtung": "direction", "autor": "author", "art": "kind", "seite": "page", "geloescht": "deleted",
+    "logik": "logic", "philosophie": "philosophy", "philosophie_bindung": "philosophy_binding", "vorschlag": "proposal", "aktion": "action",
+    "wert": "value", "regelsatz": "rule_set", "beschreibung": "description", "laeufe": "runs", "letzter_fehler": "last_error",
+    "aufgegangen_in": "merged_into", "fusion_aus": "merged_from", "genutzt": "used", "treffer": "hits", "an_gespraech": "to_conversation",
+    "von_gespraech": "from_conversation", "uebersetzung": "translation", "vertrag": "contract", "aussagen": "statements",
+    "fehler_hinweise": "error_hints", "fehler_haltewahrscheinlichkeit": "error_hold_probability", "fehler_zurueckgehalten": "error_held_back",
+    "vorrang_aus": "priority_off", "ergebnis": "result", "frage": "question", "titel": "title", "notiz": "note", "konflikte": "conflicts",
+    "merkmale": "features", "modell": "model", "gespraech": "conversation", "klasse": "class", "zweite": "second", "fragen": "questions", "sicher": "certain",
+    "neu": "new", "erfahrungen": "experiences", "objekt": "object", "maske": "mask", "quote": "ratio", "koepfe": "heads", "seit": "since", "regel": "rule", "autoren": "authors", "revisionen": "revisions",
+}
+#: subtrees whose keys are data, not names: recorded tool arguments, tool names, object ids, feature names, A/B variants, the user's
+#: signals (kept in the form the session writes them), and content in a format of its own whose hash is checked — an installed
+#: philosophy package (its package_hash covers these keys) and its stored round-trip translation
+OPAQUE_DATA = frozenset({"args", "werkzeuge", "tools", "angebot", "offer", "gewichte", "deltas", "varianten", "signale", "signals",
+                         "philosophie", "philosophy", "uebersetzung", "translation"})
+
+
+def data_keys(d, _depth: int = 0):
+    """object.data with the English keys of DATA_KEYS (recursively, opaque subtrees untouched). Renames IN PLACE and returns the same
+    value: every dict and list keeps its identity, so a caller holding `d = o.data` (or a nested part) across memory.save still writes
+    into the object."""
+    if _depth > 12:
+        return d
+    if isinstance(d, dict):
+        if any(isinstance(k, str) and k in DATA_KEYS for k in d) or any(isinstance(v, (dict, list)) for v in d.values()):
+            items = list(d.items())
+            d.clear()
+            for k, v in items:
+                k2 = DATA_KEYS.get(k, k) if isinstance(k, str) else k
+                d[k2] = v if (k in OPAQUE_DATA or k2 in OPAQUE_DATA) else data_keys(v, _depth + 1)
+        return d
+    if isinstance(d, list):
+        for i, x in enumerate(d):
+            if isinstance(x, (dict, list)):
+                d[i] = data_keys(x, _depth + 1)
+        return d
+    return d
+
+
+#: object kinds whose data step 4a rewrites (memory.save passes their data through data_keys, so stored data has one form). Not yet:
+#: sleep and model — their data are the reports of sleep_cycle, learning, weight_writer, scorer and classify, which those modules read
+#: both fresh (as built) and stored; their keys change at the source together with every reader (0.68, step 4b).
+REPORT_KINDS = ("sleep", "model", "self")
+DOMAIN_KINDS = tuple(k for k in KINDS.values() if k not in REPORT_KINDS)
+HISTORY_KEYS = {"zeit": "ts", "wer": "who", "was": "what", "grund": "reason"}
+
+
+def history_keys(changes):
+    """The change history of an object with English keys (ts, who, what, reason)."""
+    return [{HISTORY_KEYS.get(k, k): v for k, v in e.items()} if isinstance(e, dict) else e for e in changes] if isinstance(changes, list) else changes
+
+
+def _data_pending(con: Any) -> bool:
+    if "object" not in _tables(con):
+        return False
+    return bool(con.execute("SELECT 1 FROM object WHERE changes LIKE '%\"wer\":%' LIMIT 1").fetchone()
+                or con.execute(f"SELECT 1 FROM object WHERE kind IN ({','.join('?' * len(DOMAIN_KINDS))}) AND (data LIKE '%\"quelle\":%' "
+                               "OR data LIKE '%\"inhalt\":%' OR data LIKE '%\"vorher\":%' OR data LIKE '%\"zustand\":%') LIMIT 1",
+                               DOMAIN_KINDS).fetchone())
+
+
+def migrate_data(con: Any) -> dict[str, int]:
+    """Step 4a: the keys of object.data of the memory's own objects (DATA_KEYS; opaque subtrees untouched) and the keys of every change
+    history entry. Portable (Python over the rows, no json_set), idempotent."""
+    import json
+    counts: dict[str, int] = {}
+    if "object" not in _tables(con):
+        return counts
+    nd = nh = 0
+    rows = con.execute("SELECT id, kind, data, changes FROM object").fetchall()
+    for oid, kind, raw, hist in rows:
+        upd = {}
+        if kind in DOMAIN_KINDS:
+            try:
+                d = json.loads(raw or "{}")
+            except ValueError:
+                d = None
+            if d is not None:
+                before = json.dumps(d, ensure_ascii=False)
+                after = json.dumps(data_keys(d), ensure_ascii=False)  # data_keys renames in place
+                if after != before:
+                    upd["data"] = after
+                    nd += 1
+        try:
+            h = json.loads(hist or "[]")
+        except ValueError:
+            h = None
+        if h:
+            h2 = history_keys(h)
+            if h2 != h:
+                upd["changes"] = json.dumps(h2, ensure_ascii=False)
+                nh += 1
+        if upd:
+            con.execute(f"UPDATE object SET {', '.join(f'{k} = ?' for k in upd)} WHERE id = ?", (*upd.values(), oid))
+    if nd:
+        counts["data keys"] = nd
+    if nh:
+        counts["history keys"] = nh
+    return counts
+
+
 #: the migration of 0.67.0 as recorded in each database it changed (table name_migration: one row per class)
 STEP = "0.67.0"
 
@@ -665,7 +789,7 @@ def migrate_db(con: Any, tables: dict[str, str], target: Any, label: str) -> dic
     per class into the table name_migration and the log. The caller commits."""
     values = {"memory": VALUE_COLUMNS, "archive": ARCHIVE_VALUE_COLUMNS}.get(label, ())
     schema = _pending_schema(con, tables)
-    if not schema and not (values and (_value_pending(con, values) or (label == "memory" and _tags_pending(con)))):
+    if not schema and not (values and (_value_pending(con, values) or (label == "memory" and (_tags_pending(con) or _data_pending(con))))):
         return {}
     backup = _backup(con, target, label)
     log(f"migration {STEP} ({label}): backup copy before renaming: {backup}")
@@ -677,6 +801,7 @@ def migrate_db(con: Any, tables: dict[str, str], target: Any, label: str) -> dic
         counts.update(migrate_values(con, values))
     if label == "memory":
         counts.update(migrate_tags(con))
+        counts.update(migrate_data(con))
     _record(con, counts, backup)
     log(f"migration {STEP} ({label}): " + ", ".join(f"{n} {cls}" for cls, n in counts.items()))
     return counts

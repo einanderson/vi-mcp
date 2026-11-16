@@ -25,7 +25,7 @@ def test_the_same_recovery_again_is_evidence_not_a_new_version(gd):
         o = skills.new("auto-test", ["tool:t_x", "error:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
                        "sleep: recovery in conversation 1", [f"erfahrung:b{i}"], "a")
     o = g.load(o.id)
-    assert o.data["version"] == 1 and o.data["bestaetigt_ohne_aenderung"] == 5 and "erfahrung:b4" in o.data["belege"]
+    assert o.data["version"] == 1 and o.data["confirmed_unchanged"] == 5 and "erfahrung:b4" in o.data["evidence"]
     o = skills.new("auto-test", ["tool:t_x", "error:boom"], ["t_x", "t_y"], "t_x failed and then succeeded — solution path: t_x → t_y",
                    "sleep: recovery in conversation 2", ["erfahrung:c"], "a")
     assert g.load(o.id).data["version"] == 2  # another conversation is an independent line: a version
@@ -36,21 +36,21 @@ def test_versions_are_capped_first_and_newest_kept(gd):
     for i in range(skills.VERSIONS_MAX + 7):
         o = skills.evolve(g.load(o.id), [f"t_s{i}"], "", f"step {i}", [], "a")
     o = g.load(o.id)
-    assert len(o.data["versionen"]) == skills.VERSIONS_MAX and o.data["versionen"][0]["version"] == 1
-    assert o.data["versionen"][-1]["version"] == o.data["version"] and o.data["versionen_gekuerzt"] == 8
+    assert len(o.data["versions"]) == skills.VERSIONS_MAX and o.data["versions"][0]["version"] == 1
+    assert o.data["versions"][-1]["version"] == o.data["version"] and o.data["versions_trimmed"] == 8
 
 
 def test_oversized_data_loses_old_history_not_its_structure(gd, monkeypatch):
     monkeypatch.setattr(g, "DATA_MAX", 20_000)
     o = _skill()
-    o.data["versionen"] += [{"version": i, "grund": "x" * 500} for i in range(2, 80)]
+    o.data["versions"] += [{"version": i, "grund": "x" * 500} for i in range(2, 80)]
     g.save(o)
     o = g.load(o.id)
-    assert skills.usable(o) and o.data["gekuerzt"]["versionen"] > 0 and len(json.dumps(o.data)) <= 20_000
+    assert skills.usable(o) and o.data["trimmed"]["versions"] > 0 and len(json.dumps(o.data)) <= 20_000
 
 
 def test_a_damaged_skill_is_skipped_and_named(gd):
-    d = g.new_object("skill", "damaged", ["tool:t_x", "skill:auto-kaputt"], {"gekuerzt_zeichen": 401721, "grund": "daten over 400000 chars"},
+    d = g.new_object("skill", "damaged", ["tool:t_x", "skill:auto-kaputt"], {"trimmed_chars": 401721, "reason": "daten over 400000 chars"},
                      instance="vi", oid="skill:auto-kaputt")
     assert not skills.usable(d)
     assert skills.fusion_proposals() == {"vorschlaege": 0}
@@ -58,7 +58,7 @@ def test_a_damaged_skill_is_skipped_and_named(gd):
         tools.call_tool("vi_skill", {"id": d.id}, "a", True)
     with pytest.raises(ValueError, match="damaged"):
         skills.evolve(d, ["t_y"], "something new", "reason", [], "a")
-    assert "4c_skills" not in "".join(sleep_cycle.run("Test").data.get("fehler") or [])
+    assert "4c_skills" not in "".join(sleep_cycle.run("Test").data.get("error") or [])
 
 
 def test_deploy_scripts_read_both_key_names_and_start_the_memory_first():

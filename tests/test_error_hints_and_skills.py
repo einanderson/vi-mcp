@@ -17,34 +17,34 @@ def _fail(tool, args, error, instance="a"):
 
 def test_a_failed_action_brings_what_the_memory_knows_about_the_error(gd):
     k = g.new_object("insight", "jira_search answers 401 Unauthorized when the PAT expired — renew the token in the skill config",
-                     ["tool:jira_search", "skill:jira", "error:http_401"], {"quelle": "test 11.11.2026"}, instance="b")
-    g.new_object("insight", "Graylog streams are paused at night", ["skill:graylog"], {"quelle": "test"}, instance="b")
+                     ["tool:jira_search", "skill:jira", "error:http_401"], {"source": "test 11.11.2026"}, instance="b")
+    g.new_object("insight", "Graylog streams are paused at night", ["skill:graylog"], {"source": "test"}, instance="b")
     hints = _fail("jira_search", {"jql": "project = X"}, "HTTP 401 Unauthorized: token expired")
     assert len(hints) == 1 and k.id in hints[0] and hints[0].startswith("After this error — known in the VI:")
 
 
 def test_no_hint_without_a_real_match(gd):
-    g.new_object("insight", "nginx reload needs a config test first", ["tool:Bash", "topic:nginx"], {"quelle": "test"}, instance="b")
+    g.new_object("insight", "nginx reload needs a config test first", ["tool:Bash", "topic:nginx"], {"source": "test"}, instance="b")
     assert _fail("Bash", {"command": "uptime"}, "Exit 1: something unrelated broke") == []
 
 
 def test_a_shell_error_matches_on_words_and_host_not_on_the_tool(gd):
     k = g.new_object("insight", "web1 refuses ssh without BatchMode: Permission denied (publickey) until the key file is given",
-                     ["host:web1.example", "tool:Bash", "topic:ssh"], {"quelle": "test"}, instance="b")
-    g.new_object("insight", "Bash heredocs need quoted EOF to avoid expansion", ["tool:Bash"], {"quelle": "test"}, instance="b")
+                     ["host:web1.example", "tool:Bash", "topic:ssh"], {"source": "test"}, instance="b")
+    g.new_object("insight", "Bash heredocs need quoted EOF to avoid expansion", ["tool:Bash"], {"source": "test"}, instance="b")
     hints = _fail("Bash", {"command": "ssh web1.example uptime"}, "Permission denied (publickey).")
     assert len(hints) == 1 and k.id in hints[0]
 
 
 def test_refuted_and_quarantined_knowledge_is_not_offered(gd):
-    k = g.new_object("insight", "jira_search 401 Unauthorized means the PAT expired", ["tool:jira_search", "skill:jira"], {"quelle": "x"}, instance="b")
+    k = g.new_object("insight", "jira_search 401 Unauthorized means the PAT expired", ["tool:jira_search", "skill:jira"], {"source": "x"}, instance="b")
     k.mode = "refuted"
     g.save(k)
     assert _fail("jira_search", {}, "HTTP 401 Unauthorized") == []
 
 
 def test_success_brings_no_error_hints(gd):
-    g.new_object("insight", "jira_search 401 Unauthorized means the PAT expired", ["tool:jira_search", "skill:jira"], {"quelle": "x"}, instance="b")
+    g.new_object("insight", "jira_search 401 Unauthorized means the PAT expired", ["tool:jira_search", "skill:jira"], {"source": "x"}, instance="b")
     v = intuition.before("jira_search", {}, "a", False)
     assert intuition.after("jira_search", {}, True, 5, None, "ok", v["vorher_id"], "a", False)["hinweise"] == []
 
@@ -53,16 +53,16 @@ def test_success_brings_no_error_hints(gd):
 
 def _overview(doc, prefix, text, visibility=None):
     return g.new_object("insight", f"Vollständige Doku zu {doc}: vi_erinnere docs:{doc}. {text}", ["art-wissen:ueberblick", f"docs:{doc}", f"skill:{prefix}"],
-                        {"quelle": "skills folder"}, instance="alice", visibility=visibility)
+                        {"source": "skills folder"}, instance="alice", visibility=visibility)
 
 
 def test_table_lists_real_tools_only(gd):
     """0.53.3: names guessed from manual prose were often wrong (checked against the real tool list by a Claude Code session, 11.11.2026)."""
     ov = _overview("gitlab-api", "gitlab", "Verbindet sich mit GitLab und führt API-Aufrufe aus (Projekte, Pipelines, z.B. CI-Variablen).")
     g.new_object("insight", "[gitlab-api › MCP-Tools] gitlab_get_tree lists a directory, gitlab_get_file reads a file; old: gitlab_old_endpoint",
-                 ["origin:skills-folder", "docs:gitlab-api"], {"quelle": "skills folder", "inhalt": "gitlab_get_tree(project, path) · gitlab_get_file(project, path)"},
+                 ["origin:skills-folder", "docs:gitlab-api"], {"source": "skills folder", "content": "gitlab_get_tree(project, path) · gitlab_get_file(project, path)"},
                  instance="alice")
-    g.new_object("insight", "Vendor docs mention gitlab_vendor_thing", ["knowledge_kind:external-docs", "docs:gitlab-api"], {"quelle": "vendor"}, instance="alice")
+    g.new_object("insight", "Vendor docs mention gitlab_vendor_thing", ["knowledge_kind:external-docs", "docs:gitlab-api"], {"source": "vendor"}, instance="alice")
     _overview("agents", "agents", "(Abschnitte: Skills Documentation, API Skills, Other Skills)")
     rows = {r["skill"]: r for r in capabilities.table("a")}
     assert rows["gitlab-api"]["tools"] == []  # nothing registered, nothing used: no guess from prose
@@ -84,9 +84,9 @@ def test_table_lists_real_tools_only(gd):
 def test_two_skills_with_one_prefix_get_their_own_tools(gd):
     _overview("jira-api", "jira", "Jira Data Center per REST API.")
     _overview("jira-servicedesk-api", "jira", "Jira Service Desk.")
-    g.new_object("insight", "[jira-api › Tools] jira_acme_search, jira_acme_get_issue", ["origin:skills-folder", "docs:jira-api"], {"quelle": "x"}, instance="alice")
+    g.new_object("insight", "[jira-api › Tools] jira_acme_search, jira_acme_get_issue", ["origin:skills-folder", "docs:jira-api"], {"source": "x"}, instance="alice")
     g.new_object("insight", "[jira-servicedesk-api › Tools] jira_create_ticket, jira_search_issues", ["origin:skills-folder", "docs:jira-servicedesk-api"],
-                 {"quelle": "x"}, instance="alice")
+                 {"source": "x"}, instance="alice")
     capabilities.register("team-skills", ["jira_acme_search", "jira_acme_get_issue", "jira_create_ticket", "jira_search_issues"], "a")
     rows = {r["skill"]: set(r["tools"]) for r in capabilities.table("a")}
     assert rows["jira-api"] == {"jira_acme_search", "jira_acme_get_issue"}
@@ -122,9 +122,9 @@ def test_tool_and_index_line(gd):
 def test_the_failing_program_and_the_exit_code_find_the_specific_knowledge(gd):
     """Reported by a Claude Code session on 0.53.0 (11.11.2026): `pkill -f …` → "Exit code 144" brought only the generic loop rule."""
     k = g.new_object("insight", "pkill -f <pattern> also kills the own shell when its command line contains the pattern (Exit 144). "
-                     "Remedy: a character class in the pattern or pgrep and kill by PID.", [], {"quelle": "seen 09.11.2026"}, instance="b")
+                     "Remedy: a character class in the pattern or pgrep and kill by PID.", [], {"source": "seen 09.11.2026"}, instance="b")
     rule = g.new_object("rule", "Bash failed 3× in 24 h the same way (Exit_code_#) — check arguments or reachability first",
-                        ["skill:Bash", "error:Exit_code_#"], {"quelle": "loop"}, instance=g.SERVER_INSTANCE)
+                        ["skill:Bash", "error:Exit_code_#"], {"source": "loop"}, instance=g.SERVER_INSTANCE)
     hints = _fail("Bash", {"command": 'pkill -f "zz-vi-hooktest-marker-7731"'}, "Exit code 144")
     assert k.id in hints[0]  # the specific knowledge first
     assert len(hints) == 2 and rule.id in hints[1]  # the generic rule behind it

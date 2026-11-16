@@ -11,7 +11,7 @@ from test_http import request
 
 
 def _k(text, tags, instance="anna", **kw):
-    return g.new_object("insight", text, tags, {"quelle": "test 10.11.2026"}, instance=instance, **kw)
+    return g.new_object("insight", text, tags, {"source": "test 10.11.2026"}, instance=instance, **kw)
 
 
 def test_sections_requirements_proven_and_own(gd):
@@ -23,7 +23,7 @@ def test_sections_requirements_proven_and_own(gd):
     imported.confirm("ki@carl", "x", "carl", family="gpt")
     refuted = _k("A wrong statement learned by anna", ["topic:x"])
     refuted.refute("ki@anna", "wrong", "anna")
-    private = g.new_object("insight", "private note of bert only", ["topic:y"], {"quelle": "q"}, instance="bert", visibility="private")
+    private = g.new_object("insight", "private note of bert only", ["topic:y"], {"source": "q"}, instance="bert", visibility="private")
     s = index.sections("anna")
     assert [o.id for o in s["vorgaben"]] == [req.id]
     assert proven.id in [o.id for o in s["bewaehrt"]] and imported.id not in [o.id for o in s["bewaehrt"]]
@@ -57,7 +57,7 @@ def test_empty_memory_sends_no_index(gd):
 def test_images_are_marked(gd):
     from vi_mcp import images
     from test_images import png
-    o = g.new_object("image", "Screenshot of the setup dialog", ["topic:requirement"], {"quelle": "q", "bild": images.store(png())}, instance="anna")
+    o = g.new_object("image", "Screenshot of the setup dialog", ["topic:requirement"], {"source": "q", "image": images.store(png())}, instance="anna")
     assert f"- [{o.id}] image: Screenshot of the setup dialog" in index.text("anna")
 
 

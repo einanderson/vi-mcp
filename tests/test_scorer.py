@@ -44,7 +44,7 @@ def action(s, tool, ok, error=None, n=None, **extra):
 def test_scorer_in_sleep_rebooks_and_labels(gd, monkeypatch):
     monkeypatch.setattr(intuition, "REPEAT_S", 0)  # this test is about rebooking: the same hint must count in both actions
     # 0.49.0: a shell hint needs more in common than the tool — here the program
-    k = g.new_object("insight", "Hinweis zu uptime hier", ["tool:Bash", "topic:uptime"], {"quelle": "x"}, reason="T", instance="b")
+    k = g.new_object("insight", "Hinweis zu uptime hier", ["tool:Bash", "topic:uptime"], {"source": "x"}, reason="T", instance="b")
     s = session.begin("a", "t")
     bandit._reason.update(zeit=time.time(), je={"Bash": 0.8}, alle=0.8)
     ids = [action(s, "Bash", True, command="uptime") for _ in range(2)]
@@ -53,7 +53,7 @@ def test_scorer_in_sleep_rebooks_and_labels(gd, monkeypatch):
     session.finish(s.id)
     r = sleep_cycle.run("Test").data["schritte"]["4d_scorer"]
     assert r["bewertet"] == 2 and r["misslungen"] == 2 and r["hinweise_umgebucht"] == 2
-    assert g.load(ids[0]).data["score"]["version"] == scorer.CODE_VERSION and "korrektur" in g.load(ids[0]).data["score"]["merkmale"]
+    assert g.load(ids[0]).data["score"]["version"] == scorer.CODE_VERSION and "korrektur" in g.load(ids[0]).data["score"]["features"]
     assert bandit.counter(g.load(k.id)) == (0, 0.5)  # "succeeded" became "failed"; sleep recomputes: 2 failures at base rate (0+1)/(2+2) = 0.25
     assert sleep_cycle.run("Test 2").data["schritte"]["4d_scorer"]["bewertet"] == 0  # idempotent
     assert all(y == 0 for _, y, _o in learning.observations())
@@ -88,13 +88,13 @@ def test_model_scorer_and_calibration(gd, monkeypatch):
     r = scorer.model_run()
     assert r["modell_bewertet"] == 1 and "<transcript>" in seen["u"]
     b = g.recall("kind:rating scorer:model", viewer=None)[0][1]
-    assert b.data["note"] == 0.75 and b.data["belege"] == [1, 2] and b.visibility == "private" and b.instance == "a"
+    assert b.data["note"] == 0.75 and b.data["evidence"] == [1, 2] and b.visibility == "private" and b.instance == "a"
     assert scorer.model_run()["modell_bewertet"] == 0  # once per version
     assert not scorer.calibration()["geeicht"] and serial not in scorer.conversation_grades()  # uncalibrated does not count
     for i in range(scorer.CAL_MIN):
         z = _conversation(0) if i else serial
-        g.new_object("rating", "m", [f"scorer:human", f"target:{z}"], {"scorer": "human", "ziel": z, "note": 0.7}, reason="T", oid=f"bewertung:m{i}", conversation=z)
-        g.new_object("rating", "k", [f"scorer:model", f"target:{z}"], {"scorer": "model", "ziel": z, "note": 0.75}, reason="T", oid=f"bewertung:k{i}", conversation=z)
+        g.new_object("rating", "m", [f"scorer:human", f"target:{z}"], {"scorer": "human", "target": z, "note": 0.7}, reason="T", oid=f"bewertung:m{i}", conversation=z)
+        g.new_object("rating", "k", [f"scorer:model", f"target:{z}"], {"scorer": "model", "target": z, "note": 0.75}, reason="T", oid=f"bewertung:k{i}", conversation=z)
     k = scorer.calibration()
     assert k["geeicht"] and k["paare"] == scorer.CAL_MIN and k["quote"] == 1.0
 
@@ -169,30 +169,30 @@ def test_signal_endpoint(signal_srv):
 
 def test_check_cases_router(gd):
     d = json.loads((Path(__file__).parent / "evals" / "router.json").read_text())
-    ids = {w["key"]: g.new_object("insight", w["text"], w["tags"], {"quelle": "Prüffall"}, reason="T").id for w in d["wissen"]}
+    ids = {w["key"]: g.new_object("insight", w["text"], w["tags"], {"source": "Prüffall"}, reason="T").id for w in d["wissen"]}
     hits = 0
     for f in d["faelle"]:
         v = intuition.before(f["tool"], f["args"], "a", False, context=f.get("kontext"))
-        shown = v["zugriff"]["gezeigt"]
+        shown = v["zugriff"]["shown"]
         hits += (shown == [] if f["erwartet"] is None else ids[f["erwartet"]] in shown)
     assert hits == len(d["faelle"])
 
 
 def test_batch_query_same_as_single(gd):
-    o = g.new_object("insight", "Vergleich der Ladewege", ["topic:a", "host:b"], {"quelle": "x"}, reason="T")
+    o = g.new_object("insight", "Vergleich der Ladewege", ["topic:a", "host:b"], {"source": "x"}, reason="T")
     assert g.load_many([o.id, "gibtsnicht"]) == {o.id: g.load(o.id)}
 
 
 def test_numpy_near_edges_as_before(gd, monkeypatch):
     random.seed(1)
     monkeypatch.setattr(vector, "config", {"modell": "fake"})
-    a = g.new_object("insight", "erstes Objekt", ["topic:a"], {"quelle": "x"}, reason="T")
-    b = g.new_object("insight", "zweites Objekt", ["topic:b"], {"quelle": "x"}, reason="T")
-    c = g.new_object("insight", "drittes Objekt", ["topic:c"], {"quelle": "x"}, reason="T")
+    a = g.new_object("insight", "erstes Objekt", ["topic:a"], {"source": "x"}, reason="T")
+    b = g.new_object("insight", "zweites Objekt", ["topic:b"], {"source": "x"}, reason="T")
+    c = g.new_object("insight", "drittes Objekt", ["topic:c"], {"source": "x"}, reason="T")
     vector.save(a.id, [1.0, 0.0, 0.0], "m")
     vector.save(b.id, [0.9, 0.1, 0.0], "m")
     vector.save(c.id, [0.0, 1.0, 0.0], "m")
-    vector.save(g.new_object("insight", "anderes Modell", ["topic:d"], {"quelle": "x"}, reason="T").id, [1.0, 0.0], "alt")
+    vector.save(g.new_object("insight", "anderes Modell", ["topic:d"], {"source": "x"}, reason="T").id, [1.0, 0.0], "alt")
     assert abs(vector.cosine([1, 0], [1, 0]) - 1) < 1e-6 and vector.cosine([0, 0], [1, 0]) == 0.0
     r = vector.proximity_edges()
     assert r["kanten_neu"] == 1 and any(x == b.id for x, _ in g.load(a.id).edges()) and not g.load(c.id).edges()

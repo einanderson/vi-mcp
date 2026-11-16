@@ -12,17 +12,17 @@ def _before(s, tool="Bash"):
 
 def test_hint_is_not_repeated_within_the_conversation(gd):
     # 0.49.0: before a shell command a hint must share more than the tool — here the program
-    k = g.new_object("insight", "uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"], {"quelle": "x"}, instance="b")
+    k = g.new_object("insight", "uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"], {"source": "x"}, instance="b")
     s = session.begin("a", "t")
     first = _before(s)
-    assert k.id in first["zugriff"]["gezeigt"]
+    assert k.id in first["zugriff"]["shown"]
     second = _before(s)
-    assert k.id not in second["zugriff"]["gezeigt"] and second["zugriff"]["repeat_suppressed"] == [k.id]
+    assert k.id not in second["zugriff"]["shown"] and second["zugriff"]["repeat_suppressed"] == [k.id]
     assert any("1 already shown in this conversation within the last hour, not repeated" in h for h in second["hinweise"])  # named, not silent
     other = session.begin("a", "t")  # another conversation sees it again
-    assert k.id in _before(other)["zugriff"]["gezeigt"]
+    assert k.id in _before(other)["zugriff"]["shown"]
     s.shown[k.id] = time.monotonic() - intuition.REPEAT_S - 1  # after an hour it may come again
-    assert k.id in _before(s)["zugriff"]["gezeigt"]
+    assert k.id in _before(s)["zugriff"]["shown"]
 
 
 def test_project_is_the_last_part_of_the_working_directory(gd):

@@ -56,7 +56,7 @@ def test_question_to_the_network_goes_out_as_a_post(f):
     assert forum.author("a", "standard") == posts[0]["autor"]  # stable: partners recognise each other
     assert forum.author("a", "firma") == "a"  # company network: the instance name
     q = g.recall("kind:question", viewer=None)[0][1]
-    assert q.data["an"] == "net:standard" and not questions.deliver("b")  # not delivered locally
+    assert q.data["to"] == "net:standard" and not questions.deliver("b")  # not delivered locally
 
 
 def test_foreign_question_is_delivered_only_after_review_and_answered(f):
@@ -73,29 +73,29 @@ def test_foreign_question_is_delivered_only_after_review_and_answered(f):
     assert "after the network carried it" in out
     posts = [p for p in p2p.outbox()["beitraege"] if p["art"] == "antwort"]
     assert len(posts) == 1 and posts[0]["faden"] == posts[0]["eltern"]  # the question opened the thread
-    assert posts[0]["eltern"] == g.load(qid).data["beitrag"]["id"]
+    assert posts[0]["eltern"] == g.load(qid).data["post"]["id"]
 
 
 def test_answer_comes_back_reviewed_and_can_be_rated(f):
     q = forum.ask("a", "standard", "How do you restore a single file from a borg archive?", ["tool:borg"], "user question 11.11.2026")
-    qpost = q.data["beitrag"]["id"]
+    qpost = q.data["post"]["id"]
     k, _ = _key()
     ans = {"faden": qpost, "eltern": qpost, "art": "antwort", "text": "borg extract repo::archive path/to/file restores only that file.",
            "inhalt": "borg extract --help; tested on borg 1.4", "hashtags": ["tool:borg"], "reize": [], "autor": "ki-9876543210",
            "netz_id": "c" * 32, "loesch_hash": "d" * 64, "zeit": "2026-11-11"}
     assert p2p.inbox([_signed(k, ans)], in_background=False).get("beitraege") == 1
-    assert not g.load(q.id).data["antworten"]  # waits for review
+    assert not g.load(q.id).data["answers"]  # waits for review
     _release(release=False)
     q = g.load(q.id)
-    a = q.data["antworten"][0]
-    assert a["instanz"] == "ki-9876543210@standard" and a["objekt"].startswith("insight:post-") and q.data["zustand"] == "answered"
+    a = q.data["answers"][0]
+    assert a["instance"] == "ki-9876543210@standard" and a["object"].startswith("insight:post-") and q.data["state"] == "answered"
     hints = questions.deliver("a")
     assert any("borg extract repo::archive" in h for h in hints)
     listing = tools.call_tool("vi_questions", {}, "a", True)
-    assert a["objekt"] in listing and "held by 1 server" in listing
-    tools.call_tool("vi_confirm", {"id": a["objekt"], "reason": "worked on the backup host"}, "a", True)
+    assert a["object"] in listing and "held by 1 server" in listing
+    tools.call_tool("vi_confirm", {"id": a["object"], "reason": "worked on the backup host"}, "a", True)
     assert "accepted" in tools.call_tool("vi_questions", {}, "a", True)
-    rating = [r for r in net_score.outgoing("standard") if r["ziel"] == net_score.hash_of(a["objekt"])]
+    rating = [r for r in net_score.outgoing("standard") if r["ziel"] == net_score.hash_of(a["object"])]
     assert rating and rating[0]["bestaetigt"] == 1  # the acceptance is a rating for the whole network
 
 
@@ -119,7 +119,7 @@ def test_injected_instruction_needs_the_release_right(f):
 
 
 def test_open_network_refuses_internals_in_a_question(f):
-    g.new_object("insight", "db01 is the database host of the shop", ["host:db01", "topic:db"], {"quelle": "inventory"}, instance="a")
+    g.new_object("insight", "db01 is the database host of the shop", ["host:db01", "topic:db"], {"source": "inventory"}, instance="a")
     with pytest.raises(tools.Rejected, match="open network"):
         tools.call_tool("vi_ask", {"to": "netz", "text": "Why does db01 lose its NFS mount every night?", "source": "own observation 11.11.2026"}, "a", True)
     assert "sent to network firma" in tools.call_tool("vi_ask", {"to": "net:firma", "text": "Why does db01 lose its NFS mount every night?",
@@ -149,7 +149,7 @@ def test_posts_travel_through_the_network(f, net):
 
 def test_stats(f):
     q = forum.ask("a", "standard", "How do you restore a single file from a borg archive?", ["tool:borg"], "user question 11.11.2026")
-    qpost = q.data["beitrag"]["id"]
+    qpost = q.data["post"]["id"]
     k, _ = _key()
     ans = {"faden": qpost, "eltern": qpost, "art": "antwort", "text": "borg extract repo::archive path/to/file restores only that file.",
            "inhalt": "", "hashtags": [], "reize": [], "autor": "ki-9876543210", "netz_id": "c" * 32, "loesch_hash": "d" * 64, "zeit": "2026-11-11"}

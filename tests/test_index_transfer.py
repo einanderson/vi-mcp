@@ -9,15 +9,15 @@ from vi_mcp import memory as g
 
 
 def _knowledge(text, index, yes=0.0, no=0.0, **kw):
-    o = g.new_object("insight", text, ["topic:deploy", "tool:dpkg"], {"quelle": "test 2026-11-13", "inhalt": f"full content of: {text}",
-                                                                          "nuetzlich": {"ja": yes, "nein": no, "n": int(yes + no)}},
+    o = g.new_object("insight", text, ["topic:deploy", "tool:dpkg"], {"source": "test 2026-11-13", "content": f"full content of: {text}",
+                                                                          "useful": {"yes": yes, "no": no, "n": int(yes + no)}},
                      index=index, visibility=kw.pop("visibility", "intern"), instance=kw.pop("instance", "claude-code"), **kw)
     return o
 
 
 def _set_measurement(oid, yes, no):
     o = g.load(oid)
-    o.data = {**o.data, "nuetzlich": {"ja": yes, "nein": no, "n": int(yes + no)}}
+    o.data = {**o.data, "useful": {"yes": yes, "no": no, "n": int(yes + no)}}
     g.save(o)
 
 
@@ -37,9 +37,9 @@ def two(tmp_path, monkeypatch):
 def test_export_holds_only_the_knowledge_of_the_index_and_counts_the_rest(two, tmp_path):
     good = _knowledge("vi-mcp deploy: back up config and database before dpkg -i", "proj", 12, 1)
     _knowledge("other project knowledge", "other")
-    g.new_object("insight", "a private note", ["topic:deploy"], {"quelle": "t"}, index="proj", visibility="private")
-    g.new_object("insight", "def f(): pass", ["knowledge_kind:code", "file:x.py"], {"quelle": "t"}, index="proj", visibility="internal")
-    g.new_object("experience", "Bash ok", ["tool:Bash"], {"quelle": "t"}, index="proj")
+    g.new_object("insight", "a private note", ["topic:deploy"], {"source": "t"}, index="proj", visibility="private")
+    g.new_object("insight", "def f(): pass", ["knowledge_kind:code", "file:x.py"], {"source": "t"}, index="proj", visibility="internal")
+    g.new_object("experience", "Bash ok", ["tool:Bash"], {"source": "t"}, index="proj")
     r = it.export("proj", tmp_path / "proj.json")
     assert r["eintraege"] == 1 and r["eigen"] == 1
     assert r["ausgelassen"] == {"private": 1, "code piece (index import-code brings code)": 1, "kind experience is not exported": 1}
@@ -80,7 +80,7 @@ def test_import_quarantines_internal_and_books_the_origin_measurement_once(two, 
     with g.lock:
         oid = g.db().execute("SELECT id FROM object WHERE idx = 'proj-b' AND kind = 'insight'").fetchone()[0]
     o = g.load(oid)
-    assert o.mode == "quarantine" and o.visibility == "internal" and o.data["herkunft"]["netz"] == p2p.FILE_NET
+    assert o.mode == "quarantine" and o.visibility == "internal" and o.data["origin"]["net"] == p2p.FILE_NET
     reg = indexes.registry()["proj-b"]
     assert reg["beschreibung"] == "the vi-mcp project" and reg["tags"] == ["mcp", "python"] and reg["quelle"].startswith("import vi-")
     again = it.import_file(tmp_path / "proj.json", "proj-b", in_background=False)
@@ -106,7 +106,7 @@ def test_the_way_back_compares_both_places_and_moves_the_priority(two, tmp_path)
     r = it.compare("proj-b")
     assert r["klassen"]["nur_ursprung"] == 1 and r["vorrang_aus_neu"] == 1
     o = g.load(oid_b)
-    assert o.data["vorrang_aus"]["grund"].startswith("good only at its origin")
+    assert o.data["priority_off"]["reason"].startswith("good only at its origin")
     assert not indexes.first(o, "proj-b") and indexes.first(g.load(oid_b), None) is False
     assert any("index files: 1 content(s) imported" in z for z in indexes.lines())
     exp_b = it.export("proj-b", tmp_path / "b.json")
@@ -124,7 +124,7 @@ def test_the_way_back_compares_both_places_and_moves_the_priority(two, tmp_path)
     two("b")
     _set_measurement(oid_b, 30, 2)
     r2 = it.compare("proj-b")
-    assert r2["klassen"]["allgemein"] == 1 and r2["vorrang_wieder_an"] == 1 and "vorrang_aus" not in g.load(oid_b).data
+    assert r2["klassen"]["allgemein"] == 1 and r2["vorrang_wieder_an"] == 1 and "priority_off" not in g.load(oid_b).data
 
 
 @pytest.mark.parametrize("origin, target, cls", [
@@ -144,7 +144,7 @@ def test_the_way_back_finds_own_contents_that_share_a_generic_text(two, tmp_path
     and find_local checked only the first 20 with that text. Now content narrows it first."""
     for i in range(25):
         g.new_object("insight", "vi-mcp changelog: What is missing", ["topic:vi-mcp"],
-                     {"quelle": "CHANGELOG.md", "inhalt": f"gap number {i}", "nuetzlich": {"ja": 12, "nein": 1, "n": 13}},
+                     {"source": "CHANGELOG.md", "content": f"gap number {i}", "useful": {"yes": 12, "no": 1, "n": 13}},
                      index="proj", visibility="internal", instance="claude-code")
     it.export("proj", tmp_path / "a.json")
     two("b")

@@ -72,7 +72,7 @@ def test_outdated_base_makes_a_branch_that_is_merged(w):
 
 
 def test_open_network_refuses_internal_names_company_accepts(w):
-    g.new_object("insight", "db01 is the database host of the shop", ["host:db01", "topic:db"], {"quelle": "inventory"}, instance="a")
+    g.new_object("insight", "db01 is the database host of the shop", ["host:db01", "topic:db"], {"source": "inventory"}, instance="a")
     with pytest.raises(ValueError, match="open network"):
         wiki.write("a", "standard", "db", "Backups of db01 go nightly via borg to the NAS.", None)
     assert wiki.write("a", "firma", "db", "Backups of db01 go nightly via borg to the NAS.", None)["zustand"] == "current"
@@ -92,7 +92,7 @@ def test_foreign_revision_counts_only_after_review_and_release(w):
     page = _call("vi_page_read", {"network": "standard", "page": "p"})
     assert "1 change(s) waiting for review" in page and "check the borg log" not in page
     revobj = g.recall("mode:quarantine", viewer=None)[0][1]
-    assert revobj.kind == "page" and "+Note: check the borg log afterwards." in revobj.data["inhalt"]  # the reviewer reads the diff
+    assert revobj.kind == "page" and "+Note: check the borg log afterwards." in revobj.data["content"]  # the reviewer reads the diff
     _release_all(release=False)
     page = _call("vi_page_read", {"network": "standard", "page": "p"})
     assert "check the borg log" in page and "waiting for review" not in page

@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def wnet(gd, monkeypatch):
     monkeypatch.setattr(p2p, "config", {"netze": {"wiki": {"art": "frei", "instanz": "netz-wiki"}}})
     p2p.generate_token("a")
-    o = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended runs", ["tool:borg"], {"quelle": "test 11.11.2026"}, instance="a")
+    o = g.new_object("insight", "Borg needs BORG_PASSCOMMAND for unattended runs", ["tool:borg"], {"source": "test 11.11.2026"}, instance="a")
     o.confirm("ki@b", "worked", "b", family="gpt")
 
 

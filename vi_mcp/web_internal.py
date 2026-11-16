@@ -159,7 +159,7 @@ def _visible(o: g.MemoryObject | None) -> str | None:
 
 def _excerpt(o: g.MemoryObject, n: int = 260) -> str:
     import re
-    t = re.sub(r"(?m)^\s*(#{1,6}|[-*]|```\w*)\s*", "", str(o.data.get("inhalt") or ""))  # plain text: no Markdown marks
+    t = re.sub(r"(?m)^\s*(#{1,6}|[-*]|```\w*)\s*", "", str(o.data.get("content") or ""))  # plain text: no Markdown marks
     t = re.sub(r"\s+", " ", t.replace("**", "").replace("`", "")).strip()
     return (t[:n] + " …") if len(t) > n else t
 
@@ -255,7 +255,7 @@ def _gold_form(base: str, o: g.MemoryObject) -> str:
     """0.62.0: for people (instances with human: true) — the gold label of this object (classify.set_gold)."""
     from . import classify
     cur = o.data.get("gold") or {}
-    lab = o.data.get("klasse") or {}
+    lab = o.data.get("class") or {}
     opt = lambda vals, sel: "".join(f'<option value="{v}"{" selected" if v == sel else ""}>{v}</option>' for v in vals)  # noqa: E731
     return (f'<h2>Gold label</h2><p class="muted">Which question does this answer, what kind of memory is it? Your label is the gold '
             f'the language model is measured against' + (f' (model said {e(lab.get("answers"))}/{e(lab.get("memory"))})' if lab else "") + ".</p>"
@@ -263,7 +263,7 @@ def _gold_form(base: str, o: g.MemoryObject) -> str:
             f'<select name="answers" aria-label="answers">{opt(classify.ANSWERS + ("none",), cur.get("answers"))}</select> '
             f'<select name="memory" aria-label="memory">{opt(classify.MEMORY, cur.get("memory"))}</select> '
             f'<button class="btn" type="submit">Save gold label</button></form>'
-            + (f'<p class="meta">gold set by {e(cur["wer"])} on {when(cur["zeit"])}</p>' if cur else ""))
+            + (f'<p class="meta">gold set by {e(cur["who"])} on {when(cur["ts"])}</p>' if cur else ""))
 
 
 def object_page(base: str, instance: str, oid: str, human: bool = False) -> str | None:
@@ -277,18 +277,18 @@ def object_page(base: str, instance: str, oid: str, human: bool = False) -> str 
                                      ' <span class="refuted">withdrawn by its author — not proven false, but no longer claimed</span>'
                                      if o.mode == "withdrawn" else "")),
              ("learned", when(o.ts)), ("last used", when(o.last_at)), ("importance", e(o.importance)),
-             ("source", _inline(str(o.data.get("quelle") or "—"))),
+             ("source", _inline(str(o.data.get("source") or "—"))),
              ("measured", f"shown {bandit.shown(o)}× · helped {yes:g} · did not help {no:g} · confirmed by "
-                          f"{len(o.data.get('bestaetigt_von') or {})} · refuted by {len(o.data.get('widerlegt_von') or {})}")]
+                          f"{len(o.data.get('confirmed_by') or {})} · refuted by {len(o.data.get('refuted_by') or {})}")]
     line = net_score.line(o)
     if line:
         facts.append(("network", e(line)))
-    hist = "".join(f"<tr><td>{when(c.get('zeit'))}</td><td>{e(c.get('wer'))}</td><td>{e(c.get('was'))}</td><td>{e(c.get('grund'))}</td></tr>"
+    hist = "".join(f"<tr><td>{when(c.get('ts'))}</td><td>{e(c.get('who'))}</td><td>{e(c.get('what'))}</td><td>{e(c.get('reason'))}</td></tr>"
                    for c in reversed(o.changes[-15:]))
     rel_ids = [b for b, _r in o.edges()][:40]
     rel = [x for x in g.load_many(rel_ids).values() if _visible(x) is None][:10]
     body = (f'<p class="meta"><span class="kind">{e(o.kind)}</span>{e(o.id)}</p><h1>{e(o.text)}</h1>'
-            f'<div class="prose">{render_text(str(o.data.get("inhalt") or "")) or "<p class=muted>no further content</p>"}</div>'
+            f'<div class="prose">{render_text(str(o.data.get("content") or "")) or "<p class=muted>no further content</p>"}</div>'
             f'{_tag_links(base, o.hashtags)}<h2>Facts</h2><dl class="facts">'
             + "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts) + "</dl>"
             + (f'<h2>Related</h2><ul class="list">{"".join(_hit(base, x) for x in rel)}</ul>' if rel else "")

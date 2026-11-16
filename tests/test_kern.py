@@ -28,7 +28,7 @@ def test_object_reason_required_and_history(gd):
         o.confirm("ki", "")
     o.confirm("ki", "zweimal gesehen")
     o2 = g.load(o.id)
-    assert o2.confirmed == 1 and o2.changes[-1]["grund"] == "zweimal gesehen"
+    assert o2.confirmed == 1 and o2.changes[-1]["reason"] == "zweimal gesehen"
     with pytest.raises(ValueError):
         o2.tag(["kind:x"], [], "ki", "fest")
 
@@ -97,7 +97,7 @@ def test_session_conversation_and_persist(gd):
     assert o.conversation == s.serial
     assert session.finish(s.id)
     gs = g.load_keyed("conversation", s.serial)
-    assert gs.data["aufrufe"] == 1 and gs.data["zustand"] == "ended"
+    assert gs.data["calls"] == 1 and gs.data["state"] == "ended"
     assert {"tool:netbox_get_devices", "host:web1", "instance:test", "state:ended", "ok:yes"} <= set(gs.hashtags)
     assert session.find(s.id) is None
 
@@ -107,7 +107,7 @@ def test_remembered_answer_read_only(gd):
     assert v1["antwort"] is None
     intuition.after("netbox_get_devices", {"q": 1}, True, 5, None, "ERGEBNIS", v1["vorher_id"])
     v2 = intuition.before("netbox_get_devices", {"q": 1})
-    assert v2["antwort"] == "ERGEBNIS" and v2["zugriff"]["aus_gedaechtnis"]
+    assert v2["antwort"] == "ERGEBNIS" and v2["zugriff"]["from_memory"]
     # writing: never from memory
     v3 = intuition.before("jira_create_ticket", {"q": 1})
     intuition.after("jira_create_ticket", {"q": 1}, True, 5, None, "OK", v3["vorher_id"])
@@ -119,7 +119,7 @@ def test_remembered_answer_read_only(gd):
 
 
 def test_insight_as_hint_before(gd):
-    g.new_object("insight", "web1 antwortet nur über Proxy", ["host:web1"], {"quelle": "Messung"}, reason="T")
+    g.new_object("insight", "web1 antwortet nur über Proxy", ["host:web1"], {"source": "Messung"}, reason="T")
     v = intuition.before("checkmk_get_host", {"host": "web1"})
     assert any("nur über Proxy" in h for h in v["hinweise"])
 
@@ -135,7 +135,7 @@ def test_reflex_checks():
 
 def test_reflex_defective_after_three_errors(gd):
     g.new_object("reflex", "wirft immer", ["reflex:kaputt", "reflex_kind:nachher", "mode:test"],
-                   {"name": "kaputt", "art": "nachher", "code": "def run(t, a, e):\n    raise ValueError('x')"},
+                   {"name": "kaputt", "kind": "nachher", "code": "def run(t, a, e):\n    raise ValueError('x')"},
                    oid="reflex:kaputt", mode="test", reason="T")
     reflexes.load_all()
     for _ in range(3):
@@ -153,7 +153,7 @@ def test_loop_error_becomes_rule_and_hint(gd):
     assert main_loop.step() == 1
     assert main_loop.step() == 0  # idempotent: the same rule not twice
     rule = [o for _, o, _g in g.recall("kind:rule rule_kind:repeated-error")][0]
-    assert rule.mode == "test" and rule.data["treffer"] == 3 and rule.conversation is None
+    assert rule.mode == "test" and rule.data["hits"] == 3 and rule.conversation is None
     v = intuition.before("graylog_search", {"q": "neu"})
     assert any(h.startswith("Rule [") and "failed 3×" in h for h in v["hinweise"])
 
@@ -164,7 +164,7 @@ def test_before_without_after_does_not_vanish(gd):
         intuition.before("netbox_get_vms", {"host": "a"})
     session.finish(s.id)
     e = [o for _, o, _g in g.recall("tool:netbox_get_vms ok:unknown")]
-    assert len(e) == 1 and e[0].conversation == s.serial and e[0].data["vorher"]["ohne_nachher"]
+    assert len(e) == 1 and e[0].conversation == s.serial and e[0].data["before"]["without_after"]
 
 
 def test_create_instance_keeps_permissions(tmp_path):
@@ -180,7 +180,7 @@ def test_create_instance_keeps_permissions(tmp_path):
 def test_too_large_data_stays_readable(gd):
     o = g.new_object("insight", "viel Inhalt hier", ["topic:gross"], {"blob": "x" * (g.DATA_MAX + 10)}, reason="T")
     d = g.load(o.id).data
-    assert d["gekuerzt_zeichen"] > g.DATA_MAX and "blob" not in d
+    assert d["trimmed_chars"] > g.DATA_MAX and "blob" not in d
 
 
 def test_complete_knowledge_is_preserved(gd):
@@ -190,7 +190,7 @@ def test_complete_knowledge_is_preserved(gd):
     r = tools.call_tool("vi_lerne", {"text": "Die Hosts-API liefert Listen", "inhalt": table, "hashtags": ["topic:api"], "quelle": "Handbuch Kapitel 3"}, "a", False)
     oid = next(w.strip("[]") for w in r.split() if w.startswith(("[insight:", "insight:")))
     full = next(o for _, o, _g in g.recall("topic:api", viewer=None))
-    assert full.data["inhalt"] == table.strip() and len(full.text) < 100
+    assert full.data["content"] == table.strip() and len(full.text) < 100
     assert full.id.startswith(oid[:20])
     assert table.strip() in tools.call_tool("vi_objekt", {"id": full.id}, "a", False)
     assert [o.id for _, o, _g in g.recall("Zaunkoenig", viewer=None)] == [full.id]  # found even at the end of long texts
@@ -201,7 +201,7 @@ def test_too_long_text_is_not_cut_off(gd):
     long = "Satz über die API. " * 200
     tools.call_tool("vi_lerne", {"text": long, "hashtags": ["topic:lang"], "quelle": "Handbuch Kapitel 3"}, "a", False)
     o = next(o for _, o, _g in g.recall("topic:lang", viewer=None))
-    assert o.data["inhalt"] == long.strip() and len(o.text) == tools.TEXT_MAX
+    assert o.data["content"] == long.strip() and len(o.text) == tools.TEXT_MAX
 
 
 def test_too_large_content_rejected_with_reason(gd):
@@ -214,7 +214,7 @@ def test_skill_instructions_stay_complete(gd):
     from vi_mcp import skills
     long = "Schritt mit Befehl und Erklärung. " * 100
     o = skills.new("langer weg", ["tool:x"], ["Bash"], long, "weil gelöst", [], "a")
-    assert o.data["inhalt"] == long.strip() and len(o.text) == 600
+    assert o.data["content"] == long.strip() and len(o.text) == 600
 
 
 @pytest.mark.parametrize("cli_command,expected", [
@@ -306,7 +306,7 @@ def test_missing_required_field_rejected_not_silently_answered(gd):
     tools.call_tool("vi_erinnere", {"filter": "Lizenz"}, "a", True)  # correctly named: works
     # 0.51.0: the names models guess for the search field count as filter (reported 11.11.2026: vi_recall(query=…) was refused)
     from vi_mcp import memory as g
-    g.new_object("insight", "Lizenz Dongle steckt am Host lic01", ["topic:lizenz"], {"quelle": "test"}, instance="a")
+    g.new_object("insight", "Lizenz Dongle steckt am Host lic01", ["topic:lizenz"], {"source": "test"}, instance="a")
     for guess in ("query", "q", "search", "text"):
         assert "Lizenz Dongle" in tools.call_tool("vi_recall", {guess: "Dongle"}, "a", True), guess
     assert tools._filter_alias("vi_net_search", {"query": "x"}) == {"query": "x"}  # a tool with its own query keeps it
@@ -329,7 +329,7 @@ def test_state_dependent_tools_are_never_remembered(gd):
 
 def test_colon_words_without_known_kind_are_free_text(gd):
     """0.26.0: "Hosts: 62.153.216.33" emptied the search silently — a colon word is a condition only as kind:value with a known kind."""
-    o = g.new_object("insight", "Die Hosts der Range 62.153.216.33 bis 62.153.216.46 sind Mailrelays", ["topic:netz"], {"quelle": "x"})
+    o = g.new_object("insight", "Die Hosts der Range 62.153.216.33 bis 62.153.216.46 sind Mailrelays", ["topic:netz"], {"source": "x"})
     assert g.parse_filter("Hosts: 62.153.216.33", frozenset({"topic", "kind"})) == ([], [], ["Hosts:", "62.153.216.33"])
     assert g.parse_filter("um 10:30 topic:netz", frozenset({"topic"})) == ([["topic:netz"]], [], ["um", "10:30"])
     assert g.parse_filter("foo:bar topic:netz", frozenset({"topic"})) == ([["topic:netz"]], [], ["foo:bar"])  # unknown kind
@@ -342,7 +342,7 @@ def test_colon_words_without_known_kind_are_free_text(gd):
 def test_recall_without_reinforcement(gd):
     """0.31.0: reinforce=false for measurements — access count and last use stay as they were, and the answer says so."""
     from vi_mcp import tools
-    o = g.new_object("insight", "nginx reload only after nginx -t", ["topic:nginx"], {"quelle": "x"}, reason="T")
+    o = g.new_object("insight", "nginx reload only after nginx -t", ["topic:nginx"], {"source": "x"}, reason="T")
     before = g.load(o.id)
     out = tools.call_tool("vi_recall", {"filter": "topic:nginx", "reinforce": False}, "a", False)
     after = g.load(o.id)
@@ -362,5 +362,5 @@ def test_exploration_adds_a_slot_instead_of_displacing_the_only_hint(gd, monkeyp
     tools.call_tool("vi_learn", {"text": "ssh to web1 only with key and BatchMode", "hashtags": ["host:web1.example", "tool:ssh"], "source": "experience"}, "a", False)
     monkeypatch.setattr(random, "random", lambda: 0.0)
     z = intuition.before("Bash", {"command": "ssh web1.example 'docker logs nginx'"}, "a", False)["zugriff"]
-    assert z["exploration"] is True and len(z["gezeigt"]) == 2
-    assert any("ssh to web1" in g.load(i).text for i in z["gezeigt"])
+    assert z["exploration"] is True and len(z["shown"]) == 2
+    assert any("ssh to web1" in g.load(i).text for i in z["shown"])

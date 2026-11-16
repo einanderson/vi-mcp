@@ -11,7 +11,7 @@ from test_p2p import _bundle, _key  # noqa: E402
 
 
 def _k(text, tags, yes, no, **kw):
-    return g.new_object("insight", text, tags, {"quelle": "t", "nuetzlich": {"ja": yes, "nein": no, "n": int(yes + no)}},
+    return g.new_object("insight", text, tags, {"source": "t", "useful": {"yes": yes, "no": no, "n": int(yes + no)}},
                         visibility=kw.pop("visibility", "intern"), instance="a", **kw)
 
 

@@ -85,7 +85,7 @@ def judge(query: str, objs: list) -> tuple[dict[int, int] | None, str | None]:
     from . import classify, reflection
     k = len(objs)
     user = f"Query: {query}\n\n" + "\n\n".join(
-        f"Passage {i}: {o.text[:300]}\n{(o.data.get('inhalt') or '')[:CHARS]}".strip() for i, o in enumerate(objs, 1))
+        f"Passage {i}: {o.text[:300]}\n{(o.data.get('content') or '')[:CHARS]}".strip() for i, o in enumerate(objs, 1))
     why = None
     for _attempt in range(2):
         try:

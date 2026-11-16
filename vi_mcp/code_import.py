@@ -358,16 +358,16 @@ def server_sync(index: str, repo: str, commit: str, files: list[dict], removed: 
             if clean != code:
                 out["geheimnisse_ersetzt"] += 1
             text = f"{path}:{c['symbol']} — {c.get('signatur') or c.get('art') or ''}"[:300]
-            data = {"quelle": f"{repo}@{commit[:12]}:{path}:{c.get('von')}-{c.get('bis')}", "inhalt": clean, "datei": path, "sha": sha,
-                    "symbol": c["symbol"], "stueck": c.get("art"), "von": c.get("von"), "bis": c.get("bis"), "commit": commit, "repo": repo}
+            data = {"source": f"{repo}@{commit[:12]}:{path}:{c.get('von')}-{c.get('bis')}", "content": clean, "datei": path, "sha": sha,
+                    "symbol": c["symbol"], "stueck": c.get("art"), "from": c.get("von"), "bis": c.get("bis"), "commit": commit, "repo": repo}
             upsert(oid, text, list(common), data, "aktualisiert")
         if isinstance(f.get("struktur"), dict):  # the structure facts of a Python file (code_facts)
             for sym, text, tags, facts in code_facts.objects(f["struktur"], path):
                 oid = piece_id(index, repo, path, sym)
                 keep.add(oid)
-                data = {**facts, "quelle": f"{repo}@{commit[:12]}:{path}:{facts.get('von', 1)}-{facts.get('bis', '')}", "datei": path,
+                data = {**facts, "source": f"{repo}@{commit[:12]}:{path}:{facts.get('von', 1)}-{facts.get('bis', '')}", "datei": path,
                         "sha": sha, "commit": commit, "repo": repo, "stueck": tags[0].split(":", 1)[1],
-                        "inhalt": json.dumps(facts, ensure_ascii=False, sort_keys=True)}
+                        "content": json.dumps(facts, ensure_ascii=False, sort_keys=True)}
                 upsert(oid, text, list(dict.fromkeys(common + tags)), data, "fakten_aktualisiert")
         for o in _held(index, repo, path):
             if o.id not in keep:
@@ -394,7 +394,7 @@ def file_line(index: str, file_path: str) -> tuple[str | None, str | None]:
     with g.lock:
         ids = [r[0] for r in g.db().execute("SELECT o.id FROM object o JOIN tag t ON t.object_id = o.id WHERE o.idx = ? AND o.mode = 'active' "
                                             "AND t.tag = ?", (index, f"file:{best}"))]
-    pieces = sorted((o for o in g.load_many(ids).values() if not _is_fact(o)), key=lambda o: o.data.get("von") or 0)
+    pieces = sorted((o for o in g.load_many(ids).values() if not _is_fact(o)), key=lambda o: o.data.get("from") or 0)
     names = [str(o.data.get("symbol")) for o in pieces if not str(o.data.get("symbol", "")).startswith("(")]
     commit = next((str(o.data.get("commit"))[:7] for o in pieces if o.data.get("commit")), "?")
     shown = ", ".join(names[:12]) + (f" … (+{len(names) - 12})" if len(names) > 12 else "") if names else f"{len(pieces)} piece(s)"

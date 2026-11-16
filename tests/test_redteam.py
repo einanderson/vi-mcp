@@ -47,7 +47,7 @@ def test_a_held_entry_is_shown_to_nobody_and_its_author_cannot_release_it(gd):
     assert out.startswith("held ") and "harmful: pipe_to_shell" in out
     oid = out.split()[1]
     o = g.load(oid)
-    assert o.mode == "quarantine" and o.data["pruefung"]["verdacht"]
+    assert o.mode == "quarantine" and o.data["review"]["suspicion"]
     assert oid not in tools.call_tool("vi_recall", {"filter": "host:web1.example", "semantic": False}, "victim", False)
     with pytest.raises(ValueError, match="the author cannot release"):
         p2p.approve(o, "mallory", False, True, "it is fine")

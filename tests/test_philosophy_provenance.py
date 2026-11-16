@@ -13,7 +13,7 @@ from vi_mcp import philosophy_provenance as pv  # noqa: E402
 
 
 def _obj(text="Port 8080 serves the admin UI", quelle="https://docs.example.org/admin", instance="a", tags=("topic:t",)):
-    return g.new_object("insight", text, list(tags), {"quelle": quelle}, reason="T", instance=instance)
+    return g.new_object("insight", text, list(tags), {"source": quelle}, reason="T", instance=instance)
 
 
 def _acceptance(o):
@@ -26,7 +26,7 @@ def _acceptance(o):
 
 def _entries(o, n, source, family=lambda k: f"fam{k}"):
     o = g.load(o.id)
-    o.data["bestaetigungen"] = [{"instanz": f"i{k}", "familie": family(k), "quelle": source(k), "zeit": g.now()} for k in range(n)]
+    o.data["confirmations"] = [{"instanz": f"i{k}", "familie": family(k), "quelle": source(k), "zeit": g.now()} for k in range(n)]
     o.confirmed = n
     return g.save(o)
 
@@ -47,7 +47,7 @@ def test_a_record_cut_at_its_cap_concludes_nothing_and_invents_no_origin(gd):
     for k in range(150):
         o = g.load(o.id).confirm(f"ki@i{k}", "seen", instance=f"i{k}", family=f"fam{k}", source="https://news.example/post-1")
     o = g.load(o.id)
-    assert len(o.data["bestaetigungen"]) == 100 and o.confirmed == 150
+    assert len(o.data["confirmations"]) == 100 and o.confirmed == 150
     acc, _held, facts, info = _acceptance(o)
     assert acc == [] and not any(f.startswith("closed(") for f in facts) and info["not_closed_record"] == 1
     assert sum(f.startswith("line(") for f in facts) == 100  # the 50 dropped entries are not made up as origins
@@ -95,14 +95,14 @@ def test_hearsay_alone_is_held_back_with_its_reason(gd):
 def test_every_known_camp_is_given_and_the_seed_names_a_partly_known_one(gd):
     o = _obj()
     o = g.load(o.id)
-    o.data["bestaetigungen"] = [{"instanz": "x", "familie": "gpt", "quelle": "https://a.example/1", "zeit": g.now()},
+    o.data["confirmations"] = [{"instanz": "x", "familie": "gpt", "quelle": "https://a.example/1", "zeit": g.now()},
                                 {"instanz": "y", "quelle": "https://b.example/2", "zeit": g.now()}]
     o.confirmed = 2
     o = g.save(o)
     acc, held, facts, info = _acceptance(o)
     assert facts.count(f'camp("q:https://a.example/1", "gpt")') == 1 and info["camps"] == 1  # every known camp is given
     assert acc == ["tentative"] and held == ["camp_unknown"]  # the seed names the partly known camp, never one_camp
-    o.data["bestaetigungen"][1]["familie"] = "gpt"  # both known, the same camp: P10 holds it back
+    o.data["confirmations"][1]["family"] = "gpt"  # both known, the same camp: P10 holds it back
     o = g.save(o)
     acc, held, _facts, _info = _acceptance(o)
     assert acc == ["tentative"] and held == ["one_camp"]

@@ -65,7 +65,7 @@ def test_revocation_removes_one_holder_the_last_removes_the_object(two):
 
 def test_foreign_copy_of_a_local_object_links_to_it_and_never_deletes_it(two):
     k1, _ = two
-    local = g.new_object("insight", GOOD["text"], GOOD["hashtags"], {"quelle": "eigene Messung"}, instance="a")
+    local = g.new_object("insight", GOOD["text"], GOOD["hashtags"], {"source": "eigene Messung"}, instance="a")
     r = p2p.inbox(_bundle(k1, [_copy(1)]), in_background=False)
     assert r["dedupliziert"] == 1 and r["quarantaene"] == 0
     assert net_score.find(net_score.content_hash(GOOD)) == local.id
@@ -133,7 +133,7 @@ def test_outgoing_ratings_are_own_measurements_of_imports_only(two):
     o = g.recall("mode:quarantine", viewer=None)[0][1]
     assert net_score.outgoing("standard") == []  # in quarantine: nothing to rate
     o.mode = "test"
-    o.data["nuetzlich"] = {"ja": 2.5, "nein": 0.5, "n": 4}
+    o.data["useful"] = {"yes": 2.5, "no": 0.5, "n": 4}
     o.confirm("ki@a", "worked here", "a")
     out = net_score.outgoing("standard")
     assert out == [{"ziel": net_score.content_hash(GOOD), "gezeigt": 4, "ja": 2.5, "nein": 0.5, "bestaetigt": 1, "widerlegt": 0}]

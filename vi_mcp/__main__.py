@@ -311,8 +311,8 @@ def _cli(argv: list[str]) -> int:
             try:  # read only: what the clients of this instance announced (0.34.0)
                 from . import db as dbmod
                 c = dbmod.connect_readonly(k.db)
-                rows = c.execute("SELECT json_extract(data, '$.familie'), json_extract(data, '$.familie_quelle'), json_extract(data, '$.client'), "
-                                 "MAX(ts), COUNT(*) FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.familie') IS NOT NULL "
+                rows = c.execute("SELECT json_extract(data, '$.family'), json_extract(data, '$.family_source'), json_extract(data, '$.client'), "
+                                 "MAX(ts), COUNT(*) FROM object WHERE kind = 'conversation' AND instance = ? AND json_extract(data, '$.family') IS NOT NULL "
                                  "GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 10", (argv[1],)).fetchall()
             except sqlite3.Error as e:
                 rows, err = [], e

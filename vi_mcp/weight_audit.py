@@ -77,9 +77,9 @@ def _group_lift(c: int) -> tuple[float | None, int, int]:
         if grp != c or not hid.startswith(bandit.HINT_KINDS):
             continue
         o = g.load(hid)
-        z = (o.data.get("nuetzlich") or {}) if o else {}
-        if z.get("n") and "erwartet" in z:
-            ok, expected, n, members = ok + z.get("ok", 0), expected + z["erwartet"], n + int(z["n"]), members + 1
+        z = (o.data.get("useful") or {}) if o else {}
+        if z.get("n") and "expected" in z:
+            ok, expected, n, members = ok + z.get("ok", 0), expected + z["expected"], n + int(z["n"]), members + 1
     return ((ok - expected) / n if n else None), n, members
 
 

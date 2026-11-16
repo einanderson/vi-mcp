@@ -40,7 +40,7 @@ def test_before_after_and_remembered_answer(h):
     h.process(ev("PostToolUse", tool_name=t, tool_input={"host": "web1"}, tool_use_id="u1",
                     tool_response={"content": [{"type": "text", "text": "web1 aktiv"}]}))
     e = [o for _, o, _g in g.recall("tool:netbox_get_devices kind:experience ok:yes")]
-    assert len(e) == 1 and e[0].data["vorher"]["reize"][:3] == ["tool:netbox_get_devices", "skill:netbox", "host:web1"]
+    assert len(e) == 1 and e[0].data["before"]["triggers"][:3] == ["tool:netbox_get_devices", "skill:netbox", "host:web1"]
     # second identical call (other Claude session): from memory → denied with the answer as reason
     outputs = h.process(ev("PreToolUse", "cc-2", tool_name=t, tool_input={"host": "web1"}, tool_use_id="u2"))
     hs = outputs["hookSpecificOutput"]
@@ -60,7 +60,7 @@ def test_error_hint_and_own_tools(h):
     h.process(ev("PostToolUseFailure", tool_name="Bash", tool_input={"command": "x"}, tool_use_id="b1", error="Exit 127: x: not found"))
     assert [o.text for _, o, _g in g.recall("tool:Bash ok:no")][0].startswith("Bash(")
     # 0.49.0: a shell hint needs more than the tool in common — here the host
-    g.new_object("insight", "web7 hier ohne Proxy-Variablen", ["tool:Bash", "host:web7.example"], {"quelle": "Test"}, reason="T")
+    g.new_object("insight", "web7 hier ohne Proxy-Variablen", ["tool:Bash", "host:web7.example"], {"source": "Test"}, reason="T")
     outputs = h.process(ev("PreToolUse", tool_name="Bash", tool_input={"command": "ssh web7.example uptime"}, tool_use_id="b2"))
     assert "ohne Proxy-Variablen" in outputs["hookSpecificOutput"]["additionalContext"]
     assert h.process(ev("PreToolUse", tool_name="mcp__vi-mcp__vi_status", tool_input={}, tool_use_id="v1")) is None
@@ -72,7 +72,7 @@ def test_session_end_and_server_restart(h):
     serial = [o for _, o, _g in g.recall("kind:conversation instance:laptop")][0].data["serial"]
     h.process(ev("SessionEnd", "cc-9", reason="exit"))
     gs = g.load_keyed("conversation", serial)
-    assert gs.data["zustand"] == "ended" and gs.data["ohne_ergebnis"] == 1  # before without after: named
+    assert gs.data["state"] == "ended" and gs.data["without_result"] == 1  # before without after: named
     # state file points to an unknown session (server restarted) → hook registers again
     h.write("sitzung", "cc-10", {"mcp_session_id": "veraltet"})
     assert h.process(ev("PreToolUse", "cc-10", tool_name="Glob", tool_input={"pattern": "*"}, tool_use_id="g2")) is None

@@ -47,7 +47,7 @@ def _manual_names(doc: str, prefix: str) -> set[str]:
     pattern = re.compile(rf"\b({re.escape(prefix)}_[a-z0-9_]{{2,60}})\b")
     names: set[str] = set()
     for o in g.load_many(ids).values():
-        names.update(pattern.findall(o.text + "\n" + str(o.data.get("inhalt") or "")))
+        names.update(pattern.findall(o.text + "\n" + str(o.data.get("content") or "")))
     return names
 
 

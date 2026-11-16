@@ -9,7 +9,7 @@ from vi_mcp import memory as g
 
 
 def _fact(src="free -m on web1, 10.11. 14:00"):
-    return g.new_object("insight", "Dienst y braucht 2 GB RAM", ["topic:y"], {"quelle": src}, reason="T", instance="a")
+    return g.new_object("insight", "Dienst y braucht 2 GB RAM", ["topic:y"], {"source": src}, reason="T", instance="a")
 
 
 def test_one_family_counts_once(gd):
@@ -25,14 +25,14 @@ def test_same_source_is_no_independent_line(gd):
     o = _fact()
     g.load(o.id).confirm("ki@b", "steht so in der Quelle", "b", family="gpt", source="Free -m on web1, 10.11. 14:00.")
     o2 = g.load(o.id)
-    assert o2.foreign_confirmations() == 0 and "same source as the object" in o2.changes[-1]["was"]
+    assert o2.foreign_confirmations() == 0 and "same source as the object" in o2.changes[-1]["what"]
     g.load(o.id).confirm("ki@b", "selbst gemessen", "b", family="gpt", source="free -m on web2, 10.11. 16:00")
     assert g.load(o.id).foreign_confirmations() == 1
 
 
 def test_undeclared_and_legacy_count_per_instance(gd):
     o = _fact()
-    o.data["bestaetigt_von"] = {"x": 1, "y": 2}  # stored before 0.33.0, no family known
+    o.data["confirmed_by"] = {"x": 1, "y": 2}  # stored before 0.33.0, no family known
     g.save(o)
     assert g.load(o.id).foreign_confirmations() == 2
     g.load(o.id).confirm("ki@z", "ok", "z")  # no family declared → its own line
@@ -54,8 +54,8 @@ def test_tool_passes_family_and_source(gd):
     tools.call_tool("vi_confirm", {"id": o.id, "reason": "geprüft"}, "c", False, False, "claude")
     out = tools.call_tool("vi_object", {"id": o.id}, "a", False)
     assert "independent lines: 1" in out
-    e = g.load(o.id).data["bestaetigungen"]
-    assert [x["familie"] for x in e] == ["claude", "claude"] and e[0]["quelle"] == "free -m on web3"
+    e = g.load(o.id).data["confirmations"]
+    assert [x["family"] for x in e] == ["claude", "claude"] and e[0]["source"] == "free -m on web3"
 
 
 def test_family_is_declared_in_the_configuration(tmp_path):
@@ -85,10 +85,10 @@ def test_session_family_is_used_unless_the_operator_declared_one(gd):
     from vi_mcp import config, server, session
     inst = config.Instance("b", "0" * 64)
     _a, s = server._initialize({"id": 1, "params": {"clientInfo": {"name": "claude-code", "version": "2.1"}}}, inst)
-    assert s.family == "claude" and g.load_keyed("conversation", s.serial).data["familie"] == "claude"
+    assert s.family == "claude" and g.load_keyed("conversation", s.serial).data["family"] == "claude"
     o = _fact()
     tools.call_tool("vi_confirm", {"id": o.id, "reason": "geprüft"}, "b", False, False, inst.family or s.family)
-    assert g.load(o.id).data["bestaetigungen"][-1]["familie"] == "claude"
+    assert g.load(o.id).data["confirmations"][-1]["family"] == "claude"
     declared = config.Instance("c", "0" * 64, family="qwen")
     _a, s2 = server._initialize({"id": 2, "params": {"clientInfo": {"name": "claude-code"}}}, declared, "claude")
     assert (declared.family or s2.family) == "qwen"

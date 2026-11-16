@@ -41,9 +41,9 @@ def test_without_service_skipped_and_named(gd, monkeypatch):
 
 
 def test_vectors_in_sleep_and_proximity_edges(fake):
-    a = g.new_object("insight", "graylog Timeout auf cue1", ["host:cue1"], {"quelle": "x"}, reason="T", instance="a")
-    b = g.new_object("insight", "Verbindung zu cue1 haengt", ["host:cue1"], {"quelle": "y"}, reason="T", instance="b")
-    c = g.new_object("insight", "Disk voll auf web1", ["host:web1"], {"quelle": "z"}, reason="T")
+    a = g.new_object("insight", "graylog Timeout auf cue1", ["host:cue1"], {"source": "x"}, reason="T", instance="a")
+    b = g.new_object("insight", "Verbindung zu cue1 haengt", ["host:cue1"], {"source": "y"}, reason="T", instance="b")
+    c = g.new_object("insight", "Disk voll auf web1", ["host:web1"], {"source": "z"}, reason="T")
     report = sleep_cycle.run("Test")
     s7 = report.data["schritte"]["7_vektoren"]
     assert s7["zustand"] == "fertig" and s7["neu"] == 3 and vector.load(a.id) is not None
@@ -57,8 +57,8 @@ def test_vectors_in_sleep_and_proximity_edges(fake):
 
 
 def test_semantic_search(fake):
-    a = g.new_object("insight", "graylog Timeout auf cue1", ["host:cue1"], {"quelle": "x"}, reason="T")
-    g.new_object("insight", "Disk voll auf web1", ["host:web1"], {"quelle": "z"}, reason="T")
+    a = g.new_object("insight", "graylog Timeout auf cue1", ["host:cue1"], {"source": "x"}, reason="T")
+    g.new_object("insight", "Disk voll auf web1", ["host:web1"], {"source": "z"}, reason="T")
     sleep_cycle.run("Test")
     r = tools.call_tool("vi_erinnere", {"filter": "Verbindung haengt", "semantisch": True}, "a", True)
     assert r.splitlines()[1].strip().startswith(f"[{a.id}]") and "semantic hybrid (embedding" in r
@@ -74,7 +74,7 @@ def test_catch_up_names_the_real_remainder(gd, monkeypatch):
     monkeypatch.setattr(vector, "embed_fn", lambda texts: [[1.0, 0.0] for _ in texts])
     monkeypatch.setattr(vector, "BATCH", 2)
     for i in range(5):
-        g.new_object("insight", f"Wissen Nummer {i} zum Einbetten", ["topic:a"], {"quelle": "x"}, reason="T")
+        g.new_object("insight", f"Wissen Nummer {i} zum Einbetten", ["topic:a"], {"source": "x"}, reason="T")
     r = vector.catch_up(max_s=0)  # time already up: nothing embedded, everything pending
     assert r == {"zustand": "fertig", "neu": 0, "offen": 5, "pause_s": 0.0}
     r = vector.catch_up()
@@ -83,10 +83,10 @@ def test_catch_up_names_the_real_remainder(gd, monkeypatch):
 
 def test_semantic_search_checks_all_vectors_not_only_newest(fake):
     """0.19.2: candidates were the 200 most recently used objects — older docs were never compared (measured against the AIKB)."""
-    old = g.new_object("insight", "Proxy-Doku: Verbindung über den Proxy", ["docs:x"], {"quelle": "alt"}, reason="T")
+    old = g.new_object("insight", "Proxy-Doku: Verbindung über den Proxy", ["docs:x"], {"source": "alt"}, reason="T")
     g.db().execute("UPDATE object SET last_at = '2020-01-01T00:00:00+00:00', ts = '2020-01-01T00:00:00+00:00' WHERE id = ?", (old.id,))
     for i in range(260):
-        g.new_object("insight", f"Disk voll auf web{i}", [f"host:web{i}"], {"quelle": "neu"}, reason="T")
+        g.new_object("insight", f"Disk voll auf web{i}", [f"host:web{i}"], {"source": "neu"}, reason="T")
     vector.catch_up(max_s=600)
     r = tools.call_tool("vi_erinnere", {"filter": "proxy netz", "semantisch": True, "limit": 3}, "a", True)
     assert r.splitlines()[1].strip().startswith(f"[{old.id}]"), r
@@ -94,9 +94,9 @@ def test_semantic_search_checks_all_vectors_not_only_newest(fake):
 
 
 def test_semantic_search_names_objects_without_vector(fake):
-    g.new_object("insight", "proxy timeout", ["host:a"], {"quelle": "x"}, reason="T")
+    g.new_object("insight", "proxy timeout", ["host:a"], {"source": "x"}, reason="T")
     vector.catch_up(max_s=600)
-    g.new_object("insight", "proxy disk", ["host:b"], {"quelle": "y"}, reason="T")  # no vector yet
+    g.new_object("insight", "proxy disk", ["host:b"], {"source": "y"}, reason="T")  # no vector yet
     r = tools.call_tool("vi_erinnere", {"filter": "proxy", "semantisch": True}, "a", True)
     assert "1 of 2 candidates with a vector" in r
 
@@ -104,18 +104,18 @@ def test_semantic_search_names_objects_without_vector(fake):
 def test_hybrid_search_finds_fresh_learning_without_vector(fake):
     """0.19.5: new items have no vector until the next sleep. Meaning search alone did not find them (learning test 09.11.: 1 of 8 before and after)."""
     for i in range(30):
-        g.new_object("insight", f"Disk voll auf web{i}", [f"host:web{i}"], {"quelle": "alt"}, reason="T")
+        g.new_object("insight", f"Disk voll auf web{i}", [f"host:web{i}"], {"source": "alt"}, reason="T")
     vector.catch_up(max_s=600)
     new = g.new_object("insight", "ipa-client-install scheitert mit TypeError IPACertificate, Ursache pip-cryptography", ["topic:ipa-client-install"],
-                         {"quelle": "neu"}, reason="T")
+                         {"source": "neu"}, reason="T")
     r = tools.call_tool("vi_erinnere", {"filter": "ipa-client-install TypeError IPACertificate", "semantisch": True, "limit": 3}, "a", True)
     assert new.id in r and "via full text only" in r, r
 
 
 def test_fulltext_falls_back_to_or_and_says_so(gd):
     """0.19.2: FTS5 joins words with AND — a filler word of the question ("anzuhalten") gave 0 hits."""
-    a = g.new_object("insight", "vzdump im Modus snapshot sichert laufende VMs", ["skill:proxmox"], {"quelle": "x"}, reason="T")
-    b = g.new_object("insight", "vzdump sichert VMs", ["skill:proxmox"], {"quelle": "y"}, reason="T")
+    a = g.new_object("insight", "vzdump im Modus snapshot sichert laufende VMs", ["skill:proxmox"], {"source": "x"}, reason="T")
+    b = g.new_object("insight", "vzdump sichert VMs", ["skill:proxmox"], {"source": "y"}, reason="T")
     r = tools.call_tool("vi_erinnere", {"filter": "vzdump snapshot laufende anzuhalten"}, "a", True)
     assert "OR search" in r and r.splitlines()[1].strip().startswith(f"[{a.id}]") and b.id in r
     full = tools.call_tool("vi_erinnere", {"filter": "vzdump snapshot"}, "a", True)  # all words present, enough hits at limit 1
@@ -127,14 +127,14 @@ def test_fulltext_falls_back_to_or_and_says_so(gd):
 def test_fulltext_with_hashtag_filter_searches_only_filtered(gd):
     """FTS used to run globally with LIMIT 500 and was filtered only afterwards: matching objects behind 500 foreign hits were missing."""
     for i in range(520):
-        g.new_object("insight", f"timeout auf web{i}", [f"host:web{i}"], {"quelle": "x"}, reason="T")
-    target = g.new_object("insight", "timeout auf cue1", ["host:cue1"], {"quelle": "x"}, reason="T")
+        g.new_object("insight", f"timeout auf web{i}", [f"host:web{i}"], {"source": "x"}, reason="T")
+    target = g.new_object("insight", "timeout auf cue1", ["host:cue1"], {"source": "x"}, reason="T")
     assert [o.id for _, o, _g in g.recall("host:cue1 timeout")] == [target.id]
 
 
 
 def test_default_hybrid_falls_back_to_full_text_when_embedding_fails(fake, monkeypatch):
-    a = g.new_object("insight", "graylog Timeout auf cue1", ["host:cue1"], {"quelle": "x"}, reason="T")
+    a = g.new_object("insight", "graylog Timeout auf cue1", ["host:cue1"], {"source": "x"}, reason="T")
     vector.catch_up(max_s=600)
 
     def slow(texts):
@@ -147,8 +147,8 @@ def test_default_hybrid_falls_back_to_full_text_when_embedding_fails(fake, monke
 
 
 def test_reranker_orders_the_hybrid_hits(fake, monkeypatch):
-    a = g.new_object("insight", "proxy timeout on the gateway", ["host:a"], {"quelle": "x"}, reason="T")
-    b = g.new_object("insight", "proxy disk full on the gateway", ["host:b"], {"quelle": "y"}, reason="T")
+    a = g.new_object("insight", "proxy timeout on the gateway", ["host:a"], {"source": "x"}, reason="T")
+    b = g.new_object("insight", "proxy disk full on the gateway", ["host:b"], {"source": "y"}, reason="T")
     vector.catch_up(max_s=600)
     monkeypatch.setattr(vector, "rerank_fn", lambda q, docs: [10.0 if "disk" in d else 0.0 for d in docs])
     r = tools.call_tool("vi_recall", {"filter": "proxy gateway"}, "a", True)

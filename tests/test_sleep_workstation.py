@@ -19,7 +19,7 @@ def clock(gd, monkeypatch):
 
 
 def _slept(hours_ago):
-    o = g.new_object("sleep", "sleep", ["kind:sleep"], {"quelle": "t"})
+    o = g.new_object("sleep", "sleep", ["kind:sleep"], {"source": "t"})
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = ?", ((NOON - timedelta(hours=hours_ago)).isoformat(timespec="seconds"), o.id))
         g.db().commit()
@@ -27,7 +27,7 @@ def _slept(hours_ago):
 
 def _experiences(total):
     for i in range(total // 3):
-        g.new_object("experience", f"Bash ok {i}", ["tool:Bash"], {"quelle": "t"}, importance=3)
+        g.new_object("experience", f"Bash ok {i}", ["tool:Bash"], {"source": "t"}, importance=3)
 
 
 def test_a_missed_night_is_caught_up_in_a_quiet_moment_not_while_someone_works(clock):

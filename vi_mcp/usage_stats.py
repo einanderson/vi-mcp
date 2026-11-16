@@ -163,11 +163,11 @@ def data(days: float = 7) -> dict:
     per_project: dict[str, dict] = {}
     for z, i, tot, d_json, tooltag, oktag in exps:
         d = json.loads(d_json)
-        v = d.get("vorher") or {}
-        shown += len([h for h in v.get("gezeigt") or [] if not names.id_has_kind(h, "answer")])
-        feedbacks += len(d.get("rueckmeldung") or {})
+        v = d.get("before") or {}
+        shown += len([h for h in v.get("shown") or [] if not names.id_has_kind(h, "answer")])
+        feedbacks += len(d.get("feedback") or {})
         opened += len(d.get("geoeffnet") or {})
-        adopted += len(d.get("genutzt") or [])  # 0.59.0: implicit feedback
+        adopted += len(d.get("used") or [])  # 0.59.0: implicit feedback
         if tot:
             conv_with_action.add(tot)
         pr = per_project.setdefault(projects_of.get(tot) or "—", {"n": 0, "ok": 0, "ok_known": 0, "fehler": {}})
@@ -175,11 +175,11 @@ def data(days: float = 7) -> dict:
         pr["ok"] += oktag == "ok:yes"
         pr["ok_known"] += bool(oktag)
         if oktag == "ok:no":  # 14.11.2026: a low rate needs its reason — which error class, how many, when
-            cls = re.sub(r"\d+", "#", str(d.get("fehler") or "unknown error"))[:70]
+            cls = re.sub(r"\d+", "#", str(d.get("error") or "unknown error"))[:70]
             f = pr["fehler"].setdefault(cls, [0, z, z])
             f[0], f[1], f[2] = f[0] + 1, min(f[1], z), max(f[2], z)
         if oktag:
-            target = warn if v.get("warnung") else without_warn
+            target = warn if v.get("warning") else without_warn
             target["n"] += 1
             target["ok"] += oktag == "ok:yes"
         tool = (tooltag or "tool:?")[5:]

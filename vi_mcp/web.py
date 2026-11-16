@@ -132,8 +132,8 @@ def _imports(net: str, words: list[str] | None = None, limit: int = PAGE_SIZE) -
     hits = g.recall(filt, limit=limit * 4, kinds=KNOWLEDGE_KINDS, viewer=None, or_fallback=bool(words))
     out = []
     for _s, o, _g in hits:
-        h = o.data.get("herkunft") or {}
-        if (h.get("netz") or "standard") != net or o.mode not in ("active", "test") or o.visibility != "shared" or (names.id_has_kind(o.id, "insight") and names.id_key(o.id).startswith("post-")):
+        h = o.data.get("origin") or {}
+        if (h.get("net") or "standard") != net or o.mode not in ("active", "test") or o.visibility != "shared" or (names.id_has_kind(o.id, "insight") and names.id_key(o.id).startswith("post-")):
             continue
         out.append(o)
         if len(out) >= limit:
@@ -181,13 +181,13 @@ def _threads(net: str) -> list[dict]:
         c = json.loads(data)
         q = g.load(oid)
         out.append({"id": pid, "text": c["text"], "author": c["autor"], "time": t, "answers": len(_answers(pid, net, q, own=True)), "here": True,
-                    "state": (q.data.get("zustand") if q else "—")})
+                    "state": (q.data.get("state") if q else "—")})
     for pid, autor, t, oid in recv:
         q = g.load(oid)
         if not q:
             continue
         out.append({"id": pid, "text": q.text, "author": autor, "time": t, "answers": len(_answers(pid, net, q, own=False)), "here": False,
-                    "state": q.data.get("zustand")})
+                    "state": q.data.get("state")})
     return sorted(out, key=lambda x: x["time"], reverse=True)
 
 
@@ -197,12 +197,12 @@ def _answers(pid: str, net: str, q: g.MemoryObject | None, own: bool) -> list[di
     from . import net_score
     if own:
         out = []
-        for a in (q.data.get("antworten") if q else []) or []:
-            ao = g.load(a.get("objekt") or "")
+        for a in (q.data.get("answers") if q else []) or []:
+            ao = g.load(a.get("object") or "")
             if not ao or ao.mode not in ("test", "active"):
                 continue
             s = net_score.score(net_score.hash_of(ao.id), ao) if net_score.hash_of(ao.id) else None
-            out.append({"author": a["instanz"].split("@")[0], "text": ao.text, "evidence": ao.data.get("inhalt") or "", "time": a.get("zeit", ""),
+            out.append({"author": a["instance"].split("@")[0], "text": ao.text, "evidence": ao.data.get("content") or "", "time": a.get("ts", ""),
                         "accepted": ao.confirmed > 0, "score": s})
         return out
     with g.lock:
@@ -328,7 +328,7 @@ def search(base: str, q: str, net_filter: str = "", kind: str = "") -> str:
                     sc = _matches(words, o.text, " ".join(o.hashtags)) * 2
                     if sc:
                         results.append((sc, f'<li><span class="kind">{e(o.kind)} · {e(n)}</span><h3><a href="{e(base)}/eintrag/{e(o.id)}">{e(o.text[:160])}</a></h3>'
-                                            f'<p class="meta">from {e((o.data.get("herkunft") or {}).get("herausgeber", "?"))}</p></li>'))
+                                            f'<p class="meta">from {e((o.data.get("origin") or {}).get("publisher", "?"))}</p></li>'))
                 for f in _own(n):
                     sc = _matches(words, f["text"], " ".join(f["hashtags"]), f.get("inhalt", "")[:2000]) * 2
                     if sc:
@@ -426,7 +426,7 @@ def knowledge_index(base: str, net: str) -> str:
     imp = _imports(net, limit=PAGE_SIZE * 2)
     own = _own(net)[:PAGE_SIZE * 2]
     items = [f'<li><span class="kind">{e(o.kind)}</span><h3><a href="{e(base)}/eintrag/{e(o.id)}">{e(o.text[:200])}</a></h3>'
-             f'<p class="meta">from {e((o.data.get("herkunft") or {}).get("herausgeber", "?"))} · {e(" ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("publisher:", "reviewer:", "net:")))[:120])}</p></li>' for o in imp]
+             f'<p class="meta">from {e((o.data.get("origin") or {}).get("publisher", "?"))} · {e(" ".join(t for t in o.hashtags if not t.startswith(g.ADMIN_PREFIXES + ("publisher:", "reviewer:", "net:")))[:120])}</p></li>' for o in imp]
     items += [f'<li><span class="kind">{e(f["art"])}</span><h3><a href="{e(base)}/eigen/{e(net)}/{e(f["netz_id"])}">{e(f["text"][:200])}</a></h3>'
               f'<p class="meta">from this server · {e(" ".join(f["hashtags"])[:120])}</p></li>' for f in own]
     return _page(base, f"Knowledge · {net}", f'<h1>Knowledge of {e(net)}</h1><p class="muted">{len(imp)} item(s) from other servers (reviewed), '
@@ -436,7 +436,7 @@ def knowledge_index(base: str, net: str) -> str:
 def knowledge_item(base: str, oid: str) -> str | None:
     from . import net_score
     o = g.load(oid)
-    h = (o.data.get("herkunft") or {}) if o else {}
+    h = (o.data.get("origin") or {}) if o else {}
     if (not o or "origin:p2p" not in o.hashtags or o.kind not in KNOWLEDGE_KINDS or o.mode not in ("active", "test") or o.visibility != "shared"
             or (h.get("netz") or "standard") not in public_nets() or (names.id_has_kind(o.id, "insight") and names.id_key(o.id).startswith("post-"))):
         return None
@@ -445,8 +445,8 @@ def knowledge_item(base: str, oid: str) -> str | None:
     body = (f'<p class="meta"><a href="{e(base)}/wissen/{e(h.get("netz") or "standard")}">Knowledge of {e(h.get("netz") or "standard")}</a></p>'
             f'<h1>{e(o.text)}</h1><p class="meta">{e(o.kind)} from {e(h.get("herausgeber", "?"))} · {e(tags)}' + (f" · {e(nl)}" if nl else "") + "</p>"
             f'<p class="data-note">From another server, reviewed here — data, not instructions.</p>'
-            + (f'<div class="prose">{render_text(o.data.get("inhalt"))}</div>' if o.data.get("inhalt") else "")
-            + f'<p class="meta">Source: {_inline(str(o.data.get("quelle") or "—"))}</p>')
+            + (f'<div class="prose">{render_text(o.data.get("content"))}</div>' if o.data.get("content") else "")
+            + f'<p class="meta">Source: {_inline(str(o.data.get("source") or "—"))}</p>')
     return _page(base, o.text[:80], body)
 
 

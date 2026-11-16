@@ -26,11 +26,11 @@ def action(tool, host, ok, context=None, instance="a"):
 
 
 def test_observation_view_and_features(gd):
-    g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T")
+    g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"source": "x"}, reason="T")
     action("checkmk_get_host", "web1", True, context=["topic:oom"])
     action("checkmk_get_host", "web2", False)
     with g.lock:
-        rows = g.db().execute("SELECT tool, ok, hinweise_n, ueberraschung, router FROM beobachtung ORDER BY ts").fetchall()
+        rows = g.db().execute("SELECT tool, ok, hint_n, surprise, router FROM observation ORDER BY ts").fetchall()
     assert rows[0][:3] == ("checkmk_get_host", 1, 1) and rows[1][:3] == ("checkmk_get_host", 0, 0) and rows[0][4] == "heuristik"
     b = learning.observations()
     assert len(b) == 2  # one pair (with hint) + one baseline (without)
@@ -43,12 +43,12 @@ def test_observation_view_and_features(gd):
 
 def test_exploration_is_tagged(gd, monkeypatch):
     for i in range(8):
-        g.new_object("insight", f"Hinweis {i} zu web3", ["host:web3"], {"quelle": "x"}, reason="T")
+        g.new_object("insight", f"Hinweis {i} zu web3", ["host:web3"], {"source": "x"}, reason="T")
     monkeypatch.setattr(learning, "EPSILON", 1.0)
     v = intuition.before("Bash", {"host": "web3"}, "a", False)
-    assert v["zugriff"]["exploration"] is True and len(v["zugriff"]["gezeigt"]) == intuition.HINT_BUDGET
-    assert any("(exploration: a random pick" in h for h in v["hinweise"]) and len(v["zugriff"]["kandidaten"]) == 8
-    assert v["zugriff"]["gezeigt"][-1] not in v["zugriff"]["kandidaten"][:intuition.HINT_BUDGET]
+    assert v["zugriff"]["exploration"] is True and len(v["zugriff"]["shown"]) == intuition.HINT_BUDGET
+    assert any("(exploration: a random pick" in h for h in v["hinweise"]) and len(v["zugriff"]["candidates"]) == 8
+    assert v["zugriff"]["shown"][-1] not in v["zugriff"]["candidates"][:intuition.HINT_BUDGET]
     monkeypatch.setattr(learning, "EPSILON", 0.0)
     v = intuition.before("Bash", {"host": "web3"}, "a", False)
     assert v["zugriff"]["exploration"] is False and v["zugriff"]["router"] == "heuristik"
@@ -56,7 +56,7 @@ def test_exploration_is_tagged(gd, monkeypatch):
 
 def test_prediction_without_sklearn_and_ranking(gd):
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                       {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 2.0, "hint:erkenntnis:schlecht": -2.0, "skill:x": 0.5}, "achsenabschnitt": 0.0},
+                       {"state": "aktiv", "gewichte": {"hint:regel:gut": 2.0, "hint:erkenntnis:schlecht": -2.0, "skill:x": 0.5}, "achsenabschnitt": 0.0},
                        oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
     p = learning.prediction(m, {"skill:x": 1.0, "hint:regel:gut": 1.0})
     assert abs(p - 1 / (1 + 2.718281828 ** -2.5)) < 1e-6
@@ -88,8 +88,8 @@ def test_router_learns_which_hint_helps(gd):
     """Synthetic: hint R (rule) → ok 90 %; hint E (insight) → ok 20 %. Every action is shown exactly one
     of the two (as with budget 1 / exploration). After training: weight(R) > 0 > weight(E), R first."""
     random.seed(7)
-    r = g.new_object("rule", "vor graylog_search Zeitraum setzen", ["skill:graylog"], {"quelle": "x"}, reason="T")
-    e = g.new_object("insight", "graylog ist immer schnell", ["skill:graylog"], {"quelle": "x"}, reason="T")
+    r = g.new_object("rule", "vor graylog_search Zeitraum setzen", ["skill:graylog"], {"source": "x"}, reason="T")
+    e = g.new_object("insight", "graylog ist immer schnell", ["skill:graylog"], {"source": "x"}, reason="T")
     for i in range(800):
         args = {"q": i}
         v = intuition.before("graylog_search", args, "a")
@@ -100,7 +100,7 @@ def test_router_learns_which_hint_helps(gd):
             d = json.loads(data)
             only = [r.id] if i % 2 == 0 else [e.id]
             ok_new = random.random() < (0.9 if only == [r.id] else 0.2)
-            d["vorher"]["gezeigt"] = only
+            d["before"]["shown"] = only
             g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps(d), oid))
             g.db().execute("DELETE FROM tag WHERE object_id = ? AND tag IN ('ok:yes', 'ok:no')", (oid,))
             g.db().execute("INSERT INTO tag VALUES (?, ?)", (oid, "ok:yes" if ok_new else "ok:no"))
@@ -113,7 +113,7 @@ def test_router_learns_which_hint_helps(gd):
     rf = learning.ranking(m, ["tool:graylog_search", "skill:graylog"], [e.id, r.id])
     assert rf[0][0] == r.id and rf[0][1] > 0.3
     v = intuition.before("graylog_search", {"q": "neu"}, "a")
-    assert v["zugriff"]["router"] == "modell" and v["zugriff"]["gezeigt"][0] == r.id
+    assert v["zugriff"]["router"] == "modell" and v["zugriff"]["shown"][0] == r.id
     assert "Router model (aktiv)" in tools.call_tool("vi_modell", {}, "a", True)
     why = tools.call_tool("vi_why", {"id": r.id}, "a", False)  # 0.29.0: the decision just made (open, no vi_after yet), laid open
     assert "open action, not reported yet" in why and "router modell" in why and f"hint:{r.id}" in why and "lift +" in why
@@ -122,10 +122,10 @@ def test_router_learns_which_hint_helps(gd):
 
 def test_bandit_counters_and_ranking(gd):
     from vi_mcp import bandit
-    good = g.new_object("rule", "Zeitraum setzen hilft", ["skill:graylog"], {"quelle": "x"}, reason="T")
-    bad = g.new_object("insight", "graylog ist immer schnell", ["skill:graylog"], {"quelle": "x"}, reason="T")
+    good = g.new_object("rule", "Zeitraum setzen hilft", ["skill:graylog"], {"source": "x"}, reason="T")
+    bad = g.new_object("insight", "graylog ist immer schnell", ["skill:graylog"], {"source": "x"}, reason="T")
     v = intuition.before("graylog_search", {"q": 0}, "a")
-    assert v["zugriff"]["router"] == "heuristik" and set(v["zugriff"]["gezeigt"]) == {good.id, bad.id}
+    assert v["zugriff"]["router"] == "heuristik" and set(v["zugriff"]["shown"]) == {good.id, bad.id}
     # counters: 20× ok after showing "good", 20× not ok after "bad" (booked directly, as after does)
     bandit._reason.update(zeit=time.time(), je={"graylog_search": 0.5}, alle=0.5)  # the tool's base rate: half and half
     assert bandit.book_entry([good.id], True, "graylog_search") == 1 and bandit.book_entry(["antwort:x"], True) == 0 and bandit.book_entry([good.id], None) == 0
@@ -142,31 +142,31 @@ def test_bandit_counters_and_ranking(gd):
     v = intuition.before("graylog_search", {"q": 1}, "a")
     assert v["zugriff"]["router"] == "bandit"
     n = intuition.after("graylog_search", {"q": 1}, False, 1, "Fehler", None, v["vorher_id"], "a")
-    assert n["bewertet"] == len(v["zugriff"]["gezeigt"])
+    assert n["bewertet"] == len(v["zugriff"]["shown"])
     assert bandit.counter(g.load(good.id))[1] == 0.5 and bandit.shown(g.load(good.id)) == 21  # "no" booked after a real action, weighted with the base rate
 
 
 def test_ineffective_hint_stays_at_half(gd):
     """A hint shown before a tool that almost always succeeds gets no credit; a helpful one does."""
     from vi_mcp import bandit
-    empty = g.new_object("rule", "Bash scheiterte und gelang danach", ["tool:Bash"], {"quelle": "x"}, reason="T")
+    empty = g.new_object("rule", "Bash scheiterte und gelang danach", ["tool:Bash"], {"source": "x"}, reason="T")
     rng = random.Random(4)
     for i in range(400):  # Bash without hint: 94 %
-        g.new_object("experience", "Bash", ["tool:Bash", "ok:yes" if rng.random() < 0.94 else "ok:no"], {"vorher": {"gezeigt": []}, "args": {"i": i}}, reason="T")
+        g.new_object("experience", "Bash", ["tool:Bash", "ok:yes" if rng.random() < 0.94 else "ok:no"], {"before": {"shown": []}, "args": {"i": i}}, reason="T")
     for i in range(300):  # with the empty hint: also 94 %
-        g.new_object("experience", "Bash", ["tool:Bash", "ok:yes" if rng.random() < 0.94 else "ok:no"], {"vorher": {"gezeigt": [empty.id]}, "args": {"j": i}}, reason="T")
-    helps = g.new_object("rule", "Zeitraum halbieren", ["tool:graylog_search"], {"quelle": "x"}, reason="T")
+        g.new_object("experience", "Bash", ["tool:Bash", "ok:yes" if rng.random() < 0.94 else "ok:no"], {"before": {"shown": [empty.id]}, "args": {"j": i}}, reason="T")
+    helps = g.new_object("rule", "Zeitraum halbieren", ["tool:graylog_search"], {"source": "x"}, reason="T")
     for i in range(200):  # graylog without hint 50 %, with hint 90 %
-        g.new_object("experience", "g", ["tool:graylog_search", "ok:yes" if rng.random() < 0.5 else "ok:no"], {"vorher": {"gezeigt": []}, "args": {"k": i}}, reason="T")
-        g.new_object("experience", "g", ["tool:graylog_search", "ok:yes" if rng.random() < 0.9 else "ok:no"], {"vorher": {"gezeigt": [helps.id]}, "args": {"l": i}}, reason="T")
+        g.new_object("experience", "g", ["tool:graylog_search", "ok:yes" if rng.random() < 0.5 else "ok:no"], {"before": {"shown": []}, "args": {"k": i}}, reason="T")
+        g.new_object("experience", "g", ["tool:graylog_search", "ok:yes" if rng.random() < 0.9 else "ok:no"], {"before": {"shown": [helps.id]}, "args": {"l": i}}, reason="T")
     r = bandit.recompute()
     assert r["hinweise"] == 2
     e_empty, e_helps = bandit.expectation(g.load(empty.id)), bandit.expectation(g.load(helps.id))
     assert 0.35 < e_empty < 0.65 and e_helps > 0.75, (e_empty, e_helps)
     assert abs(bandit.lift(g.load(empty.id)) or 0) < 0.06 and bandit.lift(g.load(helps.id)) > 0.3
-    old = g.new_object("rule", "Altlast mit falschen Zählern", ["tool:x"], {"quelle": "x", "nuetzlich": {"ja": 226, "nein": 1}}, reason="T")
+    old = g.new_object("rule", "Altlast mit falschen Zählern", ["tool:x"], {"source": "x", "useful": {"yes": 226, "no": 1}}, reason="T")
     bandit.recompute()
-    assert "nuetzlich" not in g.load(old.id).data  # no counters without a rated action
+    assert "useful" not in g.load(old.id).data  # no counters without a rated action
 
 
 @pytest.mark.skipif(not HAS_SKLEARN, reason="scikit-learn fehlt")
@@ -207,14 +207,14 @@ def test_a_tool_that_fails_often_is_no_reason_to_warn(gd):
 
 def test_hint_feedback_is_direct_learning_signal(gd):
     """0.20.9: vi_bestaetige/vi_widerlege of a hint just shown becomes the label of the pair (situation + hint)."""
-    h = g.new_object("insight", "web7 braucht den Proxy", ["host:web7"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web7 braucht den Proxy", ["host:web7"], {"source": "x"}, reason="T", instance="b")
     action("checkmk_get_host", "web7", False)  # the action failed anyway — the indirect label would be 0
     outputs = tools.call_tool("vi_bestaetige", {"id": h.id, "grund": "Hinweis war richtig, Fehler hatte andere Ursache"}, "a", True)
     assert "feedback on the hint" in outputs
     pair = [y for m, y, _ in learning.observations() if f"hint:{h.id}" in m]
     assert pair == [1]
     # refuting an object that was not shown: normal refutation, no feedback
-    others = g.new_object("insight", "web8 ist abgeschaltet", ["host:web8"], {"quelle": "y"}, reason="T", instance="b")
+    others = g.new_object("insight", "web8 ist abgeschaltet", ["host:web8"], {"source": "y"}, reason="T", instance="b")
     assert "feedback" not in tools.call_tool("vi_widerlege", {"id": others.id, "grund": "stimmt nicht"}, "a", True)
 
 
@@ -230,7 +230,7 @@ def test_contributions_add_up_to_the_prediction(gd):
     """0.29.0: vi_why lays open the same arithmetic as the router — the contributions plus intercept are the logit."""
     import math
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                     {"zustand": "aktiv", "gewichte": {"hint:regel:gut": 1.5, "hint_kind:rule": 0.25, "hint_n:1": -0.2, "skill:x": 0.5},
+                     {"state": "aktiv", "gewichte": {"hint:regel:gut": 1.5, "hint_kind:rule": 0.25, "hint_n:1": -0.2, "skill:x": 0.5},
                       "achsenabschnitt": -0.3}, oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
     f = {"skill:x": 1.0, "hint_n:1": 1.0, "hint:regel:gut": 1.0, "hint_kind:rule": 1.0, "unbekannt:y": 1.0}
     c = learning.contributions(m, f)
@@ -243,7 +243,7 @@ def test_contributions_add_up_to_the_prediction(gd):
 
 
 def test_vi_why_explains_the_stored_decision(gd):
-    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"source": "x"}, reason="T", instance="b")
     action("checkmk_get_host", "web1", True)
     out = tools.call_tool("vi_why", {"id": h.id}, "a", False)
     assert "position 1 of 1, router heuristik" in out and "1 trigger(s) match" in out and "host:web1" in out and "Router model: none yet" in out
@@ -261,9 +261,9 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
     from datetime import datetime, timedelta, timezone
     from vi_mcp import bandit, metrics
     monkeypatch.setattr(bandit, "base_rate", lambda tool: 0.5)
-    old = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
-    new = g.new_object("insight", "web1 hat neues Zertifikat", ["host:web1"], {"quelle": "y"}, reason="T", instance="b")
-    gone = g.new_object("insight", "web1 alt", ["host:web1"], {"quelle": "z"}, reason="T", instance="b")
+    old = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"source": "x"}, reason="T", instance="b")
+    new = g.new_object("insight", "web1 hat neues Zertifikat", ["host:web1"], {"source": "y"}, reason="T", instance="b")
+    gone = g.new_object("insight", "web1 alt", ["host:web1"], {"source": "z"}, reason="T", instance="b")
     long_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="milliseconds")
     with g.lock:
         g.db().execute("UPDATE object SET ts = ? WHERE id = ?", (long_ago, old.id))
@@ -271,7 +271,7 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
     for i in range(24):
         ok = i % 4 != 0  # 75 % ok
         e = g.new_object("experience", f"checkmk_get_host {i}", ["tool:checkmk_get_host", "ok:yes" if ok else "ok:no"],
-                         {"vorher": {"gezeigt": [old.id, new.id if i % 2 else gone.id]}}, reason="T", instance="a")
+                         {"before": {"shown": [old.id, new.id if i % 2 else gone.id]}}, reason="T", instance="a")
     with g.lock:
         g.db().execute("DELETE FROM object WHERE id = ?", (gone.id,))
         g.db().commit()
@@ -285,9 +285,9 @@ def test_lift_by_age_splits_new_and_old_hints(gd, monkeypatch):
 def test_vi_why_separates_what_is_same_for_every_candidate(gd):
     """0.30.0: hinweis_n moves every lift alike; vi_why reports it apart from what decides the order."""
     m = g.new_object("model", "Testmodell", ["modell:router"],
-                     {"zustand": "aktiv", "gewichte": {"hint_n:1": -0.35, "hint_n:0": 0.05, "hint_kind:insight": 0.2, "tool:x": 0.1},
+                     {"state": "aktiv", "gewichte": {"hint_n:1": -0.35, "hint_n:0": 0.05, "hint_kind:insight": 0.2, "tool:x": 0.1},
                       "achsenabschnitt": 0.0}, oid=learning.model_id(None), reason="T", instance=g.SERVER_INSTANCE)
-    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"source": "x"}, reason="T", instance="b")
     w = learning.why(m, h.id, ["tool:x"])
     assert abs(w["same_for_all"] - (-0.40)) < 1e-9 and dict(w["distinguishing"]) == {"hint_kind:insight": 0.2}
     out = tools.call_tool("vi_why", {"id": h.id, "triggers": ["tool:x"]}, "a", False)
@@ -297,7 +297,7 @@ def test_vi_why_separates_what_is_same_for_every_candidate(gd):
 def test_hint_age_is_a_feature(gd):
     """0.30.0: alter:neu when the hint was at most metrics.NEW_DAYS old at the time it was shown."""
     from datetime import datetime, timedelta, timezone
-    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"quelle": "x"}, reason="T", instance="b")
+    h = g.new_object("insight", "web1 braucht Proxy", ["host:web1"], {"source": "x"}, reason="T", instance="b")
     now = datetime.now(timezone.utc)
     assert learning.hint_features(h.id, [], now.isoformat())["age:new"] == 1.0
     assert "age:new" not in learning.hint_features(h.id, [], (now + timedelta(days=8)).isoformat())
@@ -310,14 +310,14 @@ def test_hint_age_is_a_feature(gd):
 def test_good_auc_without_ranking_utility_stays_test(gd):
     """0.30.0: the situation predicts the outcome (high AUC), the two hints do nothing — the order of hints must not go live."""
     rnd = random.Random(3)
-    r = g.new_object("rule", "Hinweis A", ["tool:deploy_run"], {"quelle": "x"}, reason="T")
-    e = g.new_object("insight", "Hinweis B", ["tool:deploy_run"], {"quelle": "x"}, reason="T")
+    r = g.new_object("rule", "Hinweis A", ["tool:deploy_run"], {"source": "x"}, reason="T")
+    e = g.new_object("insight", "Hinweis B", ["tool:deploy_run"], {"source": "x"}, reason="T")
     for i in range(1600):
         broken = i % 2 == 0
         ok = rnd.random() < (0.05 if broken else 0.95)
         host = "host:kaputt1" if broken else "host:gut1"
         g.new_object("experience", "deploy", ["tool:deploy_run", host, "ok:yes" if ok else "ok:no"],
-                     {"vorher": {"reize": ["tool:deploy_run", host], "gezeigt": [rnd.choice([r.id, e.id])]}, "args": {"i": i}},
+                     {"before": {"triggers": ["tool:deploy_run", host], "shown": [rnd.choice([r.id, e.id])]}, "args": {"i": i}},
                      reason="T", instance="a")
     b = learning.train("Test")
     assert b["auc_holdout"] > 0.85 and b["zustand"] == "test" and b["nutzen_holdout"]["zustand"] == "kein_nutzen", b
@@ -393,11 +393,11 @@ def test_calibration_table_and_ece():
 def test_ips_factors_follow_the_logged_offer_probabilities(gd):
     """0.62.0: one factor per observation, 1/p of the hint's offer probability, clipped; 1 where nothing random was logged."""
     from vi_mcp import learning
-    h1 = g.new_object("insight", "hint one", ["tool:Bash"], {"quelle": "t"}).id
-    h2 = g.new_object("insight", "hint two", ["tool:Bash"], {"quelle": "t"}).id
-    g.new_object("experience", "Bash ok", ["tool:Bash", "ok:yes"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h1, h2],
-                                                                            "angebot": {h1: 0.9, h2: 0.02}}})
-    g.new_object("experience", "Bash failed", ["tool:Bash", "ok:no"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": []}})
+    h1 = g.new_object("insight", "hint one", ["tool:Bash"], {"source": "t"}).id
+    h2 = g.new_object("insight", "hint two", ["tool:Bash"], {"source": "t"}).id
+    g.new_object("experience", "Bash ok", ["tool:Bash", "ok:yes"], {"before": {"triggers": ["tool:Bash"], "shown": [h1, h2],
+                                                                            "offer": {h1: 0.9, h2: 0.02}}})
+    g.new_object("experience", "Bash failed", ["tool:Bash", "ok:no"], {"before": {"triggers": ["tool:Bash"], "shown": []}})
     ips: list = []
     obs = learning.weighted_observations(ips_out=ips)
     assert len(ips) == len(obs) == 3

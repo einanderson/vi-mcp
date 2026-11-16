@@ -65,14 +65,16 @@ access goes through one process, a later switch is a change in `memory.py`, not 
 > values of `art:`/`modus:`; usage, review and index values) and the hashtag kinds (`topic:`, `error:`, `kind:`, `mode:`, `origin:`, …).
 > German names of older clients are read as English. A
 > database of 0.66 or older is renamed when it is opened, after a backup copy (SQLite `<file>.pre-0.67.0.db`, PostgreSQL schema
-> `<schema>_pre_0_67_0`); the counts per class go into the table `name_migration`, the log and `vi-mcp db status`. Still German until
-> the next steps of the same migration: JSON keys in object data (`quelle`, `inhalt`, …) and the system values of hashtags (`ok:ja`,
-> `state:offen`, …). Object ids: an existing id keeps its German prefix (`erkenntnis:…`), a new object gets the English
+> `<schema>_pre_0_67_0`); the counts per class go into the table `name_migration`, the log and `vi-mcp db status`. Also done: the
+> system values of hashtags (`ok:yes`, `state:open`, …) and the JSON keys in the data of the domain objects (`source`, `content`,
+> `before.shown`, `useful.yes`, …; `names.DATA_KEYS`; `memory.save` and `update_data` write them English, renaming in place). Still
+> German until 0.68: the data of the report objects `sleep`, `model` and `self` (`names.REPORT_KINDS`), which their modules read both
+> freshly built and stored. Object ids: an existing id keeps its German prefix (`erkenntnis:…`), a new object gets the English
 > one (`insight:…`); every lookup accepts both (`names.ids`, `id_has_kind`, `memory.load_keyed`/`keyed_id`).
 > The P2P wire format (signed logbook entries, content hashes) stays German for good: every signature and hash of the network depends
 > on it, so it is translated at the network boundary. The configuration files are English since 0.51.0 (keys and network kinds `free`/`open`/`company`); the
 > German keys of older files are still read (`config.normalize`, `net_service.english_file`) and rewritten in English at package install. The MCP interface (tool names, parameters, enum values) is English since
-> 0.22.0; the German names are accepted as aliases and English enum values are translated to the stored German values (`api_en.py`).
+> 0.22.0; the German names are accepted as aliases and translated to the stored values (`api_en.py`).
 
 **Everything is an object** (`memory.MemoryObject`, table `objekt`; mapping without an ORM): fixed fields `id`, `art` (kind),
 `zeit` (time); changeable only through methods — `tag`, `confirm`, `refute`, `link`, `access` —, each with an

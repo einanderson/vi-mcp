@@ -6,8 +6,8 @@ from vi_mcp import memory as g
 
 
 def _k(text, tags=(), yes=0.0, no=0.0, **kw):
-    data = {"quelle": kw.pop("quelle", "https://docs.example/x"), "inhalt": kw.pop("inhalt", f"details of {text}"),
-            "nuetzlich": {"ja": yes, "nein": no, "n": int(yes + no)}, **kw.pop("data", {})}
+    data = {"source": kw.pop("quelle", "https://docs.example/x"), "content": kw.pop("inhalt", f"details of {text}"),
+            "useful": {"yes": yes, "no": no, "n": int(yes + no)}, **kw.pop("data", {})}
     return g.new_object(kw.pop("kind", "erkenntnis"), text, list(tags) or ["topic:x"], data, visibility=kw.pop("visibility", "intern"),
                         instance=kw.pop("instance", "a"), **kw)
 
@@ -20,7 +20,7 @@ def test_export_writes_qa_kto_dpo_with_datasheet_and_holds_out_the_evaluation(gd
     held = _k("the evaluation target", ["topic:y"], quelle="https://docs.example/held")
     _k("private note", visibility="private")
     _k("def f(): pass", ["knowledge_kind:code", "file:x.py"])
-    g.new_object("experience", "Bash ok", ["tool:Bash"], {"quelle": "t"})
+    g.new_object("experience", "Bash ok", ["tool:Bash"], {"source": "t"})
     (tmp_path / "eval").mkdir()
     (tmp_path / "eval" / "recall.json").write_text(json.dumps([{"target": held.id, "group": "g", "stratum": "s", "frage": "nginx reload ohne Ausfall?",
                                                                   "stichworte": "nginx"}]))
@@ -63,7 +63,7 @@ def test_scrubbing_is_audited_and_an_index_can_be_exported_alone(gd, tmp_path, m
     _k("other project", ["topic:deploy"], index="other", data={"klasse": {"fragen": ["How is other deployed?"]}})
     # a credential that slipped past the scrubber at save time (e.g. a pattern added later) — simulated by writing it directly
     with g.lock:
-        g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps({**o.data, "inhalt": "password=hunter2secret"}), o.id))
+        g.db().execute("UPDATE object SET data = ? WHERE id = ?", (json.dumps({**o.data, "content": "password=hunter2secret"}), o.id))
         g.db().commit()
     m = dataset.export(tmp_path / "ds", "proj")
     qa = (tmp_path / "ds" / "qa.jsonl").read_text()

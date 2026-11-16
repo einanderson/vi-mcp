@@ -7,7 +7,7 @@ from vi_mcp import memory as g
 
 
 def _k(text, tags, **kw):
-    return g.new_object("insight", text, tags, {"quelle": "test 11.11.2026"}, instance="b", **kw)
+    return g.new_object("insight", text, tags, {"source": "test 11.11.2026"}, instance="b", **kw)
 
 
 def test_tool_only_and_generic_word_hints_stay_away_from_shell_commands(gd):
@@ -15,16 +15,16 @@ def test_tool_only_and_generic_word_hints_stay_away_from_shell_commands(gd):
     grep_noise = _k("A commit chain with pytest | tail commits on red tests", ["tool:Bash", "topic:grep"])
     specific = _k("web1 answers ssh only with BatchMode and the key file", ["host:web1.example", "tool:Bash"])
     v = intuition.before("Bash", {"command": "grep -n foo vi_mcp/web.py"}, "a", False)
-    shown = v["zugriff"]["gezeigt"]
+    shown = v["zugriff"]["shown"]
     assert noise.id not in shown and grep_noise.id not in shown
     assert any("share only the tool or generic words, not shown" in h for h in v["hinweise"])  # counted, not silent
     v = intuition.before("Bash", {"command": "ssh web1.example uptime"}, "a", False)
-    assert specific.id in v["zugriff"]["gezeigt"]
+    assert specific.id in v["zugriff"]["shown"]
 
 
 def test_mcp_tools_keep_their_tool_hints(gd):
     k = _k("netbox_get_devices pages at 50 results", ["tool:netbox_get_devices"])
-    assert k.id in intuition.before("netbox_get_devices", {"name": "x"}, "a", False)["zugriff"]["gezeigt"]
+    assert k.id in intuition.before("netbox_get_devices", {"name": "x"}, "a", False)["zugriff"]["shown"]
 
 
 def test_a_hint_at_most_daily_max_times_a_day_per_instance(gd, monkeypatch):
@@ -35,9 +35,9 @@ def test_a_hint_at_most_daily_max_times_a_day_per_instance(gd, monkeypatch):
         s = session.begin("a", f"t{i}")  # a new conversation every time: the per-conversation guard does not apply
         with session.on_behalf(s):
             v = intuition.before("Bash", {"command": "uptime"}, "a", False)
-        seen += k.id in v["zugriff"]["gezeigt"]
+        seen += k.id in v["zugriff"]["shown"]
     assert seen == intuition.DAILY_MAX and any(f"shown {intuition.DAILY_MAX}× today already" in h for h in v["hinweise"])
-    assert k.id in intuition.before("Bash", {"command": "uptime"}, "other-instance", False)["zugriff"]["gezeigt"]  # per instance
+    assert k.id in intuition.before("Bash", {"command": "uptime"}, "other-instance", False)["zugriff"]["shown"]  # per instance
 
 
 def test_feedback_in_one_call_and_the_nudge(gd):
@@ -52,7 +52,7 @@ def test_feedback_in_one_call_and_the_nudge(gd):
     d = usage_stats.data(1)
     assert d["regeln"]["rueckmeldungen"] == 1
     e = [o for _s, o, _g in g.recall("kind:experience", viewer=None)][0]
-    assert e.data["rueckmeldung"] == {k.id: 1}
+    assert e.data["feedback"] == {k.id: 1}
 
 
 def test_opening_a_shown_hint_counts_as_use(gd):
@@ -68,7 +68,7 @@ def test_opening_a_shown_hint_counts_as_use(gd):
 
 def _exp(instance, tool, ok, hint):
     return g.new_object("experience", f"{tool} run", [f"tool:{tool}", f"ok:{'ja' if ok else 'nein'}"],
-                        {"vorher": {"gefunden": ["erkenntnis:x"] if hint else [], "gezeigt": []}}, instance=instance)
+                        {"before": {"found": ["erkenntnis:x"] if hint else [], "shown": []}}, instance=instance)
 
 
 def test_matched_lift_resolves_simpsons_paradox(gd):
@@ -94,13 +94,13 @@ def test_matched_lift_resolves_simpsons_paradox(gd):
 
 def test_measured_useful_hints_and_warnings_are_not_capped(gd):
     useful = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
-    useful.data["nuetzlich"] = {"ja": 2.0, "nein": 0.5, "n": 4}  # the bandit measured an advantage
+    useful.data["useful"] = {"yes": 2.0, "no": 0.5, "n": 4}  # the bandit measured an advantage
     g.save(useful)
     warning = _k("never run uptime -s on the frozen host", ["tool:Bash", "topic:uptime"], importance=3)
     for i in range(intuition.DAILY_MAX + 3):
         s = session.begin("a", f"t{i}")
         with session.on_behalf(s):
-            shown = intuition.before("Bash", {"command": "uptime"}, "a", False)["zugriff"]["gezeigt"]
+            shown = intuition.before("Bash", {"command": "uptime"}, "a", False)["zugriff"]["shown"]
         assert useful.id in shown and warning.id in shown
 
 
@@ -115,14 +115,14 @@ def test_feedback_with_before_id_books_exactly_that_action(gd):
             v = intuition.before("Bash", {"command": "uptime"}, "cs", False)
         ids.append((v["vorher_id"], intuition.after("Bash", {"command": "uptime"}, True, 5, None, None, v["vorher_id"], "cs", False)["erfahrung"]))
     (first_before, first_exp), (_second_before, second_exp) = ids
-    assert g.load(first_exp).data["vorher"]["id"] == first_before
+    assert g.load(first_exp).data["before"]["id"] == first_before
     out = tools.call_tool("vi_feedback", {"helped": [k.id], "before_id": first_before}, "cs", False)
     assert "recorded for 1 hint" in out
-    assert g.load(first_exp).data["rueckmeldung"] == {k.id: 1} and "rueckmeldung" not in g.load(second_exp).data
+    assert g.load(first_exp).data["feedback"] == {k.id: 1} and "feedback" not in g.load(second_exp).data
     out = tools.call_tool("vi_feedback", {"wrong": [k.id], "before_id": "vorher:gibt-es-nicht"}, "cs", False)
     assert "not shown before the action vorher:gibt-es-nicht" in out  # no fallback to the most recent action
     tools.call_tool("vi_feedback", {"wrong": [k.id]}, "cs", False)  # without before_id: the most recent action, as before
-    assert g.load(second_exp).data["rueckmeldung"] == {k.id: -1}
+    assert g.load(second_exp).data["feedback"] == {k.id: -1}
 
 
 def test_propensities_of_the_offer():
@@ -143,7 +143,7 @@ def test_exploration_effect_and_ips_lift_from_logged_offers(gd):
         shown = ["a", "e"] if expl else ["a", "d"]
         ok = not expl
         g.new_object("experience", f"Bash {i}", ["tool:Bash", f"ok:{'ja' if ok else 'nein'}"],
-                     {"vorher": {"gezeigt": shown, "rest_n": 1, "exploration": expl, "router": "modell", "angebot": offer}}, instance="a")
+                     {"before": {"shown": shown, "rest_n": 1, "exploration": expl, "router": "modell", "offer": offer}}, instance="a")
     metrics._GRADES["db"] = None
     ex = metrics.exploration_effect(24)
     assert ex["zustand"] == "gemessen" and ex["differenz"] == -1.0 and "ranked hint beats a random candidate" in ex["urteil"]
@@ -170,7 +170,7 @@ def test_warned_actions_are_not_counted_as_hints(gd):
     for ok, n in ((True, 50), (False, 50)):  # warned and failing often — must not count
         for _ in range(n):
             o = _exp("cs", "analyse", ok, True)
-            o.data["vorher"]["warnung"] = True
+            o.data["before"]["warning"] = True
             g.save(o)
     for ok, n in ((True, 19), (False, 1)):
         for _ in range(n):

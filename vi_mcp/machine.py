@@ -45,7 +45,7 @@ def _load(owner, name, snapshot=None):
     o = g.load(_id(owner, name, snapshot))
     if o is None or o.instance != owner or o.kind != "machine" or o.mode != "active":
         raise ValueError("unknown machine or snapshot")
-    if o.data.get("vertrag") != CONTRACT:
+    if o.data.get("contract") != CONTRACT:
         raise ValueError("unsupported machine contract")
     return o
 
@@ -97,7 +97,7 @@ def _new(owner, name, state=None, parent=None, snapshot=False, *, commit=True, e
         if not isinstance(check["execution"].get("source"), str) or not isinstance(check.get("expected"), list) or not isinstance(check.get("reference"), str) or not isinstance(check.get("question"), str):
             raise ValueError("incomplete frozen reference evidence")
         n.translate(check["execution"].get("source", ""))
-    data = {"vertrag": CONTRACT, "revision": 0, "zustand": state, **evidence,
+    data = {"contract": CONTRACT, "revision": 0, "state": state, **evidence,
             "snapshots": [], "parent": parent, "snapshot": bool(snapshot), **({"machine": snapshot} if snapshot else {})}
     from . import anonymize
     if anonymize.without_secrets(data) != data or len(json.dumps(data)) > g.DATA_MAX - 2000:
@@ -108,7 +108,7 @@ def _new(owner, name, state=None, parent=None, snapshot=False, *, commit=True, e
 
 
 def _status(o):
-    s = o.data["zustand"]
+    s = o.data["state"]
     return {"contract": CONTRACT, "revision": o.data["revision"], "state_hash": state_hash(s), "snapshot": o.data["snapshot"],
             "objects": sum(not x.get("deleted") for x in s["objects"].values()), "rules": len(s["rules"]),
             "history": len(o.data["history"]), "history_dropped": o.data["history_dropped"], "checks": len(o.data["checks"]),
@@ -201,27 +201,27 @@ def call(owner: str, args: dict) -> dict:
             raise ValueError("stale machine revision; read status and retry")
         if action == "inspect":
             obj = _load(owner, args["snapshot"], name) if args.get("snapshot") else o
-            world = copy.deepcopy(obj.data["zustand"])
+            world = copy.deepcopy(obj.data["state"])
             for key, value in mr.defaults().items():
                 world.setdefault(key, value)
             return {**_status(obj), "world": world, "evidence": _evidence(obj)}
-        pending = o.data["zustand"].get("loop", {}).get("pending")
+        pending = o.data["state"].get("loop", {}).get("pending")
         if pending and action not in ("observe", "configure", "loop"):
             raise ValueError("pending device action prevents state changes and snapshots; observe or resolve it first")
         if action in ("configure", "context", "device", "observe", "loop"):
             payload = args.get("payload") or {}
             if not isinstance(payload, dict):
                 raise ValueError("instance operands must be an object")
-            result = mr.transition(o.data["zustand"], action, payload)
+            result = mr.transition(o.data["state"], action, payload)
             _save(o, "instance " + action)
-            return {**result, "revision": o.data["revision"], "state_hash": state_hash(o.data["zustand"]), "contract": CONTRACT}
+            return {**result, "revision": o.data["revision"], "state_hash": state_hash(o.data["state"]), "contract": CONTRACT}
         if action == "snapshot":
             snap = _name(args.get("snapshot"))
             if len(o.data["snapshots"]) >= MAX_SNAPSHOTS:
                 raise ValueError("snapshot limit reached")
             # One transaction: a rejected/full parent must not leave an orphaned immutable snapshot.
             try:
-                frozen = _new(owner, snap, o.data["zustand"], _status(o), name, commit=False, evidence=_evidence(o))
+                frozen = _new(owner, snap, o.data["state"], _status(o), name, commit=False, evidence=_evidence(o))
                 o.data["snapshots"].append(snap)
                 _save(o, "snapshot created", commit=False)
                 g.db().commit()
@@ -231,10 +231,10 @@ def call(owner: str, args: dict) -> dict:
             return {**_status(frozen), "name": snap}
         if action == "fork":
             base = _load(owner, args["snapshot"], name) if args.get("snapshot") else o
-            return _status(_new(owner, _name(args.get("target")), base.data["zustand"], _status(base)))
+            return _status(_new(owner, _name(args.get("target")), base.data["state"], _status(base)))
         if action == "restore":
             frozen = _load(owner, _name(args.get("snapshot")), name)
-            o.data["zustand"] = copy.deepcopy(frozen.data["zustand"])
+            o.data["state"] = copy.deepcopy(frozen.data["state"])
             _save(o, "snapshot restored")
             return _status(o)
         if action == "import":
@@ -245,7 +245,7 @@ def call(owner: str, args: dict) -> dict:
             data = logic.object_data(filters, owner, edges=False)
             if data["counts"]["cut"] or len(data["objects"]) > MAX_OBJECTS:
                 raise ValueError("import exceeds machine object limit; narrow the filters")
-            state = o.data["zustand"]
+            state = o.data["state"]
             mount = state.setdefault("imports", {})
             key = state_hash(sorted(filters))
             ids = {x["id"] for x in data["objects"]}
@@ -288,18 +288,18 @@ def call(owner: str, args: dict) -> dict:
             if existing is not None:
                 if existing.data.get("machine_example") == example:
                     return {"state": "already taught", "id": oid}
-                existing.data.update(machine_example=example, quelle=checked["reference"])
+                existing.data.update(machine_example=example, source=checked["reference"])
                 existing.text = checked["question"]
                 existing.change(owner, "training reference corrected", "explicit teach after independent recheck")
                 g.save(existing)
                 return {"state": "teaching corrected", "id": oid, "correct": checked["correct"], "visibility": "internal"}
             published = g.new_object("rule", checked["question"], ["topic:machine-training"],
-                                     {"machine_example": example, "quelle": checked["reference"]}, oid=oid, instance=owner,
+                                     {"machine_example": example, "source": checked["reference"]}, oid=oid, instance=owner,
                                      visibility="internal", link=False, reason="machine owner explicitly published checked training example")
             return {"state": "taught", "id": published.id, "correct": checked["correct"], "visibility": "internal"}
         if action not in ("execute", "answer"):
             raise ValueError("action must be create, status, execute, answer, snapshot, restore, fork or teach")
-        state = o.data["zustand"]
+        state = o.data["state"]
         payload = args.get("payload") or {}
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
@@ -401,13 +401,13 @@ def call(owner: str, args: dict) -> dict:
         o = _load(owner, name)
         if o.data["revision"] != revision:
             raise ValueError("machine changed while the model wrote its program; retry")
-        bound = o.data["zustand"].get("runtime", {}).get("model", {})
+        bound = o.data["state"].get("runtime", {}).get("model", {})
         if bound.get("model") not in (None, "server-default", model_info.get("model")):
             raise ValueError("configured model differs from the instance binding")
         for key in ("weights_sha256", "tokenizer_sha256", "config_sha256", "decoder_sha256", "key_function"):
             if key in bound and (model_info.get("knn") or {}).get(key) != bound[key]:
                 raise ValueError("inference model identity differs from the instance binding")
-        result = _run(o.data["zustand"], r["program"])
+        result = _run(o.data["state"], r["program"])
         result.update(question=q, rounds=r["rounds"], frontend_state=r["state"], transcript=r["transcript"], frontend_model=model_info)
         rid = _receipt(o, "ask " + q, result)
         _save(o, "model-generated program executed")

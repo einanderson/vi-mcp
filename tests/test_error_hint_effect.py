@@ -7,7 +7,7 @@ from vi_mcp import memory as g
 
 def _known_error():
     g.new_object("insight", "pkill -f kills its own shell (exit 144): use pgrep and kill the PID",
-                 ["topic:pkill", "error:Exit_code_144"], {"quelle": "test", "inhalt": "pkill -f pattern matches the shell itself, exit 144"},
+                 ["topic:pkill", "error:Exit_code_144"], {"source": "test", "content": "pkill -f pattern matches the shell itself, exit 144"},
                  reason="T")
 
 
@@ -27,11 +27,11 @@ def test_error_hints_are_recorded_and_can_be_held_back(gd, monkeypatch):
     shown = _fail_then_retry(session.begin("a", "t"), True)
     assert any("After this error" in h for h in shown["hinweise"])
     d = g.load(shown["erfahrung"]).data
-    assert d["fehler_hinweise"] and d["fehler_zurueckgehalten"] is False
+    assert d["error_hints"] and d["error_held_back"] is False
     monkeypatch.setattr(intuition, "HOLD_BACK", 1.0)
     held = _fail_then_retry(session.begin("a", "t2"), True)
     assert not any("After this error" in h for h in held["hinweise"])
-    assert g.load(held["erfahrung"]).data["fehler_zurueckgehalten"] is True
+    assert g.load(held["erfahrung"]).data["error_held_back"] is True
 
 
 def test_recovery_is_compared_between_shown_and_held_back(gd, monkeypatch):

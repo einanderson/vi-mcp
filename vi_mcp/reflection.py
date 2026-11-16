@@ -107,8 +107,8 @@ def check(answer: dict, n_experiences: int) -> tuple[dict | None, str]:
 def _describe(o: g.MemoryObject) -> str:
     ok = "ok" if "ok:yes" in o.hashtags else "ERROR" if "ok:no" in o.hashtags else "unknown"
     tool = next((t[5:] for t in o.hashtags if t.startswith("tool:")), "?")
-    error = o.data.get("fehler")
-    return f"{o.ts[:16]} {tool} → {ok}" + (f": {str(error)[:120]}" if error else f", {o.data.get('dauer_ms', 0)} ms")
+    error = o.data.get("error")
+    return f"{o.ts[:16]} {tool} → {ok}" + (f": {str(error)[:120]}" if error else f", {o.data.get('duration_ms', 0)} ms")
 
 
 def reflect(cluster: list[dict]) -> dict:
@@ -138,8 +138,8 @@ def reflect(cluster: list[dict]) -> dict:
             continue
         evidence_list = [exps[i - 1] for i in ins["belege"]]
         o = g.new_object("insight", ins["satz"], sorted(set(ins["hashtags"]) | {host, skill, "mode:test", "origin:sleep-llm"}),
-                           {"quelle": f"sleep reflection (language model) from {len(evidence_list)} experiences — evidence edges", "belege_n": len(evidence_list),
-                            "ausgang": c.get("ausgang"), "modell": (config or {}).get("model") or "llm"},
+                           {"source": f"sleep reflection (language model) from {len(evidence_list)} experiences — evidence edges", "evidence_n": len(evidence_list),
+                            "outcome": c.get("ausgang"), "model": (config or {}).get("model") or "llm"},
                            importance=1, who="vi", oid=rid, mode="test", reason="sleep: reflection by the language model, checked",
                            instance=g.SERVER_INSTANCE)
         for b in evidence_list:

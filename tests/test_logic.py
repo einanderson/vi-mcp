@@ -181,7 +181,7 @@ def test_tool_check_ask_save_rate(tmp_path):
                                              "visibility": "shared"}, "max", False)
         assert "rule set dmz-rules" in saved
         o = g.load(saved.split()[1])
-        assert o.kind == "rule" and o.visibility == "shared" and "logic:dmz-rules" in o.hashtags and o.data["inhalt"] == DMZ
+        assert o.kind == "rule" and o.visibility == "shared" and "logic:dmz-rules" in o.hashtags and o.data["content"] == DMZ
         ans = tools.call_tool("vi_logic", {"action": "ask", "rule_set": "dmz-rules", "source": 'planned(run("x","web1"))',
                                            "queries": ['forbidden(run("x","web1"))', 'forbidden(run("freeipa","gate1"))'],
                                            "probabilities": True}, "moritz", False)

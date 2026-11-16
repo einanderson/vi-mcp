@@ -4,10 +4,10 @@ from vi_mcp import tools, usage_stats, vocabulary
 
 
 def _seed():
-    g.new_object("insight", "nginx reload on web1", ["host:web1.example", "tool:nginx", "topic:reload"], {"quelle": "t"}, instance="a")
-    g.new_object("insight", "nginx config test on web2", ["host:web2.example", "tool:nginx"], {"quelle": "t"}, instance="a")
-    g.new_object("insight", "backup of db1", ["host:db1.example", "topic:backup"], {"quelle": "t"}, instance="a", visibility="internal")
-    g.new_object("insight", "private: secret host", ["host:geheim.example"], {"quelle": "t"}, instance="b", visibility="private")
+    g.new_object("insight", "nginx reload on web1", ["host:web1.example", "tool:nginx", "topic:reload"], {"source": "t"}, instance="a")
+    g.new_object("insight", "nginx config test on web2", ["host:web2.example", "tool:nginx"], {"source": "t"}, instance="a")
+    g.new_object("insight", "backup of db1", ["host:db1.example", "topic:backup"], {"source": "t"}, instance="a", visibility="internal")
+    g.new_object("insight", "private: secret host", ["host:geheim.example"], {"source": "t"}, instance="b", visibility="private")
 
 
 def test_kinds_values_and_completion_count_only_what_the_viewer_may_see(gd):
@@ -56,7 +56,7 @@ def test_a_search_that_excludes_the_only_matches_is_named_not_a_search_problem(g
     """0.62.5, found on production: CentralStation's host lookups exclude its own experiences; when only those carry the host, the
     empty answer is right, and it was counted as "known words, not together (a search problem)"."""
     g.new_object("experience", "Bash on web9", ["host:web9.example", "tool:Bash", "ok:yes"], {}, instance="centralstation")
-    g.new_object("insight", "db1 backup", ["host:db1.example"], {"quelle": "t"})
+    g.new_object("insight", "db1 backup", ["host:db1.example"], {"source": "t"})
     assert vocabulary.empty_reason("(host:web9.example) !instance:centralstation !kind:experience", None)[0] == "ausgeschlossen"
     assert vocabulary.empty_reason("host:web9.example host:db1.example", None)[0] == "missed"  # both known, never together
     out = tools.call_tool("vi_recall", {"filter": "(host:web9.example) !instance:centralstation !kind:experience", "semantic": False},
@@ -67,8 +67,8 @@ def test_a_search_that_excludes_the_only_matches_is_named_not_a_search_problem(g
 def test_an_unknown_kind_gets_the_same_value_under_the_kind_that_exists(gd):
     """0.62.5, found on production: `quelle:confluence` answered "not in memory" without a suggestion; the tag is source_kind:confluence."""
     for i in range(3):
-        g.new_object("insight", f"KB page {i}", ["source_kind:confluence", "topic:linux"], {"quelle": "t"})
-    g.new_object("insight", "secret page", ["herkunft_x:confluence"], {"quelle": "t"}, instance="b", visibility="private")
+        g.new_object("insight", f"KB page {i}", ["source_kind:confluence", "topic:linux"], {"source": "t"})
+    g.new_object("insight", "secret page", ["herkunft_x:confluence"], {"source": "t"}, instance="b", visibility="private")
     out = tools.call_tool("vi_recall", {"filter": "quelle:confluence", "semantic": False}, "a", False)
     assert "did you mean source_kind:confluence" in out
     assert "herkunft_x" not in out  # nothing the viewer may not see

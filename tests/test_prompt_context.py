@@ -18,7 +18,7 @@ _spec.loader.exec_module(hook)
 
 
 def _k(text, tags, **kw):
-    return g.new_object("insight", text, tags, {"quelle": "Messung 11.11.2026"}, instance="a", **kw)
+    return g.new_object("insight", text, tags, {"source": "Messung 11.11.2026"}, instance="a", **kw)
 
 
 def test_prompt_words():
@@ -59,7 +59,7 @@ def test_disputed_and_private_of_others_stay_out(gd):
     d = _k("ssh build host needs agent forwarding always", ["tool:ssh"])
     d.mode = "disputed"
     g.save(d)
-    g.new_object("insight", "ssh build host private note of bert", ["tool:ssh"], {"quelle": "q"}, instance="bert", visibility="private")
+    g.new_object("insight", "ssh build host private note of bert", ["tool:ssh"], {"source": "q"}, instance="bert", visibility="private")
     assert intuition.prompt_hints("ssh build host", "a")["ids"] == []
 
 
@@ -179,7 +179,7 @@ def test_first_prompt_of_a_session_carries_the_skill_table_once(h):
     from vi_mcp import capabilities
     capabilities._cache.clear()  # cached per instance for 10 minutes; an earlier test of this module cached an empty table
     g.new_object("insight", "Vollständige Doku zu gitlab-api: vi_erinnere docs:gitlab-api. Verbindet sich mit GitLab.",
-                 ["art-wissen:ueberblick", "docs:gitlab-api", "skill:gitlab"], {"quelle": "skills folder"}, instance="alice")
+                 ["art-wissen:ueberblick", "docs:gitlab-api", "skill:gitlab"], {"source": "skills folder"}, instance="alice")
     ev = {"hook_event_name": "UserPromptSubmit", "session_id": "cc-skills", "cwd": "/tmp", "prompt": "wo liegt das Repo der Web-Komponente?"}
     ctx = h.process(ev)["hookSpecificOutput"]["additionalContext"]
     assert ctx.startswith("[Skills] 1 skill manuals") and "gitlab-api" in ctx

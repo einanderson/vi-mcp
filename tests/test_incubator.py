@@ -9,7 +9,7 @@ from vi_mcp import memory as g
 
 def _k(i, rated=False, **kw):
     return g.new_object("insight", f"knowledge number {i} about deploying", ["topic:deploy"],
-                        {"quelle": "t", "inhalt": f"content {i}", **({"nuetzlich": {"ja": 3, "nein": 1, "n": 4}} if rated else {})},
+                        {"source": "t", "content": f"content {i}", **({"nuetzlich": {"ja": 3, "nein": 1, "n": 4}} if rated else {})},
                         visibility="internal", instance="a", **kw)
 
 
@@ -50,7 +50,7 @@ def test_status_never_builds_the_search_trajectories(gd, monkeypatch):
     """Found on a production copy (40,861 objects): vi_incubator built the agentic trajectories — two searches per object — and ran for
     more than 10 minutes. The status counts question → answer examples only; trajectories are built on export."""
     from vi_mcp import dataset
-    g.new_object("insight", "deploy web1: stop, copy, start", ["host:web1.example"], {"quelle": "t"})
+    g.new_object("insight", "deploy web1: stop, copy, start", ["host:web1.example"], {"source": "t"})
 
     def boom(*a, **k):
         raise AssertionError("status must not build trajectories")

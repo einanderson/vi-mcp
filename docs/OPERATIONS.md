@@ -583,9 +583,10 @@ stored names: English — migrated 2026-11-15T19:03:59+00:00 (step 0.67.0): 167 
 backup copy before the migration: /var/lib/vi-mcp/vi.db.pre-0.67.0.db
 ```
 
-Measured on a copy of a production database (46,279 objects, 625 MB, SQLite, 15.11.2026): 3.4 s for copy and rename, no row lost,
-no German table or column left; the second start found nothing to do (0.13 s). Delete the copy once the server has run well with the
-new names.
+Measured on a copy of a production database (46,279 objects, 625 MB, SQLite, 16.11.2026): 12.6 s for the copy and every step (tables
+and columns, stored values, hashtags, the data keys of 46,175 objects and every change history), no row lost, no German table, column,
+value, hashtag or domain data key left; the second start found nothing to do (0.41 s). The reports of sleep, model and self objects
+keep German keys until 0.68. Delete the copy once the server has run well with the new names.
 
 ## Uninstalling
 

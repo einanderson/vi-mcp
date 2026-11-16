@@ -145,7 +145,7 @@ def test_import_does_not_overwrite_local(net, monkeypatch):
     local = skills.new("neustart", ["tool:x"], ["t_a"], "lokaler Lösungsweg bleibt", "Testlauf", [], "a")
     skill = {**NET, "art": "skill", "text": "Fremder Lösungsweg mit eigenen Schritten", "hashtags": ["topic:n"], "quelle": "Runbook Seite 12", "name": "neustart", "reize": ["tool:x"], "schritte": ["netbox_get_vms"]}
     _import_bundle(net, [skill], monkeypatch)
-    assert g.load(local.id).data["loesung"]["text"] == "lokaler Lösungsweg bleibt" and g.load(local.id).data["version"] == 1
+    assert g.load(local.id).data["solution"]["text"] == "lokaler Lösungsweg bleibt" and g.load(local.id).data["version"] == 1
     foreign = g.recall("mode:quarantine", viewer=None)[0][1]
     with pytest.raises(ValueError, match="quarantine"):
         skills.fusion(local.id, foreign.id, "gemischt", "Testlauf", "a")
@@ -220,7 +220,7 @@ def test_outbox_and_no_provenance_laundering(net, monkeypatch, tmp_path):
         p2p.generate_keys(seed)
     assert oct(seed.stat().st_mode)[-3:] == "600"
     p2p.generate_token("a")
-    e = g.new_object("insight", "eigenes Wissen über web4 hier", ["host:web4", "topic:a"], {"quelle": "Messung vom 2.11."}, reason="T", instance="a")
+    e = g.new_object("insight", "eigenes Wissen über web4 hier", ["host:web4", "topic:a"], {"source": "Messung vom 2.11."}, reason="T", instance="a")
     e.confirm("ki@b", "stimmt", "b")
     g.save(e)
     g.new_object("experience", "private Erfahrung bleibt hier", ["host:web4"], {"args": {}}, reason="T", instance="a")

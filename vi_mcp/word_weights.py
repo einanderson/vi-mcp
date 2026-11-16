@@ -49,8 +49,8 @@ def compute() -> dict:
     cond = " OR ".join(f"t.tag LIKE '{k}%'" for k in KINDS)
     base = ("FROM tag t JOIN object o ON o.id = t.object_id {join} WHERE o.kind IN ('insight', 'rule', 'skill') AND o.mode IN ('active', 'test') "
             f"AND o.visibility <> 'private' AND ({cond}) GROUP BY t.tag{{group}}")
-    sums = ("SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.ja') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.nein') AS REAL), 0)), "
-            "SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.n') AS REAL), 0))")
+    sums = ("SUM(COALESCE(CAST(json_extract(o.data, '$.useful.yes') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.useful.no') AS REAL), 0)), "
+            "SUM(COALESCE(CAST(json_extract(o.data, '$.useful.n') AS REAL), 0))")
     with g.lock:
         rows = [(w, "any", y, n_, c) for w, y, n_, c in g.db().execute(f"SELECT t.tag, {sums} " + base.format(join="", group=""))]
         rows += list(g.db().execute(f"SELECT t.tag, substr(a.tag, 9), {sums} "

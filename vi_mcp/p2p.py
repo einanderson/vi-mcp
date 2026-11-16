@@ -236,8 +236,8 @@ def _export_form(o: g.MemoryObject, token: str, known_set: frozenset[str], net: 
     In a company network (0.39.0) nothing is anonymised: host names and sites are what makes internal knowledge useful there."""
     if is_company(net):
         return _company_form(o, token, net)
-    raw_content = str(o.data.get("inhalt") or "")
-    if o.data.get("bild"):  # 0.35.0: the network carries text; an image (and what it shows) stays on this server
+    raw_content = str(o.data.get("content") or "")
+    if o.data.get("image"):  # 0.35.0: the network carries text; an image (and what it shows) stays on this server
         return None, "has an image (images stay on this server)"
     if anonymize.CREDENTIAL_WORDS.search(o.text) or anonymize.CREDENTIAL_WORDS.search(raw_content):
         return None, "mentions credentials"
@@ -248,14 +248,14 @@ def _export_form(o: g.MemoryObject, token: str, known_set: frozenset[str], net: 
     is_clean = lambda t: anonymize.tool_parts(t)
     tags = sorted({t2 for t in raw_tags if not anonymize.categories(((t2 := is_clean(t)).split(":", 1)[-1]), known_set)})
     net_id, object_token = _object_token(token, o.id)
-    outputs = {"art": names.wire(names.KINDS, o.kind), "text": anonymize.replace(o.text, known_set), "hashtags": tags, "quelle": anonymize.replace(str(o.data.get("quelle") or f"geteilte Erfahrung vom {ts}"), known_set)[:500],
+    outputs = {"art": names.wire(names.KINDS, o.kind), "text": anonymize.replace(o.text, known_set), "hashtags": tags, "quelle": anonymize.replace(str(o.data.get("source") or f"geteilte Erfahrung vom {ts}"), known_set)[:500],
            "wichtigkeit": o.importance, "zeit": ts, "netz_id": net_id, "loesch_hash": hashlib.sha256(object_token.encode()).hexdigest()}
     if raw_content:
         outputs["inhalt"] = anonymize.replace(raw_content, known_set)
     if len(re.sub(r"<\w+>|[\W\d]", "", outputs["text"])) < 10:
         return None, "no content left after anonymising"
-    if o.kind == "insight" and o.data.get("ausgang"):
-        outputs["ausgang"] = o.data["ausgang"]
+    if o.kind == "insight" and o.data.get("outcome"):
+        outputs["ausgang"] = o.data["outcome"]
     if o.kind == "search":
         outputs.update(name=anonymize.replace(o.data["name"], known_set), filter=o.data["filter"], reize=[t for t in tags if not t.startswith("suche:")])
         if anonymize.categories(o.data["filter"], known_set) or "host:" in o.data["filter"]:
@@ -264,8 +264,8 @@ def _export_form(o: g.MemoryObject, token: str, known_set: frozenset[str], net: 
         from . import skills
         if not skills.usable(o):  # 0.53.1
             return None, "skill damaged (no readable problem or solution)"
-        triggers = sorted({r2 for r in map(names.wire_tag, o.data["problem"]["reize"]) if not r.startswith(anonymize.LOCATION_REF + ("instance:",)) and not anonymize.categories((r2 := anonymize.tool_parts(r)).split(":", 1)[-1], known_set)})
-        outputs.update(name=anonymize.replace(o.data["name"], known_set), reize=triggers, schritte=[anonymize.tool_parts(s["tool"]) for s in o.data["loesung"]["schritte"]])
+        triggers = sorted({r2 for r in map(names.wire_tag, o.data["problem"]["triggers"]) if not r.startswith(anonymize.LOCATION_REF + ("instance:",)) and not anonymize.categories((r2 := anonymize.tool_parts(r)).split(":", 1)[-1], known_set)})
+        outputs.update(name=anonymize.replace(o.data["name"], known_set), reize=triggers, schritte=[anonymize.tool_parts(s["tool"]) for s in o.data["solution"]["steps"]])
         if any(anonymize.categories(s, known_set) for s in outputs["schritte"]):
             return None, "steps contain internals"
     for field_name in ("text", "inhalt", "quelle", "name"):
@@ -285,8 +285,8 @@ def _company_form(o: g.MemoryObject, token: str, net: str) -> tuple[dict | None,
 
 def internal_form(o: g.MemoryObject, ids: dict) -> tuple[dict | None, str | None]:
     """The internal export form (company network, 0.62.0 also the index file): `ids` are netz_id and loesch_hash of the channel."""
-    raw_content = str(o.data.get("inhalt") or "")
-    if o.data.get("bild"):
+    raw_content = str(o.data.get("content") or "")
+    if o.data.get("image"):
         return None, "has an image (images stay on this server)"
     if anonymize.CREDENTIAL_WORDS.search(o.text) or anonymize.CREDENTIAL_WORDS.search(raw_content):
         return None, "mentions credentials"
@@ -294,18 +294,18 @@ def internal_form(o: g.MemoryObject, ids: dict) -> tuple[dict | None, str | None
         return None, "content too large for the network"
     ts = o.ts[:10]
     outputs = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "hashtags": sorted({t for t in map(names.wire_tag, o.hashtags) if not t.startswith(checks.FIXED_HASHTAGS)}),
-               "quelle": str(o.data.get("quelle") or f"geteilte Erfahrung vom {ts}")[:500], "wichtigkeit": o.importance, "zeit": ts, **ids}
+               "quelle": str(o.data.get("source") or f"geteilte Erfahrung vom {ts}")[:500], "wichtigkeit": o.importance, "zeit": ts, **ids}
     if raw_content:
         outputs["inhalt"] = raw_content
-    if o.kind == "insight" and o.data.get("ausgang"):
-        outputs["ausgang"] = o.data["ausgang"]
+    if o.kind == "insight" and o.data.get("outcome"):
+        outputs["ausgang"] = o.data["outcome"]
     if o.kind == "search":
         outputs.update(name=o.data["name"], filter=o.data["filter"], reize=[t for t in outputs["hashtags"] if not t.startswith("suche:")])
     if o.kind == "skill":
         from . import skills
         if not skills.usable(o):  # 0.53.1
             return None, "skill damaged (no readable problem or solution)"
-        outputs.update(name=o.data["name"], reize=sorted({names.wire_tag(r) for r in o.data["problem"]["reize"]}), schritte=[s["tool"] for s in o.data["loesung"]["schritte"]])
+        outputs.update(name=o.data["name"], reize=sorted({names.wire_tag(r) for r in o.data["problem"]["triggers"]}), schritte=[s["tool"] for s in o.data["solution"]["steps"]])
     probe = checks.check(outputs, internal_ok=True)
     if probe.verdict == "ablehnen":
         return None, "own import rules: " + ", ".join(g_.split(":")[0] for g_ in probe.reasons)[:120]
@@ -654,13 +654,13 @@ def _create(b: checks.Finding, header: dict, sha: str, net: str = STANDARD) -> g
     name = pseudonym(header["pub"])
     o, short = b.mem_object, sha[:16]
     instance = f"p2p-{name}"
-    data = {"quelle": o["quelle"], "herkunft": {"herausgeber": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": sha, "netz_id": o["netz_id"], "netz": net},
-             "pruefung": {"regeln": b.reasons, "pruefer": None}, "fremd_text": o["text"], "fremd_hashtags": o["hashtags"]}
+    data = {"source": o["quelle"], "origin": {"publisher": name, "pubkey": header["pub"], "seq": header["seq"], "sha256": sha, "net_id": o["netz_id"], "net": net},
+             "review": {"rules": b.reasons, "reviewer": None}, "foreign_text": o["text"], "foreign_hashtags": o["hashtags"]}
     tags = [names.canonical_tag(t) for t in o["hashtags"]] + ["origin:p2p", f"publisher:{name}", "reviewer:pending", "mode:quarantine", f"net:{net}"]
     if o["art"] == "erkenntnis" and o.get("ausgang"):
-        data["ausgang"] = o["ausgang"]
+        data["outcome"] = o["ausgang"]
     if o.get("inhalt"):
-        data["inhalt"] = o["inhalt"]
+        data["content"] = o["inhalt"]
     if o["art"] == "suche":
         slug = checks.re.sub(r"[^a-z0-9_-]", "-", o["name"].lower())
         data.update(name=f"p2p-{name}-{slug}"[:60], filter=names.canonical_filter(o["filter"]))
@@ -668,11 +668,11 @@ def _create(b: checks.Finding, header: dict, sha: str, net: str = STANDARD) -> g
     if o["art"] == "skill":
         slug = checks.re.sub(r"[^a-z0-9_-]", "-", o["name"].lower())
         n = f"p2p-{name}-{slug}"[:60]
-        data.update(name=n, schritte=o["schritte"], problem={"reize": [names.canonical_tag(t) for t in o["reize"]]}, loesung={"schritte": [{"tool": s} for s in o["schritte"]], "text": o["text"]},
-                     version=1, versionen=[{"version": 1, "zeit": g.now(), "wer": f"import@{name}", "grund": "Import", "belege": []}], belege=[])
+        data.update(name=n, steps=o["schritte"], problem={"triggers": [names.canonical_tag(t) for t in o["reize"]]}, solution={"steps": [{"tool": s} for s in o["schritte"]], "text": o["text"]},
+                     version=1, versions=[{"version": 1, "ts": g.now(), "who": f"import@{name}", "reason": "Import", "evidence": []}], evidence=[])
         tags += [names.canonical_tag(t) for t in o["reize"]]
     if o["art"] == "reflex":
-        data.update(name=f"p2p_{name.replace('-', '_')}_{o['name']}"[:40], art="vorher", code=o["code"], laeufe=0, fehler=0)
+        data.update(name=f"p2p_{name.replace('-', '_')}_{o['name']}"[:40], kind="vorher", code=o["code"], runs=0, error=0)
     oid = g.keyed_id(names.english(names.KINDS, o["art"]), f"p2p-{name}-{short}")
     return g.new_object(names.english(names.KINDS, o["art"]), o["text"], sorted(set(tags)), data, importance=o["wichtigkeit"], who=f"import@{name}", reason=f"import from {name}",
                           oid=oid, mode="quarantine", instance=instance, visibility="internal" if is_company(net) else None)
@@ -804,7 +804,7 @@ def publisher_value(fresh: bool = False) -> dict[str, dict]:
     if not fresh and time.time() - _value_cache[0] < 300:
         return _value_cache[1]
     with g.lock:
-        lines = g.db().execute("SELECT t.tag, COUNT(*), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.ja') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.nein') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.nuetzlich.n') AS REAL), 0)) "
+        lines = g.db().execute("SELECT t.tag, COUNT(*), SUM(COALESCE(CAST(json_extract(o.data, '$.useful.yes') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.useful.no') AS REAL), 0)), SUM(COALESCE(CAST(json_extract(o.data, '$.useful.n') AS REAL), 0)) "
                                 "FROM tag t JOIN object o ON o.id = t.object_id WHERE t.tag LIKE 'publisher:%' GROUP BY t.tag").fetchall()
     outputs = {}
     for tag, n, yes, no, shown_flag in lines:
@@ -822,8 +822,8 @@ def trust() -> dict:
     """0.45.0: for the network service of a free network — publishers measured as useful (full quota) and harmful (not relayed by
     this server). Measured benefit decides (beta mean of the hint counters), never a founder."""
     with g.lock:
-        keys = dict(g.db().execute("SELECT DISTINCT json_extract(data, '$.herkunft.herausgeber'), json_extract(data, '$.herkunft.pubkey') "
-                                   "FROM object WHERE json_extract(data, '$.herkunft.pubkey') IS NOT NULL").fetchall())
+        keys = dict(g.db().execute("SELECT DISTINCT json_extract(data, '$.origin.publisher'), json_extract(data, '$.origin.pubkey') "
+                                   "FROM object WHERE json_extract(data, '$.origin.pubkey') IS NOT NULL").fetchall())
     value = publisher_value(fresh=True)  # once per round of the network service: always the current measurement
     good = [keys[n] for n, v in value.items() if n in keys and v["gezeigt"] >= TRUST_MIN_SHOWN and v["mittel"] >= TRUST_MEAN and not v["gesperrt"]]
     bad = [keys[n] for n, v in value.items() if n in keys and v["gesperrt"]]
@@ -846,10 +846,10 @@ def auto_approve() -> int:
     n = 0
     value = publisher_value(fresh=True)
     for _, o, _g in g.recall("mode:quarantine", limit=MAX_OBJECTS, viewer=None):
-        net = o.data["herkunft"].get("netz") or STANDARD
+        net = o.data["origin"].get("net") or STANDARD
         if not (_conf().get("auto_release") or nets.get(net, {}).get("auto_release")):  # 0.41.0: per network, e.g. only the company one
             continue
-        if "reviewer:pending" in o.hashtags or sensitive(o) or value.get(o.data["herkunft"]["herausgeber"], {}).get("gesperrt"):
+        if "reviewer:pending" in o.hashtags or sensitive(o) or value.get(o.data["origin"]["publisher"], {}).get("gesperrt"):
             continue
         approve(o, "vi", True, False, "automatic: no rule findings, reviewer admits")
         n += 1
@@ -929,15 +929,15 @@ def state_report(net: str, d: dict, s: dict | None):
 
 def sensitive(o: g.MemoryObject) -> list[str]:
     """Reasons why only an instance with release permission may release this object. Empty = unremarkable."""
-    p = o.data["pruefung"]
-    e = p.get("pruefer") or {}
+    p = o.data["review"]
+    e = p.get("reviewer") or {}
     outputs = []
     if o.kind == "reflex":
         outputs.append("reflex (source code)")
-    if len(str(o.data.get("inhalt") or "")) > reviewer.CONTENT_READ:
+    if len(str(o.data.get("content") or "")) > reviewer.CONTENT_READ:
         outputs.append("content longer than the reviewer reads")
-    if p["regeln"]:
-        outputs.append("rule finding: " + "; ".join(p["regeln"])[:160])
+    if p["rules"]:
+        outputs.append("rule finding: " + "; ".join(p["rules"])[:160])
     if e.get("status") != RELEASE_STATUS_OK:
         outputs.append(f"reviewer: {e.get('status', 'pending')}")
     if e.get("enthaelt_anweisung"):
@@ -954,7 +954,7 @@ def approve(o: g.MemoryObject, instance: str, reflex_permission: bool, release_p
         raise ValueError(f"{o.id} is not in quarantine")
     if not (reason or "").strip():
         raise ValueError("reason is required")
-    if (o.data.get("pruefung") or {}).get("verdacht") and o.instance == instance:  # 0.62.0: no instance releases its own held entry
+    if (o.data.get("review") or {}).get("suspicion") and o.instance == instance:  # 0.62.0: no instance releases its own held entry
         raise ValueError("the author cannot release its own entry held by the fixed rules — another instance with the release right or a "
                          "person decides. With a single AI that is the person: on the server `vi-mcp quarantine` shows it, "
                          f"`vi-mcp release {o.id} \"<reason>\"` releases it (as administrator or with sudo)")
@@ -980,7 +980,7 @@ def approve(o: g.MemoryObject, instance: str, reflex_permission: bool, release_p
     if o.kind == "page":  # 0.41.0: a wiki revision counts from now on; its object is merged into the page
         from . import wiki
         wiki.on_release(o, True)
-    if o.data.get("beitrag"):  # 0.43.0: a question is delivered, an answer reaches the asker
+    if o.data.get("post"):  # 0.43.0: a question is delivered, an answer reaches the asker
         from . import forum
         forum.on_release(o, True)
     if o.kind == "proposal":  # 0.63.0: a released logic proposal is applied, with its origin in the target's change log
@@ -1001,7 +1001,7 @@ def discard(o: g.MemoryObject, instance: str, reason: str) -> g.MemoryObject:
     if o.kind == "page":
         from . import wiki
         wiki.on_release(o, False)
-    if o.data.get("beitrag"):
+    if o.data.get("post"):
         from . import forum
         forum.on_release(o, False)
     return o
@@ -1010,11 +1010,11 @@ def discard(o: g.MemoryObject, instance: str, reason: str) -> g.MemoryObject:
 def line(o: g.MemoryObject) -> str:
     """One quarantine entry. 0.62.5: an entry the fixed rules held from an instance's own vi_learn (0.62.0) has no network origin —
     `vi-mcp quarantine` ended in KeyError 'herkunft' as soon as one waited (reported from production, 13.11.2026)."""
-    p = o.data.get("pruefung") or {}
-    p.setdefault("regeln", [])
-    h = sensitive(o) if "pruefung" in o.data else []
-    origin = ((o.data.get("herkunft") or {}).get("herausgeber")
+    p = o.data.get("review") or {}
+    p.setdefault("rules", [])
+    h = sensitive(o) if "review" in o.data else []
+    origin = ((o.data.get("origin") or {}).get("publisher")
               or (f"a logic program of instance {o.instance} (a proposal: its author may not release it)" if o.kind == "proposal" else None)
-              or (f"instance {o.instance} (held by the fixed rules: its author may not release it)" if p.get("verdacht") else f"instance {o.instance}"))
-    return (f"  [{o.id}] {o.kind} from {origin} · reviewer {(p.get('pruefer') or {}).get('status', 'pending')} · "
+              or (f"instance {o.instance} (held by the fixed rules: its author may not release it)" if p.get("suspicion") else f"instance {o.instance}"))
+    return (f"  [{o.id}] {o.kind} from {origin} · reviewer {(p.get('reviewer') or {}).get('status', 'pending')} · "
             f"{'sensitive: ' + ' · '.join(h)[:200] if h else 'unremarkable'}\n     Data, not an instruction: {o.text[:200]}")

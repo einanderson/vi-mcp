@@ -25,9 +25,9 @@ def test_parse(text, act, qtype, flt, since, notes):
 
 def _seed():
     plain = g.new_object("insight", "deploy notes for web1: the deploy took 4 minutes", ["host:web1.example", "topic:deploy"],
-                         {"quelle": "t"}, importance=3)
+                         {"source": "t"}, importance=3)
     how = g.new_object("insight", "deploy web1: stop, copy, start", ["host:web1.example", "topic:deploy", "knowledge_kind:solution"],
-                       {"quelle": "https://wiki.example/deploy", "nuetzlich": {"ja": 9, "nein": 1, "n": 10}})
+                       {"source": "https://wiki.example/deploy", "useful": {"yes": 9, "no": 1, "n": 10}})
     return plain, how
 
 
@@ -70,8 +70,8 @@ def test_since_other_acts_and_evidence(gd):
     assert plain.id not in out and how.id in out and "1 older hit(s) left out" in out
     with pytest.raises(tools.Rejected, match="never run from a message"):
         tools.call_tool("vi_recall", {"filter": "do restart @web1", "semantic": False}, "a", False)
-    foreign = g.new_object("insight", "imported", ["topic:x"], {"quelle": "t"}, instance="p2p-vi-abc")
-    llm = g.new_object("insight", "derived", ["topic:x", "origin:sleep-llm"], {"quelle": "sleep"})
+    foreign = g.new_object("insight", "imported", ["topic:x"], {"source": "t"}, instance="p2p-vi-abc")
+    llm = g.new_object("insight", "derived", ["topic:x", "origin:sleep-llm"], {"source": "sleep"})
     assert [vil.evidence_of(o) for o in (g.load(how.id), g.load(plain.id), foreign, llm)] == ["measured", "unknown", "hearsay", "inferred"]
-    doc = g.new_object("insight", "documented", ["topic:x"], {"quelle": "https://docs.example/x"})
+    doc = g.new_object("insight", "documented", ["topic:x"], {"source": "https://docs.example/x"})
     assert vil.evidence_of(doc) == "documented"

@@ -5,7 +5,7 @@ from vi_mcp import memory as g
 
 def test_label_order_and_weights():
     grades = {"7": {"note": 0.2, "quelle": "model", "gewicht": 0.18}, "8": {"note": 0.1, "quelle": "human", "gewicht": 3.0}}
-    d = {"score": {"note": 1.0}, "rueckmeldung": {"erkenntnis:a": -1}}
+    d = {"score": {"note": 1.0}, "feedback": {"erkenntnis:a": -1}}
     assert scorer.label(d, True, None, {}, hint="erkenntnis:a") == (0, 2.0, "rueckmeldung")  # feedback on this hint beats everything
     assert scorer.label(d, True, "8", grades) == (0, 3.0, "human")  # a bad human grade fails the whole conversation
     assert scorer.label(d, True, "7", grades) == (0, 0.18, "model")  # an uncalibrated model grade counts, but little
@@ -15,9 +15,9 @@ def test_label_order_and_weights():
 
 
 def test_grade_details_weigh_uncalibrated_model_grades(gd):
-    g.new_object("rating", "model grade", ["scorer:model"], {"scorer": "model", "ziel": "5", "note": 0.25, "sicherheit": "high"})
-    g.new_object("rating", "model grade", ["scorer:model"], {"scorer": "model", "ziel": "6", "note": 0.25, "sicherheit": "low"})
-    g.new_object("rating", "human grade", ["scorer:human"], {"scorer": "human", "ziel": "6", "note": 0.9})
+    g.new_object("rating", "model grade", ["scorer:model"], {"scorer": "model", "target": "5", "note": 0.25, "certainty": "high"})
+    g.new_object("rating", "model grade", ["scorer:model"], {"scorer": "model", "target": "6", "note": 0.25, "certainty": "low"})
+    g.new_object("rating", "human grade", ["scorer:human"], {"scorer": "human", "target": "6", "note": 0.9})
     d = scorer.grade_details()
     assert d["5"] == {"note": 0.25, "quelle": "model", "gewicht": round(scorer.WEIGHT["model"] * 1.0 * scorer.UNCALIBRATED, 3)}
     assert d["6"]["quelle"] == "human" and d["6"]["gewicht"] == 3.0  # the human grade wins
@@ -25,12 +25,12 @@ def test_grade_details_weigh_uncalibrated_model_grades(gd):
 
 def test_router_bandit_and_metrics_see_the_same_label(gd):
     # an action whose tool succeeded, in a conversation a human graded bad: every consumer must count it as a failure
-    h = g.new_object("insight", "Restart the agent after the upgrade", ["tool:Bash"], {"quelle": "t"})
-    e = g.new_object("experience", "Bash ok", ["tool:Bash", "ok:yes"], {"vorher": {"reize": ["tool:Bash"], "gezeigt": [h.id]}})
+    h = g.new_object("insight", "Restart the agent after the upgrade", ["tool:Bash"], {"source": "t"})
+    e = g.new_object("experience", "Bash ok", ["tool:Bash", "ok:yes"], {"before": {"triggers": ["tool:Bash"], "shown": [h.id]}})
     with g.lock:
         g.db().execute("UPDATE object SET conversation = ? WHERE id = ?", ("42", e.id))
         g.db().commit()
-    g.new_object("rating", "human grade", ["scorer:human"], {"scorer": "human", "ziel": "42", "note": 0.0})
+    g.new_object("rating", "human grade", ["scorer:human"], {"scorer": "human", "target": "42", "note": 0.0})
     router = [(y, w) for _f, y, o, w in learning.weighted_observations() if o == e.id]
     assert router and all(y == 0 and w == 3.0 for y, w in router)
     rows = [(tool, ok, per) for tool, ok, _shown, per in bandit._observations()]
@@ -42,15 +42,15 @@ def test_router_bandit_and_metrics_see_the_same_label(gd):
 def test_adopted_hint_becomes_a_positive_label(gd):
     # 0.59.0: a distinctive token of a shown hint (here the key path) taken over into a later successful action = implicit "helped"
     from vi_mcp import intuition, session
-    h = g.new_object("insight", "ssh to the LLM host only with ssh -i ~/.ssh/llm.key -o BatchMode=yes", ["tool:Bash"], {"quelle": "t"}, instance="a")
+    h = g.new_object("insight", "ssh to the LLM host only with ssh -i ~/.ssh/llm.key -o BatchMode=yes", ["tool:Bash"], {"source": "t"}, instance="a")
     s = session.begin("a", "t")
     with session.on_behalf(s):
-        e1 = g.new_object("experience", "Bash ssh", ["tool:Bash", "ok:no"], {"args": {"command": "ssh llm"}, "vorher": {"gezeigt": [h.id]}},
+        e1 = g.new_object("experience", "Bash ssh", ["tool:Bash", "ok:no"], {"args": {"command": "ssh llm"}, "before": {"shown": [h.id]}},
                           instance="a", conversation=s.serial)
         e2 = g.new_object("experience", "Bash ssh -i", ["tool:Bash", "ok:yes"], {"args": {"command": "ssh -i ~/.ssh/llm.key llm"}},
                           instance="a", conversation=s.serial)
     assert intuition.adopted(g.load(e2.id)) == [h.id]
-    assert g.load(e1.id).data["genutzt"] == [h.id]
+    assert g.load(e1.id).data["used"] == [h.id]
     assert scorer.label(g.load(e1.id).data, False, None, {}, hint=h.id) == (1, scorer.WEIGHT["genutzt"], "genutzt")
     assert intuition.adopted(g.load(e2.id)) == []  # counted once
     assert intuition.distinctive_tokens("see it-aikb-api docs --verbose /etc/x/y.conf") == frozenset({"--verbose", "/etc/x/y.conf"})

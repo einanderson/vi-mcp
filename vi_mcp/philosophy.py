@@ -62,8 +62,8 @@ def translation_lines(pkg: dict, t: dict | None) -> list[str]:
 def stored_translation(name: str) -> dict | None:
     """The newest derived translation stored on an installed object of this philosophy (needs the memory)."""
     for o in _installed_all(name):
-        if o.data.get("uebersetzung"):
-            return o.data["uebersetzung"]
+        if o.data.get("translation"):
+            return o.data["translation"]
     return None
 
 
@@ -90,10 +90,10 @@ def explain(ref: str, url: str | None, model: str | None, judge_url: str | None,
 
 def store_translation(r: dict, who: str) -> g.MemoryObject:
     """Store a round-trip report as a DERIVED artifact on the installed object whose hash it was made for — never as a source."""
-    o = next((x for x in _installed_all(r["package"]) if x.data["philosophie"]["hash"] == r["seed_hash"]), None)
+    o = next((x for x in _installed_all(r["package"]) if x.data["philosophy"]["hash"] == r["seed_hash"]), None)
     if o is None:
         raise ValueError(f"no installed {r['package']} with hash {r['seed_hash'][:16]}… — install it first, then store its translation")
-    o.data = {**o.data, "uebersetzung": r}
+    o.data = {**o.data, "translation": r}
     o.change(f"ki@{who}", "derived translation stored", f"round trip: whole seed {r['whole']['agreement']:.0%} of {r['whole']['worlds']} worlds"
              + (f", control {r['control']['agreement']:.0%}" if r.get("control") else ""))
     return g.save(o)
@@ -103,10 +103,10 @@ def installed() -> list[g.MemoryObject]:
     """The newest installed object per philosophy name."""
     newest: dict[str, g.MemoryObject] = {}
     for _s, o, _w in g.recall(TAG, limit=1000, viewer=None):
-        p = o.data.get("philosophie") or {}
+        p = o.data.get("philosophy") or {}
         if p.get("name") and o.mode not in ("refuted", "withdrawn", "archived") and (p["name"] not in newest or o.ts > newest[p["name"]].ts):
             newest[p["name"]] = o
-    return sorted(newest.values(), key=lambda o: o.data["philosophie"]["name"])
+    return sorted(newest.values(), key=lambda o: o.data["philosophy"]["name"])
 
 
 def install(ref: str, instance: str, who: str | None = None, visibility: str | None = None) -> g.MemoryObject:
@@ -119,7 +119,7 @@ def install(ref: str, instance: str, who: str | None = None, visibility: str | N
     o = logic.save_rule_set(f"philosophie-{pkg['name']}", pkg["seed"], f"philosophy {pkg['name']} {pkg['version']}: {pkg.get('description', '')}"[:300],
                             visibility, instance, who)
     o.hashtags = sorted(set(o.hashtags) | {TAG, f"philosophy:{pkg['name']}"})
-    o.data = {**o.data, "philosophie": {**{k: v for k, v in pkg.items() if k != "seed"}, "hash": r["hash"],
+    o.data = {**o.data, "philosophy": {**{k: v for k, v in pkg.items() if k != "seed"}, "hash": r["hash"],
                                          "check": {"worlds": len(r["worlds"]), "coverage": r["coverage"]}}}
     o.change(f"ki@{who or instance}", "philosophy installed", f"{pkg['name']} {pkg['version']} hash {r['hash'][:16]} — every check passed")
     return g.save(o)
@@ -128,14 +128,14 @@ def install(ref: str, instance: str, who: str | None = None, visibility: str | N
 def _installed_all(name: str) -> list[g.MemoryObject]:
     """Every installed object of one philosophy (all versions), newest first."""
     objs = [o for _s, o, _w in g.recall(TAG, limit=1000, viewer=None)
-            if (o.data.get("philosophie") or {}).get("name") == name and o.mode not in ("refuted", "withdrawn", "archived")]
+            if (o.data.get("philosophy") or {}).get("name") == name and o.mode not in ("refuted", "withdrawn", "archived")]
     return sorted(objs, key=lambda o: o.ts, reverse=True)
 
 
 def _package_of(o: g.MemoryObject) -> dict:
     """The package an installed object holds (manifest + seed), as it was checked."""
-    pkg = {k: v for k, v in o.data["philosophie"].items() if k not in ("hash", "check")}
-    pkg["seed"] = o.data["logik"]["quelle"]
+    pkg = {k: v for k, v in o.data["philosophy"].items() if k not in ("hash", "check")}
+    pkg["seed"] = o.data["logic"]["source"]
     return pkg
 
 
@@ -148,15 +148,15 @@ def _target(instance: str | None, index: str | None) -> tuple[str, str]:
 
 def _active_bindings() -> list[g.MemoryObject]:
     return [o for _s, o, _w in g.recall(BIND_TAG, limit=1000, viewer=None)
-            if o.mode == "active" and (o.data.get("philosophie_bindung") or {}).get("name")]
+            if o.mode == "active" and (o.data.get("philosophy_binding") or {}).get("name")]
 
 
 def bind(name: str, who: str, instance: str | None = None, index: str | None = None, off: bool = False) -> str:
     """Bind an installed philosophy (its current hash) to an instance or an index, or end the binding (off: mode aus, kept as a
     tombstone with the reason). Several philosophies may apply to one target; their verdicts stay apart (evaluate_bound)."""
     kind, target = _target(instance, index)
-    current = [o for o in _active_bindings() if o.data["philosophie_bindung"]["name"] == name
-               and (o.data["philosophie_bindung"]["target_kind"], o.data["philosophie_bindung"]["target"]) == (kind, target)]
+    current = [o for o in _active_bindings() if o.data["philosophy_binding"]["name"] == name
+               and (o.data["philosophy_binding"]["target_kind"], o.data["philosophy_binding"]["target"]) == (kind, target)]
     if off:
         if not current:
             return f"no active binding of {name} to {kind} {target} — nothing to end"
@@ -169,17 +169,17 @@ def bind(name: str, who: str, instance: str | None = None, index: str | None = N
     if not objs:
         raise ValueError(f"{name} is not installed — install it first (vi_philosophy action install, or vi-mcp philosophy install {name})")
     inst = objs[0]
-    h = inst.data["philosophie"]["hash"]
+    h = inst.data["philosophy"]["hash"]
     for o in current:
-        if o.data["philosophie_bindung"]["hash"] == h:
-            return f"already bound: {name} {inst.data['philosophie']['version']} (hash {h[:16]}…) applies to {kind} {target} — {o.id}"
+        if o.data["philosophy_binding"]["hash"] == h:
+            return f"already bound: {name} {inst.data['philosophy']['version']} (hash {h[:16]}…) applies to {kind} {target} — {o.id}"
         o.mode = "off"
         o.change(f"ki@{who}", "philosophy binding replaced", f"rebound to hash {h[:16]}")
         g.save(o)
-    meta = inst.data["philosophie"]
+    meta = inst.data["philosophy"]
     o = g.new_object("rule", f"Philosophy binding: {name} {meta['version']} applies to {kind} {target}",
                      [BIND_TAG, f"philosophy:{name}"],
-                     {"philosophie_bindung": {"name": name, "version": meta["version"], "hash": h, "installed": inst.id,
+                     {"philosophy_binding": {"name": name, "version": meta["version"], "hash": h, "installed": inst.id,
                                               "profile": meta.get("profile"), "target_kind": kind, "target": target}},
                      importance=1, who=f"ki@{who}", reason="vi_philosophy use", instance=who,
                      visibility="internal")
@@ -191,11 +191,11 @@ def bindings(instance: str | None = None, index: str | None = None) -> list[dict
     current (the installed package has that hash) · stale (a newer install differs — the bound hash still decides) · missing."""
     out = []
     for o in _active_bindings():
-        b = o.data["philosophie_bindung"]
+        b = o.data["philosophy_binding"]
         if not ((b["target_kind"] == "instance" and b["target"] == instance) or (b["target_kind"] == "index" and index and b["target"] == index)):
             continue
         objs = _installed_all(b["name"])
-        hashes = [x.data["philosophie"]["hash"] for x in objs]
+        hashes = [x.data["philosophy"]["hash"] for x in objs]
         state = "missing" if b["hash"] not in hashes else ("current" if hashes[0] == b["hash"] else "stale")
         out.append({**b, "binding": o.id, "state": state})
     return sorted(out, key=lambda b: (b["name"], b["target_kind"]))
@@ -210,7 +210,7 @@ def evaluate_bound(facts: str, instance: str | None = None, index: str | None = 
         if b["state"] == "missing":
             out[key] = {"hash": b["hash"], "state": "missing", "verdict": None}
             continue
-        o = next(x for x in _installed_all(b["name"]) if x.data["philosophie"]["hash"] == b["hash"])
+        o = next(x for x in _installed_all(b["name"]) if x.data["philosophy"]["hash"] == b["hash"])
         pkg = _package_of(o)
         if ph.package_hash(pkg) != b["hash"]:  # the stored package must still be the one that was checked and bound
             out[key] = {"hash": b["hash"], "state": "hash_mismatch", "verdict": None}
@@ -233,7 +233,7 @@ def tool(args: dict, instance: str) -> str:
     if action == "list":
         inst = installed()
         lines = ["Built in: " + ", ".join(sorted(ph.BUILTIN))]
-        lines += ["Installed: " + (", ".join(f"{o.data['philosophie']['name']} {o.data['philosophie']['version']} ({o.id})" for o in inst) or "none")]
+        lines += ["Installed: " + (", ".join(f"{o.data['philosophy']['name']} {o.data['philosophy']['version']} ({o.id})" for o in inst) or "none")]
         lines += ["Bound to you:"] + binding_lines(bindings(instance, args.get("index")))
         return "\n".join(lines)
     if action == "bound":
@@ -262,7 +262,7 @@ def tool(args: dict, instance: str) -> str:
         return json.dumps(ph.evaluate(pkg, str(args.get("facts") or "")), ensure_ascii=False, indent=1)
     if action == "install":
         o = install(ref, instance, None, args.get("visibility") or "internal")
-        return f"installed {o.id} — philosophy {pkg['name']} {pkg['version']}, hash {o.data['philosophie']['hash'][:16]}…"
+        return f"installed {o.id} — philosophy {pkg['name']} {pkg['version']}, hash {o.data['philosophy']['hash'][:16]}…"
     if action == "use":
         target = args.get("instance")
         if target and target != instance:  # a seed never overrides tool rights: an instance binds itself; an administrator binds others
@@ -370,7 +370,7 @@ def main(argv: list[str]) -> int:
             print(tool({"action": "list"}, "admin"))
         elif o.cmd == "install":
             ob = install(o.ref, "admin", "admin", o.visibility)
-            print(f"installed {ob.id} (hash {ob.data['philosophie']['hash'][:16]}…)")
+            print(f"installed {ob.id} (hash {ob.data['philosophy']['hash'][:16]}…)")
         elif o.cmd == "use":
             print(bind(o.name, "admin", o.instance, o.index, o.off))
         elif o.cmd == "bound":

@@ -16,7 +16,7 @@ from .log_output import log
 
 LOOP_S = 60
 ERROR_RULE_MIN = 3
-progress = {"laeufe": 0, "zuletzt": None, "regeln_neu": 0, "fehler": 0, "letzter_fehler": None, "schlaf_zuletzt": None}
+progress = {"laeufe": 0, "zuletzt": None, "regeln_neu": 0, "fehler": 0, "last_error": None, "schlaf_zuletzt": None}
 _halt = threading.Event()
 
 
@@ -37,8 +37,8 @@ def step() -> int:
             rid = g.keyed_id("rule", g.hash_value(tool_tag, error_tag, "wiederholter-fehler"))
             collective = n_inst >= 2
             o = g.load(rid)
-            data = {"treffer": n, "instanzen": sorted((instances or "").split(",")),
-                     "quelle": "loop: experiences of the last 24 h" + (f" at {n_inst} instances" if collective else "")}
+            data = {"hits": n, "instances": sorted((instances or "").split(",")),
+                     "source": "loop: experiences of the last 24 h" + (f" at {n_inst} instances" if collective else "")}
             if o is None:
                 g.new_object("rule", f"{tool_tag[5:]} failed {n}× in 24 h the same way ({error_tag.split(":", 1)[-1]})"
                                         + (f", at {n_inst} instances" if collective else "")
@@ -48,7 +48,7 @@ def step() -> int:
                                data, importance=2, oid=rid, mode="test",
                                reason=f"{n} identical errors in 24 h")  # author: the server (instance vi), no conversation
                 new += 1
-            elif o.data.get("treffer") != n or o.data.get("instanzen") != data["instanzen"]:
+            elif o.data.get("hits") != n or o.data.get("instances") != data["instances"]:
                 o.data.update(data)
                 o.hashtags = [t for t in o.hashtags if not t.startswith("collective:")] + [f"collective:{'ja' if collective else 'nein'}"]
                 g.save(o)
@@ -68,7 +68,7 @@ def step() -> int:
             except sleep_cycle.AlreadyRunning:
                 pass  # a sleep started by hand is still running; the next round checks again
             except Exception as exc:  # noqa: BLE001 — named in the progress state
-                progress["letzter_fehler"] = f"{g.now()} sleep: {type(exc).__name__}: {exc}"[:300]
+                progress["last_error"] = f"{g.now()} sleep: {type(exc).__name__}: {exc}"[:300]
                 log(f"Sleep failed: {exc}")
         threading.Thread(target=_sleep_bg, name="vi-schlaf", daemon=True).start()
     if expired_questions:
@@ -95,7 +95,7 @@ def _run() -> None:
                 log(f"Loop: {n} new rule(s) from experience")
         except Exception as exc:  # noqa: BLE001 — counted and named in the status
             progress["fehler"] += 1
-            progress["letzter_fehler"] = f"{g.now()} {type(exc).__name__}: {exc}"[:300]
+            progress["last_error"] = f"{g.now()} {type(exc).__name__}: {exc}"[:300]
             log(f"Loop error: {exc}")
 
 

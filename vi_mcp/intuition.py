@@ -219,7 +219,7 @@ def error_hints(tool: str, args: dict, error: str, instance: str | None) -> list
         for _sc, o, _p in hits:
             if o.mode not in ("active", "test") or o.id in found:
                 continue
-            body = (o.text + " " + str(o.data.get("inhalt") or "")[:4000]).lower()
+            body = (o.text + " " + str(o.data.get("content") or "")[:4000]).lower()
             shared_words = sum(1 for w in words if w in body) + sum(1 for c in codes if re.search(rf"\b{c}\b", body))
             shared_tags = len((trig - generic) & set(o.hashtags)) + sum(1 for b in programs if re.search(rf"(?<![\w-]){re.escape(b)}(?![\w-])", body))
             tagged = sig in o.hashtags
@@ -232,7 +232,7 @@ def error_hints(tool: str, args: dict, error: str, instance: str | None) -> list
         return []
     from . import bandit
     return [f"After this error — known in the VI: [{o.id}] ({'solution' if 'origin:episode' in o.hashtags else o.kind}, {bandit.mark(o)}) "
-            f"{' '.join(o.text.split())[:240]}" + (" — vi_object for the full content" if o.data.get("inhalt") else "")
+            f"{' '.join(o.text.split())[:240]}" + (" — vi_object for the full content" if o.data.get("content") else "")
             for _w, o in best]
 
 
@@ -375,24 +375,24 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
         if o.kind == "image":  # 0.37.0
             from . import images
             from_memory.append(f"Image{ins} [{o.id}] ({provenance}): {o.text[:300]} — {images.summary(o)}; vi_object {o.id} shows it "
-                               f"[Source: {str(o.data.get('quelle', '—'))[:120]}]")
+                               f"[Source: {str(o.data.get('source', '—'))[:120]}]")
             continue
         if o.kind == "page":  # 0.41.0: a network wiki page — reviewed, maintained by the network
             from_memory.append(f"Wiki page{ins} [{o.id}] ({provenance}): {o.text[:300]} — vi_page_read shows it "
-                               f"[Source: {str(o.data.get('quelle', '—'))[:120]}]")
+                               f"[Source: {str(o.data.get('source', '—'))[:120]}]")
             continue
         from_memory.append(f"{'Learned' if o.kind == 'insight' else 'Rule'}{ins} [{o.id}] ({provenance}"
                                + (", DISPUTED — contradicted by another instance" if o.mode == "disputed" else "")
                                + f"; {', '.join(t for t in o.hashtags if t.startswith(('mode:', 'skill:', 'collective:')))[:60]}): "
-                               f"{o.text[:300]} [Source: {str(o.data.get('quelle', '—'))[:120]}]"
-                               + (f" [complete with code/tables: vi_object {o.id}]" if o.data.get("inhalt") else ""))
+                               f"{o.text[:300]} [Source: {str(o.data.get('source', '—'))[:120]}]"
+                               + (f" [complete with code/tables: vi_object {o.id}]" if o.data.get("content") else ""))
     candidate_ids = [o.id for o in cand]
     remaining = len(cand) - len(shown_obj)
     # 1. access to what was learned: searches whose hint triggers match the action run automatically
     for _, su, _g in g.recall("(" + " OR ".join(search_triggers) + ")", limit=3, kinds=("search",)):
         hits = [o for _, o, _g2 in g.recall(su.data.get("filter", ""), limit=3) if o.id != su.id]
         found += [su.id] + [o.id for o in hits]
-        search.append({"suche": su.id, "name": su.data.get("name"), "treffer": [o.id for o in hits]})
+        search.append({"search": su.id, "name": su.data.get("name"), "hits": [o.id for o in hits]})
         from_memory.append(f"Learned search \"{su.data.get('name')}\" [{su.data.get('filter')}] — {su.text[:120]}: "
                                + ("; ".join(f"[{o.id}] {o.text[:90]}" for o in hits) if hits else "no hits"))
     # working memory: at most HINT_BUDGET hints from memory (Cowan 2001: ~4 chunks); the rest on request
@@ -426,15 +426,15 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(o.ts)).total_seconds()
             if age <= ttl:
                 found.append(o.id)
-                answer, age_s = o.data.get("ergebnis", ""), int(age)
-    access = {"reize": rz, "warnung": bool(warn), "gefunden": found, "gezeigt": [o.id for o in shown_obj], "kandidaten": candidate_ids,
-               "router": router, "exploration": exploration, "rest_n": len(rest), "suchen": search, "aus_gedaechtnis": answer is not None,
+                answer, age_s = o.data.get("result", ""), int(age)
+    access = names.data_keys({"reize": rz, "warnung": bool(warn), "gefunden": found, "gezeigt": [o.id for o in shown_obj], "kandidaten": candidate_ids,
+               "router": router, "exploration": exploration, "rest_n": len(rest), "suchen": search, "from_memory": answer is not None,
                "angebot": offer, **({"arm": layer_arm} if layer_arm else {}),
                **({"haltewahrscheinlichkeit": HOLD_BACK, "zurueckgehalten": held} if eligible else {}),
-               **({"idx": project_idx, "idx_vorrang": sum(1 for o in shown_obj if indexes.first(o, project_idx)),
-                  "idx_vorrang_aus": sum(1 for o in shown_obj if o.idx == project_idx and o.data.get("vorrang_aus"))} if project_idx else {}),
+               **({"idx": project_idx, "idx_priority": sum(1 for o in shown_obj if indexes.first(o, project_idx)),
+                  "idx_priority_off": sum(1 for o in shown_obj if o.idx == project_idx and o.data.get("priority_off"))} if project_idx else {}),
                **({"code_datei": code_file} if code_file else {}),
-               "repeat_suppressed": [o.id for o in repeated]}
+               "repeat_suppressed": [o.id for o in repeated]})
     before_id = secrets.token_hex(8)
     if answer is not None:
         experience(tool, args, True, 0, None, answer, access, instance, is_read_only)
@@ -455,7 +455,7 @@ def _last_shown(instance: str, hint_id: str) -> tuple[str, str, dict, str] | Non
     """(time, tool, decision, where) of the instance's most recent decision that showed this hint: first the open ones (vi_before
     without vi_after yet — what was just shown), then the stored experiences of the last WHY_DAYS days."""
     with _open_lock:
-        pending = [(t, tool, acc) for t, tool, _a, acc, inst, _ro, _c in _open.values() if inst == instance and hint_id in acc.get("gezeigt", [])]
+        pending = [(t, tool, acc) for t, tool, _a, acc, inst, _ro, _c in _open.values() if inst == instance and hint_id in acc.get("shown", [])]
     if pending:
         t, tool, acc = max(pending, key=lambda x: x[0])
         ts = (datetime.now(timezone.utc) - timedelta(seconds=time.monotonic() - t)).isoformat(timespec="seconds")
@@ -466,8 +466,8 @@ def _last_shown(instance: str, hint_id: str) -> tuple[str, str, dict, str] | Non
                               (instance, since, f"%{hint_id}%")).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
-        if e and hint_id in ((e.data.get("vorher") or {}).get("gezeigt") or []):
-            return e.ts, next((t[5:] for t in e.hashtags if t.startswith("tool:")), "?"), e.data["vorher"], f"experience {e.id}"
+        if e and hint_id in ((e.data.get("before") or {}).get("shown") or []):
+            return e.ts, next((t[5:] for t in e.hashtags if t.startswith("tool:")), "?"), e.data["before"], f"experience {e.id}"
     return None
 
 
@@ -483,11 +483,11 @@ def explain(hint: g.MemoryObject, instance: str, triggers: list[str] | None = No
                 f"to ask for a situation")
     if e is not None:
         _ts, tool, v, where = e
-        triggers, router = v.get("reize", []), v.get("router", "—")
-        pos = v.get("gezeigt", []).index(hint.id) + 1
+        triggers, router = v.get("triggers", []), v.get("router", "—")
+        pos = v.get("shown", []).index(hint.id) + 1
         z.append(f"Shown {ts[:16]} before {tool} ({where}), "
-                 f"position {pos} of {len(v.get('gezeigt', []))}, router {router}"
-                 + (" — this slot was ε-exploration (a random candidate from further back)" if v.get("exploration") and pos == len(v.get("gezeigt", [])) else ""))
+                 f"position {pos} of {len(v.get('shown', []))}, router {router}"
+                 + (" — this slot was ε-exploration (a random candidate from further back)" if v.get("exploration") and pos == len(v.get("shown", [])) else ""))
     else:
         router = "modell" if learning.active() else "bandit" if bandit.has_counter([hint]) else "heuristik"
         z.append(f"Situation given: {', '.join(triggers)} · router now {router}")
@@ -521,7 +521,7 @@ def opened(instance: str, hint_id: str) -> str | None:
                               (instance, since)).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
-        if e and hint_id in ((e.data.get("vorher") or {}).get("gezeigt") or []):
+        if e and hint_id in ((e.data.get("before") or {}).get("shown") or []):
             if not (e.data.get("geoeffnet") or {}).get(hint_id):
                 e.data.setdefault("geoeffnet", {})[hint_id] = 1
                 g.save(e)
@@ -537,15 +537,15 @@ def feedback(instance: str, hint_id: str, value: int, before_id: str | None = No
     since = (datetime.now(timezone.utc) - timedelta(minutes=FEEDBACK_MIN)).isoformat(timespec="milliseconds")
     with g.lock:
         if before_id:
-            rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND instance = ? AND ts >= ? AND json_extract(data, '$.vorher.id') = ?",
+            rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND instance = ? AND ts >= ? AND json_extract(data, '$.before.id') = ?",
                                   (instance, since, before_id)).fetchall()
         else:
             rows = g.db().execute("SELECT id FROM object WHERE kind = 'experience' AND instance = ? AND ts >= ? ORDER BY ts DESC LIMIT 200",
                                   (instance, since)).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
-        if e and hint_id in ((e.data.get("vorher") or {}).get("gezeigt") or []):
-            e.data.setdefault("rueckmeldung", {})[hint_id] = 1 if value > 0 else -1
+        if e and hint_id in ((e.data.get("before") or {}).get("shown") or []):
+            e.data.setdefault("feedback", {})[hint_id] = 1 if value > 0 else -1
             e.change(f"ki@{instance}", "feedback on the hint", f"{hint_id}: {'helped' if value > 0 else 'was wrong'}")
             g.save(e)
             return eid
@@ -556,16 +556,16 @@ def after(tool: str, args: dict, ok: bool, duration_ms: int, error: str | None, 
             before_id: str | None = None, instance: str | None = None, is_read_only: bool | None = None) -> dict:
     with _open_lock:
         open_ = _open.pop(before_id, None) if before_id else None
-    access = open_[3] if open_ else {"reize": triggers(tool, args or {}), "gefunden": [], "suchen": [],
-                                      "aus_gedaechtnis": False, "ohne_vorher": True}
+    access = open_[3] if open_ else names.data_keys({"reize": triggers(tool, args or {}), "gefunden": [], "suchen": [],
+                                                      "from_memory": False, "without_before": True})
     if before_id:  # 0.50.1: the experience knows its vi_before — vi_feedback(before_id=…) books exactly here, not on a parallel neighbour
         access = {**access, "id": before_id}
     o = experience(tool, args or {}, ok, duration_ms, error, result, access, instance, is_read_only)
     from . import bandit
-    rated = bandit.book_entry(access.get("gezeigt", []), ok, tool)  # counter pair per shown hint (stage 2)
+    rated = bandit.book_entry(access.get("shown", []), ok, tool)  # counter pair per shown hint (stage 2)
     reinforced = 0
     if ok:  # hints after which the action succeeded are reinforced (consolidation) — not already when shown
-        for oid in access.get("gefunden", []):
+        for oid in access.get("found", []):
             if not names.id_has_kind(oid, "answer"):
                 h = g.load(oid)
                 if h:
@@ -579,8 +579,8 @@ def after(tool: str, args: dict, ok: bool, duration_ms: int, error: str | None, 
             import random as _random
             held = HOLD_BACK > 0 and _random.random() < HOLD_BACK
             ids = [m.group(1) for m in (re.search(r"\[([^\]]+)\]", h) for h in found_eh) if m]
-            g.update_data(o.id, lambda d: d.update({"fehler_hinweise": ids, "fehler_haltewahrscheinlichkeit": HOLD_BACK,
-                                                    "fehler_zurueckgehalten": held}))
+            g.update_data(o.id, lambda d: d.update({"error_hints": ids, "error_hold_probability": HOLD_BACK,
+                                                    "error_held_back": held}))
             with g.lock:
                 g.db().commit()
             if not held:
@@ -610,7 +610,7 @@ def distinctive_tokens(text: str) -> frozenset:
 def _hint_tokens(hid: str) -> frozenset:
     if hid not in _tokens_cache:
         h = g.load(hid)
-        _tokens_cache[hid] = distinctive_tokens((h.text + " " + str(h.data.get("inhalt") or "")[:4000]) if h else "")
+        _tokens_cache[hid] = distinctive_tokens((h.text + " " + str(h.data.get("content") or "")[:4000]) if h else "")
         if len(_tokens_cache) > 5000:
             _tokens_cache.clear()
     return _tokens_cache[hid]
@@ -629,16 +629,16 @@ def adopted(o: g.MemoryObject) -> list[str]:
     found = []
     for (eid,) in rows:
         e = g.load(eid)
-        v = (e.data.get("vorher") or {}) if e else {}
+        v = (e.data.get("before") or {}) if e else {}
         before_args = json.dumps(e.data.get("args") or {}, ensure_ascii=False) if e else ""
         new = []
-        for h in v.get("gezeigt") or []:
-            if not h.startswith(names.id_prefixes("insight", "rule", "skill", "page")) or h in (e.data.get("genutzt") or []):
+        for h in v.get("shown") or []:
+            if not h.startswith(names.id_prefixes("insight", "rule", "skill", "page")) or h in (e.data.get("used") or []):
                 continue
             if any(t in here and t not in before_args for t in _hint_tokens(h)):
                 new.append(h)
         if new:
-            g.update_data(eid, lambda d, n=new: d.__setitem__("genutzt", sorted(set(d.get("genutzt") or []) | set(n))))
+            g.update_data(eid, lambda d, n=new: d.__setitem__("genutzt", sorted(set(d.get("used") or []) | set(n))))
             found += new
     return found
 
@@ -656,7 +656,7 @@ def close_open(conversation: str | None = None, only_older_than_s: float | None 
     for _t0, tool, args, access, instance, is_read_only, serial in cases:
         tok = g.current_conversation.set(serial)
         try:
-            experience(tool, args, None, 0, None, None, {**access, "ohne_nachher": True}, instance, is_read_only)
+            experience(tool, args, None, 0, None, None, {**access, "without_after": True}, instance, is_read_only)
         finally:
             g.current_conversation.reset(tok)
     return len(cases)
@@ -694,7 +694,7 @@ def surprise(tool: str, ok: bool | None, error_sig: str | None) -> tuple[str, st
 def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: str | None, result: str | None,
               access: dict, instance: str | None = None, is_read_only: bool | None = None) -> g.MemoryObject:
     tags = [f"tool:{tool}", f"skill:{tool.split('_')[0]}", f"ok:{'unbekannt' if ok is None else 'ja' if ok else 'nein'}"]
-    tags += [t for t in access.get("reize", []) if t.startswith(("host:", "topic:"))]  # context triggers as tags (TRAINING.md 4a)
+    tags += [t for t in access.get("triggers", []) if t.startswith(("host:", "topic:"))]  # context triggers as tags (TRAINING.md 4a)
     sig = None
     if error:
         sig = error_signature(error)[:60].replace(" ", "_").replace("(", "_").replace(")", "_")
@@ -710,13 +710,13 @@ def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: 
     from .solutions import EXCERPT_MAX, WEB_TOOLS
     # 0.56.0: what a web search or a fetched page returned is kept as an excerpt — the solution of an episode may come from it
     web = {"auszug": result[:EXCERPT_MAX]} if ok and result and tool in WEB_TOOLS else {}
-    o = g.new_object("experience", text, tags, {"args": args, "dauer_ms": duration_ms, "fehler": error, "vorher": access,
-                                                  "ueberraschung": {"stufe": level, "grund": reason_u}, **web},
+    o = g.new_object("experience", text, tags, {"args": args, "duration_ms": duration_ms, "error": error, "before": access,
+                                                  "surprise": {"level": level, "reason": reason_u}, **web},
                        importance=SURPRISE[level], reason=f"tool call · surprise {level}: {reason_u}", instance=instance)
-    for oid in access.get("gefunden", []):
+    for oid in access.get("found", []):
         o.link(oid, "recalled before the action")
     from .config import OPEN
-    if (ok and result is not None and read_only(tool, is_read_only) and not access.get("aus_gedaechtnis") and len(result) <= 200_000
+    if (ok and result is not None and read_only(tool, is_read_only) and not access.get("from_memory") and len(result) <= 200_000
             and instance != OPEN and not state_dependent(tool)):
         fh = _question(tool, args)
         with g.lock:
@@ -724,7 +724,7 @@ def experience(tool: str, args: dict, ok: bool | None, duration_ms: int, error: 
             old = [r[0] for r in g.db().execute("SELECT t.object_id FROM tag t JOIN object o ON o.id = t.object_id "
                                                 "WHERE t.tag = ? AND o.instance = ?", (f"cache:{fh}", o.instance))]
         g.delete(old)
-        g.new_object("answer", text, [f"tool:{tool}", f"cache:{fh}"], {"ergebnis": result, "args": args},
+        g.new_object("answer", text, [f"tool:{tool}", f"cache:{fh}"], {"result": result, "args": args},
                        importance=0, reason="answer remembered", instance=instance)
     from . import session  # late: session does not know intuition
     s = session.current()
@@ -806,7 +806,7 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
         provenance = (f"from {o.instance}" if o.instance else "from the server") + f", {bandit.mark(o)}"  # 0.57.0
         label = {"rule": "Rule", "skill": "Skill", "image": "Image", "page": "Wiki page", "search": "Search"}.get(o.kind, "Learned")
         out.append({"id": o.id, "zeile": f"{label} [{o.id}] ({provenance}): {o.text[:300]} — vi_object {o.id} for the complete content "
-                                         f"[Source: {str(o.data.get('quelle', '—'))[:120]}]"})
+                                         f"[Source: {str(o.data.get('source', '—'))[:120]}]"})
         if len(out) >= PROMPT_HINTS:
             break
     return {"hinweise": [h["zeile"] for h in out], "ids": [h["id"] for h in out], "woerter": len(words)}

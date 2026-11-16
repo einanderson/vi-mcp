@@ -161,7 +161,7 @@ def evidence_of(o) -> str:
         return "measured"
     if "origin:sleep-llm" in o.hashtags:  # derived by a language model in sleep — not every object of instance vi is
         return "inferred"
-    if re.search(r"https?://", str(o.data.get("quelle") or "")):
+    if re.search(r"https?://", str(o.data.get("source") or "")):
         return "documented"
     return "unknown"
 
@@ -175,5 +175,5 @@ def weight_of(o) -> tuple[float, int]:
 def tell_line(o) -> str:
     w, n = weight_of(o)
     text = o.text[:200].replace("\n", " ").replace('"', "'")
-    src = str(o.data.get("quelle") or "")[:120].replace('"', "'")
+    src = str(o.data.get("source") or "")[:120].replace('"', "'")
     return f'tell.{memory_of(o)} {o.id} "{text}" ev:{evidence_of(o)} w:{w}/{n}' + (f' src:"{src}"' if src else "")

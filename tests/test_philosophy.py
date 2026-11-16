@@ -86,7 +86,7 @@ def test_the_tool_and_install_store_a_checked_philosophy_as_a_rule_set(gd):
     oid = msg.split()[1]
     o = g.load(oid)
     assert o.kind == "rule" and "philosophy:kollektiv" in o.hashtags and o.visibility == "internal"
-    assert o.data["philosophie"]["hash"] == ph.package_hash(ph.load("kollektiv")) and o.data["logik"]["quelle"] == ph.load("kollektiv")["seed"]
+    assert o.data["philosophy"]["hash"] == ph.package_hash(ph.load("kollektiv")) and o.data["logic"]["source"] == ph.load("kollektiv")["seed"]
     assert f"kollektiv {ph.load('kollektiv')['version']}" in tools.call_tool("vi_philosophy", {"action": "list"}, "a", False)
 
 
@@ -325,7 +325,7 @@ def test_binding_names_philosophy_and_hash_and_keeps_two_verdicts_apart(gd, tmp_
     assert "ended" in tools.call_tool("vi_philosophy", {"action": "use", "name": "kollektiv", "off": True}, "a", False)
     assert [b["name"] for b in philosophy.bindings("a")] == ["messung"]
     gone = g.load(rows[0]["binding"])
-    assert gone.mode == "off" and gone.changes[-1]["was"] == "philosophy binding ended"
+    assert gone.mode == "off" and gone.changes[-1]["what"] == "philosophy binding ended"
 
 
 # ── GRPO: the seed as a verifiable reward ───────────────────────────────────────────────────────────────────────────────────────

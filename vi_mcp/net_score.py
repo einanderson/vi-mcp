@@ -59,15 +59,15 @@ def _backfill() -> None:
     Searches and skills were renamed on import, their hash cannot be rebuilt — they are counted, not guessed."""
     from .log_output import log
     with g.lock:
-        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE json_extract(data, '$.herkunft.pubkey') IS NOT NULL")]
+        ids = [r[0] for r in g.db().execute("SELECT id FROM object WHERE json_extract(data, '$.origin.pubkey') IS NOT NULL")]
     done = skipped = 0
     for oid in ids:
         o = g.load(oid)
-        h = (o.data.get("herkunft") or {}) if o else {}
-        if not o or o.kind not in ("insight", "rule") or "fremd_text" not in o.data:
+        h = (o.data.get("origin") or {}) if o else {}
+        if not o or o.kind not in ("insight", "rule") or "foreign_text" not in o.data:
             skipped += 1
             continue
-        ish = content_hash({"art": names.wire(names.KINDS, o.kind), "text": o.data["fremd_text"], "inhalt": o.data.get("inhalt"), "hashtags": o.data.get("fremd_hashtags") or []})
+        ish = content_hash({"art": names.wire(names.KINDS, o.kind), "text": o.data["foreign_text"], "inhalt": o.data.get("content"), "hashtags": o.data.get("foreign_hashtags") or []})
         with g.lock:
             g.db().execute("INSERT OR IGNORE INTO p2p_content (content_sha, oid) VALUES (?,?)", (ish, oid))
             g.db().execute("INSERT OR IGNORE INTO p2p_holder (content_sha, pub, net, net_id, seq, ts) VALUES (?,?,?,?,?,?)",
@@ -104,7 +104,7 @@ def local_form(o: g.MemoryObject) -> dict:
     """A local object in the fields the content hash uses (hashtags without the reserved ones), in the wire form: the German kind of 0.66,
     so the same meaning has the same hash on servers before and after 0.67.0."""
     from . import checks
-    d = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "inhalt": o.data.get("inhalt"), "hashtags": [t for t in map(names.wire_tag, o.hashtags) if not t.startswith(checks.FIXED_HASHTAGS)]}
+    d = {"art": names.wire(names.KINDS, o.kind), "text": o.text, "inhalt": o.data.get("content"), "hashtags": [t for t in map(names.wire_tag, o.hashtags) if not t.startswith(checks.FIXED_HASHTAGS)]}
     if o.kind == "search":
         d.update(filter=o.data.get("filter"), name=o.data.get("name"))
     return d
@@ -129,7 +129,7 @@ def find_local(raw: dict, ish: str) -> str | None:
              "AND mode NOT IN ('refuted', 'withdrawn', 'quarantine')")
     par = (names.english(names.KINDS, raw.get("art")), str(raw.get("text") or "").strip())  # raw is the wire form: German kind
     with g.lock:
-        ids = [r[0] for r in g.db().execute(f"SELECT id {where} AND json_extract(data, '$.inhalt') IS ? LIMIT 20", (*par, raw.get("inhalt")))]
+        ids = [r[0] for r in g.db().execute(f"SELECT id {where} AND json_extract(data, '$.content') IS ? LIMIT 20", (*par, raw.get("inhalt")))]
         ids += [r[0] for r in g.db().execute(f"SELECT id {where} LIMIT 500", par) if r[0] not in ids]
     for oid in ids:
         o = g.load(oid)
@@ -195,8 +195,8 @@ def own_measurement(o: g.MemoryObject) -> dict:
     """This server's own measurements of an object: the hint bandit (only fed by this server) and its own instances' verdicts."""
     from . import bandit
     yes, no = bandit.counter(o)
-    return {"gezeigt": bandit.shown(o), "ja": yes, "nein": no, "bestaetigt": sum((o.data.get("bestaetigt_von") or {}).values()),
-            "widerlegt": sum((o.data.get("widerlegt_von") or {}).values())}
+    return {"gezeigt": bandit.shown(o), "ja": yes, "nein": no, "bestaetigt": sum((o.data.get("confirmed_by") or {}).values()),
+            "widerlegt": sum((o.data.get("refuted_by") or {}).values())}
 
 
 def outgoing(net: str, limit: int = 2000) -> list[dict]:
@@ -205,8 +205,8 @@ def outgoing(net: str, limit: int = 2000) -> list[dict]:
     out = []
     with g.lock:
         lines = g.db().execute("SELECT i.content_sha, i.oid FROM p2p_content i JOIN object o ON o.id = i.oid "
-                               "WHERE json_extract(o.data, '$.herkunft.netz') IS ? OR (? = 'standard' AND json_extract(o.data, '$.herkunft') IS NOT NULL "
-                               "AND json_extract(o.data, '$.herkunft.netz') IS NULL)", (net, net)).fetchall()
+                               "WHERE json_extract(o.data, '$.origin.net') IS ? OR (? = 'standard' AND json_extract(o.data, '$.origin') IS NOT NULL "
+                               "AND json_extract(o.data, '$.origin.net') IS NULL)", (net, net)).fetchall()
     for ish, oid in lines:
         o = g.load(oid)
         if not o or o.mode == "quarantine":
