@@ -373,6 +373,9 @@ def _cli(argv: list[str]) -> int:
     if command == "relevance":  # 0.62.0: a language model grades real searches (UMBRELA) — the relevance label
         from . import relevance
         return relevance.main(argv[1:])
+    if command == "query-adapter":  # 0.68.0: learned embedding weights on the query vector (scikit-learn)
+        from . import query_adapter
+        return query_adapter.main(argv[1:])
     if command == "hint-prior":  # 0.68.0: LLM prior for new hints
         from . import hint_prior
         return hint_prior.main(argv[1:])

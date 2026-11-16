@@ -866,7 +866,9 @@ def search(args: dict, only: str | None, first: str | None) -> tuple[list, str, 
             hits = [(rrf[i], by[i], {"relevanz": round(cos[i], 2) if i in cos else "–(full text)", "aktualitaet": 0, "wichtigkeit": 0}) for i in ranked]
             with_vector = vector.present(cand)
             text_only = sum(1 for i in ranked if i not in cos)
-            f += (f" · {'semantic' if explicit else 'default'} hybrid (embedding {ms} ms, {with_vector} of {len(cand)} candidates with a vector; "
+            from . import query_adapter
+            adapter = "; order of meaning by the learned query adapter" if query_adapter.scale(vector.matrix()[2].shape[1]) is not None else ""
+            f += (f" · {'semantic' if explicit else 'default'} hybrid (embedding {ms} ms, {with_vector} of {len(cand)} candidates with a vector{adapter}; "
                   "meaning and full text by rank fusion" + (f"; {text_only} hits via full text only" if text_only else "") + note + ")")
             # 0.63.0: whether the reranker ran is part of the search kind — the relevance grades (UMBRELA) of searches before and after
             # it was switched on were mixed in one number (found on production, 13.11.2026)

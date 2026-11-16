@@ -1194,6 +1194,7 @@ First line of each module's docstring.
 | `philosophy` | vi-mcp side of philosophy packages (0.66.0): the command line, installing a checked package into the VI, the tool vi_philosophy. |
 | `philosophy_provenance` | Provenance adapter: the evidence about a knowledge object as input facts of kollektiv 1.3.0 — shadow mode only (Unreleased). |
 | `qa_pairs` | Grounded question-answer pairs for knowledge — the training form of a VI's knowledge (0.65.0). |
+| `query_adapter` | Query adapter (0.68.0) — learned embedding weights by scikit-learn instead of fine-tuning the embedding model. |
 | `questions` | Questions between instances — instances learn from each other by asking each other. |
 | `redteam` | Memory-poisoning test (0.62.0) — how often does planted knowledge reach an agent? Runs in a throw-away memory, never in the real one. |
 | `reflection` | Reflection — the language model thinks about experiences during sleep (stage 4; Park et al. 2023, section 4.2). |

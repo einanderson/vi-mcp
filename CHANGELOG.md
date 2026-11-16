@@ -58,6 +58,21 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
   training part, tested once on the holdout, better by > 2 SE) says so (table `hint_prior_state`, re-checked each sleep). Research:
   language-model priors help only at very small n (AutoElicit 2411.17284) and must be switchable by the data (LLM-Lasso 2502.10648).
   Migration: none — hints without a prior get no feature, the state starts off. Evidence: `tests/test_hint_prior.py`.
+- **Query adapter — learned embedding weights by scikit-learn** (`vi_mcp/query_adapter.py`, sleep step `8m_query_adapter`,
+  `vi-mcp query-adapter run|report|off`, a line in `vi_stats`; the user, 16.11.2026: "ja dann machen wir das doch die embed gewichte
+  per scikit learn"). A logistic regression on [cosine, D·q₁h₁ … D·q_Dh_D] gives one weight per dimension; the search multiplies the
+  QUERY vector by them, so every stored vector and the embedding service stay as they are (no re-embedding, nothing for llama.cpp).
+  L2 pulls the weights to 0 = the plain cosine. Labels: the grounded questions stored on objects (`data.qa`), the language model's
+  relevance grades of real searches (grade ≥ 2 positive, 0 a confirmed negative); negatives otherwise from cosine ranks 5–50, never the
+  top. Two-step gate as for the feature writer: regularisation chosen inside training, one paired test of the reciprocal rank on
+  held-out queries — split by OBJECT (probes of objects never trained) and by time (newest 20 % of the judged searches); on only if
+  better by > 2 SE; the weights belong to one embedding model and dimension, another model switches them off. `vi_recall` names it
+  when it orders by the adapter and still reports the cosine. Evidence: `tests/test_query_adapter.py` (a world where 8 of 16
+  dimensions carry the signal: MRR 0.426 → 0.692, gate on; pure noise: off; too few queries: off with the reason; another model: off;
+  the test never asks for a trained object). Measured on the production copy with bge-m3 (16.11.2026): 95 training and 17 test
+  queries — below the minimum (200 / 30), so OFF. Forced with lower minimums: the first split (probes of TRAINED objects in the test)
+  showed MRR 0.552 → 0.662 (+0.110 ± 0.037) — an artefact: on objects never trained it is 0.424 → 0.388 (−0.036 ± 0.043, 3 better,
+  4 worse). No gain shown yet; the gate keeps it off until the labels suffice.
 - **Embedding fine-tuning kit** (`vi-mcp finetune embed-kit DIR [--days N]`, `vi_mcp/finetune_embed.py`): the embedding model, not a
   chat model, learns this VI's (situation → hint) pairs. Real positives (feedback helped, adopted, judge used after success) are the
   EVALUATION set — 302 over 128 hints on the production copy, far below the volumes of any published gain (GPL 2112.07577, Promptagator
@@ -96,12 +111,12 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
    (`1_Pooling/config.json`: `pooling_mode_cls_token: true`), a llama.cpp embed service started with `--pooling mean` gives other
    vectors. Migration path: measure Hit@4 on the fixed question set with both poolings on a copy; switch the service to `--pooling cls`
    and re-embed every stored vector in the same step (vectors of two poolings are not comparable); keep the old vectors until the new
-   ones are complete, so the way back is a configuration change.
-8. **A query adapter as learned weights instead of LoRA** (proposal, waiting for the user's decision): a per-dimension weighting of
-   the similarity (logistic regression on query ⊙ hint, 1024 weights) or a low-rank matrix on the query vector only, stored like the
-   router's weights and switched by the same two-step gate. Stored vectors and the embed service stay unchanged, so no re-embedding.
-   Evidence: query-only linear adapters, up to +70 % NDCG from ~1,500 labelled pairs (Chroma technical report "Embedding Adapters",
-   2024, https://research.trychroma.com/embedding-adapters).
+   ones are complete, so the way back is a configuration change. The model NAME stays the same under another pooling: in the same
+   step run `vi-mcp query-adapter off` and empty the table `query_vector` (cached query vectors), or the adapter's weights and
+   cached queries would belong to the old pooling.
+8. **Labels for the query adapter**: built (see above) and gated off — 95 training queries on the production copy, 200 needed. The
+   stored questions grow by `classify.pairs_per_sleep()` objects per sleep; decide whether to raise that, or to have the classify model
+   write search-style questions for objects for this purpose (round-trip filter, by object split), before the adapter can be judged.
 
 ### What is new: more labels on shown hints
 

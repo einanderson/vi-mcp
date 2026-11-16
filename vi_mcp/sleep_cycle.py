@@ -217,6 +217,9 @@ def _run(reason: str) -> g.MemoryObject:
             step("8k_feature_writer", lambda: feature_writer.run("sleep"))
             from . import hint_prior  # 0.68.0: priors for new hints, switched on or off by the offline gate
             step("8l_hint_prior", lambda: hint_prior.run("sleep"))
+    from . import query_adapter, vector as _vector
+    if _vector.available():  # 0.68.0: learned embedding weights on the query vector (scikit-learn), switched by the offline gate
+        step("8m_query_adapter", lambda: query_adapter.run("sleep"))
     from . import evaluation
     step("9_pruefung", lambda: evaluation.nightly())  # 0.55.0: once a day the fixed question set and the router numbers
     duration = int((time.monotonic() - t0) * 1000)

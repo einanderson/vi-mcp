@@ -288,9 +288,12 @@ def similar(text: str, candidates: list[str], limit: int = 10, timeout: float | 
     rows = [pos[k] for k in dict.fromkeys(candidates) if k in pos]
     if not rows or m.shape[1] != len(q):
         return []
-    proximity = m[rows] @ (q / n)
-    order = np.argsort(-proximity)[:limit]
-    return [(ids[rows[i]], float(proximity[i])) for i in order]
+    qn = q / n
+    proximity = m[rows] @ qn
+    from . import query_adapter  # 0.68.0: learned weights on the query vector (scikit-learn), only while its offline gate says on
+    qa = query_adapter.transform(qn)  # the same object while off
+    order = np.argsort(-(proximity if qa is qn else m[rows] @ qa))[:limit]
+    return [(ids[rows[i]], float(proximity[i])) for i in order]  # the cosine is reported, the order may come from the adapter
 
 
 # ── 0.57.0: cross-encoder reranker (optional) ──────────────────────────────────────────────────────────────────────────────────────
