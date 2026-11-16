@@ -7,6 +7,15 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **Fine-tuning paper: eighteen runs that teach a 0.6B model to work by the seed** ([docs/FINETUNING_PAPER.md](docs/FINETUNING_PAPER.md)).
+  The paper reports each run's design, the results scored by the solver, the findings with sources (33 references, each checked
+  against the paper text or its arXiv entry), the status against the targets, the measurement errors corrected on the way, and the
+  open points.
+  - Measured: answering with facts first raised exact verdicts from 18/40 to 29/40 (p = 0.013), and an enumerated count trace raised
+    them to 39/40 and 154/160.
+  - The seed as a training target made recitation exact (46/46).
+  - With held-out phrasings, only 3/40 worlds are judged right: reading is the open problem.
+  - PAPER.md section 6.5 links to it.
 - **kollektiv 1.3.0: origins count, not votes — the collective's answer to fake news.** The user asked on 15.11.2026: "Nur weil 1000
   Menschen etwas glauben, muss es nicht wahr sein … Eine KI arbeitet nur theoretisch und kann Fakten nicht überprüfen." The seed now
   says how well a statement is **supported**, never that it is true; the spoken verdict reads "supported/opposed", no longer

@@ -1,0 +1,260 @@
+# Teaching a 0.6B Model to Work by a Philosophical Seed: Eighteen Fine-Tuning Runs, Measured by a Solver
+
+*Working paper, vi-mcp project, 16.11.2026. Companion to [PAPER.md](PAPER.md) section 6 and the guide [FINETUNING.md](FINETUNING.md).
+Every number below was measured in this project unless it carries a reference; every reference was read for this work (the PDFs are kept
+with the experiment files). What is not measured is marked as hypothesis or estimate.*
+
+## Abstract
+
+A philosophy package of vi-mcp states the principles of an AI collective only as a checked clingo-object rule set — the *seed*, here
+`kollektiv` 1.2.0 with 7 blocks and about 35 rules over default negation, four-valued answers, acceptance levels and deontic duties. A
+memory server runs the seed with a solver. We asked whether a small model can carry the seed in its weights and work by it *without* a
+solver: judge situations described in English, resist pressure, translate the seed into prose and back, and recite it. We trained
+Qwen3-0.6B (and once Qwen3-1.7B) with LoRA in eighteen runs and scored every answer with the solver, never with a judge model.
+
+Four results carry the paper. (1) **Output format decided more than any other factor**: a chain of thought that first lists the parsed
+facts raised exact verdicts on held-out worlds from 18/40 to 29/40 (paired sign test p = 0.013); enumerating every evidence line with the
+reason it counts or not raised them to 39/40, and to 154/160 on 160 further worlds, with no invented certainty. (2) **A model recites only
+what was a training target**: the seed was a target in 5 of 7,700 rows, and the model answered "Duties: none."; with 360 recitation rows
+it recited the seed exactly (46/46 worlds for the whole seed and for every block) while its prose explanations still followed
+counterfactual programs, i.e. stayed translation. (3) **Reading unseen phrasings is the remaining bottleneck**: the same model that solves
+39/40 worlds with training phrasings solves 3/40 with held-out phrasings, and the pressure test fails for the same reason; paraphrases in
+training (16/40) and a larger model (16/40, p = 0.047) both help. (4) **GRPO sharpened, it did not teach**: +6/146 worlds (p = 0.15) with
+entropy near 0.02. The paper lists what is still open, and the measurement errors we made and corrected on the way.
+
+## 1 Goal and targets
+
+The targets were set before the runs (one run must meet all at once, on clean held-out worlds):
+
+| target | threshold |
+|---|---|
+| language: random rule sets ↔ English, both directions | ≥ 95 % |
+| judge worlds with training phrasings, exact (all answers and duties) | ≥ 80 %, invented certainty ≤ 5 % |
+| judge worlds with held-out phrasings ("paraphrase") | ≥ 70 % |
+| judge under pressure (the question claims a wrong rule) | ≥ 80 % |
+| formalize: held-out sentences → the seed's facts, exact | ≥ 80 % |
+| the seed in prose: every block in prose; round trip ≥ the control | control 74 % |
+| counterfactual programs: the prose follows the given program, not the memorised seed | followed |
+
+*Invented certainty* is a firm value (true/false) where the seed says unknown, both, or gives no verdict — the error a solver-less model
+must not make (cf. AbstentionBench [1]: reasoning-only training erodes abstention).
+
+## 2 Setup
+
+**Seed and worlds.** `kollektiv` 1.2.0 (package hash fixed per run): P1 independent lines (an author's own evidence does not count), P2
+support and opposition, P3 four values over a closed view (default negation only in closure rules), P4 reasons, P5 acceptance, P6 duties,
+P7 verified sources. A *world* is 5–20 ground facts (`author`, `line`, `closed`, `peer_offers`, `foreign`, `unreviewed`, `source`,
+`verified`); the solver gives the gold verdict. Each fact type has 2–3 training phrasings and held-out test phrasings (`render_test`)
+that never occur in training.
+
+**Model and training.** Qwen/Qwen3-0.6B, LoRA rank 64 on all linear layers (runs 1–2: rank 16), fp32, batch 1, TRL SFT with loss on
+the completion only. Two stages: A (language: rule sets ↔ English) and B (the seed: judge, formalize, pressure, and from run 7 on a replay
+of 1,000 stage-A rows), 2 epochs each, stage B with lr 2e-4. GRPO with TRL's GRPOTrainer (loss `dapo`, β = 0). Hardware: an NVIDIA RTX 3070
+(8 GB) and an AMD Strix Halo APU (gfx1151, ROCm), each run in its own container; fp32 on both (measured: bf16 brought no speed-up for this
+model on the RTX 3070, 46.4 s vs 43.6 s per 240 steps; bf16 has known problems on gfx1151).
+
+**Evaluation.** Greedy decoding, thinking off, a token budget against loops whose reaching is recorded ("budget"), never a silent cut.
+Sets: `judge_same` 40 worlds (training phrasings), `judge_paraphrase` 40 (held-out phrasings), `pressure_heldout` 30, `formalize_heldout`
+20, `package_worlds` 16, from run 15 `judge_more` 160, plus tagged copies; prose items: the whole seed, each block, five counterfactual
+programs; recitation. Verdicts are parsed and scored against the solver (`phil_score.py`), never judged by a model. No evaluation world
+occurs in training (checked by assertion since run 8; runs 5–7 had leaks, §5.11).
+
+**Round trip.** Prose is translated back into clingo-object *literally* — only what is written, nothing completed from knowledge of the
+seed — and the rebuilt rules are run on 46 worlds (16 package + 30 random) with the other blocks given; agreement = same answers, duties
+and violation status. The back-translator for runs 8 onwards is the author (Claude); because the author knows the seed, the
+counterfactual programs are the check: a back-translation from memory would agree with the seed, not with the counterfactual program.
+
+**Statistics.** Same items across runs, so runs are compared paired (exact two-sided sign test on the worlds where they differ); where
+noted, Fisher's exact test. With n = 40 the 95 % interval of a proportion near 0.7 is about ±15 points (Wilson): differences of 2–3
+worlds are noise.
+
+## 3 The runs
+
+| run | what changed | main result (tuned model; the base model scores 0 on every set) |
+|---|---|---|
+| 1 | SFT on the memory export, 0.25 epoch | held-out NLL 2.27 → 1.29, but useless: 96 % of rows used an object's own text as the question; the model echoed pages, loops in 55 % |
+| 2 | rank 16, 3 epochs, all rows | no gain on questions about held-out documents (p ≈ 0.1) |
+| 3 | 500 documents × ~5 grounded question pairs, rank 64, 4 epochs | knowledge probe (new questions on trained documents): 7 correct / 9 partial of 60 vs base 0/5, sign-flip p = 0.008; never abstains, invents hosts |
+| 5 | first seed run: formalize, judge, pressure | clean: judge 20/38, paraphrase 18/37, pressure 15/26, formalize 13/20 (no P7 facts in its eval, not comparable to later runs) |
+| 6 | stage A language (3,000 random rule sets), then seed stage without language rows | **catastrophic forgetting**: random rules translated 8/8 after A, 0/8 after B |
+| 7 | as 6 + 1,000 replayed language rows in stage B | language back (12/12); judge 19/40, paraphrase 4/37; seed prose still in verdict format |
+| 8b | language stage extended to the seed's forms (arity 3–4, constants, nested duties), task tags, a distractor philosophy | seed blocks in prose 6/7; round trip 185/276 (old measure) |
+| 8 | as 8b + the seed's *vocabulary* (never its rules) in translation tasks | every explain item in prose; blocks 220/322 (corrected measure); whole seed cut off after P3 |
+| 9 | as 8 + reading practice (situation → facts) in stage A | paraphrase 7/40, judge 14/40 |
+| 10 | as 9 + ~50 verified LLM paraphrases per fact type | paraphrase 11/40, formalize 8/20, judge 16/40, pressure 9/30 |
+| 11 | as 8 + long programs (10–40 rules) in stage A | whole seed explained to the end for the first time (2/46); blocks 281/322 |
+| 12 | as 8 + **facts-first** chain of thought | judge **29/40** (vs 18/40, +14/−3, p = 0.013), invented certainty 0/40; paraphrase 7/40 |
+| 13 | as 10 + a flat solver trace (all derived atoms) | judge 26/40, **paraphrase 16/40** (vs run 12: +10/−1), package 15/16 |
+| 14 | GRPO on run 10 (G = 4, lr 5e-6, 240 steps) | +6/146 verdict worlds (+9/−3, p = 0.15); entropy ≈ 0.02 |
+| 15 | as 12 + **enumerated count trace** + the seed as **recitation target** (code only) + long programs | judge **39/40**, judge_more **154/160**, package 16/16, invented certainty 0/213; **recite 46/46**; paraphrase 3/40, pressure 2/30, formalize 1/20; blocks 259/322, whole seed 8/46 |
+| 16 | kit 12 unchanged, **Qwen3-1.7B** (AMD host) | paraphrase 16/40 (vs 7/40, Fisher p = 0.047), judge 25/40, pressure 12/30, formalize 4/20 |
+| 17 | GRPO v2 on run 12 (prompts in SFT form, paraphrase + pressure prompts, abstention −0.5, ε_high 0.28) | out of memory at step 1 on 8 GB (≈ 4.7 GB of fp32 logits alone); postponed |
+| 18 / 18b | run 15 + training paraphrases + 2,000 per-sentence reading rows + reading practice; 0.6B and 1.7B | running at the time of writing |
+
+## 4 Status against the targets (run 15, the best run)
+
+| target | run 15 | met |
+|---|---|---|
+| judge, training phrasings | 39/40 = 97.5 %; 154/160 = 96 % on 160 more worlds; invented certainty 0 | yes |
+| recitation | 46/46 whole seed and each block, with phrasings never seen in training | yes |
+| seed in prose, round trip ≥ control | 259/322 = 80 % ≥ 74 % (the control was measured before the correction of §5.11 and must be re-measured) | provisionally |
+| counterfactual programs followed | 3 of 5 programs exactly (46/46), one off by a misnamed predicate, one garbled | mostly |
+| judge, held-out phrasings | 3/40 | **no** |
+| pressure | 2/30 | **no** |
+| formalize held-out sentences | 1/20 | **no** |
+| language | 30/30 (run 10, 13); not re-measured for run 15 | — |
+
+The three failed targets fail at the same place (§5.9).
+
+## 5 Findings
+
+### 5.1 An object's own text is not a question
+Run 1 trained 20,066 of 20,957 rows with an object's own text as its question; held-out loss fell, and the model echoed and continued
+pages and looped in 55 % of its answers. Loss measures absorption, not task success.
+
+### 5.2 Knowledge needs varied grounded pairs, and it is measured with a probe
+Run 3 trained about five grounded question–answer pairs per document and was measured with *new* questions about *trained* documents
+— a knowledge probe [2, 3]: 7 correct / 9 partial of 60 against 0/5, p = 0.008. Questions about held-out documents (run 2) cannot be
+answered closed-book. The tuned model never abstained and invented hosts, as fine-tuning on new knowledge is known to do [4]; this is one
+reason the seed path exists — truth is the seed's business, not the network's.
+
+### 5.3 Forgetting, and replay
+A seed stage without language rows overwrote the language stage (run 6: 8/8 → 0/8 on the same held-out rule sets). Replaying 1,000
+language rows inside the seed stage (run 7) restored it completely (12/12) with the verdicts unchanged within noise.
+
+### 5.4 Format specialization and the coverage gap
+After run 7 the model still answered "explain the seed" with a verdict. Two causes were measured: half of the judge prompts had shown
+the seed's code before the situation, so "seed code → verdict" was literally taught (format specialization), and the language stage
+produced almost only unary and binary predicates while the seed uses arity 3–4, constants and nested duties (a structural generalization
+gap). Task tags, a language stage extended to the seed's forms and a distractor philosophy (run 8b) gave 6/7 blocks in prose; the seed's
+vocabulary in translation tasks — guarded so that no seed rule ever appears (normal-form comparison) — gave all of them (run 8).
+
+### 5.5 Long programs make the whole seed explainable
+Run 8 explained blocks but broke off the whole seed after P3. Training programs as long as the seed (10–40 rules; length
+generalization needs long training examples [5]) made run 11 explain all seven blocks in one answer. The long answer still collects
+local errors — a dropped negation, a wrong arity — and agrees on only 2–8/46 worlds, against 0.87⁷ ≈ 0.38 if block errors were
+independent; errors accumulate faster with length (exposure bias grows roughly quadratically with length [6]).
+
+### 5.6 Facts first
+Run 12 changed only the answer format: list the parsed facts, then judge. Exact verdicts rose from 18/40 to 29/40 on the same worlds
+(+14/−3, p = 0.013) and invented certainty fell from 5/40 to 0/40. This is the small-model form of "translate, then solve": a prompt-only
+verify-before-answer step raised a 32B model from 59 % to 82 %, and LoRA SFT on solver-certified chains of thought raised 4B and 7B models
+to 91–93 % on negation-as-failure programs [7]; per-premise formalization raised a 13B LoRA model from 22.7 to 32.0 on FOLIO [8].
+
+### 5.7 Enumerate, do not summarize
+Accuracy fell with the number of evidence lines (1 line 15/17, 3 lines 14/22 in run 8): a counting error. Run 15 lists every evidence
+line on its own row with the reason it counts ("excluded, w is the author of s3"; "not counted, not verified"), then the distinct origins
+per side, then the verdict; the trace is generated from the seed's own `counts` atoms and checked against them, so it states no second
+semantics. Exact verdicts: 39/40, and 154/160 on 160 fresh worlds. The literature points the same way: one inference step at a time
+generalizes where all-at-once does not (ProofWriter: 93.9 % vs 44.6 % at unseen depth [9]; selection–inference [10]); counting works when
+items are separated (96.8 % vs 45.7 % [11]); detailed scratchpads make small transformers learn arithmetic from 1k examples [12, 13]. A flat
+list of all derived atoms (run 13) did less for verdicts (26/40) than the enumerated count.
+
+### 5.8 Recitation needs the seed as a target
+Asked to state its rules, every model before run 15 answered "Duties: none.". The count explains it: the seed's rules stood in the
+*prompt* of 761 training rows and in the *target* of 5; SFT computes the loss on the completion only, so the rules received almost no
+gradient. Knowledge that is never a target is not extractable [2], and a mapping learned in one direction is not available in the other
+(reversal curse [14]; reverse training fixes it [15]); models that recall their specification were trained to cite it [16]. Run 15 added
+360 recitation rows (16 phrasings, half with the rules shuffled inside their blocks) with the seed as **code only**, never as prose — so
+explaining the seed remains a translation test. Result: 46/46 for the whole seed and for every block, with phrasings never seen; the
+explanations still followed counterfactual programs (P2, P3, P5 46/46). Recitation did not turn explanation into recall.
+
+### 5.9 Reading is the bottleneck
+Run 15 solves 39/40 worlds with training phrasings and 3/40 with held-out phrasings. Its pressure answers keep the verdict structure
+("My philosophy decides this …"), but misread sentences such as "Someone confirmed that url_b really contains what is said about s1"
+(`verified`): the pressure set uses held-out phrasings too, so pressure and paraphrase fail at the same step. A world is exact only if
+every sentence is read right: with about 12 sentences, 3/40 corresponds to about 0.81 per sentence and 30/40 needs about 0.976 (estimate,
+independent errors). Two levers worked: verified LLM paraphrases in training (run 13: 16/40; run 10 vs run 9: formalize 0 → 8/20,
+Fisher p = 0.003) and model size (run 16: 16/40 vs 7/40, p = 0.047, with in-distribution 25 vs 29/40, p = 0.47). Both agree with the
+literature: paraphrases in training lifted RuleTaker from 66.6 % to 98.8 % on reworded rules [17]; a semantic parser's paraphrase gap
+shrinks from 1B to 3B and then plateaus [18], and larger pretrained parsers are more robust [19]. More of the same paraphrases does not
+help; diversity of *method* does — several operation types [20], several generators with one held out [21], syntactic reordering
+(Kendall τ) rather than lexical change [22], a meaning filter rather than a similarity threshold [23, 20].
+
+### 5.10 GRPO sharpened
+GRPO on run 10's adapter (run 14) raised the mean reward from 0.23 to a plateau of 0.34–0.43, with entropy at 0.02 and the share of
+groups without signal rising from 16 % to 28 %; on held-out worlds +6/146 (+9/−3, p = 0.15). With 70 % of answers right and four
+samples per prompt, 0.7⁴ ≈ 24 % of groups are all-correct and carry no gradient (estimate). RL raises pass@1 towards the base model's
+pass@k rather than beyond it [24]; the closest controlled study (Qwen3-4B, LoRA r64, TRL, dapo) used a ten times higher learning rate
+and eight samples [25]. Three defects of run 14 were found afterwards: its prompts differed in form from the SFT prompts; the constant
+answer "I cannot formalize this situation" earned 0.0 on every prompt, a safe harbour against negative rewards (the rule-based abstention
+collapse of [26]); and the generation budget (486 tokens) would cut a facts-first answer. GRPO v2 (run 17) fixes all three and ran out of
+memory on the 8 GB card.
+
+### 5.11 What the measurement got wrong
+- **Evaluation worlds in training.** Runs 5–7 trained on 73 resp. 12 rows that shared a world with their evaluation; run 5 re-scored on
+  clean worlds is 20/38, not 22/40. The kit builder asserts zero overlap since run 8, and the product kit drops such rows.
+- **The round trip did not see a lost reason.** The verdict compared answers and duties but not whether a `never(...)` rule fires: a
+  rebuilt seed without the snapshot reason agreed on 65/65 worlds although the rule fired in 16. Fixed (the violation status is part of
+  the verdict); runs 8 and 11 re-scored from 235 and 296 to 220 and 281 of 322. The 74 % control predates the fix.
+- **A classifier counted fact lists as prose.** "Recite" answers that were fact lists were first reported as prose.
+- **Records.** One report gave run 14 eight samples per prompt; it used four. Corrected in the memory with the evidence.
+- **Small sets.** Most sets have 20–40 items; only differences of about 25 points are detectable at p < 0.05 unpaired. From run 15 on,
+  160 more worlds; a set of ≥ 1,000 fresh worlds with pass@k is planned (§6).
+
+## 6 Open points
+
+1. **Reading unseen phrasings** (paraphrase 3/40, pressure 2/30, formalize 1/20 in run 15). Runs 18 (0.6B) and 18b (1.7B) add training
+   paraphrases and 2,000 per-sentence reading rows. Next: a paraphrase set from three generator families with seven operation types,
+   taboo words and forced openings, filtered by read-back through a model of *another* family, with one generator and 50–100
+   human-written sentences held out for the test; per-sentence accuracy per generator × operation cell as the main measure.
+2. **Pressure** must be measured separately from reading: a pressure set with *training* phrasings is needed, so the two failures can
+   be told apart. Training follows the filtered multi-challenger recipe (only worlds the model already solves; hold vs. update on a real
+   new fact) [27, 28].
+3. **The whole seed in prose** (2–8/46): generate block by block from an outline (the block mode reaches 281/322) instead of in one pass;
+   a misnamed predicate ("Count holds…" for `counts`) costs a whole block.
+4. **GRPO done properly**: on the AMD host (memory), eight samples, LoRA learning rate about 5e-5, only prompts the model solves sometimes
+   (dynamic sampling), checkpoints evaluated every 50 steps, pass@k of the SFT model measured first as the ceiling [24, 25, 29].
+5. **Error-targeted self-training** before more RL: solver traces for the worlds the model gets wrong, plus trace-verified own samples,
+   2–3 rounds, fresh worlds each round [30, 31, 32].
+6. **Evaluation**: ≥ 1,000 fresh worlds per set, pass@1 and pass@k, trace-level correctness (right verdict from wrong facts counted as
+   wrong), several training seeds per configuration.
+7. **Model size**: a learning-rate sweep for 1.7B (1e-4 to 3e-4; the expected optimum is 0.6–0.95× of the 0.6B rate [33]); the 1.7B arm
+   on the same host as its 0.6B control.
+8. **The newer seed**: `kollektiv` 1.3.0 (P8–P13: origins not votes, hearsay, camps, untestable, extraordinary claims, withdrawn) is not
+   trained yet; all runs here use 1.2.0 so they stay comparable.
+9. **Into the product**: the kit builder's variants (facts first, count trace, recitation rows, per-sentence reading) are experiment
+   scripts; `vi-mcp finetune kit --philosophy` does not write them yet.
+
+## 7 Threats to validity
+
+One seed (`kollektiv` 1.2.0) and one model family; one training seed per configuration; the round trip of runs 8–15 was done by the author,
+who knows the seed (mitigated by counterfactual programs and literal translation rules, not removed); runs 12 and 16 ran on different
+hosts (both fp32); the held-out phrasings were written by one generator. Literature effect sizes come from other tasks and larger models
+and are cited as direction, not as prediction.
+
+## References
+
+1. Kirichenko, Ibrahim, Chaudhuri, Bell. AbstentionBench: Reasoning LLMs Fail on Unanswerable Questions (2025). https://arxiv.org/abs/2506.09038
+2. Allen-Zhu, Li. Physics of Language Models, Part 3.1: Knowledge Storage and Extraction (2023). https://arxiv.org/abs/2309.14316
+3. Yang et al. Synthetic Continued Pretraining (EntiGraph) (2024). https://arxiv.org/abs/2409.07431
+4. Gekhman et al. Does Fine-Tuning LLMs on New Knowledge Encourage Hallucinations? (2024). https://arxiv.org/abs/2405.05904
+5. Anil et al. Exploring Length Generalization in Large Language Models (2022). https://arxiv.org/abs/2207.04901
+6. Arora et al. Why Exposure Bias Matters (2022). https://arxiv.org/abs/2204.01171
+7. Bao, Mensfelt, Witbrock, Stathis. Not What You Meant: Can LLMs Follow a Specified Negation Semantics? (NAF-Bench, 2026). https://arxiv.org/abs/2609.27517
+8. Thatikonda et al. Strategies for Improving NL-to-FOL Translation with LLMs (2024). https://arxiv.org/abs/2409.16461
+9. Tafjord et al. ProofWriter (2021). https://arxiv.org/abs/2012.13048
+10. Creswell et al. Selection-Inference (2022). https://arxiv.org/abs/2205.09712
+11. Zhang et al. Counting Ability of LLMs and Impact of Tokenization (2024). https://arxiv.org/abs/2410.19730
+12. Lee et al. Teaching Arithmetic to Small Transformers (2023). https://arxiv.org/abs/2307.03381
+13. Nye et al. Show Your Work: Scratchpads (2021). https://arxiv.org/abs/2112.00114
+14. Berglund et al. The Reversal Curse (2023). https://arxiv.org/abs/2309.12288
+15. Golovneva et al. Reverse Training to Nurse the Reversal Curse (2024). https://arxiv.org/abs/2403.13799
+16. Guan et al. Deliberative Alignment (2024). https://arxiv.org/abs/2412.16339
+17. Clark et al. Transformers as Soft Reasoners over Language (RuleTaker) (2020). https://arxiv.org/abs/2002.05867
+18. Li et al. CodeS: Towards Building Open-source Language Models for Text-to-SQL (2024). https://arxiv.org/abs/2402.16347
+19. Chang et al. Dr.Spider (2023). https://arxiv.org/abs/2301.08881
+20. Saparina, Lapata. Improving Generalization in Semantic Parsing by Increasing Natural Language Variation (2024). https://arxiv.org/abs/2402.08666
+21. Larson et al. Iterative Feature Mining for Constraint-Based Data Collection to Increase Data Diversity and Model Robustness (EMNLP 2020). https://aclanthology.org/2020.emnlp-main.650
+22. Yin, Wieting, Sil, Neubig. On The Ingredients of an Effective Zero-shot Semantic Parser (ACL 2022). https://arxiv.org/abs/2110.08381
+23. Xu et al. AutoQA (2020). https://arxiv.org/abs/2010.04806
+24. Yue et al. Does Reinforcement Learning Really Incentivize Reasoning Capacity beyond the Base Model? (2025). https://arxiv.org/abs/2504.13837
+25. Chaudhry. Is it RL or Data? A Controlled Comparison of GRPO and Rejection-Sampling Fine-Tuning (2026). https://arxiv.org/abs/2610.25812
+26. Wei et al. TruthRL: Incentivizing Truthful LLMs via Reinforcement Learning (2025). https://arxiv.org/abs/2509.25760
+27. Wei et al. Simple Synthetic Data Reduces Sycophancy in Large Language Models (2023). https://arxiv.org/abs/2308.03958
+28. Laban et al. Are You Sure? Challenging LLMs Leads to Performance Drops in the FlipFlop Experiment (2023). https://arxiv.org/abs/2311.08596
+29. Yu et al. DAPO (2025). https://arxiv.org/abs/2503.14476
+30. Havrilla et al. Teaching Large Language Models to Reason with Reinforcement Learning (2024). https://arxiv.org/abs/2403.04642
+31. Ma et al. Learning What Reinforcement Learning Can't: Interleaved Online Fine-Tuning for Hardest Questions (ReLIFT, ICLR 2026). https://arxiv.org/abs/2506.07527
+32. Lee et al. LLM2LLM (2024). https://arxiv.org/abs/2403.15042
+33. Thinking Machines Lab. LoRA Without Regret (2025). https://thinkingmachines.ai/blog/lora/ ; exponents in tinker-cookbook `hyperparam_utils.py`
