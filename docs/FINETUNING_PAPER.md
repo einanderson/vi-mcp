@@ -101,7 +101,8 @@ worlds are noise.
 | 20 | run 19 + **duty trace** (solver-checked), negative type queries, guideline dropout | judge **39/40** (vs 19: +6/−1), tagged **20/20** (+4/−0), judge_more **150/160** (+11/−8), pressure **27/30** (+5/−3), formalize **20/20**, paraphrase 37/40 (+3/−3), package 15/16; all sets pooled +29/−16 worlds (sign test p = 0.07); invented certainty **3/433** (run 19: 0/400) |
 | 21 | run 20 + standalone near-topic negatives (codex) + two-fact sentences | stopped after stage A start: replaced by 21b after the minimal pairs of run 20 and the negation research (contrast pairs instead of standalone negations) |
 | 22 | run 20 + **value check** (support, opposition, closed → value; solver-checked) | paraphrase **40/40** (+3/−0), judge **40/40**, judge_more **157/160** (+10/−3), package 16/16, pressure 28/30 (+3/−2), formalize 20/20; pooled **+18/−5** worlds (p = 0.011); invented certainty **1/433**; the 3 judge_more errors are duties in the largest worlds (18–19 sentences) |
-| 21b, 23, 20b | contrast twins (codex, five forms) / 21b + value check / kit 20 on Qwen3-1.7B | running at the time of writing |
+| 21b | run 20 + **contrast twins** (codex minimal edits in five forms, qwen-filtered, 25 % of fact sentences) + negatives 5 % + two-fact sentences | minimal pairs **25/30** (unknown **6/9** vs 3/9, +3/−0), facts unchanged (no over-abstention); pressure **30/30** (+3/−0), judge_more 154/160 (+7/−3), judge 40/40; second minimal test (qwen27b, 35) 26/35 |
+| 23, 24, 20b | 21b + value check / 23 + language rows for the constant-in-body form / kit 20 on Qwen3-1.7B | running at the time of writing |
 
 ## 4 Status against the targets (runs 19 and 20)
 
