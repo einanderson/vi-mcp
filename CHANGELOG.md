@@ -63,7 +63,9 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
   EVALUATION set — 302 over 128 hints on the production copy, far below the volumes of any published gain (GPL 2112.07577, Promptagator
   2209.11755); training volume comes from synthetic pairs with a round-trip filter (`gen_synth.py`). Negatives only when confirmed
   (feedback wrong, judge misleading): "shown but not used" is no negative (RocketQA 2010.08191: ~70 % of such passages were relevant).
-  The tuned model is merged with the base (alpha 0.5, LM-Cocktail 2311.13534) against forgetting; `eval_embed.py` compares Recall@4 on
+  Training is LoRA on the embedding model (the user, 16.11.2026: only small low-rank matrices, the base stays unchanged); for serving the
+  adapter is merged with strength 0.5 (LM-Cocktail 2311.13534 against forgetting) — whether LoRA matches full fine-tuning for embedding
+  models is not established, the evaluation decides; `eval_embed.py` compares Recall@4 on
   the newest window. Privacy: an experience is never exported — the situation is its trigger tags without hosts, as the router sees it.
   Written, never run by vi-mcp. Evidence: `tests/test_finetune_embed.py`.
 

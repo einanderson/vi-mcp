@@ -9,8 +9,8 @@ insight:8f363e8e… and the embedding research of 16.11.2026) shapes the kit:
     its own situation among all hints (round-trip filter, Promptagator: +2.5 nDCG);
   - "shown but not used" is NOT a negative (RocketQA 2010.08191: ~70 % of such passages were relevant) → negatives only from feedback
     "wrong" or the hint judge's "misleading", otherwise in-batch negatives (MultipleNegativesRankingLoss);
-  - a model tuned on a narrow domain forgets (LM-Cocktail 2311.13534: other tasks 49.81 → 47.49) → merge tuned and base weights (alpha
-    0.5) and keep a general retrieval check;
+  - a model tuned on a narrow domain forgets (LM-Cocktail 2311.13534: other tasks 49.81 → 47.49) → train LoRA only (the user's choice,
+    16.11.2026: the base stays unchanged), merge the adapter with strength 0.5 for serving, and keep a general retrieval check;
   - privacy: an experience belongs to its instance (dataset.py never exports it); the kit takes only its trigger tags without hosts
     — the situation as the router already represents it — and only non-private hints;
   - evaluation by time: train on the older pairs, test Recall@4 of the used hint on the newest window; then the router's paired log loss
@@ -30,6 +30,7 @@ TEST_SHARE = 0.2
 README = """# Embedding fine-tuning kit (vi-mcp)
 
 Trains the embedding model (default `BAAI/bge-m3`) on this VI's own (situation → hint) pairs. Nothing here touches a chat model.
+Needs: `sentence-transformers` ≥ 3.3 (PEFT adapters, `add_adapter`), `peft`, `torch` — in a container on the GPU host.
 
 Files:
 - `pairs_real.jsonl` — {situation (trigger tags, no hosts, no command), hint, label: helped|adopted|judge_used, ts}: real positives. **Evaluation only** (too few to train).
@@ -41,9 +42,10 @@ Steps (each: run, then check the "OK if"):
 1. Synthetic pairs: `python gen_synth.py --url http://LLM/v1 --model NAME --per-hint 4` — writes `pairs_synth.jsonl`; a pair is kept
    only if its hint ranks first for its own situation among all hints with the base model (round-trip filter).
    OK if: `synth_report.json` shows kept pairs for most hints.
-2. Train: `python train_embed.py --base BAAI/bge-m3 --epochs 1` — MultipleNegativesRankingLoss on `pairs_synth.jsonl` (+ confirmed
-   negatives as hard negatives), then merges tuned and base weights with alpha 0.5 into `out/merged`.
-   OK if: `out/merged` exists and `train_report.json` shows the loss falling.
+2. Train: `python train_embed.py --base BAAI/bge-m3 --epochs 1 --rank 16` — LoRA (only small low-rank matrices; the base model stays
+   unchanged), MultipleNegativesRankingLoss on `pairs_synth.jsonl` (+ confirmed negatives as hard negatives); the adapter is saved in
+   `out/adapter` and merged with strength alpha 0.5 into `out/merged` for serving.
+   OK if: `out/adapter` and `out/merged` exist and `train_report.json` shows a few percent trainable parameters.
 3. Evaluate: `python eval_embed.py --model out/merged` — Recall@4 of the real used hint on the test window, base vs merged, paired;
    plus a general retrieval check (a fixed set of the VI's own questions). Keep the merged model only if Recall@4 rises and the general
    check does not fall.
@@ -138,11 +140,15 @@ open("pairs_synth.jsonl", "w").write("".join(json.dumps(r, ensure_ascii=False) +
 json.dump({"hints": len(hints), "tried": tried, "kept": len(kept)}, open("synth_report.json", "w"), indent=1)
 print(len(kept), "of", tried, "kept")
 ''',
-    "train_embed.py": r'''"""MultipleNegativesRankingLoss on the synthetic pairs (+ confirmed negatives as hard negatives), then merge tuned and base weights
-(LM-Cocktail 2311.13534) against forgetting. usage: python train_embed.py [--base BAAI/bge-m3] [--epochs 1] [--alpha 0.5]"""
+    "train_embed.py": r'''"""LoRA on the embedding model (the user, 16.11.2026: "dann nimm LoRA für das Embedding-Modell"): only small low-rank matrices are
+trained, the base model stays unchanged. MultipleNegativesRankingLoss on the synthetic pairs (+ confirmed negatives as hard negatives).
+For serving, the adapter is merged with strength alpha (W + alpha*dW; alpha 0.5 = halfway between base and tuned, as LM-Cocktail
+2311.13534 does against forgetting). Whether LoRA matches full fine-tuning for embedding models is not established (research 16.11.2026:
+not found) — eval_embed.py decides. usage: python train_embed.py [--base BAAI/bge-m3] [--epochs 1] [--rank 16] [--alpha 0.5]"""
 import argparse, json
 a = argparse.ArgumentParser(); a.add_argument("--base", default="BAAI/bge-m3"); a.add_argument("--epochs", type=float, default=1)
-a.add_argument("--alpha", type=float, default=0.5); o = a.parse_args()
+a.add_argument("--rank", type=int, default=16); a.add_argument("--alpha", type=float, default=0.5); o = a.parse_args()
+from peft import LoraConfig, TaskType
 from sentence_transformers import SentenceTransformer, InputExample, losses
 from torch.utils.data import DataLoader
 pairs = [json.loads(l) for l in open("pairs_synth.jsonl")]
@@ -151,13 +157,18 @@ for l in open("negatives.jsonl"):
     r = json.loads(l); neg.setdefault(r["situation"], r["hint"])
 ex = [InputExample(texts=[p["situation"], p["hint"]] + ([neg[p["situation"]]] if p["situation"] in neg else [])) for p in pairs]
 m = SentenceTransformer(o.base)
+m.add_adapter(LoraConfig(task_type=TaskType.FEATURE_EXTRACTION, r=o.rank, lora_alpha=2 * o.rank, lora_dropout=0.05,
+                         target_modules=["query", "key", "value", "dense"]))
+trainable = sum(p.numel() for p in m.parameters() if p.requires_grad); total = sum(p.numel() for p in m.parameters())
 dl = DataLoader(ex, shuffle=True, batch_size=16)
 m.fit(train_objectives=[(dl, losses.MultipleNegativesRankingLoss(m))], epochs=int(max(1, o.epochs)), show_progress_bar=True)
-m.save("out/tuned")
-base = SentenceTransformer(o.base); sd_b = base.state_dict(); sd_t = m.state_dict()
-merged = {k: (o.alpha * sd_t[k] + (1 - o.alpha) * sd_b[k]) if sd_t[k].dtype.is_floating_point else sd_t[k] for k in sd_t}
-m.load_state_dict(merged); m.save("out/merged")
-json.dump({"pairs": len(ex), "with_hard_negative": sum(len(e.texts) == 3 for e in ex), "alpha": o.alpha}, open("train_report.json", "w"), indent=1)
+m.save("out/adapter")                                    # the LoRA adapter alone (small)
+hf = m[0].auto_model.merge_and_unload()                  # W + dW
+base = SentenceTransformer(o.base); sd_b = base[0].auto_model.state_dict(); sd_t = hf.state_dict()
+blended = {k: (o.alpha * sd_t[k] + (1 - o.alpha) * sd_b[k]) if k in sd_b and sd_t[k].dtype.is_floating_point else sd_t[k] for k in sd_t}
+base[0].auto_model.load_state_dict(blended, strict=False); base.save("out/merged")   # W + alpha*dW, for serving
+json.dump({"pairs": len(ex), "with_hard_negative": sum(len(e.texts) == 3 for e in ex), "lora_rank": o.rank, "alpha": o.alpha,
+           "trainable_parameters": trainable, "total_parameters": total}, open("train_report.json", "w"), indent=1)
 ''',
     "eval_embed.py": r'''"""Recall@4 of the real used hint on the test window: base vs tuned model, paired per pair. usage: python eval_embed.py --model out/merged [--base BAAI/bge-m3]"""
 import argparse, json
