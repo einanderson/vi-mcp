@@ -1090,6 +1090,7 @@ Besides the `VI_MCP_<KEY>` of the configuration catalogue above.
 | `VI_MCP_KEIN_DIENST` | Tests and containers: `vi-mcp net …` does not start or stop systemd services. |
 | `VI_MCP_KEIN_MENUE` | Package installation without the interactive menu. |
 | `VI_MCP_KEIN_WIKI` | At installation: do not join the public wiki network (same as `VI_MCP_WIKI=false`). |
+| `VI_MCP_NO_ENABLE` | Package installation (Arch, CachyOS): do not enable vi-mcp.service; an enabled one is restarted after an upgrade. |
 | `VI_MCP_RELEASE_KEY` | Release: private Ed25519 key that signs SHA256SUMS (default `~/.config/vi-mcp/release-ed25519.pem`). |
 | `VI_MCP_RELEASE_SCHLUESSEL` | Old name of `VI_MCP_RELEASE_KEY`. |
 | `VI_MCP_REPO_GNUPG` | Release: GnuPG home with the OpenPGP key of the apt/dnf repository (default `~/.config/vi-mcp/repo-gnupg`). |

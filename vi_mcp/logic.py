@@ -124,7 +124,7 @@ def install(target: Path | None = None) -> int:
     print("running: " + " ".join(cmd))
     r = subprocess.run(cmd, check=False)
     if r.returncode != 0:
-        print("pip failed — without pip: apt install python3-pip (Debian/Ubuntu) or dnf install python3-clingo (Fedora); behind a proxy set https_proxy")
+        print("pip failed — without pip: apt install python3-pip (Debian/Ubuntu), dnf install python3-clingo (Fedora) or pacman -S python-pip (Arch, CachyOS; or clingo from the AUR); behind a proxy set https_proxy")
         return r.returncode
     # 0.62.4: check the directory just installed into — before, only extra_dirs() was searched, so `--target DIR` outside the default
     # places installed correctly and still reported "still not importable" with exit 1 (reported from the CentralStation container)

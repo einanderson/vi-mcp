@@ -78,6 +78,7 @@ older files, and the package rewrites them in English at install (`configure.mig
 ```bash
 sudo apt install ./vi-mcp_<version>-1_all.deb        # Debian 12+, Ubuntu 24.04+
 sudo dnf install ./vi-mcp-<version>-1.noarch.rpm     # Fedora, AlmaLinux/RHEL 10 with EPEL
+sudo pacman -U ./vi-mcp-<version>-1-any.pkg.tar.zst  # Arch Linux, CachyOS (then: sudo systemctl enable --now vi-mcp.service)
 sudo vi-mcp setup                                    # ANSI menu: Claude Code, Codex CLI, Hermes Agent
 ```
 
@@ -95,6 +96,7 @@ menu below. On first installation the menu opens by itself if a terminal is pres
 | Tests against PostgreSQL (0.50.0) | `VI_MCP_TEST_PG=postgresql://USER@HOST/DB` before the same command (`.venv` also needs psycopg; a throw-away database: every test gets its own schema and none is dropped — recreate the database now and then: at 21,804 schemas (9.8 GB) a container's `/dev/shm` ran full and PostgreSQL crashed mid-run, 13.11.2026) |
 | Debian package | `deploy/debian/build.sh` |
 | RPM package | `deploy/rpm/build.sh` (builds in a Fedora container if `rpmbuild` is missing) |
+| Arch / CachyOS package | `deploy/arch/build.sh` (PKGBUILD from `deploy/arch/PKGBUILD.in`; builds in an `archlinux:base-devel` container if `makepkg` is missing; users by sysusers.d, the service is not enabled by the package) |
 | Windows MSI | `deploy/windows/build.sh` (wixl/msitools in a Fedora container; `install.ps1` does Python, venv, PyPI and the scheduled task) |
 | Release | `deploy/release.sh --gh`: builds .deb, .rpm and .msi, signs `SHA256SUMS` (key outside the repo, `VI_MCP_RELEASE_KEY`, old name `VI_MCP_RELEASE_SCHLUESSEL`), checks and publishes — since 0.54.0 also into the signed apt/dnf repository `imoes/vi-mcp-packages` (GitHub Pages, `deploy/publish-repo.sh`, OpenPGP key in `VI_MCP_REPO_GNUPG`, default `~/.config/vi-mcp/repo-gnupg`, public part `deploy/repo-key.asc`) |
 | Check a release | `deploy/pruefe-release.sh <directory>` |

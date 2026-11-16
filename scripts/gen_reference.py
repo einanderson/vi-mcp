@@ -94,6 +94,7 @@ ENV_VARS = {
     "VI_MCP_KEIN_DIENST": "Tests and containers: `vi-mcp net …` does not start or stop systemd services.",
     "VI_MCP_KEIN_MENUE": "Package installation without the interactive menu.",
     "VI_MCP_KEIN_WIKI": "At installation: do not join the public wiki network (same as `VI_MCP_WIKI=false`).",
+    "VI_MCP_NO_ENABLE": "Package installation (Arch, CachyOS): do not enable vi-mcp.service; an enabled one is restarted after an upgrade.",
     "VI_MCP_SOCKET": "Local Unix socket of the server (`vi-mcp stdio`), instead of config `socket`.",
     "VI_MCP_URL": "Client side (hook, `vi-mcp image`): URL of the VI server.",
     "VI_MCP_TOKEN": "Hermes Agent: the token referenced as `${VI_MCP_TOKEN}` in its MCP configuration (`~/.hermes/.env`).",

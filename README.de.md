@@ -343,6 +343,7 @@ Pakete liegen unter [Releases](https://github.com/imoes/vi-mcp/releases/latest).
 sudo apt install ./vi-mcp_<version>-1_all.deb      # Debian 12/13, Ubuntu 24.04
 sudo dnf install ./vi-mcp-<version>-1.noarch.rpm   # Fedora 43
 sudo dnf install epel-release && sudo dnf install ./vi-mcp-<version>-1.noarch.rpm   # AlmaLinux/RHEL 10
+sudo pacman -Syu && sudo pacman -U ./vi-mcp-<version>-1-any.pkg.tar.zst   # Arch Linux, CachyOS; danach: sudo systemctl enable --now vi-mcp.service
 sudo VI_MCP_PORT=9000 apt install ./vi-mcp_<version>-1_all.deb                       # anderer Port bei der Erstinstallation
 ```
 

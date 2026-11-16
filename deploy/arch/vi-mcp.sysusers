@@ -1,0 +1,3 @@
+# vi-mcp: the memory server and the network service run as their own system users (systemd-sysusers, sysusers.d(5))
+u vi-mcp - "vi-mcp memory" /var/lib/vi-mcp
+u vi-p2p - "vi-mcp network service" /var/lib/vi-p2p

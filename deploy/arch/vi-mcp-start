@@ -1,0 +1,7 @@
+#!/usr/bin/python3 -I
+# Arch/CachyOS: the code lives in /usr/lib/vi-mcp, outside site-packages, so a Python update needs no rebuild of the package.
+import runpy
+import sys
+
+sys.path.insert(0, "/usr/lib/vi-mcp")
+runpy.run_module("vi_mcp", run_name="__main__", alter_sys=True)

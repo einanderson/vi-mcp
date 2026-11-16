@@ -1,5 +1,6 @@
 #!/bin/sh
-# Shared by Debian and RPM. Usage: nach-installation.sh system | menue
+# Shared by Debian, RPM and Arch. Usage: nach-installation.sh system | wiki | menue
+# VI_MCP_NO_ENABLE=1 (Arch convention): the service is not enabled by the package; an enabled one is restarted after an upgrade
 case "$1" in
 system)
     install -d -o vi-mcp -g vi-mcp -m 0700 /var/lib/vi-mcp
@@ -26,10 +27,11 @@ JSON
         chmod 0640 /etc/vi-mcp/config.json
     fi
     systemctl daemon-reload >/dev/null 2>&1 || true
-    systemctl enable vi-mcp.service >/dev/null 2>&1 || true
+    if [ -z "$VI_MCP_NO_ENABLE" ]; then systemctl enable vi-mcp.service >/dev/null 2>&1 || true; fi
     # 0.53.1: the memory first, then the network services (they ask the memory at their first round). The key is "instances" since
     # 0.51.0 ("instanzen" before): checking only the old name left vi-mcp stopped after the update to 0.53.0 (production, 11.11.2026).
-    if python3 -c "import json,sys; c=json.load(open('/etc/vi-mcp/config.json')); sys.exit(0 if c.get('instances') or c.get('instanzen') else 1)"; then
+    if { [ -z "$VI_MCP_NO_ENABLE" ] || systemctl is-enabled --quiet vi-mcp.service 2>/dev/null; } && \
+       python3 -c "import json,sys; c=json.load(open('/etc/vi-mcp/config.json')); sys.exit(0 if c.get('instances') or c.get('instanzen') else 1)"; then
         systemctl restart vi-mcp.service >/dev/null 2>&1 || true
         # wait until it answers (at most 20 s): the network services ask it at their first round
         python3 - <<'PY' || true

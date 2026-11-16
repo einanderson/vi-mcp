@@ -1,0 +1,32 @@
+# vi-mcp for Arch Linux and CachyOS. pacman runs this without a terminal, so nothing here asks; the service is not enabled by the
+# package (Arch convention) — the messages say how.
+post_install() {
+    # pacman runs this before the sysusers hook at the end of the transaction: create the users now, the directories need them
+    systemd-sysusers /usr/lib/sysusers.d/vi-mcp.conf
+    VI_MCP_NO_ENABLE=1 /usr/share/vi-mcp/nach-installation.sh system
+    /usr/bin/vi-mcp configure --package first >/dev/null 2>&1 || echo "vi-mcp: configuration with defaults; change it with: sudo vi-mcp configure"
+    echo "vi-mcp: start the memory server:      sudo systemctl enable --now vi-mcp.service"
+    echo "vi-mcp: then set up Claude Code, Codex and Hermes:  sudo vi-mcp setup"
+    echo "vi-mcp: the public wiki network (optional):          sudo vi-mcp net wiki on"
+}
+
+post_upgrade() {
+    systemd-sysusers /usr/lib/sysusers.d/vi-mcp.conf
+    VI_MCP_NO_ENABLE=1 /usr/share/vi-mcp/nach-installation.sh system
+    /usr/bin/vi-mcp configure --package upgrade >/dev/null 2>&1 || true
+}
+
+pre_upgrade() {
+    systemctl stop vi-p2p.service 'vi-p2p@*.service' >/dev/null 2>&1 || true
+}
+
+pre_remove() {
+    systemctl disable --now vi-p2p.service >/dev/null 2>&1 || true
+    systemctl disable --now 'vi-p2p@*.service' >/dev/null 2>&1 || true
+    systemctl disable --now vi-mcp.service >/dev/null 2>&1 || true
+}
+
+post_remove() {
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    echo "vi-mcp: data and configuration are kept: /var/lib/vi-mcp, /etc/vi-mcp, /var/lib/vi-p2p, /etc/vi-p2p"
+}

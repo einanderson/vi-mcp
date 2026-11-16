@@ -7,6 +7,22 @@ Linked from [README.md](README.md).
 
 ### What is new
 
+- **A package for Arch Linux and CachyOS** (`deploy/arch/build.sh` → `dist/vi-mcp-<version>-1-any.pkg.tar.zst`). Install with
+  `sudo pacman -U`.
+  - Dependencies from the official repositories: python, python-numpy, python-scikit-learn, python-cryptography, python-yaml.
+  - Optional: clingo (only in the AUR), python-pip (for `vi-mcp logic install`), python-psycopg, libtorrent-rasterbar.
+  - Arch conventions:
+    - the code goes to `/usr/lib/vi-mcp`, not `libexec`, so a Python update needs no rebuild;
+    - users come from `sysusers.d`;
+    - the service is not enabled by the package; the install prints how to start it.
+  - Measured in a fresh `archlinux:base-devel` container (Python 3.14.9, OpenSSL 4.1.0): install, users, directories with the same
+    owners and modes as Debian, configuration, an instance, and the server answering `/health` with "ok vi-mcp"; removal keeps data
+    and configuration.
+  - Found while testing: pacman runs a package's `post_install` before the sysusers hook at the end of the transaction, so the
+    install creates its users itself first. A partial upgrade (`pacman -Sy` without `-u`) breaks python-cryptography (`libssl.so.4`);
+    the README therefore says `pacman -Syu`.
+  - Not yet: `deploy/release.sh` and the signed package repository do not build or publish it. CachyOS itself was not tested — it is
+    Arch-based and uses pacman and the same repositories.
 - **vi_recall collects by itself when a question wants everything about one entity.** The user said (16.11.2026): "Bei einer Recherche können
   auch mehr als vier Werte von einem Objekt relevant sein. Z.B. welche Ausstattung hat ein Host." On the production copy, 20 % of all
   objects are parts of longer pages (9,196 parts of 3,387 pages, up to 159 parts), and the facts about one host are spread over several
