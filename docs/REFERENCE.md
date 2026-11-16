@@ -1203,6 +1203,7 @@ First line of each module's docstring.
 | `reviewer` | Plausibility reviewer — the local language model reads every imported object, after the fixed rules. |
 | `sandbox` | Sandbox — reflex code runs in its own process, never in the server. |
 | `scorer` | Scorer — rates whether work succeeded. "The tool did not crash" is not enough for that (measured: 63 of 64). |
+| `search_questions` | Search questions per object (0.68.0) — labels for the query adapter, written by the classify model while the VI sleeps. |
 | `self_model` | The self — an object every session loads and that changes only with reason, evidence and confirmation. |
 | `server` | MCP over Streamable HTTP — ONE process, many sessions. |
 | `session` | Sessions and conversations — the time slice. |

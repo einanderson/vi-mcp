@@ -15,7 +15,9 @@ Labels (only what exists, each named by its source):
   - `judged` the language model's relevance grades of real searches (relevance.py, UMBRELA): grade ≥ 2 positive, grade 0 a confirmed
              negative for that query;
   - `probe`  the one held-out question per object (data.qa.probe) — never trained, test only (it is held out for fine-tuning too);
-             only the probes of HELD-OUT objects count (split by object, see split()).
+             only the probes of HELD-OUT objects count (split by object, see split());
+  - `sq`     short search-style queries the classify model wrote per object (search_questions.py, round-trip filtered).
+The judged real searches are reported apart (judged_diff); an adapter that is better overall but worse on them stays off.
 Negatives besides grade 0: objects at cosine ranks NEG_FROM…NEG_TO of the query, never the very top (an unjudged top hit is often
 relevant — RocketQA 2010.08191: ~70 % of such "negatives" were relevant).
 
@@ -43,6 +45,7 @@ CANDIDATES = 50
 NEG_FROM, NEG_TO, NEG_PER_QUERY = 5, 50, 8
 MIN_TRAIN_QUERIES = 200
 MIN_TEST_QUERIES = 30
+MIN_JUDGED = 5  # with this many judged real searches in the test, the adapter must not make them worse
 C_GRID = (0.01, 0.1, 1.0)
 EMBED_BATCH = 32
 SEED = 7
@@ -131,6 +134,13 @@ def examples() -> list[dict]:
             add(p.get("question"), qa.get("time") or "", "qa", pos=oid)
         if (qa.get("probe") or {}).get("question"):
             add(qa["probe"]["question"], qa.get("time") or "", "probe", pos=oid)
+    with g.lock:
+        rows = g.db().execute("SELECT id, data FROM object WHERE mode = 'active' AND visibility != 'private' AND data LIKE ?",
+                              ('%"search_q": {%',)).fetchall()
+    for oid, raw in rows:  # search_questions.py: short search-style queries the classify model wrote, round-trip filtered
+        sq = (json.loads(raw) if isinstance(raw, str) else raw or {}).get("search_q") or {}
+        for q in sq.get("questions") or []:
+            add(q, sq.get("time") or "", "sq", pos=oid)
     from . import relevance
     relevance._table()
     with g.lock:
@@ -226,14 +236,14 @@ def _held_out(oid: str) -> bool:
 
 def split(ex: list[dict]) -> tuple[list[dict], list[dict]]:
     """Split by OBJECT and by time, so the test asks for what the fit never saw:
-    train: the qa questions of the objects not held out + the older judged searches;
-    test:  the probes of the held-out objects + the newest TEST_SHARE of the judged searches.
+    train: the qa and search questions of the objects not held out + the older judged searches;
+    test:  the probes and search questions of the held-out objects + the newest TEST_SHARE of the judged searches.
     Measured why (production copy 16.11.2026): with probes of the TRAINED objects in the test, MRR rose 0.552 → 0.662 — the adapter may
     simply prefer the few objects that have questions at all; a per-dimension weighting can learn that cluster."""
     judged = sorted([e for e in ex if e["source"] == "judged"], key=lambda e: e["ts"] or "")
     cut = int(len(judged) * (1 - TEST_SHARE))
-    train = [e for e in ex if e["source"] == "qa" and not any(_held_out(i) for i in e["positives"])] + judged[:cut]
-    test = judged[cut:] + [e for e in ex if e["source"] == "probe" and all(_held_out(i) for i in e["positives"])]
+    train = [e for e in ex if e["source"] in ("qa", "sq") and not any(_held_out(i) for i in e["positives"])] + judged[:cut]
+    test = judged[cut:] + [e for e in ex if e["source"] in ("probe", "sq") and all(_held_out(i) for i in e["positives"])]
     test_q = {e["query"] for e in test}
     return [e for e in train if e["query"] not in test_q], test
 
@@ -279,8 +289,13 @@ def gate(ex: list[dict] | None = None) -> dict:
             "val_mrr_cosine": round(float(base_val.mean()), 4), "test_mrr_adapter": round(float(a.mean()), 4),
             "test_mrr_cosine": round(float(b.mean()), 4), "paired_diff": round(float(d.mean()), 4), "se": round(se, 4),
             "better": int((d > 0).sum()), "worse": int((d < 0).sum()),
-            "test_by_source": {s: sum(1 for e in test if e["source"] == s) for s in ("judged", "probe")}}
+            "test_by_source": {s: sum(1 for e in test if e["source"] == s) for s in ("judged", "probe", "sq")}}
+    jd = np.array([x for x, e in zip(d, test) if e["source"] == "judged"])
+    if len(jd):
+        meas["judged_diff"] = round(float(jd.mean()), 4)
     s = "on" if float(d.mean()) > 2 * se else "off"
+    if s == "on" and len(jd) >= MIN_JUDGED and float(jd.mean()) < 0:  # generated queries must not win against real searches
+        s, meas["reason"] = "off", f"better overall but worse on the {len(jd)} judged real searches"
     _set(s, model, dim, w if s == "on" else None, meas)
     return {"state": s, **meas}
 

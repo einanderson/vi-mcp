@@ -217,6 +217,9 @@ def _run(reason: str) -> g.MemoryObject:
             step("8k_feature_writer", lambda: feature_writer.run("sleep"))
             from . import hint_prior  # 0.68.0: priors for new hints, switched on or off by the offline gate
             step("8l_hint_prior", lambda: hint_prior.run("sleep"))
+            from . import search_questions, vector as _vec
+            if _vec.available():  # 0.68.0: short search queries per object, round-trip filtered — labels for the query adapter (8m)
+                step("8n_search_questions", lambda: search_questions.run(None, "sleep"))
     from . import query_adapter, vector as _vector
     if _vector.available():  # 0.68.0: learned embedding weights on the query vector (scikit-learn), switched by the offline gate
         step("8m_query_adapter", lambda: query_adapter.run("sleep"))

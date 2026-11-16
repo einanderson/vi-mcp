@@ -92,3 +92,29 @@ def test_the_test_never_asks_for_a_trained_object(gd):
     trained = {i for e in train for i in e["positives"]}
     assert test and all(not (e["positives"] & trained) for e in test if e["source"] == "probe")
     assert all(e["source"] != "probe" for e in train)
+
+
+def test_search_questions_keep_only_short_round_trip_queries_and_feed_the_adapter(gd, monkeypatch):
+    import json as _json
+    from vi_mcp import classify, reflection, search_questions as sq
+    table = _world(True, n=40)
+    target = g.recall("object 7", limit=50)
+    o = next(o for _s, o, _w in target if o.text == "object 7")
+    good = table["q7a"]
+    table["good query"] = good
+    table["far query"] = -np.asarray(good)
+    table["object 7"] = good
+    monkeypatch.setattr(classify, "available", lambda: True)
+    monkeypatch.setattr(reflection, "ask_fn", lambda s, u: _json.dumps({"queries": ["good query", "far query", "object 7",
+                                                                                     " ".join(["w"] * 30)]}))
+    monkeypatch.setattr(sq, "pending", lambda limit: [o])
+    monkeypatch.setattr(sq, "PER_OBJECT", 4)
+    try:
+        r = sq.run(1, "test")
+    finally:
+        vector.embed_fn = None
+    stored = g.load(o.id).data["search_q"]
+    assert r["objects"] == 1 and stored["questions"] == ["good query"]
+    assert stored["rejected"] == {"own object not in the top 20": 1, "copies the first sentence": 1, "too long or empty": 1}
+    assert any(e["source"] == "sq" and e["query"] == "good query" for e in qa.examples())
+    assert "Search questions per object" in sq.line()

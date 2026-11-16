@@ -73,6 +73,14 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
   queries — below the minimum (200 / 30), so OFF. Forced with lower minimums: the first split (probes of TRAINED objects in the test)
   showed MRR 0.552 → 0.662 (+0.110 ± 0.037) — an artefact: on objects never trained it is 0.424 → 0.388 (−0.036 ± 0.043, 3 better,
   4 worse). No gain shown yet; the gate keeps it off until the labels suffice.
+- **Search questions per object** (`vi_mcp/search_questions.py`, sleep step `8n_search_questions`, `vi-mcp search-questions run [N]|report`,
+  config `classify.search_questions_per_sleep`, default 20; the user, 16.11.2026: "lass das modell suchfragen pro objekt schreiben"):
+  the classify model writes 3 short queries per shared knowledge object as an agent would type them into `vi_recall`, with real
+  queries of the search log as style examples (Promptagator, arXiv 2209.11755; InPars, arXiv 2202.05144). Kept only if ≤ 14 words,
+  not a copy of the first sentence, and if its own object is among the 20 nearest of all stored vectors (round trip). Stored as
+  `data.search_q`, asked again when the content changes; private objects get none. They are training queries for the query adapter
+  (source `sq`); its test reports the judged real searches apart, and an adapter better overall but worse on ≥ 5 judged real searches
+  stays off. Evidence: `tests/test_query_adapter.py` (round trip, copy and length rejections counted; the queries reach the adapter).
 - **Embedding fine-tuning kit** (`vi-mcp finetune embed-kit DIR [--days N]`, `vi_mcp/finetune_embed.py`): the embedding model, not a
   chat model, learns this VI's (situation → hint) pairs. Real positives (feedback helped, adopted, judge used after success) are the
   EVALUATION set — 302 over 128 hints on the production copy, far below the volumes of any published gain (GPL 2112.07577, Promptagator
@@ -114,9 +122,8 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
    ones are complete, so the way back is a configuration change. The model NAME stays the same under another pooling: in the same
    step run `vi-mcp query-adapter off` and empty the table `query_vector` (cached query vectors), or the adapter's weights and
    cached queries would belong to the old pooling.
-8. **Labels for the query adapter**: built (see above) and gated off — 95 training queries on the production copy, 200 needed. The
-   stored questions grow by `classify.pairs_per_sleep()` objects per sleep; decide whether to raise that, or to have the classify model
-   write search-style questions for objects for this purpose (round-trip filter, by object split), before the adapter can be judged.
+8. **Labels for the query adapter**: search questions per object are now written each sleep (see above); re-run the gate once they
+   have accumulated, and compare with the judged real searches before trusting a gain.
 
 ### What is new: more labels on shown hints
 
