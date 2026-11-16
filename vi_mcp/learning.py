@@ -749,8 +749,8 @@ def _keep_champion(report: dict) -> None:
             "champion": report["champion"], "herausforderer": dict(report),
             "warnung": active_report.get("warnung") or {"zustand": "aus", "grund": "champion kept without a measured warning threshold"},
             **({"llm_schicht": m.data["llm_schicht"]} if m.data.get("llm_schicht") else {})}
-    m.text = (f"Router model (aktiv, champion of {str(champ.get('trainiert'))[:16]}): challenger rejected — {report['champion']['urteil']}")
-    m.data, m.mode = {**data, "versionen": m.data.get("versionen", 0) + 1}, "aktiv"
+    m.text = (f"Router model (active, champion of {str(champ.get('trainiert'))[:16]}): challenger rejected — {report['champion']['urteil']}")
+    m.data, m.mode = {**data, "versionen": m.data.get("versionen", 0) + 1}, "active"
     m.change("vi", "challenger rejected, champion kept", report.get("grund", "learning"))
     g.save(m)
 

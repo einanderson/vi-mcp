@@ -66,6 +66,9 @@ def test_retained_champion_keeps_its_metrics_and_date(gd):
     m = learning.model()
     assert m.data["auc_holdout"] == .91 and m.data["trainiert"] == "2026-01-01"
     assert m.data["herausforderer"]["auc_holdout"] == .61
+    # 0.67.0: the kept champion is the active router — it was stored with the mode "aktiv", which no longer exists, so
+    # learning.active() returned None and the router went silent until the next successful training
+    assert m.mode == "active" and learning.active() is not None
 
 
 def test_a_legacy_champion_gets_its_own_measured_auc_not_none(gd):

@@ -520,6 +520,9 @@ def save(o: MemoryObject, *, commit: bool = True) -> MemoryObject:
     if o.kind in names.DOMAIN_KINDS:
         o.data = names.data_keys(o.data)
     o.changes = names.history_keys(o.changes)
+    # one form of the stored values too, as in new_object: a mode or visibility assigned directly (o.mode = "aktiv") is stored English;
+    # learning.active() asks for mode "active", so a German mode silently switched the router off (0.67.0, _keep_champion)
+    o.mode, o.visibility = names.english(names.MODES, o.mode), names.english(names.VISIBILITIES, o.visibility)
     tags = sorted(set(o.hashtags) | {f"kind:{o.kind}", f"instance:{o.instance}"})
     if o.idx not in _known_indexes:  # 0.61.0: every index an object refers to has its row (the primary key of vi_index)
         with lock:

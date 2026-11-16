@@ -173,6 +173,13 @@ done; step 4b follows in 0.68 (the user's decision, 16.11.2026: "4a now, 4b in 0
   router score before (code of 0.66.1) and after: without the renaming the mean change would be 0.074 (max 0.487, 21,165 observations
   moved by more than 0.01); with it 0.000003 (max 0.022, 3 observations above 0.01 — one traced to a stored feature value 0.87 vs 0.867,
   not to a name).
+- **A stored mode or visibility is always English, also when code assigns it directly.** `memory.save` now canonicalizes them as
+  `new_object` does. Found while preparing step 4b: `learning._keep_champion` still wrote the mode `aktiv` (step 2's rewrite missed a
+  tuple assignment), and `learning.active()` asks for `active` — after a rejected challenger the kept champion would not have been used
+  and the router would have gone silent until the next successful training. Never released. Evidence:
+  `tests/test_training_audit.py::test_retained_champion_keeps_its_metrics_and_date` failed with `'aktiv' == 'active'` before the fix
+  and passes after it; an AST scan over `vi_mcp` and `clingo_object` finds no other German kind, mode or visibility assigned to or
+  compared with those fields.
 - **Reserved and location hashtags are refused in both languages.** The fixed import rules knew only the German forms: a peer could have
   set `net:firma`, `mode:active` or `location:MUC-1`, or a search filter `mode:archived`. Now both forms are reserved or refused (test).
 - **Older clients keep working.** German values are read as English where they come in: tool arguments (`visibility: "geteilt"`),
