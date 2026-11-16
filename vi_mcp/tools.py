@@ -251,6 +251,20 @@ TOOLS = [
                              "index": {"type": "string", "description": "optional: one index (a project or special VI)"},
                              "base_model": {"type": "string", "description": "optional: the model to fine-tune (Hugging Face id or directory)"},
                              "directory": {"type": "string", "description": "record: the kit directory on the server"}})},
+    {"name": "vi_feature_propose",
+     "description": "VI: propose FEATURE RULES for the router that chooses hints — you read its weights, you never write a number. "
+                    "action card (default): the fitted weights (strongest ±) and the situations where the router errs most (training part "
+                    "only) plus the rule language; propose: up to 10 rules {name, situation_all: [kind:value or kind:prefix*], hint_any: "
+                    "[...], reason} — the next sleep measures them with a two-step offline gate (chosen inside training, tested once on the "
+                    "newest holdout, kept only if paired log loss is better by more than 2 SE); the fit then weighs a kept rule daily; "
+                    "list: your proposals with state (proposed, offline_rejected, active, retired) and measurement. Needs an own instance "
+                    "with a token.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["card", "propose", "list"], "description": "card (default), propose or list"},
+                             "rules": {"type": "array", "description": "propose: the rules", "items": {"type": "object", "properties": {
+                                 "name": {"type": "string"}, "situation_all": {"type": "array", "items": {"type": "string"}},
+                                 "hint_any": {"type": "array", "items": {"type": "string"}}, "reason": {"type": "string"}},
+                                 "required": ["name", "situation_all", "reason"]}},
+                             "reason": {"type": "string", "description": "propose: why these rules (one sentence; each rule may carry its own)"}})},
     {"name": "vi_philosophy",
      "description": "VI: equip an AI with a philosophy. A philosophy is a package that stores only a clingo-object rule set (the "
                     "seed, in blocks marked # P1), proven by test worlds; prose is a translation, checked by its round trip. action guide "
@@ -494,6 +508,9 @@ _TOOL_PARAM_DOCS = {
     ("vi_answer", "text"): "the answer",
     ("vi_answer", "evidence"): "evidence: command, URL or measurement (required)",
     ("vi_self", "versions"): "true: also the history of the self-image's versions",
+    ("vi_feature_propose", "action"): "card (default), propose or list",
+    ("vi_feature_propose", "rules"): "propose: rules {name, situation_all, hint_any, reason}",
+    ("vi_feature_propose", "reason"): "propose: why these rules",
     ("vi_self_propose", "area"): "values, goals, style or limits",
     ("vi_self_propose", "sentence"): "the proposed sentence",
     ("vi_self_propose", "evidence"): "at least 3 object ids from at least 2 days",
@@ -1112,6 +1129,18 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             z.append("Versions:")
             z += [f"  v{v} {zt[:16]} {who} {b}: {sentence[:100]} — {gr[:100]}" for v, zt, who, b, sentence, gr in self_model.versions()]
         return "\n".join(z)
+    if name == "vi_feature_propose":  # 0.68.0: external AIs read the weights and propose rules; the gate decides
+        from . import feature_writer
+        action = args.get("action") or "card"
+        if action == "card":
+            return json.dumps(feature_writer.card_for_agents(), ensure_ascii=False, indent=1)
+        if action == "propose":
+            if not args.get("rules"):
+                raise Rejected("propose needs rules — see action card for the rule language")
+            return json.dumps(feature_writer.propose(instance, family, args["rules"], args.get("reason") or ""), ensure_ascii=False, indent=1)
+        if action == "list":
+            return json.dumps(feature_writer.proposals(instance), ensure_ascii=False, indent=1)
+        raise Rejected(f"action {action!r} unknown — card, propose or list")
     if name == "vi_self_propose":
         try:
             o = self_model.proposal(instance, args.get("area") or "", args.get("sentence") or "", args.get("reason") or "", args.get("evidence") or [],

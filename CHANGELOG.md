@@ -3,6 +3,33 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What is new: external AIs propose feature rules (to-do 1 of 0.68.0)
+
+- **`vi_feature_propose`** (`vi_mcp/feature_writer.py`; the user, 16.11.2026: "mache das To-Do vi_feature_propose"). An instance with a
+  token — Claude, Codex, any connected AI — reads the router's card (`action=card`: the strongest fitted weights and the situations where
+  the router errs most, from the training part only, plus the rule language), submits up to 10 rules in the feature writer's language
+  (`action=propose`: `situation_all` and `hint_any` patterns `kind:value` or `kind:prefix*`, a reason) and follows them (`action=list`).
+  Nobody writes a number: fields beyond name, patterns and reason are ignored, the fit weighs a kept rule every day. Nobody decides about
+  their own rules: the next sleep (step `8k2_feature_proposals`, no language model needed) measures every proposer's rules as one set
+  with the same two-step gate (chosen inside training, tested once on the newest holdout, kept only if paired log loss improves by more
+  than 2 SE), so one proposer never rides on another's rules. At most 10 open proposals per instance; names unique; the open wiki
+  (no token) is refused. By hand: `vi-mcp feature-writer evaluate`. Evidence: `tests/test_feature_propose.py` (no token refused, a label
+  pattern refused, a smuggled weight ignored, the limit, two proposers measured apart — the rule with signal active, the one without
+  rejected — the card without holdout numbers).
+
+### What has changed: search questions per sleep by time, not by count
+
+- **Search questions per object** run for a time budget instead of 20 objects per sleep (config `classify.search_questions_seconds`,
+  default 600; `classify.search_questions_per_sleep` is now an upper bound, default 300), until 1,200 objects have questions; after that
+  only new objects (younger than the "new" window) and changed ones are asked (the user, 16.11.2026: "warum nur 20 und nicht alle während
+  des Schlafs" — all ~25,000 would take days of the shared model, and the adapter uses at most 3,000 generated queries anyway). Measured
+  for the 10 minutes (the user: "messe ob 10 Minuten ausreichend sind"; production copy, qwen27b + bge-m3, 16.11.2026): 70 objects
+  (8.6 s each), 199 of 210 queries kept; a live embedding stayed at median 0.078 s / p90 0.119 s (baseline 0.077 / 0.110 s); a short call
+  to the shared classify model went from median 0.77 s / p90 0.87 s to 1.09 s / 3.1 s (max 5.7 s) while it ran. With ~8 sleeps a day
+  (production: 25 in 3 days) the 1,200 objects are reached in about two days.
+
 ## 0.68.0 — 2026-11-16 — learning from the agents' own words: feedback labels, LLM-written feature rules, query adapter, fine-tuning skill
 
 ### What is new: the fine-tuning skill and the paper

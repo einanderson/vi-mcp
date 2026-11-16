@@ -21,6 +21,13 @@ What it does (sleep step 8k, only with an explicit classify model; by hand `vi-m
                weight every day, and the router's champion/challenger gate still guards the whole model.
 Every rule is a row (table feature_rule) with its definition, reason, proposing model, state and measurement — readable, never deleted
 (state rejected/retired). States (exhaustive): proposed · offline_rejected · active · retired.
+
+External AIs propose too (`vi_feature_propose`, 0.68.0; the user, 16.11.2026: "mache das To-Do vi_feature_propose"): an instance with a
+token (Claude, Codex, …) reads the same card (action card), submits rules in the same language (action propose) and follows their state
+(action list). The rules wait as `proposed`; the next sleep (step 8k2, no language model needed) measures every proposer's rules as one
+set with the same two-step gate, so one proposer never rides on another's rules. The proposer never writes a number — fields other than
+name, situation_all, hint_any and reason are ignored — and never decides: no instance rates itself (AGENTS.md), the holdout does.
+Limits: MAX_PENDING open proposals per instance; names unique across all proposers.
 Nothing to migrate: without rows the router is exactly as before.
 """
 from __future__ import annotations
@@ -33,6 +40,8 @@ import time
 from . import memory as g
 
 MAX_RULES = 10
+MAX_PENDING = 10  # open proposals per instance (vi_feature_propose)
+CARD_TTL_S = 3600
 MAX_PATTERNS = 4
 ERROR_GROUPS = 12
 TOP_WEIGHTS = 15
@@ -267,6 +276,96 @@ def run(who: str = "sleep") -> dict:
             "rejected_by_check": why}
 
 
+# ── external proposals (vi_feature_propose) ─────────────────────────────────────────────────────────────────────────────────────────
+_card_cache: dict = {"at": 0.0, "db": None, "card": None}
+
+
+def card_for_agents() -> dict:
+    """The card an external AI reads — computed at most once an hour (one fit over all observations)."""
+    from . import learning
+    db = id(g.db())
+    if _card_cache["db"] != db or time.monotonic() - _card_cache["at"] > CARD_TTL_S or _card_cache["card"] is None:
+        obs = learning.weighted_observations()
+        if len(obs) < 500:
+            return {"state": "too_few_observations", "observations": len(obs)}
+        _card_cache.update(at=time.monotonic(), db=db, card={**card(obs), "observations": len(obs)})
+    return {**_card_cache["card"], "rule_language": {"situation_all": f"1–{MAX_PATTERNS} patterns kind:value or kind:prefix*, kinds "
+            f"{', '.join(SITUATION_KINDS)}; all must match the action's tags", "hint_any": f"0–{MAX_PATTERNS} patterns; the hint must "
+            "carry one", "forbidden": list(FORBIDDEN_KINDS), "numbers": "none — the fit writes every weight"}}
+
+
+def propose(instance: str, family: str | None, rules: list, reason: str = "") -> dict:
+    """Store an external AI's rules as `proposed` (checked by the same fixed rules); the next sleep measures them."""
+    _table()
+    valid, why = check({"rules": rules if isinstance(rules, list) else []})
+    by = f"{instance} ({family or 'family unknown'})"
+    with g.lock:
+        existing = {r[0] for r in g.db().execute("SELECT name FROM feature_rule").fetchall()}
+        pending = g.db().execute("SELECT COUNT(*) FROM feature_rule WHERE state = 'proposed' AND proposed_by LIKE ?",
+                                 (f"{instance} (%",)).fetchone()[0]
+    stored, dup = [], []
+    for r in valid:
+        if r["name"] in existing:
+            dup.append(r["name"]); continue
+        if pending + len(stored) >= MAX_PENDING:
+            why.append(f"{r['name']}: {MAX_PENDING} open proposals of {instance} already wait for the next sleep"); continue
+        stored.append(r)
+    now = g.now()
+    with g.lock:
+        for r in stored:
+            g.db().execute("INSERT INTO feature_rule (name, ts, definition, reason, proposed_by, state, measurement) VALUES (?,?,?,?,?,?,?)",
+                           (r["name"], now, json.dumps({"situation_all": r["situation_all"], "hint_any": r["hint_any"]}),
+                            (r["reason"] or reason)[:300], by, "proposed", None))
+        g.db().commit()
+    return {"stored": [r["name"] for r in stored], "rejected": why + [f"{n}: the name exists already" for n in dup],
+            "next": "the next sleep (step 8k2) measures them with the two-step gate; vi_feature_propose(action='list') shows the result"}
+
+
+def evaluate_proposed(obs: list | None = None) -> dict:
+    """Measure the waiting external proposals — one set per proposer, the same two-step gate as the language model's rules."""
+    from . import learning
+    _table()
+    with g.lock:
+        rows = g.db().execute("SELECT name, definition, proposed_by FROM feature_rule WHERE state = 'proposed' ORDER BY ts").fetchall()
+    if not rows:
+        return {"state": "nothing_proposed"}
+    obs = learning.weighted_observations() if obs is None else obs
+    if len(obs) < 500:
+        return {"state": "skipped", "reason": f"too few observations ({len(obs)})", "waiting": len(rows)}
+    by: dict[str, list] = {}
+    for name, d, who in rows:
+        by.setdefault(who, []).append({"name": name, **json.loads(d)})
+    out = {}
+    for who, rules in by.items():
+        m = offline(obs, rules)
+        with g.lock:
+            for r in rules:
+                g.db().execute("UPDATE feature_rule SET state = ?, measurement = ? WHERE name = ? AND state = 'proposed'",
+                               ("active" if r["name"] in m["kept"] else "offline_rejected",
+                                json.dumps({**m, "rule_weight": m["rule_weights"].get(r["name"]), "by": "vi_feature_propose"}), r["name"]))
+            g.db().commit()
+        out[who] = {"rules": len(rules), "kept": m["kept"], "paired_logloss": m["paired_logloss"], "se": m["se"]}
+    clear()
+    return {"state": "measured", "by_proposer": out}
+
+
+def proposals(instance: str | None = None) -> list[dict]:
+    _table()
+    q = "SELECT name, ts, definition, reason, proposed_by, state, measurement FROM feature_rule"
+    args: tuple = ()
+    if instance:
+        q += " WHERE proposed_by LIKE ?"
+        args = (f"{instance} (%",)
+    with g.lock:
+        rows = g.db().execute(q + " ORDER BY ts DESC LIMIT 100", args).fetchall()
+    out = []
+    for name, ts, d, reason, who, state, meas in rows:
+        m = json.loads(meas) if meas else {}
+        out.append({"name": name, "ts": ts, "rule": json.loads(d), "reason": reason, "proposed_by": who, "state": state,
+                    "measurement": {k: m.get(k) for k in ("paired_logloss", "se", "n", "validation_logloss", "rule_weight") if k in m}})
+    return out
+
+
 def line() -> str:
     _table()
     with g.lock:
@@ -279,12 +378,15 @@ def line() -> str:
 
 
 def main(argv: list[str]) -> int:
-    """vi-mcp feature-writer run | report"""
+    """vi-mcp feature-writer run | evaluate | report"""
     from . import config
     g.open_db(config.load().db)
     cmd = argv[0] if argv else "report"
     if cmd == "run":
         print(json.dumps(run("cli"), ensure_ascii=False, indent=1))
+        return 0
+    if cmd == "evaluate":  # the waiting external proposals (vi_feature_propose)
+        print(json.dumps(evaluate_proposed(), ensure_ascii=False, indent=1))
         return 0
     if cmd == "report":
         print(line().strip())

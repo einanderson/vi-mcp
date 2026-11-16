@@ -232,7 +232,10 @@ wahr ist:
   ist mit `vi_model` einsehbar. `vi_why` zeigt für einen Hinweis, warum er gezeigt wurde: die gespeicherte Entscheidung und die Gewichte,
   die ihn getragen haben. Der Router lernt über die Labels (Urteile des Scorers, deine Rückmeldung zu einem Hinweis), nie dadurch, dass
   jemand Gewichte schreibt; nach jedem Training geht er nur live, wenn seine Reihenfolge auf zurückgehaltenen Daten mehr Erfolg bringt, und feste Regeln prüfen die Gewichte und benennen, was falsch aussieht (ein Merkmal dominiert,
-  ein Gewicht gegen den gemessenen Nutzen, ein unbestätigter Hinweis aus dem Netz, die Uhrzeit als Ursache).
+  ein Gewicht gegen den gemessenen Nutzen, ein unbestätigter Hinweis aus dem Netz, die Uhrzeit als Ursache). Eine KI kann ihn trotzdem
+  mitgestalten, ohne eine Zahl zu schreiben: Mit `vi_feature_propose` liest sie die Gewichte und die schlechtesten Lagen des Routers und
+  schlägt Merkmalsregeln vor („Bash mit Timeout-Fehler und ein Hinweis zu ssh“); der nächste Schlaf misst sie auf zurückgehaltenen Daten
+  und behält nur, was den Router verbessert.
 - **Der Bandit** zählt je Hinweis, wie oft eine Handlung danach gelang, verglichen mit der Grundrate (Thompson Sampling) — der Rückfall,
   solange der Router zu wenig Daten hat.
 - **Bedeutung** kommt aus einem vortrainierten Embedding-Modell (bge-m3): Vektoren für die Bedeutungssuche und um ähnliches Wissen zu

@@ -15,6 +15,11 @@ changes. Private objects get none (their text never goes to a model for this). L
 used as a training query for the adapter, never shown as knowledge.
 Risk, named: the model's queries may differ from real agents' queries; the adapter's test therefore reports the judged real
 searches separately, and the gate refuses an adapter that makes them worse (query_adapter.gate).
+How many per sleep (the user, 16.11.2026: "warum nur 20 und nicht alle während des Schlafs"): all ~25,000 objects would take ~39 h of
+the shared classify model (5.6 s each, measured) and three embeddings each on the shared embedding service, which slows every live
+search while it is busy (VI erkenntnis:cd0b8eb7…). And all are not needed: the adapter uses at most query_adapter.MAX_TRAIN_QUERIES
+(3,000) generated queries, ~1,000 objects at three each. So a sleep spends a TIME budget (SECONDS_PER_SLEEP, default 10 min ≈ 100
+objects) until TARGET_OBJECTS have questions; after that only new objects (younger than metrics.NEW_DAYS) and changed ones are asked.
 Migration: none — objects without data.search_q are simply asked in later sleeps.
 """
 from __future__ import annotations
@@ -33,6 +38,8 @@ MAX_WORDS = 14
 COPY_JACCARD = 0.8
 ROUND_TRIP_K = 20
 STYLE_EXAMPLES = 8
+SECONDS_PER_SLEEP = 600   # config classify.search_questions_seconds
+TARGET_OBJECTS = 1200     # coverage after which only new and changed objects are asked
 KINDS = ("insight", "rule", "skill", "page")
 SYSTEM = ("You write search queries for an IT operations memory that AI agents search before they act. For the item given, write "
           f"{PER_OBJECT} different short queries an agent would type to find it: keywords and names as in the examples (hosts, tools, "
@@ -45,13 +52,32 @@ def _schema() -> dict:
             "required": ["queries"]}
 
 
-def per_sleep() -> int:
-    """Objects per sleep (config classify.search_questions_per_sleep, default 20: one call each)."""
+def _cfg() -> dict:
     from . import config
     try:
-        return max(0, min(int((config.read_raw(config.fpath()).get("classify") or {}).get("search_questions_per_sleep", 20)), 500))
+        return config.read_raw(config.fpath()).get("classify") or {}
     except Exception:  # noqa: BLE001
-        return 20
+        return {}
+
+
+def per_sleep() -> int:
+    """At most this many objects per sleep (config classify.search_questions_per_sleep, default 300) — the time budget usually ends first."""
+    try:
+        return max(0, min(int(_cfg().get("search_questions_per_sleep", 300)), 2000))
+    except (TypeError, ValueError):
+        return 300
+
+
+def seconds_per_sleep() -> float:
+    try:
+        return max(0.0, min(float(_cfg().get("search_questions_seconds", SECONDS_PER_SLEEP)), 3600.0))
+    except (TypeError, ValueError):
+        return float(SECONDS_PER_SLEEP)
+
+
+def covered() -> int:
+    with g.lock:
+        return g.db().execute("SELECT COUNT(*) FROM object WHERE mode = 'active' AND data LIKE ?", (f'%"version": "{VERSION}"%',)).fetchone()[0]
 
 
 def prompt_sha256() -> str:
@@ -79,12 +105,17 @@ def style_examples(n: int = STYLE_EXAMPLES) -> list[str]:
     return out[:n]
 
 
-def pending(limit: int) -> list[g.MemoryObject]:
-    from . import classify, qa_pairs, vector
+def pending(limit: int, recent_only: bool = False) -> list[g.MemoryObject]:
+    """Objects without current search questions (or whose content changed), newest first; recent_only: younger than metrics.NEW_DAYS
+    or already asked (a changed object is asked again)."""
+    from datetime import datetime, timedelta, timezone
+    from . import classify, metrics, qa_pairs, vector
     _ids, pos, _m = vector.matrix()
+    since = (datetime.now(timezone.utc) - timedelta(days=metrics.NEW_DAYS)).isoformat(timespec="seconds") if recent_only else ""
     with g.lock:
         rows = g.db().execute(f"SELECT id FROM object WHERE kind IN ({','.join('?' * len(KINDS))}) AND mode = 'active' "
-                              "AND visibility != 'private' ORDER BY ts DESC LIMIT ?", (*KINDS, limit * 20)).fetchall()
+                              "AND visibility != 'private' AND (ts >= ? OR data LIKE ?) ORDER BY ts DESC LIMIT ?",
+                              (*KINDS, since, '%"search_q": {%' if recent_only else '%', limit * 20)).fetchall()
     out = []
     for (oid,) in rows:
         if oid not in pos:
@@ -143,12 +174,20 @@ def run(limit: int | None = None, who: str = "sleep") -> dict:
         return {"state": "skipped", "reason": "no language model configured (config classify or llm)"}
     if not vector.available():
         return {"state": "skipped", "reason": "no embedding service configured (config embed) — the round trip needs it"}
+    budget = seconds_per_sleep() if limit is None else float("inf")
     limit = per_sleep() if limit is None else limit
+    recent_only = covered() >= TARGET_OBJECTS
     examples = style_examples()
+    import time
+    t0 = time.monotonic()
     model, _dim = query_adapter._model()
-    out = {"objects": 0, "kept": 0, "rejected": {}, "failed": 0, "style_examples": len(examples)}
+    out = {"objects": 0, "kept": 0, "rejected": {}, "failed": 0, "style_examples": len(examples), "covered_before": covered(),
+           "mode": "new and changed only" if recent_only else f"filling up to {TARGET_OBJECTS} objects"}
     version_model = classify._config().get("model") or "?"
-    for o in pending(limit):
+    for o in pending(limit, recent_only):
+        if time.monotonic() - t0 > budget:
+            out["stopped"] = f"time budget {int(budget)} s"
+            break
         user = ((("Examples of real searches in this memory:\n" + "\n".join(f"- {e}" for e in examples) + "\n\n") if examples else "")
                 + f"Item: {o.text[:400]}\n{str(o.data.get('content') or '')[:800]}")
         try:
@@ -177,7 +216,8 @@ def run(limit: int | None = None, who: str = "sleep") -> dict:
 def line() -> str:
     with g.lock:
         n = g.db().execute("SELECT COUNT(*) FROM object WHERE data LIKE ?", ('%"search_q": {%',)).fetchone()[0]
-    return f"    Search questions per object (labels for the query adapter, 0.68.0): {n} objects asked"
+    return (f"    Search questions per object (labels for the query adapter, 0.68.0): {n} objects asked, target {TARGET_OBJECTS}, then new "
+            f"and changed only; budget {int(seconds_per_sleep())} s per sleep")
 
 
 def main(argv: list[str]) -> int:

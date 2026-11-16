@@ -223,7 +223,9 @@ vi-mcp never trains the language model. The only weights it learns decide **whic
   feature and can be inspected with `vi_model`. `vi_why` shows, for one hint, why it was shown: the stored decision and the weights that
   carried it. The router is taught through the labels (the scorer's verdicts, your feedback on a hint), never by writing weights; after
   each training it goes live only if its order of hints pays off on held-back data, and fixed rules check the weights and name what looks wrong (one feature dominating, a weight against the measured
-  usefulness, an unconfirmed hint from the network, time of day as a cause).
+  usefulness, an unconfirmed hint from the network, time of day as a cause). An AI may still shape it, without writing a number: with
+  `vi_feature_propose` it reads the weights and the router's worst situations and proposes feature rules ("Bash with a timeout error
+  and a hint about ssh"); the next sleep measures them on held-back data and keeps only what improves the router.
 - **The bandit** counts per hint how often an action succeeded after it was shown, compared with the base rate (Thompson sampling) — the
   fallback while the router has too little data.
 - **Meaning** comes from a pre-trained embedding model (bge-m3): vectors for semantic search and for linking similar knowledge. vi-mcp

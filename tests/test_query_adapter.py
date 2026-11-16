@@ -107,7 +107,7 @@ def test_search_questions_keep_only_short_round_trip_queries_and_feed_the_adapte
     monkeypatch.setattr(classify, "available", lambda: True)
     monkeypatch.setattr(reflection, "ask_fn", lambda s, u: _json.dumps({"queries": ["good query", "far query", "object 7",
                                                                                      " ".join(["w"] * 30)]}))
-    monkeypatch.setattr(sq, "pending", lambda limit: [o])
+    monkeypatch.setattr(sq, "pending", lambda limit, recent_only=False: [o])
     monkeypatch.setattr(sq, "PER_OBJECT", 4)
     try:
         r = sq.run(1, "test")

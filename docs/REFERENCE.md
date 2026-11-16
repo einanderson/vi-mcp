@@ -6,7 +6,7 @@ Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server co
 
 ## MCP tools
 
-64 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
+65 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
 
 ### `vi_before`
 
@@ -369,6 +369,16 @@ VI: fine-tune an AI with the knowledge of this VI. When the user says they want 
 | `index` | string |  | optional: one index (a project or special VI) |
 | `base_model` | string |  | optional: the model to fine-tune (Hugging Face id or directory) |
 | `directory` | string |  | record: the kit directory on the server |
+
+### `vi_feature_propose`
+
+VI: propose FEATURE RULES for the router that chooses hints — you read its weights, you never write a number. action card (default): the fitted weights (strongest ±) and the situations where the router errs most (training part only) plus the rule language; propose: up to 10 rules {name, situation_all: [kind:value or kind:prefix*], hint_any: [...], reason} — the next sleep measures them with a two-step offline gate (chosen inside training, tested once on the newest holdout, kept only if paired log loss is better by more than 2 SE); the fit then weighs a kept rule daily; list: your proposals with state (proposed, offline_rejected, active, retired) and measurement. Needs an own instance with a token.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | string (card, propose, list) |  | card (default), propose or list (German: `aktion`) |
+| `rules` | array of object |  | propose: the rules |
+| `reason` | string |  | propose: why these rules (one sentence; each rule may carry its own) (German: `grund`) |
 
 ### `vi_philosophy`
 
