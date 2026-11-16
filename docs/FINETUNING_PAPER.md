@@ -248,13 +248,16 @@ sampled by confusion frequency [44] and drops the type definitions in 20 % of th
 - **Small sets.** Most sets have 20–40 items; only differences of about 25 points are detectable at p < 0.05 unpaired. From run 15 on,
   160 more worlds; a set of ≥ 1,000 fresh worlds with pass@k is planned (§6).
 
-### 5.16 The duty trace worked; the value step is what is left
+### 5.16 The duty trace worked; the closed condition is what is left
 Run 20's duty trace fixed the duties it was built for (judge 34 → 39/40, tagged 16 → 20/20, duties exact = world exact on every set).
-Its three invented certainties have one shape: facts and count trace right, totals right ("support 0, opposition 1 (fam_c)"), the duty
-check even right ("tentative → may state s1 only as a hypothesis"), and then the final value contradicts it ("s1 is false"). The step
-from totals to value — two independent lines needed for true or false — is the only step the model still does without a written trace.
-Run 22 should add a **value line** per statement ("s1: support 0 of 2, opposition 1 of 2 → no firm value"), checked against the seed like
-the count and duty traces; the evidence for step-wise traces is the same as for the duty trace [9].
+Its three invented certainties have one shape: facts, count and totals right, and then a firm value and an acceptance for a statement
+whose view is **not closed**. In the seed a single line is enough for a value — `value(S, f) <= neg(S) & absent_pos(S)` — but
+`absent_pos(S) <= closed(S) & ~pos(S)`: without `closed(S)` only conflicting lines give a value (b), one-sided lines give none, and then
+no acceptance either. In all three worlds `closed(s1)` is missing, also in the model's own fact list; it gave f or t and an acceptance
+anyway. (A first reading of these cases, "two independent lines are needed for true or false", was wrong — that is the rule for
+*acceptance*, not for the value; corrected here and in the memory.) The step from totals to value is the only step the model still
+does without a written trace. Run 22 should add a **value line** per statement that names the closed condition ("s1: support 0,
+opposition 1, closed no → no value"), checked against the seed like the count and duty traces [9].
 
 ## 6 Open points
 
@@ -279,7 +282,7 @@ the count and duty traces; the evidence for step-wise traces is the same as for 
    trained yet; all runs here use 1.2.0 so they stay comparable.
 9. **Into the product**: the kit builder's variants (facts first, count trace, duty trace, numbered reading with unknown class, anchored
    recitation, hard language forms) are experiment scripts; `vi-mcp finetune kit --philosophy` does not write them yet.
-10. **Duties** (§5.14): done by run 20's duty trace (§5.16); its value step needs a value line (run 22); then GRPO v3 with a graded reward — F2 of the fact list (an omission costs more than an
+10. **Duties** (§5.14): done by run 20's duty trace (§5.16); its value step needs a value line naming the closed condition (run 22); then GRPO v3 with a graded reward — F2 of the fact list (an omission costs more than an
    extra fact) plus the verdict reward plus an exact-set bonus — because an exact-set or verdict-only reward leaves most groups without
    gradient at pass@8 = 9/40 [24, 49].
 
