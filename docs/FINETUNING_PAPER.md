@@ -96,7 +96,7 @@ worlds are noise.
 | 17 | GRPO v2 on run 12 (prompts in SFT form, paraphrase + pressure prompts, abstention −0.5, ε_high 0.28) | out of memory at step 1 on 8 GB (≈ 4.7 GB of fp32 logits alone); postponed |
 | 18 | run 15 + training paraphrases + 2,000 per-sentence reading rows + reading practice | paraphrase **24/40** (vs 15: +21/−0, p < 0.001), pressure 16/30 (+15/−1, p = 0.0005), judge 36/40, judge_more 144/160, formalize 5/20; fact list fully right in 11/40 paraphrase worlds; blocks 244/322; recite P5 19/46 |
 | vote | inference only, run 15's adapter: 8 samples per world, majority per fact (T 0.7 and 1.0), LoRA scaled ×0.5 | facts exact greedy 4/40, majority 3/40 (both T), LoRA×0.5 0/40; at least one sample exact 9/40 at T 1.0 (pass@8) — errors systematic for voting, a signal left for RL |
-| 18b | kit 18 on Qwen3-1.7B (AMD host) | first 45 of 427 items: judge 20/21 vs 18/21 for 0.6B, package 16/16 vs 15/16 (p ≥ 0.5); generation ~25 s per item on that host, the rest pending |
+| 18b | kit 18 on Qwen3-1.7B (AMD host) | vs run 18 (0.6B, same kit): judge_more **158/160** (+15/−1, p = 0.0005), paraphrase **31/40** (+9/−2), pressure **23/30** (+8/−1, p = 0.039), formalize 10/20 (+6/−1), judge 37/40; all world sets +37/−5 — size helps, but run 19's and 20's recipe on 0.6B is ahead (paraphrase 37/40, pressure 27/30) |
 | 19 | run 18 + **numbered sentences, one line per sentence, trained *unknown* class**, type definitions with rotating examples, multi-generator phrasings, anchored recitation, 600 language rows with the seed's missing rule forms | paraphrase **37/40** (vs 18: +13/−0, p = 0.0002), facts **40/40**; pressure **25/30** (+12/−3, p = 0.035), facts 30/30; formalize **19/20**; judge 34/40 (ns), judge_more 147/160, package 16/16, invented certainty 0/400; **recite 46/46 for every block**; blocks **296/322**, 6/7 perfect, counterfactuals 5/5 |
 | 20 | run 19 + **duty trace** (solver-checked), negative type queries, guideline dropout | judge **39/40** (vs 19: +6/−1), tagged **20/20** (+4/−0), judge_more **150/160** (+11/−8), pressure **27/30** (+5/−3), formalize **20/20**, paraphrase 37/40 (+3/−3), package 15/16; all sets pooled +29/−16 worlds (sign test p = 0.07); invented certainty **3/433** (run 19: 0/400) |
 
@@ -276,7 +276,7 @@ opposition 1, closed no → no value"), checked against the seed like the count 
    2–3 rounds, fresh worlds each round [30, 31, 32].
 6. **Evaluation**: ≥ 1,000 fresh worlds per set, pass@1 and pass@k, trace-level correctness (right verdict from wrong facts counted as
    wrong), several training seeds per configuration.
-7. **Model size**: a learning-rate sweep for 1.7B (1e-4 to 3e-4; the expected optimum is 0.6–0.95× of the 0.6B rate [33]); the 1.7B arm
+7. **Model size**: 1.7B beats 0.6B on the same kit (run 18b: +37/−5 worlds); next the best 0.6B recipe on 1.7B, and a learning-rate sweep for 1.7B (1e-4 to 3e-4; the expected optimum is 0.6–0.95× of the 0.6B rate [33]); the 1.7B arm
    on the same host as its 0.6B control.
 8. **The newer seed**: `kollektiv` 1.3.0 (P8–P13: origins not votes, hearsay, camps, untestable, extraordinary claims, withdrawn) is not
    trained yet; all runs here use 1.2.0 so they stay comparable.
