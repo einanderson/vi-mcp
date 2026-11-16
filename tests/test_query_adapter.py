@@ -118,3 +118,22 @@ def test_search_questions_keep_only_short_round_trip_queries_and_feed_the_adapte
     assert stored["rejected"] == {"own object not in the top 20": 1, "copies the first sentence": 1, "too long or empty": 1}
     assert any(e["source"] == "sq" and e["query"] == "good query" for e in qa.examples())
     assert "Search questions per object" in sq.line()
+
+
+def test_generated_training_queries_are_capped_and_the_vector_cache_pruned(gd, monkeypatch):
+    monkeypatch.setattr(qa, "MAX_TRAIN_QUERIES", 100)
+    monkeypatch.setattr(qa, "MIN_TRAIN_QUERIES", 50)
+    _world(True)
+    try:
+        train, test = qa.split(qa.examples())
+        assert sum(1 for e in train if e["source"] != "judged") == 100
+        with g.lock:  # a vector cached by an earlier gate that the next gate no longer uses
+            g.db().execute("CREATE TABLE IF NOT EXISTS query_vector (sha TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL, raw BLOB NOT NULL)")
+            g.db().execute("INSERT INTO query_vector VALUES ('stale', 'm1', 16, ?)", (np.zeros(16, dtype=np.float32).tobytes(),))
+            g.db().commit()
+        assert qa.gate()["train"] == 100
+        with g.lock:
+            n = g.db().execute("SELECT COUNT(*) FROM query_vector").fetchone()[0]
+        assert n == len({e["query"] for e in train + test})  # only what the gate used stays cached
+    finally:
+        vector.embed_fn = None

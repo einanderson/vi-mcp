@@ -104,6 +104,32 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
   legacy 10,000-step warm-up that kept the rate at ~0 for a few hundred steps (now 10 % of the steps; LoRA B moved 1e-9 → 1.5e-3), and
   the pooling not read under sentence-transformers 6. Not tested: the GGUF conversion of the adapter (`convert_lora_to_gguf.py`).
 
+### Migration (0.67 → 0.68, and back)
+
+Nothing is renamed or rewritten; every addition is opt-in by data and gated, so an upgrade changes no answer until a gate says so.
+- **New tables**, created on first use (SQLite and PostgreSQL, `CREATE TABLE IF NOT EXISTS`): `feature_rule`, `hint_prior_state`,
+  `query_adapter`, `query_vector`. Without a row the feature is off (feature rules none, prior off, adapter off = plain cosine).
+- **New data keys on objects**, written only by the new sleep steps and only on shared objects: `data.prior` (hint prior),
+  `data.search_q` (search questions), `data.judge` and `data.used`/`data.declared` on experiences (feedback labels). Objects without
+  them behave as before; the network export is a fixed list of fields (`p2p._export_form`) and carries none of them, so older peers
+  see nothing new.
+- **New sleep steps** `8j_hint_judge`, `8k_feature_writer`, `8l_hint_prior`, `8n_search_questions` (only with a classify model) and
+  `8m_query_adapter` (only with an embedding service). Load: `8n` one classify call per object (default 20 per sleep, ~5.6 s each
+  measured) and up to 3 embeddings per object; `8m` embeds only queries not cached yet.
+- **Growth is bounded**: at most 3,000 generated training queries per gate (stable hash), the query-vector cache is pruned to what the
+  gate uses and rejected search questions are never cached — without the cap, 3 questions for 25,000 objects would have been ~300 MB.
+- **New config keys** with defaults: `feedback_nudge_off` (0.2 — a fifth of conversations get no feedback request, the A/B test of
+  the request) and `classify.search_questions_per_sleep` (20). 0.67 ignores both (it reads keys one by one).
+- **Upgrade verified** on the production host (0.67.0 → 0.68.0, services active, no errors) and in a container installation
+  (0.64.1 → 0.68.0, the 0.65–0.67 migrations ran with their backups), 16.11.2026.
+- **Way back verified**: the 0.67.0 code opened a production copy that 0.68 had written (`query_adapter`, `query_vector`,
+  `data.search_q` on 150 objects), searched, loaded those objects and ran a full sleep without a step error (16.11.2026). A downgrade
+  needs no step; the extra tables and keys are ignored.
+- **Switching the embedding pooling later** (to-do 7) keeps the model name: run `vi-mcp query-adapter off` and empty `query_vector`
+  in the same step.
+- **Packages**: a locally built pre-release carries the Debian revision `0dev…`, which sorts before the release `0.68.0-1`, so the
+  release upgrades over it.
+
 ### What is missing (to do, proposals of 16.11.2026)
 
 1. **External AIs propose feature rules** (`vi_feature_propose`): Claude or Codex read the router's weights (`vi_model`) and its errors and

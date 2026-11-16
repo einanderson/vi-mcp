@@ -127,6 +127,16 @@ def check(o: g.MemoryObject, queries: list[str], qv: dict) -> tuple[list[str], d
     return kept, rejected
 
 
+def _drop_cached(texts: list[str], model: str) -> None:
+    from . import query_adapter
+    if not texts:
+        return
+    with g.lock:
+        for t in texts:
+            g.db().execute("DELETE FROM query_vector WHERE sha = ?", (query_adapter._sha(t, model),))
+        g.db().commit()
+
+
 def run(limit: int | None = None, who: str = "sleep") -> dict:
     from . import classify, qa_pairs, query_adapter, reflection, vector
     if not classify.available():
@@ -145,11 +155,13 @@ def run(limit: int | None = None, who: str = "sleep") -> dict:
             a = reflection._json_from(classify._ask_schema(SYSTEM, user, _schema(), "search_questions"))
             queries = [str(q) for q in (a.get("queries") or [])][:PER_OBJECT]
             # only queries that can pass the cheap checks are embedded (the embedding service is shared)
-            qv = query_adapter.query_vectors([" ".join(q.split()) for q in queries if 0 < len(q.split()) <= MAX_WORDS], model)
+            texts = [" ".join(q.split()) for q in queries if 0 < len(q.split()) <= MAX_WORDS]
+            qv = query_adapter.query_vectors(texts, model)
         except Exception:  # noqa: BLE001 — asked again next sleep
             out["failed"] += 1
             continue
         kept, rejected = check(o, queries, qv)
+        _drop_cached([t for t in texts if t not in kept], model)  # rejected queries never reach the adapter: no cached vector for them
         for k, v in rejected.items():
             out["rejected"][k] = out["rejected"].get(k, 0) + v
         rec = {"questions": kept, "rejected": rejected, "version": VERSION, "model": version_model, "prompt": prompt_sha256(),

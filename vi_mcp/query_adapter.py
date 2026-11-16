@@ -45,7 +45,10 @@ CANDIDATES = 50
 NEG_FROM, NEG_TO, NEG_PER_QUERY = 5, 50, 8
 MIN_TRAIN_QUERIES = 200
 MIN_TEST_QUERIES = 30
-MIN_JUDGED = 5  # with this many judged real searches in the test, the adapter must not make them worse
+MIN_JUDGED = 5
+#: at most this many generated training queries (qa, sq) per gate, chosen by a stable hash; judged searches always count. Bounds the
+#: table query_vector (4 KB per query at 1024 dimensions): every object with 3 search questions would be ~300 MB on a 25k-object memory
+MAX_TRAIN_QUERIES = 3000  # with this many judged real searches in the test, the adapter must not make them worse
 C_GRID = (0.01, 0.1, 1.0)
 EMBED_BATCH = 32
 SEED = 7
@@ -245,7 +248,23 @@ def split(ex: list[dict]) -> tuple[list[dict], list[dict]]:
     train = [e for e in ex if e["source"] in ("qa", "sq") and not any(_held_out(i) for i in e["positives"])] + judged[:cut]
     test = judged[cut:] + [e for e in ex if e["source"] in ("probe", "sq") and all(_held_out(i) for i in e["positives"])]
     test_q = {e["query"] for e in test}
-    return [e for e in train if e["query"] not in test_q], test
+    train = [e for e in train if e["query"] not in test_q]
+    gen = sorted([e for e in train if e["source"] != "judged"], key=lambda e: hashlib.sha256(e["query"].encode()).hexdigest())
+    return gen[:MAX_TRAIN_QUERIES] + [e for e in train if e["source"] == "judged"], test
+
+
+def prune_vectors(keep: list[str], model: str) -> int:
+    """Remove cached query vectors no longer used by the gate — the table stays bounded (MAX_TRAIN_QUERIES + the test)."""
+    _table()
+    want = {_sha(t, model) for t in keep}
+    with g.lock:
+        have = [r[0] for r in g.db().execute("SELECT sha FROM query_vector").fetchall()]
+        gone = [s for s in have if s not in want]
+        for i in range(0, len(gone), 500):
+            part = gone[i:i + 500]
+            g.db().execute(f"DELETE FROM query_vector WHERE sha IN ({','.join('?' * len(part))})", part)
+        g.db().commit()
+    return len(gone)
 
 
 def gate(ex: list[dict] | None = None) -> dict:
@@ -263,6 +282,7 @@ def gate(ex: list[dict] | None = None) -> dict:
         _set("off", model, dim, None, r)
         return {"state": "off", **r}
     qv = query_vectors([e["query"] for e in train + test], model)
+    prune_vectors([e["query"] for e in train + test], model)
     if any(len(v) != m.shape[1] for v in qv.values()):
         r = {"reason": "the embedding service returns another dimension than the stored vectors"}
         _set("off", model, dim, None, r)
