@@ -40,7 +40,8 @@ def test_a_hint_at_most_daily_max_times_a_day_per_instance(gd, monkeypatch):
     assert k.id in intuition.before("Bash", {"command": "uptime"}, "other-instance", False)["zugriff"]["shown"]  # per instance
 
 
-def test_feedback_in_one_call_and_the_nudge(gd):
+def test_feedback_in_one_call_and_the_nudge(gd, monkeypatch):
+    monkeypatch.setattr(intuition, "NUDGE_OFF", 0.0)  # 0.68.0: the request is A/B-tested per conversation; here always asked
     k = _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
     s = session.begin("a", "t")
     with session.on_behalf(s):

@@ -398,3 +398,57 @@ def error_hint_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict
             "ohne_wiederholung": no_retry, "schichten": used,
             "urteil": f"recovery shown − held back {d * 100:+.1f} ± {se * 100:.1f} points ({n_s} vs {n_h} failures, {used} strata, "
                       f"{no_retry} without a retry): {verdict}"}
+
+
+def nudge_effect(hours: float = 24 * 30, viewer: str | None = None) -> dict:
+    """0.68.0: the A/B test of the feedback request (intuition.nudge_arm, per conversation). Per arm: actions, conversations, shown hints,
+    hints with the agent's own feedback (vi_feedback or vi_after used) and successful actions. The arms are assigned per conversation,
+    so actions within one are not independent: the standard error is computed over conversations (each conversation one unit), not
+    over actions. Actions before the test (no vorher.nudge) are left out."""
+    import math
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    conv: dict[str, dict] = {}
+    for _, o, _g in g.recall("kind:experience (ok:yes OR ok:no)", limit=50000, viewer=viewer):
+        v = o.data.get("before") or {}
+        arm = v.get("nudge")
+        if o.ts < since or arm not in ("on", "off"):
+            continue
+        shown = list(v.get("shown") or [])
+        fb = set(o.data.get("feedback") or {}) | set((o.data.get("declared") or {}).get("used") or [])
+        c = conv.setdefault(o.conversation or o.id, {"arm": arm, "actions": 0, "ok": 0, "shown": 0, "feedback": 0})
+        c["actions"] += 1
+        c["ok"] += "ok:yes" in o.hashtags
+        c["shown"] += len(shown)
+        c["feedback"] += len(fb & set(shown))
+    out: dict = {}
+    for arm in ("on", "off"):
+        cs = [c for c in conv.values() if c["arm"] == arm]
+        rates = [(c["feedback"] / c["shown"], c["ok"] / c["actions"]) for c in cs if c["shown"]]
+        n = len(rates)
+
+        def mean_se(xs):
+            if not xs:
+                return None, None
+            m = sum(xs) / len(xs)
+            se = math.sqrt(sum((x - m) ** 2 for x in xs) / (len(xs) - 1) / len(xs)) if len(xs) > 1 else None
+            return m, se
+        fr, fr_se = mean_se([r[0] for r in rates])
+        sr, sr_se = mean_se([r[1] for r in rates])
+        out[arm] = {"conversations": n, "actions": sum(c["actions"] for c in cs), "shown": sum(c["shown"] for c in cs),
+                    "feedback": sum(c["feedback"] for c in cs), "feedback_rate": fr, "feedback_se": fr_se, "success": sr, "success_se": sr_se}
+    on, off = out["on"], out["off"]
+    if min(on["conversations"], off["conversations"]) < 20:
+        out["verdict"] = (f"too few conversations — asked {on['conversations']}, not asked {off['conversations']} (at least 20 each); "
+                          f"hints with feedback {on['feedback']}/{on['shown']} vs {off['feedback']}/{off['shown']}")
+        return out
+
+    def diff(a, b, sa, sb):
+        se = math.sqrt((sa or 0) ** 2 + (sb or 0) ** 2)
+        return a - b, se
+    d_fb, se_fb = diff(on["feedback_rate"], off["feedback_rate"], on["feedback_se"], off["feedback_se"])
+    d_ok, se_ok = diff(on["success"], off["success"], on["success_se"], off["success_se"])
+    out.update(feedback_diff=d_fb, feedback_diff_se=se_fb, success_diff=d_ok, success_diff_se=se_ok)
+    out["verdict"] = (f"asking − not asking: feedback {d_fb * 100:+.1f} ± {se_fb * 100:.1f} points of shown hints, success "
+                      f"{d_ok * 100:+.1f} ± {se_ok * 100:.1f} points ({on['conversations']} vs {off['conversations']} conversations, "
+                      "standard errors over conversations)")
+    return out

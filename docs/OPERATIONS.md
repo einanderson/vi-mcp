@@ -506,6 +506,11 @@ vi-mcp index import-code ~/Dev/code/vi-mcp --index vi-mcp --url https://<host>/v
   imported contents stay in quarantine until `vi_release`.
 - **Hold-back:** `"hold_back": 0.05` is the share of actions whose hints are held back at random to measure their total effect; `0` switches
   it off. The result is in `vi_stats` C and in the daily measurement P.
+- **Feedback request A/B (0.68.0):** `"feedback_nudge_off": 0.2` is the share of conversations in which the line asking for
+  `vi_feedback` under the hints is left out; `0` always asks. `vi_stats` C compares feedback per shown hint and success of both arms.
+- **Hint judge (0.68.0):** with an explicit classify model, sleep step 8j lets it judge whether shown hints were used
+  (`classify.hint_judge_per_sleep`, default 5 actions). By hand: `vi-mcp hint-judge run 10`; the result and its agreement with the
+  agents' own feedback: `vi-mcp hint-judge report` or `vi_stats` C.
 
 ## Changing the port
 

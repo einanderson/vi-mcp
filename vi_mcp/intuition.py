@@ -11,6 +11,7 @@ Limit: writing tools are never answered from memory.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -39,6 +40,17 @@ def state_dependent(tool: str) -> bool:
 TTL_MAX = 3600
 #: 0.61.0: share of actions with hints whose hints are held back at random (config hold_back; 0 = off)
 HOLD_BACK = 0.05
+#: 0.68.0: share of conversations in which the feedback request under the hints is left out (config feedback_nudge_off) — the A/B test
+#: of the request itself: does asking raise the feedback, and does it cost success? Assigned per conversation (a hash, stable within it).
+NUDGE_OFF = 0.2
+
+
+def nudge_arm(conversation: str | None) -> str | None:
+    """"on" / "off" for a conversation, None without one (not in the test). Deterministic: the same conversation always gets the same arm."""
+    if not conversation or NUDGE_OFF <= 0:
+        return None if not conversation else "on"
+    x = int(hashlib.sha256(f"nudge|{conversation}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+    return "off" if x < NUDGE_OFF else "on"
 HINT_BUDGET = 4
 #: 0.24.0: a hint is shown at most once per conversation within this many seconds
 REPEAT_S = 3600
@@ -399,8 +411,11 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
     if len(from_memory) > HINT_BUDGET:
         remaining += len(from_memory) - HINT_BUDGET
         from_memory = from_memory[:HINT_BUDGET]
+    nudge = None
     if shown_obj and any(not h.startswith("Learned search") for h in from_memory):  # 0.49.0: ask for feedback where it costs least
-        from_memory.append("Did one of these help or mislead you? vi_feedback(helped=[ids], wrong=[ids]) — one call, no reason needed")
+        nudge = nudge_arm(g.current_conversation.get())  # 0.68.0: the request itself is A/B-tested per conversation
+        if nudge != "off":
+            from_memory.append("Did one of these help or mislead you? vi_feedback(helped=[ids], wrong=[ids]) — one call, no reason needed")
     if remaining > 0 or only_on_request or repeated or unspecific or capped:
         addendum = f" (of which {len(only_on_request)} disputed or unconfirmed hypothesis, only on request)" if only_on_request else ""
         again = " · ".join(x for x in (f"{len(repeated)} already shown in this conversation within the last hour, not repeated" if repeated else "",
@@ -434,7 +449,7 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
                **({"idx": project_idx, "idx_priority": sum(1 for o in shown_obj if indexes.first(o, project_idx)),
                   "idx_priority_off": sum(1 for o in shown_obj if o.idx == project_idx and o.data.get("priority_off"))} if project_idx else {}),
                **({"code_datei": code_file} if code_file else {}),
-               "repeat_suppressed": [o.id for o in repeated]})
+               "repeat_suppressed": [o.id for o in repeated], **({"nudge": nudge} if nudge else {})})
     before_id = secrets.token_hex(8)
     if answer is not None:
         experience(tool, args, True, 0, None, answer, access, instance, is_read_only)

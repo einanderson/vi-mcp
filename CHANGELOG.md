@@ -40,6 +40,20 @@ migration path in mind ("denke immer an einen migrations pfad").
     disagreement is counted, calibration after 30 agreeing pairs gives the full weight, private hints not sent, no model → skipped,
     old data unchanged).
 
+- **The feedback request itself is A/B-tested.** The line "Did one of these help or mislead you? vi_feedback(…)" under the hints is
+  left out in a fixed share of conversations (config `feedback_nudge_off`, default 0.2, at most 0.5; assigned per conversation by a
+  hash, stable within it, recorded as `before.nudge`). `vi_stats` C compares the arms over 30 days: feedback per shown hint and success,
+  with standard errors over conversations (actions within one conversation are not independent). The literature gives no number for
+  how asking changes feedback or success (research 16.11.2026), so it is measured here.
+  - Migration: none. An old configuration without the key gets the default; actions before the test carry no `nudge` and are left
+    out of the comparison.
+  - Evidence: `tests/test_feedback_labels.py` (share and stability of the arms, the off arm hides the request and records the arm, the
+    comparison over conversations ignores actions before the test, config bounds).
+- **Already there and now named:** the position randomization the research recommended (Joachims et al., WSDM 2017) exists since
+  0.57.0/0.62.0 — one slot is filled at random with probability ε, the offer probability of every shown hint is logged
+  (`before.offer`) and the router weights by its inverse (IPS). A model grade of conversations exists since 0.55.0 (weight 0.3 until
+  calibrated).
+
 ## 0.67.0 — 2026-11-16
 
 ### What is new

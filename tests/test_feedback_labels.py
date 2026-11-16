@@ -145,3 +145,51 @@ def test_experiences_without_judge_are_labelled_as_before(gd):
     from vi_mcp import scorer
     d = {"before": {"shown": ["insight:h"]}}
     assert scorer.label(d, True, None, {}, hint="insight:h") == (1, scorer.WEIGHT["ok"], "ok")  # no "_judge" key, no data.judge
+
+
+# ── block 3: the A/B test of the feedback request itself (intuition.nudge_arm, metrics.nudge_effect) ──────────────────────────────
+
+def test_the_request_is_left_out_in_a_stable_share_of_conversations(gd, monkeypatch):
+    monkeypatch.setattr(intuition, "NUDGE_OFF", 0.2)
+    arms = [intuition.nudge_arm(f"20261116{i:03d}") for i in range(1000)]
+    assert 150 <= arms.count("off") <= 250 and arms.count("on") + arms.count("off") == 1000
+    assert intuition.nudge_arm("20261116007") == intuition.nudge_arm("20261116007")  # stable within a conversation
+    assert intuition.nudge_arm(None) is None
+    monkeypatch.setattr(intuition, "NUDGE_OFF", 0.0)
+    assert intuition.nudge_arm("x") == "on"  # 0 = always ask
+
+
+def test_off_arm_hides_the_request_and_records_the_arm(gd, monkeypatch):
+    _k("uptime on the build host lies after a suspend", ["tool:Bash", "topic:uptime"])
+    for arm in ("off", "on"):
+        monkeypatch.setattr(intuition, "nudge_arm", lambda c, a=arm: a)
+        s = session.begin("a", f"t-{arm}")
+        with session.on_behalf(s):
+            v = intuition.before("Bash", {"command": "uptime"}, "a", False)
+        asked = any("vi_feedback(helped=[ids], wrong=[ids])" in h for h in v["hinweise"])
+        assert asked == (arm == "on") and v["zugriff"]["nudge"] == arm
+
+
+def test_nudge_effect_compares_conversations_and_ignores_actions_before_the_test(gd):
+    from vi_mcp import metrics
+    for c in range(80):
+        arm = "off" if c % 4 == 0 else "on"
+        for a in range(3):
+            fb = {"insight:h": 1} if arm == "on" and a == 0 else {}
+            g.new_object("experience", f"x {c} {a}", ["tool:x", "ok:yes"], {"before": {"shown": ["insight:h"], "nudge": arm}, "feedback": fb},
+                         conversation=f"c{c}")
+    g.new_object("experience", "old", ["tool:x", "ok:no"], {"before": {"shown": ["insight:h"]}}, conversation="old")  # before the test
+    e = metrics.nudge_effect()
+    assert e["on"]["conversations"] == 60 and e["off"]["conversations"] == 20
+    assert abs(e["feedback_diff"] - 1 / 3) < 1e-9 and e["success_diff"] == 0 and "asking − not asking" in e["verdict"]
+
+
+def test_config_bounds_the_nudge_share(tmp_path, monkeypatch):
+    from vi_mcp import config
+    p = tmp_path / "config.json"
+    for raw, want in ((0.9, 0.5), (-1, 0.0), ("x", 0.2), (0.1, 0.1)):
+        p.write_text(json.dumps({"feedback_nudge_off": raw}))
+        monkeypatch.setenv("VI_MCP_CONFIG", str(p))
+        assert config.load().feedback_nudge_off == want
+    p.write_text("{}")
+    assert config.load().feedback_nudge_off == 0.2  # an old config without the key: the default

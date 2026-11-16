@@ -46,6 +46,7 @@ def _no_hold_back(monkeypatch):
     (tests/test_holdback.py) switch it on."""
     from vi_mcp import intuition
     monkeypatch.setattr(intuition, "HOLD_BACK", 0.0)
+    monkeypatch.setattr(intuition, "NUDGE_OFF", 0.0)  # 0.68.0: the A/B test of the feedback request depends on the conversation serial — tests set it
 
 
 @pytest.fixture(autouse=True)

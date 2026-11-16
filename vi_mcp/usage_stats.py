@@ -351,6 +351,8 @@ def report(days: float = 7) -> str:
     z.append("    " + index_transfer.stats_line())
     hb = metrics.holdback_effect(24 * max(days, 30))  # 0.61.0: the total effect needs weeks — always over at least 30 days
     z.append(f"    randomized (hints held back on a random {intuition.HOLD_BACK * 100:g} % of actions, 30 d): {hb['urteil']}")
+    z.append(f"    feedback request A/B (0.68.0; left out in {intuition.NUDGE_OFF * 100:g} % of conversations, 30 d): "
+             f"{metrics.nudge_effect(24 * max(days, 30))['verdict']}")
     z.append(f"    after an error (0.63.0; error hints held back on a random {intuition.HOLD_BACK * 100:g} %, recovery = next action with the "
              f"same tool succeeds, 30 d): {metrics.error_hint_effect(24 * max(days, 30))['urteil']}")
     from . import learning, weight_writer
