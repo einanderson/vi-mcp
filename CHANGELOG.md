@@ -5,6 +5,29 @@ Linked from [README.md](README.md).
 
 ## Unreleased
 
+### What is new: the feature writer — weight-space programming turned around
+
+The user (16.11.2026): bring weight-space programming in "so that the connected model only reads the weights". The LLM weight layer of
+0.58.0 let a language model write weight deltas; measured, it never helped (online +0.1 ± 0.7 points over 1,048 actions). Research
+(VI insight:8f363e8e…): where a language model helps a fitted model, it proposes FEATURES and the model weighs them (CAAFE 2305.03403:
+11 of 14 datasets better, AUC 0.798 → 0.822; OCTree 2406.08527).
+
+- **`vi_mcp/feature_writer.py`, sleep step `8k_feature_writer`, `vi-mcp feature-writer run|report`.** The classify model reads a card —
+  the fitted weights and the groups where the router errs most, from the training part only — and answers with up to 10 rules in a fixed
+  language (no code, no numbers): situation tag patterns, optionally "the hint carries one of these tags". Fixed rules check names, kinds
+  and patterns (never the label, never a hint id). A rule is SELECTED inside the training part (fit on its older 80 %, weight not ~0,
+  validation on its newest 20 % not worse) and TESTED once on the newest holdout (paired log loss, better by > 2 SE); the holdout never
+  chooses. A kept rule becomes feature `rule:<name>` of every later fit, which decides its weight. Every rule is a row of table
+  `feature_rule` with definition, reason, proposing model, state (proposed, offline_rejected, active, retired) and measurement.
+  - Measured on a production copy (16.11.2026, qwen27b): 8 rules proposed; selected and tested on the same holdout they looked strong
+    (−0.0051 ± 0.0004), with the separation above none survived (validation +0.0009). The first gate was wrong and was changed before
+    commit. With today's outcome labels the hint signal is weak (hint-pair AUC 0.52 in the same data); the existing embedding features
+    `naehe`/`content:` even worsen paired log loss (+0.0042 ± 0.0005, on new hints +0.0174 ± 0.0018). The hint labels above come first.
+  - Migration: none. Without rows the router is exactly as before.
+  - Evidence: `tests/test_feature_writer.py` (rule language and its rejections, matching, a rule carrying a synthetic interaction kept
+    and a useless one dropped, run with a fake model storing every rule and turning the kept one into a router feature, card numbers from
+    the training part only, no model → skipped).
+
 ### What is new: more labels on shown hints
 
 Measured on production (`vi_stats`, 7 days to 16.11.2026): 13,679 hints shown, explicit feedback for 374 (3 %), adopted 1 %, opened 0 %;

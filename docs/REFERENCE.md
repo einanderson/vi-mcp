@@ -1157,6 +1157,7 @@ First line of each module's docstring.
 | `doc_triggers` | Triggers for documentation (0.26.0): imported documentation gets host: and topic: hashtags so it can appear before matching actions. |
 | `embed_service` | Own embedding service (0.28.0) and reranker (0.60.0): `vi-mcp embed setup\|auto\|compare\|status\|remove` — vectors without a foreign stack. |
 | `evaluation` | Evaluation (0.55.0) — a fixed measuring instrument for the search, so every change to it is measured before it stays. |
+| `feature_writer` | The feature writer (0.68.0) — weight-space programming turned around: the language model READS the router's weights and its errors and |
 | `finetune` | Fine-tuning an AI with what a VI learned (0.62.0) — the VI knows how, and an AI on vi-mcp is told "I want to fine-tune". |
 | `forum` | 0.43.0: AIs talk in the network — questions and answers between servers, what vi_ask/vi_answer already do between the instances of |
 | `hint_judge` | Did the agent use the hint? A language model judges shown hints after the fact (0.68.0) — the label the agents rarely give. |

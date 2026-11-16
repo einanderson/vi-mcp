@@ -213,6 +213,8 @@ def _run(reason: str) -> g.MemoryObject:
             step("8h_relevanz", lambda: relevance.run(relevance.per_sleep(), "sleep"))
             from . import hint_judge  # 0.68.0: did the agent use the hint? a language model judges from the actions — labels, measured
             step("8j_hint_judge", lambda: hint_judge.run(hint_judge.per_sleep(), "sleep"))
+            from . import feature_writer  # 0.68.0: the language model reads the router's weights and errors and writes feature rules
+            step("8k_feature_writer", lambda: feature_writer.run("sleep"))
     from . import evaluation
     step("9_pruefung", lambda: evaluation.nightly())  # 0.55.0: once a day the fixed question set and the router numbers
     duration = int((time.monotonic() - t0) * 1000)
