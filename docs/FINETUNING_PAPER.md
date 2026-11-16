@@ -1,4 +1,4 @@
-# Teaching a 0.6B Model to Work by a Philosophical Seed: Eighteen Fine-Tuning Runs, Measured by a Solver
+# Teaching a 0.6B Model to Work by a Philosophical Seed: Nineteen Fine-Tuning Runs, Measured by a Solver
 
 *Working paper, vi-mcp project, 16.11.2026. Companion to [PAPER.md](PAPER.md) section 6 and the guide [FINETUNING.md](FINETUNING.md).
 Every number below was measured in this project unless it carries a reference; every reference was read for this work (the PDFs are kept
@@ -10,16 +10,21 @@ A philosophy package of vi-mcp states the principles of an AI collective only as
 `kollektiv` 1.2.0 with 7 blocks and about 35 rules over default negation, four-valued answers, acceptance levels and deontic duties. A
 memory server runs the seed with a solver. We asked whether a small model can carry the seed in its weights and work by it *without* a
 solver: judge situations described in English, resist pressure, translate the seed into prose and back, and recite it. We trained
-Qwen3-0.6B (and once Qwen3-1.7B) with LoRA in eighteen runs and scored every answer with the solver, never with a judge model.
+Qwen3-0.6B (and twice Qwen3-1.7B) with LoRA in nineteen runs and scored every answer with the solver, never with a judge model.
 
-Four results carry the paper. (1) **Output format decided more than any other factor**: a chain of thought that first lists the parsed
+Five results carry the paper. (1) **Output format decided more than any other factor**: a chain of thought that first lists the parsed
 facts raised exact verdicts on held-out worlds from 18/40 to 29/40 (paired sign test p = 0.013); enumerating every evidence line with the
 reason it counts or not raised them to 39/40, and to 154/160 on 160 further worlds, with no invented certainty. (2) **A model recites only
 what was a training target**: the seed was a target in 5 of 7,700 rows, and the model answered "Duties: none."; with 360 recitation rows
 it recited the seed exactly (46/46 worlds for the whole seed and for every block) while its prose explanations still followed
-counterfactual programs, i.e. stayed translation. (3) **Reading unseen phrasings is the remaining bottleneck**: the same model that solves
-39/40 worlds with training phrasings solves 3/40 with held-out phrasings, and the pressure test fails for the same reason; paraphrases in
-training (16/40, McNemar p = 0.012) and a larger model (16/40, p = 0.035) both help. (4) **GRPO sharpened, it did not teach**: +6/146 worlds (p = 0.15) with
+counterfactual programs, i.e. stayed translation. (3) **Reading unseen phrasings was the bottleneck, and its cause was omission**: the
+same model that solved 39/40 worlds with training phrasings solved 3/40 with held-out phrasings; most errors were sentences silently
+skipped, and voting over samples did not help (the errors were systematic). Numbering the sentences, one output line per sentence with a
+trained *unknown* class, type definitions and phrasings from several generator families (run 19) raised exact fact lists on held-out
+phrasings from 11/40 to 40/40, verdicts from 24/40 to 37/40 (p = 0.0002), pressure from 16/30 to 25/30 and formalization from 5/20 to
+19/20. (4) **The model explains what its language stage could express**: three prose errors that survived four runs came from rule forms
+the generator never produced (shuffled head variables, constants in heads, several heads on one body); adding them brought six of seven
+blocks to a perfect round trip (296/322 worlds, run 15: 259). (5) **GRPO sharpened, it did not teach**: +6/146 worlds (p = 0.15) with
 entropy near 0.02. The paper lists what is still open, and the measurement errors we made and corrected on the way.
 
 ## 1 Goal and targets
@@ -57,7 +62,7 @@ model on the RTX 3070, 46.4 s vs 43.6 s per 240 steps; bf16 has known problems o
 Sets: `judge_same` 40 worlds (training phrasings), `judge_paraphrase` 40 (held-out phrasings), `pressure_heldout` 30, `formalize_heldout`
 20, `package_worlds` 16, from run 15 `judge_more` 160, plus tagged copies; prose items: the whole seed, each block, five counterfactual
 programs; recitation. Verdicts are parsed and scored against the solver (`phil_score.py`), never judged by a model. No evaluation world
-occurs in training (checked by assertion since run 8; runs 5–7 had leaks, §5.11).
+occurs in training (checked by assertion since run 8; runs 5–7 had leaks, §5.15).
 
 **Round trip.** Prose is translated back into clingo-object *literally* — only what is written, nothing completed from knowledge of the
 seed — and the rebuilt rules are run on 46 worlds (16 package + 30 random) with the other blocks given; agreement = same answers, duties
@@ -89,22 +94,28 @@ worlds are noise.
 | 15 | as 12 + **enumerated count trace** + the seed as **recitation target** (code only) + long programs | judge **39/40**, judge_more **154/160**, package 16/16, invented certainty 0/213; **recite 46/46**; paraphrase 3/40, pressure 2/30, formalize 1/20; blocks 259/322, whole seed 8/46 |
 | 16 | kit 12 unchanged, **Qwen3-1.7B** (AMD host) | paraphrase 16/40 (vs 7/40, +12/−3, McNemar p = 0.035), judge 25/40, pressure 12/30, formalize 4/20 |
 | 17 | GRPO v2 on run 12 (prompts in SFT form, paraphrase + pressure prompts, abstention −0.5, ε_high 0.28) | out of memory at step 1 on 8 GB (≈ 4.7 GB of fp32 logits alone); postponed |
-| 18 / 18b | run 15 + training paraphrases + 2,000 per-sentence reading rows + reading practice; 0.6B and 1.7B | running at the time of writing |
+| 18 | run 15 + training paraphrases + 2,000 per-sentence reading rows + reading practice | paraphrase **24/40** (vs 15: +21/−0, p < 0.001), pressure 16/30 (+15/−1, p = 0.0005), judge 36/40, judge_more 144/160, formalize 5/20; fact list fully right in 11/40 paraphrase worlds; blocks 244/322; recite P5 19/46 |
+| vote | inference only, run 15's adapter: 8 samples per world, majority per fact (T 0.7 and 1.0), LoRA scaled ×0.5 | facts exact greedy 4/40, majority 3/40 (both T), LoRA×0.5 0/40; at least one sample exact 9/40 at T 1.0 (pass@8) — errors systematic for voting, a signal left for RL |
+| 18b | kit 18 on Qwen3-1.7B (AMD host) | running at the time of writing |
+| 19 | run 18 + **numbered sentences, one line per sentence, trained *unknown* class**, type definitions with rotating examples, multi-generator phrasings, anchored recitation, 600 language rows with the seed's missing rule forms | paraphrase **37/40** (vs 18: +13/−0, p = 0.0002), facts **40/40**; pressure **25/30** (+12/−3, p = 0.035), facts 30/30; formalize **19/20**; judge 34/40 (ns), judge_more 147/160, package 16/16, invented certainty 0/400; **recite 46/46 for every block**; blocks **296/322**, 6/7 perfect, counterfactuals 5/5 |
+| 20 | run 19 + **duty trace** (solver-checked), negative type queries, guideline dropout | queued at the time of writing |
 
-## 4 Status against the targets (run 15, the best run)
+## 4 Status against the targets (run 19, the best run)
 
-| target | run 15 | met |
-|---|---|---|
-| judge, training phrasings | 39/40 = 97.5 %; 154/160 = 96 % on 160 more worlds; invented certainty 0 | yes |
-| recitation | 46/46 whole seed and each block, with phrasings never seen in training | yes |
-| seed in prose, round trip ≥ control | 259/322 = 80 % ≥ 74 % (the control was measured before the correction of §5.11 and must be re-measured) | provisionally |
-| counterfactual programs followed | 3 of 5 programs exactly (46/46), one off by a misnamed predicate, one garbled | mostly |
-| judge, held-out phrasings | 3/40 | **no** |
-| pressure | 2/30 | **no** |
-| formalize held-out sentences | 1/20 | **no** |
-| language | 30/30 (run 10, 13); not re-measured for run 15 | — |
+| target | run 15 | run 19 | met (run 19) |
+|---|---|---|---|
+| judge, training phrasings | 39/40; 154/160 | 34/40 = 85 %; 147/160 = 92 %; invented certainty 0/400 | yes |
+| judge, held-out phrasings | 3/40 | 37/40 = 92.5 % | yes |
+| pressure | 2/30 | 25/30 = 83 % | yes |
+| formalize held-out sentences | 1/20 | 19/20 = 95 % | yes |
+| recitation | 46/46 whole seed and each block | 46/46 whole seed and each block | yes |
+| seed in prose, round trip ≥ control | 259/322 = 80 % | 296/322 = 92 % ≥ 74 % (control to be re-measured, §5.15) | provisionally |
+| every explain item perfect (8: whole seed + 7 blocks) | 4/8 | 6/8 (P6 one rule wrong; whole seed 17/46) | **no** |
+| counterfactual programs followed | 3 of 5 | 5 of 5 (46/46 each) | yes |
+| language | 30/30 (runs 10, 13) | not re-measured | — |
 
-The three failed targets fail at the same place (§5.9).
+Run 19 meets every target but the perfect prose of every item and the re-measured language set. It is one training seed; the effects
+that carry it (+13/−0, +29/−0 on facts) are far above the seed variance of §7, the small differences (judge 36 → 34/40) are not.
 
 ## 5 Findings
 
@@ -159,7 +170,7 @@ gradient. Knowledge that is never a target is not extractable [2], and a mapping
 explaining the seed remains a translation test. Result: 46/46 for the whole seed and for every block, with phrasings never seen; the
 explanations still followed counterfactual programs (P2, P3, P5 46/46). Recitation did not turn explanation into recall.
 
-### 5.9 Reading is the bottleneck
+### 5.9 Reading was the bottleneck
 Run 15 solves 39/40 worlds with training phrasings and 3/40 with held-out phrasings. Its pressure answers keep the verdict structure
 ("My philosophy decides this …"), but misread sentences such as "Someone confirmed that url_b really contains what is said about s1"
 (`verified`): the pressure set uses held-out phrasings too, so pressure and paraphrase fail at the same step. A world is exact only if
@@ -169,7 +180,7 @@ Fisher p = 0.003) and model size (run 16: 16/40 vs 7/40, +12/−3, McNemar p = 0
 literature: paraphrases in training lifted RuleTaker from 66.6 % to 98.8 % on reworded rules [17]; a semantic parser's paraphrase gap
 shrinks from 1B to 3B and then plateaus [18], and larger pretrained parsers are more robust [19]. More of the same paraphrases does not
 help; diversity of *method* does — several operation types [20], several generators with one held out [21], syntactic reordering
-(Kendall τ) rather than lexical change [22], a meaning filter rather than a similarity threshold [23, 20].
+(Kendall τ) rather than lexical change [22], a meaning filter rather than a similarity threshold [23, 20]. Run 19 found the cause — omission — and removed it (§5.11).
 
 ### 5.10 GRPO sharpened
 GRPO on run 10's adapter (run 14) raised the mean reward from 0.23 to a plateau of 0.34–0.43, with entropy at 0.02 and the share of
@@ -181,7 +192,50 @@ answer "I cannot formalize this situation" earned 0.0 on every prompt, a safe ha
 collapse of [26]); and the generation budget (486 tokens) would cut a facts-first answer. GRPO v2 (run 17) fixes all three and ran out of
 memory on the 8 GB card.
 
-### 5.11 What the measurement got wrong
+### 5.11 Reading was omission, and alignment fixed it
+Run 18 added training paraphrases and per-sentence reading and lifted paraphrase verdicts from 3/40 to 24/40 — but the fact list was fully
+right in only 11/40 worlds. The dominant error was **omission**: a sentence that matched no known phrasing produced no fact (peer_offers
+missed 61 times, foreign 23, verified 21, author 20 in 1,124 gold facts), not a wrong fact (38) and never a syntax error (0). Sampling
+did not help: per fact, the union of eight samples covered 93–95 % against 86 % greedy, but the per-fact majority was no better than greedy
+(4 vs 3/40 worlds exact) — the errors are systematic, which is what self-consistency cannot fix [37]. A grammar would not have helped
+either: format, arity and vocabulary errors were 0, constants absent from the sentence 10 of 184 errors (≈ 5 %, the upper bound of
+grammar-constrained decoding, whose gains are large for untrained and small for fine-tuned models [38, 39, 40]).
+
+Run 19 made omission impossible to do silently. The harness numbers the sentences ("[1] … [N]") and the answer writes one line per
+sentence, either a fact or "unknown" (sentence-aligned output as in GNER [41] and TANL [42]; coverage as in NMT [43]); about 12 % of the
+training sentences are filler labelled *unknown*, so "none of the types" is a trained class (negative instances, UniversalNER [44]); the
+eight fact types are defined in the instructions with two rotating example phrasings each (annotation guidelines, GoLLIE [45]); and the
+phrasings come from two generator families plus run 10's set, filtered by read-back through a model of another family. Exact fact lists on
+held-out phrasings went from 11/40 to 40/40 (+29/−0, p = 4·10⁻⁹), under pressure from 7/30 to 30/30, formalization from 5/20 to 19/20;
+verdicts followed (paraphrase 37/40, pressure 25/30). Which of the four changes did the work is not separated (one run); the omission
+counts point to the alignment and the unknown class (hypothesis).
+
+### 5.12 The language stage decides which seed forms can be explained
+Runs 15 and 18 lost the same three rules in prose: P1 came back as "Count holds…", P4 lost the constant in `grund(S, snapshot, closed)`,
+P6 dropped the second rule on `acceptance(S, tentative)`, and P7 turned `unverified(R, S)` into "unverified holds for S and S". The
+generator of the language stage drew every head as the first letters in order (S, P, O), never put a constant into a head and never wrote
+two rules on one body — exactly the forms the seed uses there. Run 19 added 600 language rows with shuffled head variables, constants in
+heads and two or three heads per shared body (the seed's rules excluded by normal form). P1, P4 and P7 became exact (46/46 each), six of
+seven blocks are perfect, and the round trip rose from 244 to 296 of 322 worlds; every counterfactual program was followed. The remaining
+error (P6: "if acceptance is unresolved, one must report S") again mixes a head with a neighbouring body.
+
+### 5.13 Order and anchors for recitation
+Half of run 15's recitation targets shuffled the rules inside a block (permutation augmentation helps *extraction* of knowledge [2]); run 18
+recited block P5 with a rule missing and one invented (19/46). Run 19 recited every block in the canonical order with an anchor before each
+rule ("P5.1: …"; index labels let a model look items up by label [46]) and gave block rows about 70 % more exposures (under about 100
+exposures counts as under-trained [47]): all eleven recitation items 46/46.
+
+### 5.14 Duties are what is left
+With the facts right, run 19's remaining wrong worlds are duties, not values: obligatory(ask) missing 11 times and spurious 6 times — it
+needs a conjunction, value n *and* peer_offers — and verify/cite attached to the wrong statement 9 times; values and acceptance were wrong
+once. Counting had the same shape before the count trace (§5.7). Run 20 adds a **duty trace** between the count and the verdict: statement
+by statement, rules in a fixed order, one short line per condition and duty, and for the two conjunctive rules also the near misses ("value
+t, peer offers yes → not met, no ask"); every duty it names is checked against the seed's own atoms (600 of 600 random worlds agree).
+Step-wise proofs generalize to unseen depth where all-at-once proofs do not (89 % vs 14 % [9]); whether "not met" lines stop a duty from
+firing on one conjunct is a hypothesis this run tests. It also adds negative type queries ("which sentences state peer_offers?" → none)
+sampled by confusion frequency [44] and drops the type definitions in 20 % of the rows [45].
+
+### 5.15 What the measurement got wrong
 - **Evaluation worlds in training.** Runs 5–7 trained on 73 resp. 12 rows that shared a world with their evaluation; run 5 re-scored on
   clean worlds is 20/38, not 22/40. The kit builder asserts zero overlap since run 8, and the product kit drops such rows.
 - **The round trip did not see a lost reason.** The verdict compared answers and duties but not whether a `never(...)` rule fires: a
@@ -194,15 +248,15 @@ memory on the 8 GB card.
 
 ## 6 Open points
 
-1. **Reading unseen phrasings** (paraphrase 3/40, pressure 2/30, formalize 1/20 in run 15). Runs 18 (0.6B) and 18b (1.7B) add training
-   paraphrases and 2,000 per-sentence reading rows. Next: a paraphrase set from three generator families with seven operation types,
-   taboo words and forced openings, filtered by read-back through a model of *another* family, with one generator and 50–100
-   human-written sentences held out for the test; per-sentence accuracy per generator × operation cell as the main measure.
+1. **Reading unseen phrasings** — solved for this seed's test phrasings by run 19 (§5.11). Still open: the held-out phrasings come from
+   one generator; a set written by a third generator family (generated, not yet used) and 50–100 human-written sentences must confirm
+   it, together with the minimal-pair set (30 sentences whose type flips with one cue word) that run 19 and 20 are measured on.
 2. **Pressure** must be measured separately from reading: a pressure set with *training* phrasings is needed, so the two failures can
    be told apart. Training follows the filtered multi-challenger recipe (only worlds the model already solves; hold vs. update on a real
    new fact) [27, 28].
-3. **The whole seed in prose** (2–8/46): generate block by block from an outline (the block mode reaches 281/322) instead of in one pass;
-   a misnamed predicate ("Count holds…" for `counts`) costs a whole block.
+3. **The whole seed in prose** (17/46 in run 19): generate block by block and concatenate at inference — length generalization is bounded
+   by the lengths seen in training, and decomposition into parts is the measured remedy [48]; P6's head/body confusion needs more rows
+   with several rules on neighbouring bodies.
 4. **GRPO done properly**: on the AMD host (memory), eight samples, LoRA learning rate about 5e-5, only prompts the model solves sometimes
    (dynamic sampling), checkpoints evaluated every 50 steps, pass@k of the SFT model measured first as the ceiling [24, 25, 29].
 5. **Error-targeted self-training** before more RL: solver traces for the worlds the model gets wrong, plus trace-verified own samples,
@@ -213,8 +267,11 @@ memory on the 8 GB card.
    on the same host as its 0.6B control.
 8. **The newer seed**: `kollektiv` 1.3.0 (P8–P13: origins not votes, hearsay, camps, untestable, extraordinary claims, withdrawn) is not
    trained yet; all runs here use 1.2.0 so they stay comparable.
-9. **Into the product**: the kit builder's variants (facts first, count trace, recitation rows, per-sentence reading) are experiment
-   scripts; `vi-mcp finetune kit --philosophy` does not write them yet.
+9. **Into the product**: the kit builder's variants (facts first, count trace, duty trace, numbered reading with unknown class, anchored
+   recitation, hard language forms) are experiment scripts; `vi-mcp finetune kit --philosophy` does not write them yet.
+10. **Duties** (§5.14): run 20's duty trace; then GRPO v3 with a graded reward — F2 of the fact list (an omission costs more than an
+   extra fact) plus the verdict reward plus an exact-set bonus — because an exact-set or verdict-only reward leaves most groups without
+   gradient at pass@8 = 9/40 [24, 49].
 
 ## 7 Threats to validity
 
@@ -268,3 +325,16 @@ and are cited as direction, not as prediction.
 34. Bui, Savova, Wang. Assessing the Macro and Micro Effects of Random Seeds on Fine-Tuning Large Language Models (IJCNLP 2025). https://arxiv.org/abs/2503.07329
 35. Bouthillier et al. Accounting for Variance in Machine Learning Benchmarks (2021). https://arxiv.org/abs/2103.03098
 36. Dodge et al. Fine-Tuning Pretrained Language Models: Weight Initializations, Data Orders, and Early Stopping (2020). https://arxiv.org/abs/2002.06305
+37. Wang et al. Self-Consistency Improves Chain of Thought Reasoning in Language Models (2022). https://arxiv.org/abs/2203.11171
+38. Geng, Josifoski, Peyrard, West. Grammar-Constrained Decoding for Structured NLP Tasks without Finetuning (EMNLP 2023). https://arxiv.org/abs/2305.13971
+39. Shin et al. Constrained Language Models Yield Few-Shot Semantic Parsers (2021). https://arxiv.org/abs/2104.08768
+40. Scholak, Schucher, Bahdanau. PICARD (EMNLP 2021). https://arxiv.org/abs/2109.05093
+41. Ding et al. Rethinking Negative Instances for Generative Named Entity Recognition (GNER, 2024). https://arxiv.org/abs/2402.16602
+42. Paolini et al. Structured Prediction as Translation between Augmented Natural Languages (TANL, 2021). https://arxiv.org/abs/2101.05779
+43. Tu et al. Modeling Coverage for Neural Machine Translation (2016). https://arxiv.org/abs/1601.04811
+44. Zhou et al. UniversalNER (2023). https://arxiv.org/abs/2308.03279
+45. Sainz et al. GoLLIE: Annotation Guidelines improve Zero-Shot Information-Extraction (2023). https://arxiv.org/abs/2310.03668
+46. Zhou et al. What Algorithms can Transformers Learn? (RASP-L, index hints, 2023). https://arxiv.org/abs/2310.16028
+47. Allen-Zhu, Li. Physics of Language Models, Part 3.3: Knowledge Capacity Scaling Laws (2024). https://arxiv.org/abs/2404.05405
+48. Bai et al. LongWriter (2024). https://arxiv.org/abs/2408.07055
+49. Liu et al. ProUIE (2026). https://arxiv.org/abs/2604.10633
