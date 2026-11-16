@@ -19,7 +19,7 @@ what was a training target**: the seed was a target in 5 of 7,700 rows, and the 
 it recited the seed exactly (46/46 worlds for the whole seed and for every block) while its prose explanations still followed
 counterfactual programs, i.e. stayed translation. (3) **Reading unseen phrasings is the remaining bottleneck**: the same model that solves
 39/40 worlds with training phrasings solves 3/40 with held-out phrasings, and the pressure test fails for the same reason; paraphrases in
-training (16/40) and a larger model (16/40, p = 0.047) both help. (4) **GRPO sharpened, it did not teach**: +6/146 worlds (p = 0.15) with
+training (16/40, McNemar p = 0.012) and a larger model (16/40, p = 0.035) both help. (4) **GRPO sharpened, it did not teach**: +6/146 worlds (p = 0.15) with
 entropy near 0.02. The paper lists what is still open, and the measurement errors we made and corrected on the way.
 
 ## 1 Goal and targets
@@ -87,7 +87,7 @@ worlds are noise.
 | 13 | as 10 + a flat solver trace (all derived atoms) | judge 26/40, **paraphrase 16/40** (vs run 12: +10/−1), package 15/16 |
 | 14 | GRPO on run 10 (G = 4, lr 5e-6, 240 steps) | +6/146 verdict worlds (+9/−3, p = 0.15); entropy ≈ 0.02 |
 | 15 | as 12 + **enumerated count trace** + the seed as **recitation target** (code only) + long programs | judge **39/40**, judge_more **154/160**, package 16/16, invented certainty 0/213; **recite 46/46**; paraphrase 3/40, pressure 2/30, formalize 1/20; blocks 259/322, whole seed 8/46 |
-| 16 | kit 12 unchanged, **Qwen3-1.7B** (AMD host) | paraphrase 16/40 (vs 7/40, Fisher p = 0.047), judge 25/40, pressure 12/30, formalize 4/20 |
+| 16 | kit 12 unchanged, **Qwen3-1.7B** (AMD host) | paraphrase 16/40 (vs 7/40, +12/−3, McNemar p = 0.035), judge 25/40, pressure 12/30, formalize 4/20 |
 | 17 | GRPO v2 on run 12 (prompts in SFT form, paraphrase + pressure prompts, abstention −0.5, ε_high 0.28) | out of memory at step 1 on 8 GB (≈ 4.7 GB of fp32 logits alone); postponed |
 | 18 / 18b | run 15 + training paraphrases + 2,000 per-sentence reading rows + reading practice; 0.6B and 1.7B | running at the time of writing |
 
@@ -145,7 +145,7 @@ to 91–93 % on negation-as-failure programs [7]; per-premise formalization rais
 Accuracy fell with the number of evidence lines (1 line 15/17, 3 lines 14/22 in run 8): a counting error. Run 15 lists every evidence
 line on its own row with the reason it counts ("excluded, w is the author of s3"; "not counted, not verified"), then the distinct origins
 per side, then the verdict; the trace is generated from the seed's own `counts` atoms and checked against them, so it states no second
-semantics. Exact verdicts: 39/40, and 154/160 on 160 fresh worlds. The literature points the same way: one inference step at a time
+semantics. Exact verdicts: 39/40 (vs run 12 on the same worlds +11/−1, McNemar p = 0.006), and 154/160 on 160 fresh worlds. The literature points the same way: one inference step at a time
 generalizes where all-at-once does not (ProofWriter: 93.9 % vs 44.6 % at unseen depth [9]; selection–inference [10]); counting works when
 items are separated (96.8 % vs 45.7 % [11]); detailed scratchpads make small transformers learn arithmetic from 1k examples [12, 13]. A flat
 list of all derived atoms (run 13) did less for verdicts (26/40) than the enumerated count.
@@ -165,7 +165,7 @@ Run 15 solves 39/40 worlds with training phrasings and 3/40 with held-out phrasi
 (`verified`): the pressure set uses held-out phrasings too, so pressure and paraphrase fail at the same step. A world is exact only if
 every sentence is read right: with about 12 sentences, 3/40 corresponds to about 0.81 per sentence and 30/40 needs about 0.976 (estimate,
 independent errors). Two levers worked: verified LLM paraphrases in training (run 13: 16/40; run 10 vs run 9: formalize 0 → 8/20,
-Fisher p = 0.003) and model size (run 16: 16/40 vs 7/40, p = 0.047, with in-distribution 25 vs 29/40, p = 0.47). Both agree with the
+Fisher p = 0.003) and model size (run 16: 16/40 vs 7/40, +12/−3, McNemar p = 0.035; in-distribution 25 vs 29/40, within noise). Both agree with the
 literature: paraphrases in training lifted RuleTaker from 66.6 % to 98.8 % on reworded rules [17]; a semantic parser's paraphrase gap
 shrinks from 1B to 3B and then plateaus [18], and larger pretrained parsers are more robust [19]. More of the same paraphrases does not
 help; diversity of *method* does — several operation types [20], several generators with one held out [21], syntactic reordering
@@ -218,6 +218,13 @@ memory on the 8 GB card.
 
 ## 7 Threats to validity
 
+**One training seed per configuration.** All comparisons are paired over items of a single run per arm; the systematic shift of a
+whole run from the training seed is not in the p-values. LoRA fine-tuning shows seed standard deviations of about 0.1–5 points on
+classification tasks [34, 35] (BERT full fine-tuning up to 6–7 points [36]); no study reports it for a sub-1B decoder with exact match
+on generated output, so 1–5 points is an estimate. With one seed per arm, the paired effects of +25 points (run 15 vs 12) and +22.5
+points (runs 13 and 16 vs 12) stay significant up to a seed SD of about 3–5 points (estimate, normal approximation). Comparisons from now
+on use three seeds per arm and at least 160 items per set; at 3 seeds × 160 items only effects of about 11–16 points are detectable.
+
 One seed (`kollektiv` 1.2.0) and one model family; one training seed per configuration; the round trip of runs 8–15 was done by the author,
 who knows the seed (mitigated by counterfactual programs and literal translation rules, not removed); runs 12 and 16 ran on different
 hosts (both fp32); the held-out phrasings were written by one generator. Literature effect sizes come from other tasks and larger models
@@ -258,3 +265,6 @@ and are cited as direction, not as prediction.
 31. Ma et al. Learning What Reinforcement Learning Can't: Interleaved Online Fine-Tuning for Hardest Questions (ReLIFT, ICLR 2026). https://arxiv.org/abs/2506.07527
 32. Lee et al. LLM2LLM (2024). https://arxiv.org/abs/2403.15042
 33. Thinking Machines Lab. LoRA Without Regret (2025). https://thinkingmachines.ai/blog/lora/ ; exponents in tinker-cookbook `hyperparam_utils.py`
+34. Bui, Savova, Wang. Assessing the Macro and Micro Effects of Random Seeds on Fine-Tuning Large Language Models (IJCNLP 2025). https://arxiv.org/abs/2503.07329
+35. Bouthillier et al. Accounting for Variance in Machine Learning Benchmarks (2021). https://arxiv.org/abs/2103.03098
+36. Dodge et al. Fine-Tuning Pretrained Language Models: Weight Initializations, Data Orders, and Early Stopping (2020). https://arxiv.org/abs/2002.06305
