@@ -99,6 +99,9 @@ worlds are noise.
 | 18b | kit 18 on Qwen3-1.7B (AMD host) | vs run 18 (0.6B, same kit): judge_more **158/160** (+15/−1, p = 0.0005), paraphrase **31/40** (+9/−2), pressure **23/30** (+8/−1, p = 0.039), formalize 10/20 (+6/−1), judge 37/40; all world sets +37/−5 — size helps, but run 19's and 20's recipe on 0.6B is ahead (paraphrase 37/40, pressure 27/30) |
 | 19 | run 18 + **numbered sentences, one line per sentence, trained *unknown* class**, type definitions with rotating examples, multi-generator phrasings, anchored recitation, 600 language rows with the seed's missing rule forms | paraphrase **37/40** (vs 18: +13/−0, p = 0.0002), facts **40/40**; pressure **25/30** (+12/−3, p = 0.035), facts 30/30; formalize **19/20**; judge 34/40 (ns), judge_more 147/160, package 16/16, invented certainty 0/400; **recite 46/46 for every block**; blocks **296/322**, 6/7 perfect, counterfactuals 5/5 |
 | 20 | run 19 + **duty trace** (solver-checked), negative type queries, guideline dropout | judge **39/40** (vs 19: +6/−1), tagged **20/20** (+4/−0), judge_more **150/160** (+11/−8), pressure **27/30** (+5/−3), formalize **20/20**, paraphrase 37/40 (+3/−3), package 15/16; all sets pooled +29/−16 worlds (sign test p = 0.07); invented certainty **3/433** (run 19: 0/400) |
+| 21 | run 20 + standalone near-topic negatives (codex) + two-fact sentences | stopped after stage A start: replaced by 21b after the minimal pairs of run 20 and the negation research (contrast pairs instead of standalone negations) |
+| 22 | run 20 + **value check** (support, opposition, closed → value; solver-checked) | paraphrase **40/40** (+3/−0), judge **40/40**, judge_more **157/160** (+10/−3), package 16/16, pressure 28/30 (+3/−2), formalize 20/20; pooled **+18/−5** worlds (p = 0.011); invented certainty **1/433**; the 3 judge_more errors are duties in the largest worlds (18–19 sentences) |
+| 21b, 23, 20b | contrast twins (codex, five forms) / 21b + value check / kit 20 on Qwen3-1.7B | running at the time of writing |
 
 ## 4 Status against the targets (runs 19 and 20)
 
@@ -258,6 +261,13 @@ anyway. (A first reading of these cases, "two independent lines are needed for t
 *acceptance*, not for the value; corrected here and in the memory.) The step from totals to value is the only step the model still
 does without a written trace. Run 22 should add a **value line** per statement that names the closed condition ("s1: support 0,
 opposition 1, closed no → no value"), checked against the seed like the count and duty traces [9].
+
+### 5.17 The value line closed it
+Run 22 adds one line per statement after the totals — support yes/no, opposition yes/no, closed yes/no → the value or "no value",
+and the acceptance with its reason — checked against the seed's atoms (600 of 600 random worlds agree). On the same worlds as run 20 it
+removes the closed-condition errors (invented certainty 3 → 1 of 433) and lifts every verdict set (pooled +18/−5 worlds, p = 0.011;
+paraphrase 40/40). The errors left are duties in the largest worlds (18–19 sentences, answers of 2,200–2,900 characters), where small
+models are known to learn long traces worst [arXiv 2502.12143]; mixing full traces with shorter ones is the measured remedy there.
 
 ## 6 Open points
 
