@@ -1,4 +1,4 @@
-"""Provenance adapter: the evidence about a knowledge object as input facts of kollektiv 1.3.0 — shadow mode only (Unreleased).
+"""Provenance adapter: the evidence about a knowledge object as input facts of kollektiv 1.3.0 — shadow mode only (0.67.0).
 
 kollektiv 1.3.0 (P8–P12) asks where a statement's support comes from: copies (derives_from), model-made origins (machine_made), the
 weight of each origin (evidence_kind), camps (camp), testability and extraordinary claims. This module turns what the memory STORES

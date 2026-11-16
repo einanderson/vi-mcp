@@ -1,4 +1,4 @@
-"""Structure facts of code (Unreleased): what a Python file defines, calls, imports, writes, raises — read by clingo-object rules.
+"""Structure facts of code (0.66.0): what a Python file defines, calls, imports, writes, raises — read by clingo-object rules.
 
 The user (15.11.2026): code text stays text (code_import's pieces); from the same `ast` pass the importer also derives the structure,
 so rules can answer "which functions write table objekt", "what calls memory.save", "is there an import cycle" exactly, where a text

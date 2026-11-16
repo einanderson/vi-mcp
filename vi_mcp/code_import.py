@@ -9,7 +9,7 @@ sends the pieces over MCP (vi_code_sync), so the server never needs the reposito
   imports); other text in blocks of at most BLOCK_LINES lines cut at blank lines; a small file (< WHOLE_LINES) stays whole.
 - Incremental: the server knows the blob SHA of every file it holds for (index, repo); only changed files and the list of removed ones
   are sent. Removed pieces go to the long-term archive on the server — nothing disappears silently.
-- Structure facts (Unreleased, vi_mcp/code_facts.py): from the same ast pass every Python file also sends what it defines, calls,
+- Structure facts (0.66.0, vi_mcp/code_facts.py): from the same ast pass every Python file also sends what it defines, calls,
   imports, writes, raises — stored as fact objects next to the pieces and read by clingo-object rules (philosophy package `code`).
   A Python file the server holds without facts is sent again once, so an existing index gets its facts without a forced re-import.
 """

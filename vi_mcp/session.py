@@ -93,7 +93,7 @@ def recent_project(instance: str, within_s: float = RECENT_S) -> str | None:
     return p if p and time.monotonic() - t <= within_s else None
 
 
-# ── Pairing: the agent's own MCP conversation and its hook's conversation (Unreleased) ───────────────────────────────────────────
+# ── Pairing: the agent's own MCP conversation and its hook's conversation (0.66.0) ───────────────────────────────────────────
 #: A Claude Code session talks to vi-mcp twice: the agent's MCP client (the conversation named in the instructions) and the hook
 #: (vi_before/vi_after/vi_prompt_context, its own conversation). Questions between conversations of one instance need to know that both
 #: are the same asker — otherwise a question would be delivered to its own author through the author's hook. The hook announces every

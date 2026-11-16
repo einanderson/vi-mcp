@@ -2,7 +2,7 @@
 
 Measured on a production copy (300 queries): natural questions AND all their words, function words included ("wie", "ich", "der",
 "how"), so the AND set is empty or wrong and the OR fallback ranks by weak words. Removing them is the lever; no FTS5 tokenizer beat
-unicode61 (CHANGELOG, Unreleased). Only the QUERY changes — the index keeps every word, so a quoted search for a stop word still
+unicode61 (CHANGELOG 0.67.0). Only the QUERY changes — the index keeps every word, so a quoted search for a stop word still
 finds it when the query has nothing else (content_words falls back to the unchanged words).
 
 The lists are the published Snowball stop lists, unchanged, no additions:

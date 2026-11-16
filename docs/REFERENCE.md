@@ -1144,7 +1144,7 @@ First line of each module's docstring.
 | `checks` | Deterministic check of foreign content — always runs first; only it may reject for good. |
 | `chunking` | Structure-aware chunking of long content: the SEARCH unit of a large document (0.67.0). |
 | `classify` | Classify knowledge for the AI language (0.62.0): which question an object answers, what kind of memory it is. |
-| `code_facts` | Structure facts of code (Unreleased): what a Python file defines, calls, imports, writes, raises — read by clingo-object rules. |
+| `code_facts` | Structure facts of code (0.66.0): what a Python file defines, calls, imports, writes, raises — read by clingo-object rules. |
 | `code_import` | Code in the index (0.61.0): `vi-mcp index import-code <repo> --index X` puts the code of a git repository into an index. |
 | `collect` | Collect mode of vi_recall (0.67.0): a question that wants many values about one entity ("what hardware does host X have") gets the |
 | `config` | Configuration — one file, readable by the owner only. |
@@ -1192,7 +1192,7 @@ First line of each module's docstring.
 | `on_demand` | Training on demand (since 0.20.0) — instead of only in the nightly sleep. |
 | `p2p` | The memory on the network: anonymous outbox, checked inbox, quarantine, right to be forgotten, value per publisher. |
 | `philosophy` | vi-mcp side of philosophy packages (0.66.0): the command line, installing a checked package into the VI, the tool vi_philosophy. |
-| `philosophy_provenance` | Provenance adapter: the evidence about a knowledge object as input facts of kollektiv 1.3.0 — shadow mode only (Unreleased). |
+| `philosophy_provenance` | Provenance adapter: the evidence about a knowledge object as input facts of kollektiv 1.3.0 — shadow mode only (0.67.0). |
 | `qa_pairs` | Grounded question-answer pairs for knowledge — the training form of a VI's knowledge (0.65.0). |
 | `query_adapter` | Query adapter (0.68.0) — learned embedding weights by scikit-learn instead of fine-tuning the embedding model. |
 | `questions` | Questions between instances — instances learn from each other by asking each other. |

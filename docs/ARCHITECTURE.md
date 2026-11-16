@@ -127,7 +127,7 @@ five paths:
 4. **Questions:** `vi_ask(to, text)` → the target instance sees the question at its next action (once per
    instance), answers with `vi_answer(id, text, evidence)` (evidence mandatory); the asker sees the answer at
    its next action or via `vi_questions`. After 7 days without an answer: `abgelaufen` (expired).
-   Within one instance (Unreleased): `vi_ask(to="<own instance>")` from a conversation goes to every other conversation of
+   Within one instance (0.66.0): `vi_ask(to="<own instance>")` from a conversation goes to every other conversation of
    the instance (once per conversation, never the asking one), `to="<instance>#<conversation>"` to one; answers go back
    to the asking conversation (`von_gespraech`). A Claude Code session is two conversations, the agent's MCP client and its
    hook; the hook announces the agent's vi-mcp calls in `vi_before`, and the matching call pairs them (`session.pair_on_call`),

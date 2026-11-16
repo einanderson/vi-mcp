@@ -8,7 +8,7 @@ States (exhaustive): `offen` (not yet shown to any target instance) · `zugestel
 Delivery: at the target instance's next `vi_before` as a hint (once per instance). Answers reach the
 asker likewise at its next `vi_before` — or via `vi_questions`.
 
-Between conversations of ONE instance (Unreleased): all Claude Code sessions of a machine share the instance `claude-code`, so a
+Between conversations of ONE instance (0.66.0): all Claude Code sessions of a machine share the instance `claude-code`, so a
 question to the own instance goes to its other conversations. The question records its origin `von_gespraech` (the asker's
 conversation; a hook's conversation counts as its agent's, session.canonical) and optionally a target `an_gespraech`
 (`to="claude-code#<conversation>"`). Such a question is delivered once per other conversation (`zugestellt_gespraeche`), never to the
