@@ -33,9 +33,9 @@ Notation:
   linked(O, B) is only for explicit edges between objects, not for "is about the same host".
 - Only use hashtag kinds and values from the list below; an empty answer is a valid answer when nothing matches.
 - Capitalised names are variables, strings in double quotes.
-Example — hosts at location MUE-0 for which no service is known:
+Example — hosts at location SITE-1 for which no service is known:
 ```logic
-at(H) <= (O in objects("location:MUE-0")) & (O.host == H)
+at(H) <= (O in objects("location:SITE-1")) & (O.host == H)
 served(H) <= (S in objects("service:*")) & (S.host == H)
 ans(H) <= at(H) & ~served(H)
 ```"""

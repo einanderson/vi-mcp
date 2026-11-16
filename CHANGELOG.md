@@ -3,7 +3,7 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
-## Unreleased
+## 0.67.0 — 2026-11-16
 
 ### What is new
 
@@ -27,7 +27,7 @@ Linked from [README.md](README.md).
   auch mehr als vier Werte von einem Objekt relevant sein. Z.B. welche Ausstattung hat ein Host." On the production copy, 20 % of all
   objects are parts of longer pages (9,196 parts of 3,387 pages, up to 159 parts), and the facts about one host are spread over several
   pages; ranked hits return only a fraction of such a set (QUEST 2305.11694, QAMPARI 2205.12665).
-  - **When:** the question names an entity that exists as a `host:` hashtag value and asks to collect ("Welche Ausstattung", "all",
+  - **When:** the question names an entity that exists as a `host:` hashtag value and asks to collect ("what equipment", "all",
     "overview", …) or is little more than the name. Single-fact questions about the host ("backup failed on X since yesterday") stay
     ordinary searches. `collect=false` switches it off, e.g. for an A/B measurement.
   - **What:** the hits plus every visible object carrying the entity hashtag. Page parts are joined by `data.source` in their order and
