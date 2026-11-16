@@ -807,6 +807,8 @@ def search(args: dict, only: str | None, first: str | None) -> tuple[list, str, 
                        "vocabulary; do is never run from a message, it is a proposal for a human")
     f = u.filter
     groups, remove, words = g.parse_filter(f, g.known_kinds())
+    from . import lexicon
+    entities = lexicon.link(" ".join(words)) if words else []  # 0.67.0: the VIL domain lexicon names what the question is about
     # 0.57.0: meaning + full text by default when an embedding service is configured and the filter has free text — measured on a
     # production copy (150 known targets × 2 queries): full text MRR 0.42, hybrid 0.75. semantic=false forces full text only.
     explicit = args.get("semantic")
@@ -883,6 +885,8 @@ def search(args: dict, only: str | None, first: str | None) -> tuple[list, str, 
             hits = ranked
             f += f" · VIL ask.{u.qtype}" + (f": {moved} hit(s) labelled for {u.qtype}-questions moved up" if moved else "")
         f += "".join(f" · {n}" for n in u.notes)
+    if entities:  # named, never reordered (vil.ORDER): every reordering measured so far lowered MRR
+        f += " · entities: " + ", ".join(e["tag"] for e in entities[:6]) + (f" (+{len(entities) - 6})" if len(entities) > 6 else "")
     code_asked = "knowledge_kind:code" in f or "file:" in f
     if not only and not code_asked:  # 0.61.0: imported code of other indexes would swamp a general search — hidden, counted
         foreign_code = [h for h in hits if "knowledge_kind:code" in h[1].hashtags and h[1].idx != first]

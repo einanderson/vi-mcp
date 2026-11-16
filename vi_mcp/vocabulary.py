@@ -164,5 +164,7 @@ def lines(prefix: str = "", kind: str = "", viewer: str | None = "aktuell", limi
         rows = complete(prefix, viewer, limit)
         return [f"completions of “{prefix}” (objects you can see):"] + [f"  {t}  ({n})" for t, n in rows] if rows else [f"nothing starts with “{prefix}”"]
     rows = kinds(viewer, limit)
-    return (["kinds of words — kind (distinct values, objects); vi_vocabulary(word_kind=…) shows the values, prefix=… completes:"]
+    from . import lexicon
+    return ([lexicon.describe() + " — a question naming one is linked to it (search note 'entities:'); about everything of a host, site, "
+             "service, app or project vi_recall collects by itself", "kinds of words — kind (distinct values, objects); vi_vocabulary(word_kind=…) shows the values, prefix=… completes:"]
             + [f"  {k}:  ({nv} values, {no} objects)" for k, nv, no in rows])

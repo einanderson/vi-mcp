@@ -1166,6 +1166,7 @@ First line of each module's docstring.
 | `knn_cli` | vi-mcp knn add\|predict\|generate\|forget\|compact\|snapshot\|serve — frozen causal model with mutable next-token memory. |
 | `knn_lm` | kNN-LM below MCP: mutable hidden-state/next-token memory interpolated with frozen-model probabilities. |
 | `learning` | Learning — the router learns from the hint lift instead of us setting its weights (docs/TRAINING.md 4a/4b). |
+| `lexicon` | The domain lexicon of VIL (0.67.0): the entity words of the memory, so VIL is a technical language and not only a query syntax. |
 | `log_output` | Server log output — one line per event on stderr (systemd → journal). |
 | `logbook` | Logbook — per server a signed, chained sequence of entries; the basis of the network. Knows neither transport nor memory. |
 | `logic` | Logical descriptions in a Python-like notation, checked by formal logic (0.62.0) — the logic layer of the AI language. |

@@ -23,7 +23,7 @@ def _page(gd):
 
 def test_the_router_tells_collect_questions_from_single_facts(gd):
     _page(gd)
-    assert "collect intent" in collect.detect("Welche Ausstattung hat host7?")["reason"]
+    assert "collect intent" in collect.detect("which hardware does host7 have?")["reason"]
     assert collect.detect("what hardware does host7 have")["entities"] == ["host:host7.example.org"]
     assert "the entity" in collect.detect("host7")["reason"]
     assert collect.detect("backup failed on host7 since yesterday") is None  # a single fact about the host
@@ -54,8 +54,8 @@ def test_a_failing_reranker_never_costs_the_answer(gd, monkeypatch):
 def test_vi_recall_switches_by_itself_and_collect_false_switches_it_off(gd, monkeypatch):
     _page(gd)
     monkeypatch.setattr(vector, "rerank_fn", lambda q, docs: [1.0 for _ in docs])
-    on = tools._recall({"filter": "Welche Ausstattung hat host7?", "reinforce": False}, "a", None, None)
-    off = tools._recall({"filter": "Welche Ausstattung hat host7?", "reinforce": False, "collect": False}, "a", None, None)
+    on = tools._recall({"filter": "which hardware does host7 have?", "reinforce": False}, "a", None, None)
+    off = tools._recall({"filter": "which hardware does host7 have?", "reinforce": False, "collect": False}, "a", None, None)
     assert "collect mode (entity host:host7.example.org" in on and "| RAM | 128 GB |" in on
     assert "collect mode" not in off
 
@@ -71,3 +71,77 @@ def test_the_budget_holds_and_private_objects_of_others_stay_invisible(gd, monke
     finally:
         g.current_instance.reset(token)
     assert counts["tokens"] <= 60 and "secret" not in ctx
+
+
+def test_the_lexicon_links_the_memorys_entity_words_and_rejects_paths(gd):
+    from vi_mcp import lexicon
+    lexicon.clear()
+    _page(gd)
+    g.new_object("insight", "Rack plan of site SITE-1", ["location:SITE-1"], {"content": "racks"}, reason="T", visibility="shared")
+    g.new_object("insight", "Systemd summary check", ["service:Systemd-Service-Summary"], {}, reason="T", visibility="shared")
+    g.new_object("insight", "a path", ["host:$s/handbuch.py;"], {}, reason="T", visibility="shared")
+    lexicon.clear()
+    tags = [e["tag"] for e in lexicon.link("which hosts are at SITE-1 and what does the systemd service summary report on host7?")]
+    assert "location:SITE-1" in tags and "service:Systemd-Service-Summary" in tags and "host:host7.example.org" in tags
+    assert lexicon.lexicon()["rejected"]["host"] == 1  # the path is not a host name
+    assert "location (1)" in lexicon.describe() and "not names, left out: 1 host" in lexicon.describe()
+
+
+def test_a_site_is_an_entity_of_the_collect_mode_too(gd, monkeypatch):
+    from vi_mcp import lexicon
+    _page(gd)
+    g.new_object("insight", "Rack plan of site SITE-1: host7 in rack 3", ["location:SITE-1"], {"content": "## Racks\n\nhost7 in rack 3.\n"},
+                 reason="T", visibility="shared")
+    lexicon.clear()
+    d = collect.detect("which hosts are at SITE-1?")
+    assert d and d["entities"] == ["location:SITE-1"]
+    monkeypatch.setattr(vector, "rerank_fn", lambda q, docs: [1.0 for _ in docs])
+    ctx, counts = collect.collect("hosts SITE-1", [], d)
+    assert "rack 3" in ctx and counts["objects_with_entity_tag"] == 1
+
+
+def test_the_lexicon_never_names_an_entity_the_asker_cannot_see(gd):
+    from vi_mcp import lexicon
+    g.new_object("insight", "secret box", ["host:secretbox9.example.org"], {}, reason="T", instance="other", visibility="private")
+    lexicon.clear()
+    token = g.current_instance.set("a")
+    try:
+        assert lexicon.link("hardware of secretbox9") == []
+    finally:
+        g.current_instance.reset(token)
+
+
+def test_the_answer_names_the_next_steps_for_an_agentic_follow_up(gd, monkeypatch):
+    _page(gd)
+    monkeypatch.setattr(vector, "rerank_fn", lambda q, docs: [5.0 if "RAM" in d else -9.0 for d in docs])
+    ctx, counts = collect.collect("RAM of host7", [], collect.detect("hardware of host7"), min_tokens=1, max_tokens=60, per_page=1)
+    line = collect.note(counts)
+    assert "\nfollow-up: " in line and "vi_object <id>" in line
+    assert 'vi_recall("host:host7.example.org", collect=false, limit=50) lists all 3 objects' in line
+    assert counts["pages_left_out"] and "pages not shown: " in line
+
+
+def test_short_words_are_never_hosts(gd):
+    from vi_mcp import lexicon
+    g.new_object("insight", "abc host", ["host:abc.example.org"], {}, reason="T", visibility="shared")
+    lexicon.clear()
+    assert lexicon.link("which apps abc run") == []
+
+
+def test_a_list_question_gets_the_entities_that_occur_with_it_and_a_broad_entity_is_narrowed(gd, monkeypatch):
+    from vi_mcp import lexicon
+    for i in range(12):
+        g.new_object("insight", f"finding {i} on web{i % 3} at the site", ["location:SITE-9", f"host:web{i % 3}.example.org"],
+                     {"content": f"## Finding\n\nweb{i % 3} disk {i}\n"}, reason="T", visibility="shared")
+    lexicon.clear()
+    monkeypatch.setattr(collect, "BROAD", 5)
+    monkeypatch.setattr(collect, "BROAD_TOP", 4)
+    monkeypatch.setattr(vector, "rerank_fn", lambda q, docs: [1.0 for _ in docs])
+    d = collect.detect("which hosts are at SITE-9?")
+    ctx, counts = collect.collect("Hosts SITE-9", [], d)
+    hosts = dict(counts["related"]["host"])
+    assert hosts == {"host:web0.example.org": 4, "host:web1.example.org": 4, "host:web2.example.org": 4}
+    b = counts["broad_entity"]
+    assert b["objects"] == 12 and b["kept_by_question"] + b["filled_by_recency"] == 4
+    line = collect.note(counts)
+    assert "with it — host: web0.example.org (4)" in line and "a broad entity (12 objects)" in line

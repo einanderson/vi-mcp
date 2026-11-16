@@ -12,6 +12,8 @@ An utterance:  ACT[.TYPE] WORD…  — tolerant: anything that does not start wi
   type   for ask: how · why · what · who · where · rule — which question it is
   words  kind:value as in vi_recall, plus short forms:  @web1 → host:web1* (a name without a dot: every host starting with it),
          @web1.example → host:web1.example   #x → topic:x   since:30d / since:2026-10-01 (recency)
+  domain words (0.67.0, lexicon.py): the entity words of the memory — hosts, sites, monitored services, applications, projects, areas,
+         networks, error keys — are recognised in free text and named in the search note; they never reorder the hits
          !word negates, (a OR b), "phrase", free text — unchanged
 
 The question type does not reorder the hits (ORDER "off"): every reordering measured on a production copy — the fixed prior, a lift

@@ -24,7 +24,20 @@ Linked from [README.md](README.md).
     The router was right on 4 of 4 probe questions. A completeness measurement with a multi-target question set is still open (below).
   - **Fixed on the way, also present in the IT-AIKB original:** a table that is only an oversized header row lost all its text when
     split. On the copy: 21,580 contents → 93,515 chunks, none losing text, none over the limit.
-  - Evidence: `tests/test_chunking.py`, `tests/test_context_budget.py`, `tests/test_collect.py`; full suite 1,166 passed / 8 skipped.
+  - **VIL domain lexicon** (`lexicon.py`). The user asked that VIL take in more words, since it is meant to be a technical language. The
+    entity words of the memory's hashtags are linked in free text and named in the search note (`entities: …`), never reordering hits:
+    hosts, sites, monitored services, applications, projects, areas, networks, error keys.
+    - Production copy: 967 hosts, 74 sites, 356 services, 75 apps, 49 areas, 2 networks, 60 error keys; 58 file paths tagged as host
+      and 8 error keys shorter than an everyday word are left out and counted. Built in 0.11 s, linked in 0–36 ms per question.
+    - A name counts only if the asking instance can see an object carrying it, so the note never reveals a private or internal name.
+    - The collect mode triggers for hosts, sites, services, apps and projects. Its word lists are English: VIL is the memory's
+      standard language, and an agent asks it in English.
+  - **List questions are answered from the hashtags.** "Which hosts are at site X" lists the hosts, apps and services that occur with
+    the entity, each with its number of objects. A broad entity (more than 300 objects; a site carries about 1,400, mostly monitoring
+    findings) contributes only its 100 objects that match the question, filled up by recency.
+  - **Follow-up for agentic search.** An agent searches on with follow-up questions, so the answer names its next steps: the pages not
+    shown (ranked by their best chunk), `vi_object` for a page in full, the entity filter for all its objects, and a narrower question.
+  - Evidence: `tests/test_chunking.py`, `tests/test_context_budget.py`, `tests/test_collect.py` (11 cases incl. visibility of names).
 - **Fine-tuning paper: eighteen runs that teach a 0.6B model to work by the seed** ([docs/FINETUNING_PAPER.md](docs/FINETUNING_PAPER.md)).
   The paper reports each run's design, the results scored by the solver, the findings with sources (33 references, each checked
   against the paper text or its arXiv entry), the status against the targets, the measurement errors corrected on the way, and the

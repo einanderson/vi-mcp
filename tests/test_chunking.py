@@ -115,3 +115,15 @@ def test_empty_content_has_no_chunks_and_the_hash_carries_the_version():
     assert ch.chunk_markdown("T", "  \n") == [] and ch.chunk_plain_text("T", "") == []
     h = ch.versioned_hash("abc")
     assert h == f"c{ch.CHUNKER_VERSION}:abc" and ch.hash_digest(h) == "abc" and ch.hash_digest("abc") == "abc"
+
+
+def test_a_header_longer_than_a_chunk_with_body_rows_does_not_blow_up():
+    # Reproduced by the IT-AIKB session against the original (16.11.2026): the budget fell to 1 character and one table became
+    # 1,785 chunks of header + 1 character (4 MB). Here the header is not repeated, every row is kept once.
+    import re
+    header = "| " + " | ".join(f"column {i} named at length" for i in range(80)) + " |"
+    rows = "\n".join(f"| r{i} | v{i} |" for i in range(5))
+    chunks = ch.chunk_markdown("T", f"## Data\n\n{header}\n|---|---|\n{rows}\n", max_chars=1600)
+    assert len(chunks) <= 4 and all(len(c.text) <= 1600 for c in chunks)
+    joined = re.sub(r"\s+", "", "".join(c.body for c in chunks))
+    assert re.sub(r"\s+", "", header) in joined and all(f"|r{i}|v{i}|" in joined for i in range(5))
