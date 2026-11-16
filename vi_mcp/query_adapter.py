@@ -210,7 +210,7 @@ def _fit(ex, qv, pos, m, c: float):
     X, y = _rows(ex, qv, pos, m, np.random.default_rng(SEED))
     if X is None or len(set(y)) < 2:
         return None
-    lr = LogisticRegression(C=c, max_iter=2000)
+    lr = LogisticRegression(C=c, max_iter=10000)  # 2000 left lbfgs unconverged on the production copy (16.11.2026)
     lr.fit(X, y)
     return {"cos": float(lr.coef_[0][0]), "dims": [float(x) for x in lr.coef_[0][1:]]}
 

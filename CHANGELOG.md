@@ -81,6 +81,10 @@ The user (16.11.2026): bring weight-space programming in "so that the connected 
   `data.search_q`, asked again when the content changes; private objects get none. They are training queries for the query adapter
   (source `sq`); its test reports the judged real searches apart, and an adapter better overall but worse on ≥ 5 judged real searches
   stays off. Evidence: `tests/test_query_adapter.py` (round trip, copy and length rejections counted; the queries reach the adapter).
+  Measured on the production copy (16.11.2026, qwen27b + bge-m3): 150 objects in 838 s, 427 of 450 queries kept (23 failed the round
+  trip); the adapter then had 403 training / 97 test queries and stayed OFF: MRR 0.706 → 0.723 (+0.017 ± 0.020, 15 better, 7 worse),
+  judged real searches +0.09 on only 6. Caveat: the round trip keeps only queries the cosine already finds (top 20), so generated test
+  queries are easy for the cosine; the judged real searches are the unbiased test and must grow.
 - **Embedding fine-tuning kit** (`vi-mcp finetune embed-kit DIR [--days N]`, `vi_mcp/finetune_embed.py`): the embedding model, not a
   chat model, learns this VI's (situation → hint) pairs. Real positives (feedback helped, adopted, judge used after success) are the
   EVALUATION set — 302 over 128 hints on the production copy, far below the volumes of any published gain (GPL 2112.07577, Promptagator
