@@ -81,3 +81,15 @@ def test_situations_are_checked_and_a_situation_nobody_declared_gets_a_reason(gd
         tools.call_tool("vi_philosophy", {"action": "install", "package": bad}, "a", False)
     out = tools.call_tool("vi_philosophy", {"action": "suggest", "situation": "bake a cake"}, "a", False)
     assert "no situation tag" in out
+
+
+def test_a_philosophy_that_must_run_its_seed_asks_the_logic_layer_first(gd, monkeypatch):
+    """0.69.7 (production 17.11.2026): clingo lives in the logic layer's own directory there; vi_logic put it on sys.path, vi_philosophy
+    did not, so install failed with "No module named 'clingo'" unless a vi_logic call had come first."""
+    from vi_mcp import logic
+    calls = []
+    monkeypatch.setattr(logic, "available", lambda: calls.append(1) or False)
+    monkeypatch.setattr(logic, "unavailable_reason", lambda: "No module named 'clingo'")
+    with pytest.raises(tools.Rejected, match="logic layer is off on this server"):
+        tools.call_tool("vi_philosophy", {"action": "install", "package": _copy("x")}, "a", False)
+    assert calls and "Built in" in tools.call_tool("vi_philosophy", {"action": "list"}, "a", False)  # listing needs no solver

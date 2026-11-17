@@ -408,6 +408,9 @@ def build(k: config.Config) -> list[Server]:
     intuition.ttl_per_tool.update(k.ttl)
     n = len(reflexes.load_all())
     self_model.core()  # create the self if new (version 1 from the project rules)
+    from . import logic  # 0.69.7: clingo from the logic layer's own directory on sys.path for the whole process (philosophy needs it too)
+    if not logic.available():
+        log(f"logic layer off: {logic.unavailable_reason()} — sudo vi-mcp logic install")
     from . import knowledge_skills  # 0.69.4: the initial skills (clingo, finetune, philosophy) into this memory — every AI inherits them
     log(f"initial skills: {knowledge_skills.ensure()}")
     from . import archive, p2p, reviewer, reflection, vector

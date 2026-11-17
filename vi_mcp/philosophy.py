@@ -256,6 +256,11 @@ def tool(args: dict, instance: str) -> str:
     action = args.get("action") or "guide"
     if action == "guide":
         return ph.GUIDE
+    if action in ("check", "evaluate", "install", "explain"):  # 0.69.7: these run the seed — clingo may live in the logic layer's own
+        from . import logic                                    # directory, which only logic.available() puts on sys.path
+        if not logic.available():
+            raise ValueError(f"the logic layer is off on this server ({logic.unavailable_reason()}) — an administrator runs: "
+                             "sudo vi-mcp logic install")
     if action == "list":
         inst = installed()
         lines = ["Built in: " + ", ".join(sorted(ph.BUILTIN))]

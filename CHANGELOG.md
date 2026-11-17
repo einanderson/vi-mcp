@@ -3,6 +3,18 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.69.7 — 2026-11-17
+
+### What was fixed: installing a philosophy failed with "No module named 'clingo'" on a server whose clingo is in the logic layer
+
+- Production 17.11.2026: `vi_philosophy(action="install", package=…)` stopped while checking the package — clingo missing — although
+  vi_logic worked. On that server clingo lives in the logic layer's own directory (`vi-mcp logic install`), which only
+  `logic.available()` puts on sys.path; vi_logic calls it before every action, vi_philosophy never did, so its check, evaluate,
+  install and explain worked only if a vi_logic call had come first in the same process. Now the server puts the logic layer on the
+  path at start (and logs why, if it cannot), and vi_philosophy asks it before every action that runs a seed, with a clear message
+  when the logic layer is off. Evidence: `tests/test_philosophy_package_mcp.py::test_a_philosophy_that_must_run_its_seed_asks_the_logic_layer_first`.
+  Workaround on 0.69.6: one vi_logic call (e.g. action check) before the install.
+
 ## 0.69.6 — 2026-11-17
 
 ### What is new: a philosophy is handed over MCP, and the VI learns which philosophy fits which situation
