@@ -213,7 +213,7 @@ TOOLS = [
                     "unabridged (up to 200,000 characters). Store it completely and do not point to files that exist on one machine only "
                     "— what is missing here is a gap in memory. vi_object reads it back; full-text search finds it. Objects sharing "
                     "hashtags are linked.",
-     "inputSchema": _schema({"content": {"type": "string", "description": "complete knowledge: code, API tables, commands, unabridged"}, "text": _S, "hashtags": _TAGS, "source": {"type": "string", "description": "source: command, host and time, or URL (for vi_ask: why you ask)"}, "importance": {"type": "integer", "description": "0–3 (default 1)"}, "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "shared (default): everyone, also without a token, and the networks. internal: only instances with a token — never an open network, only a company network (members of the same organisation) — for company knowledge"}, "outcome": {"type": "string", "enum": ["good", "bad"], "description": "optional: does the insight describe a working or a broken state? Sleep compares new experiences with it."}, "key": {"type": "string", "description": "optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1."},
+     "inputSchema": _schema({"content": {"type": "string", "description": "complete knowledge: code, API tables, commands, unabridged"}, "text": _S, "hashtags": _TAGS, "source": {"type": "string", "description": "source: command, host and time, or URL (for vi_ask: why you ask)"}, "importance": {"type": "integer", "description": "0–3 (default 1)"}, "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "shared (default): everyone, also without a token, and the networks. internal: only instances with a token — never an open network, only a company network (members of the same organisation) — for company knowledge"}, "outcome": {"type": "string", "enum": ["good", "bad"], "description": "optional: does the insight describe a working or a broken state? Sleep compares new experiences with it."}, "key": {"type": "string", "description": "optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1."}, "supersedes": {"type": "array", "items": {"type": "string"}, "description": "optional (0.68.1): ids of this instance's own knowledge objects the new one replaces — e.g. a page re-imported as one object instead of section parts. Each is moved to the long-term archive with a reason naming the new object (vi_archive shows it, vi_archive_restore brings it back) and linked to it; another instance's object, an unknown id or more than 200 ids refuse the whole call before anything is stored."},
                             "index": {"type": "string", "description": "optional: the index the knowledge belongs to — a project or special VI (e.g. cue-print, ansible); default: the project of your working directory, else global"},
                             "project": {"type": "string", "description": "set by the hook: the name of your working directory (mapped to an index by the server)"},
                             "image": {"type": "string", "description": "optional: an image as base64 — stored as a memory of its own kind (kind:image); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F]"},
@@ -1025,6 +1025,50 @@ def _used_arg(v) -> list | None:
     return [str(x) for x in v][:20]
 
 
+SUPERSEDES_MAX = 200
+SUPERSEDABLE_KINDS = ("insight", "rule", "skill")
+
+
+def _superseded(ids, instance: str) -> list[str]:
+    """0.68.1: the ids vi_learn(supersedes=…) may archive — only this instance's own knowledge objects. Checked before the new object is
+    stored, so a wrong id refuses the whole call and nothing half-done remains. Already archived ones are skipped, not refused."""
+    if not ids:
+        return []
+    if not isinstance(ids, list):
+        raise ValueError("supersedes must be a list of object ids")
+    ids = list(dict.fromkeys(str(x).strip() for x in ids if str(x).strip()))
+    if len(ids) > SUPERSEDES_MAX:
+        raise ValueError(f"supersedes takes at most {SUPERSEDES_MAX} ids per call ({len(ids)} given)")
+    out = []
+    for oid in ids:
+        old = g.load(oid)
+        if old is None:
+            raise ValueError(f"supersedes: {oid} does not exist")
+        if old.instance != instance:
+            raise ValueError(f"supersedes: {oid} belongs to instance {old.instance} — only an instance's own objects can be superseded")
+        if old.kind not in SUPERSEDABLE_KINDS:
+            raise ValueError(f"supersedes: {oid} is a {old.kind}, only {', '.join(SUPERSEDABLE_KINDS)} can be superseded")
+        if old.mode != "archived":
+            out.append(oid)
+    return out
+
+
+def _archive_superseded(new: "g.MemoryObject", ids: list[str], instance: str) -> list[str]:
+    """Link each superseded object to the new one, record the ids on the new object, then move each to the long-term archive."""
+    from . import archive
+    done = [oid for oid in ids if oid != new.id]
+    if not done:
+        return []
+    for oid in done:
+        new.link(oid, "Beleg (supersedes: the same knowledge in a new shape)")  # a strong edge replaces an automatic one
+    g.update_data(new.id, lambda d: d.__setitem__("supersedes", sorted(set(d.get("supersedes") or []) | set(done))))
+    for oid in done:
+        old = g.load(oid)
+        if old is not None and old.mode != "archived":
+            archive.store_in_archive(old, f"superseded by {new.id} (vi_learn supersedes, instance {instance})")
+    return done
+
+
 def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, release_permission: bool = False, family: str | None = None) -> str:
     """Run a tool. Returns text; a domain refusal as Rejected(reason).
     Name and arguments may be English (public since 0.22.0) or German (alias) — translated to the internal form here."""
@@ -1436,6 +1480,7 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 return _proposal(text, tags, data, int(args.get("importance") or 1))
             if args.get("visibility") not in (None, "shared", "internal"):
                 raise ValueError("visibility must be shared or internal")
+            superseded = _superseded(args.get("supersedes"), instance)  # 0.68.1: checked before anything is stored
             key = (args.get("key") or "").strip()[:500]
             if len(key) > 0 and len(key) < 3:
                 raise ValueError("key must have at least 3 characters")
@@ -1461,17 +1506,22 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                                  visibility=args.get("visibility"), instance=instance, index=idx, mode="quarantine" if held else "active")
                 if held:
                     return (f"held {o.id} in quarantine — fixed rules found: {'; '.join(held)[:300]}. It is shown to nobody until another "
-                            "instance with the release right (or a person) releases it with vi_release; the author cannot release its own.")
+                            "instance with the release right (or a person) releases it with vi_release; the author cannot release its own."
+                            + (f" The {len(superseded)} superseded object(s) stay active until it is released." if superseded else ""))
         except ValueError as e:
             raise Rejected(str(e)) from e
+        archived = _archive_superseded(o, superseded, instance)
         from . import on_demand
         on_demand.nudge("knowledge learned")
+        sup_line = (f" · superseded {len(archived)} object(s), now in the long-term archive: {', '.join(archived[:5])}"
+                    + (" …" if len(archived) > 5 else "")) if archived else ""
         if prev:
             return (f"updated {o.id} (key {key!r}, {o.data['repeats']}×) — the previous text is in its history ({len(o.data.get('history') or [])} entries); "
-                    "no new object")
+                    "no new object" + sup_line)
         return (f"learned {o.id} with {', '.join(o.hashtags)} — {len(o.edges())} edges to objects with shared hashtags"
                 + (f" · {images.summary(o)} (sha256 {o.data['image']['sha'][:12]}…)" if o.data.get("image") else "")
-                + (" · visibility internal (instances with a token only; never an open network, only a company network)" if o.visibility == "internal" else ""))
+                + (" · visibility internal (instances with a token only; never an open network, only a company network)" if o.visibility == "internal" else "")
+                + sup_line)
     if name == "vi_code_sync":  # 0.61.0
         from . import code_import, indexes
         if instance == config.OPEN:

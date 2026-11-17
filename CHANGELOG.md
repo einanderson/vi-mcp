@@ -3,7 +3,21 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
-## Unreleased
+## 0.68.1 — 2026-11-17
+
+### What is new: a re-import retires its old shape — `vi_learn(supersedes=[…])`
+
+- **`supersedes`** (list of ids, at most 200 per call): the new object replaces this instance's own older knowledge objects — e.g. a
+  documentation page stored as section parts ("part 3/6") and now learned as one object with its whole Markdown, which the server
+  chunks itself since 0.67.0. Each superseded object goes to the long-term archive with the reason "superseded by <new id>" (`vi_archive`
+  shows it, `vi_archive_restore` brings it back), gets an evidence edge to the new object, and the new object records the ids in
+  `data.supersedes`. Another instance's object, an unknown id, a non-knowledge kind or more than 200 ids refuse the whole call before
+  anything is stored; already archived ids are skipped. When the new object is held in quarantine, nothing is superseded until it is
+  released. Why: the Confluence pages (7,542 pages as 12,994 section objects) and the CUE and DC-X documentation (6,041 objects) were
+  imported in an older shape, and no MCP tool could retire an object — a re-import would have left every old part next to the new page.
+  Evidence: `tests/test_supersedes.py` (own parts archived, linked, recorded and restorable; a foreign object refuses the call with no
+  object stored; unknown, too many and wrong-kind ids refused; an archived part skipped; a keyed update can supersede).
+- **Migration:** none — an optional parameter; objects superseded stay in the archive database and can be restored.
 
 ### What is new: every release ships every platform — Arch Linux and macOS added
 

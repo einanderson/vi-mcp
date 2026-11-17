@@ -1,6 +1,6 @@
 # vi-mcp reference
 
-Generated from the code of vi-mcp 0.68.0 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
+Generated from the code of vi-mcp 0.68.1 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
 
 Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server configuration](#server-configuration-configjson) · [Network service configuration](#network-service-configuration-etcvi-p2pnetworkjson) · [Configuration catalogue](#configuration-catalogue-debconf-vi-mcp-configure-vi_mcp_key) · [Environment variables](#environment-variables) · [HTTP endpoints](#http-endpoints) · [Modules](#modules-vi_mcp)
 
@@ -333,6 +333,7 @@ VI: store knowledge as an object. When: a non-obvious problem was solved, a last
 | `visibility` | string (shared, internal) |  | shared (default): everyone, also without a token, and the networks. internal: only instances with a token — never an open network, only a company network (members of the same organisation) — for company knowledge (German: `sicht`) |
 | `outcome` | string (good, bad) |  | optional: does the insight describe a working or a broken state? Sleep compares new experiences with it. (German: `ausgang`) |
 | `key` | string |  | optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1. |
+| `supersedes` | array of string |  | optional (0.68.1): ids of this instance's own knowledge objects the new one replaces — e.g. a page re-imported as one object instead of section parts. Each is moved to the long-term archive with a reason naming the new object (vi_archive shows it, vi_archive_restore brings it back) and linked to it; another instance's object, an unknown id or more than 200 ids refuse the whole call before anything is stored. |
 | `index` | string |  | optional: the index the knowledge belongs to — a project or special VI (e.g. cue-print, ansible); default: the project of your working directory, else global |
 | `project` | string |  | set by the hook: the name of your working directory (mapped to an index by the server) (German: `projekt`) |
 | `image` | string |  | optional: an image as base64 — stored as a memory of its own kind (kind:image); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F] |
