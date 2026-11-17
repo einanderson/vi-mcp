@@ -466,6 +466,29 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
 #: 0.20.9: confirming/refuting a shown hint within this period counts as feedback on the action
 FEEDBACK_MIN = 60
 WHY_DAYS = 7
+#: 17.11.2026: hints shown for a user prompt (vi_prompt_context) per instance — {instance: {hint_id: monotonic time}}. They belong to no
+#: action, so vi_feedback found them nowhere ("not shown … in the last 60 min") although the hook's Stop request asks for them.
+_PROMPT_HINT_KINDS = names.id_prefixes("insight", "rule", "search", "skill", "image", "page")
+_prompt_shown: dict[str, dict[str, float]] = {}
+_prompt_lock = threading.Lock()
+
+
+def note_prompt_shown(instance: str | None, ids: list[str]) -> None:
+    if not instance or not ids:
+        return
+    now = time.monotonic()
+    with _prompt_lock:
+        d = _prompt_shown.setdefault(instance, {})
+        for h in ids:
+            d[h] = now
+        for h in [h for h, ts in d.items() if now - ts > FEEDBACK_MIN * 60]:
+            del d[h]
+
+
+def _prompt_shown_recently(instance: str, hint_id: str) -> bool:
+    with _prompt_lock:
+        ts = (_prompt_shown.get(instance) or {}).get(hint_id)
+    return ts is not None and time.monotonic() - ts <= FEEDBACK_MIN * 60
 
 
 def _last_shown(instance: str, hint_id: str) -> tuple[str, str, dict, str] | None:
@@ -573,6 +596,21 @@ def feedback(instance: str, hint_id: str, value: int, before_id: str | None = No
             e.change(f"ki@{instance}", "feedback on the hint", f"{hint_id}: {'helped' if value > 0 else 'was wrong'}")
             g.save(e)
             return eid
+        if e and hint_id in (e.data.get("error_hints") or []) and not e.data.get("error_held_back"):  # 17.11.2026: shown after a failure
+            e.data.setdefault("feedback", {})[hint_id] = 1 if value > 0 else -1
+            e.change(f"ki@{instance}", "feedback on the error hint", f"{hint_id}: {'helped' if value > 0 else 'was wrong'}")
+            g.save(e)
+            return eid
+    if not before_id and rows and _prompt_shown_recently(instance, hint_id):  # 17.11.2026: a prompt hint — booked on the latest action
+        e = g.load(rows[0][0])
+        if e:
+            ps = e.data.setdefault("prompt_shown", [])
+            if hint_id not in ps:
+                ps.append(hint_id)
+            e.data.setdefault("feedback", {})[hint_id] = 1 if value > 0 else -1
+            e.change(f"ki@{instance}", "feedback on the prompt hint", f"{hint_id}: {'helped' if value > 0 else 'was wrong'}")
+            g.save(e)
+            return e.id
     return None
 
 
@@ -868,4 +906,5 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
             ids_.append(pid)
     except Exception:  # noqa: BLE001 — a suggestion must never stop the context
         pass
+    note_prompt_shown(instance, [h for h in ids_ if str(h).startswith(_PROMPT_HINT_KINDS)])  # 17.11.2026: so vi_feedback finds them
     return {"hinweise": lines_, "ids": ids_, "woerter": len(words)}
