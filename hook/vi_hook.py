@@ -443,7 +443,7 @@ def process(e: dict) -> dict | None:
     if event in ("PreToolUse", "PostToolUse", "PostToolUseFailure") and server and name.startswith("vi_"):
         if event == "PreToolUse" and name in CONTEXT_TOOLS:  # 0.61.0: tell the memory which project the call comes from
             try:
-                call_tool(e["session_id"], e.get("cwd"), "vi_context", {})
+                call_tool(e["session_id"], e.get("cwd"), "vi_context", {}, raw=True)  # plain text, not JSON
             except Exception as ex:  # noqa: BLE001 — an older server without vi_context, an outage: global, never block the call
                 log_output(f"vi_context: {type(ex).__name__}: {ex}")
         if event == "PostToolUse" and name in FEEDBACK_TOOLS:  # 0.59.0: feedback given — no request at the end

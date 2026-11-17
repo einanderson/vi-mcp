@@ -142,3 +142,10 @@ def test_before_vi_learn_the_hook_notes_the_project(h, monkeypatch):
     called.clear()
     h.process(ev("PreToolUse", tool_name="mcp__vi-mcp__vi_object", tool_input={"id": "x"}))
     assert called == []  # only before learning and searching
+
+
+def test_vi_context_answer_is_plain_text_and_logs_no_error(h):
+    # vi_context answers plain text ("project … noted"); parsing it as JSON logged a JSONDecodeError before every vi_learn/vi_recall
+    assert h.process(ev("PreToolUse", tool_name="mcp__vi-mcp__vi_recall", tool_input={"filter": "x"}, cwd="/home/x/cue-print")) is None
+    log = h.STATE / "hook.log"
+    assert not log.exists() or "vi_context" not in log.read_text()

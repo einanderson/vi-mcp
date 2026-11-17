@@ -54,6 +54,36 @@ Linked from [README.md](README.md).
   (`test_hints::test_stats_count_rules_only_while_calls_are_recorded_and_show_projects`) fails on unmodified 0.69.7 the same way in
   that run and passes alone. **Migration:** none.
 
+### What was fixed: user installs (deploy/install.sh) without a package — PR #1
+
+- **`embed setup` failed on a user install.** On Linux without root it wrote a system unit to `/etc/systemd/system`
+  (`User=vi-mcp`, `ProtectHome=yes`), which needs root, a `vi-mcp` user and files outside `$HOME` — none of which a user install
+  from `deploy/install.sh` has. Now `embed setup`, `embed status` and `embed remove` use a systemd **user** unit
+  (`~/.config/systemd/user/vi-embed.service`, `vi-rerank.service`, `systemctl --user`) when not running as root **and no package
+  is installed** (`/usr/share/vi-mcp`, the same mark `setup` uses). Packages keep their system units — also when a user without
+  sudo runs `embed status`. The root/package unit is byte-identical to 0.66.1 (`vi-embed` 735 bytes, `vi-rerank` 651 bytes).
+  Evidence: CachyOS (Arch), Python 3.14, RTX 4070 — `vi-mcp embed setup --backend cuda` as user: backend cuda-13, 8.4 ms per text,
+  reranker used, `embed status` shows both services `active` (before: unit write failed; status queried the system manager).
+  `tests/test_embed_service.py`: three new tests (user unit, root unchanged, package without root unchanged).
+- **`deploy/install.sh` lost the token on a first install.** It wrote the token to `~/.config/vi-mcp/token-NAME` without creating
+  the directory: the instance was created, the token file failed (`No such file or directory`), and the next run skipped the
+  instance, so the token was gone. Now the directory is created first.
+  Evidence: fresh `$HOME`, old script → `config.json` with the instance but no token file; new script → token file 44 bytes, 0600.
+- **`deploy/install.sh` assumed the checkout at `~/Dev/code/vi-mcp`.** The unit is now written with the path of the checkout it
+  runs from.
+- **The hook logged a `JSONDecodeError` before every `vi_learn`/`vi_recall`.** It parsed the answer of `vi_context` as JSON, but
+  `vi_context` answers plain text ("project … noted …"). The project was noted anyway (the server acts before it answers); only
+  the hook log filled with errors. Now the hook reads it as text.
+  Evidence: `~/.cache/vi-mcp/hook/hook.log` showed `vi_context: JSONDecodeError: Expecting value: line 1 column 1 (char 0)` three
+  times in one evening; `tests/test_hook.py::test_vi_context_answer_is_plain_text_and_logs_no_error` against a real server fails
+  without the fix and passes with it.
+- **`vi_learn(importance=0)` stored importance 1.** `int(args.get("importance") or 1)` turns an explicit 0 into the default,
+  although the schema allows 0–3. Now only a missing value falls back to 1 (three places in `tools.py`).
+  Evidence: `tests/test_dedup.py::test_importance_zero_is_kept` fails without the fix and passes with it; seen live when 378
+  history entries sent with importance 0 all landed with `wichtigkeit = 1`.
+- **`deploy/install.sh` says when scikit-learn is missing** — without it the router never trains and hints stay in heuristic
+  order; the note names the package for Debian, Arch and Fedora.
+
 ## 0.69.7 — 2026-11-17
 
 ### What was fixed: installing a philosophy failed with "No module named 'clingo'" on a server whose clingo is in the logic layer

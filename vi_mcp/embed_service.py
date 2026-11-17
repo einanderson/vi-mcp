@@ -91,6 +91,26 @@ def home() -> Path:
     return Path("/var/lib/vi-mcp/embed") if os.geteuid() == 0 else Path("~/.local/share/vi-mcp/embed").expanduser()
 
 
+#: the deb and rpm packages install here (as setup._hook_script checks); their services are system units whoever calls
+PACKAGE_DIR = Path("/usr/share/vi-mcp")
+
+
+def user_install() -> bool:
+    """Linux, not root and no package: vi-mcp runs as a systemd user service (deploy/install.sh), so its embedding services must be
+    user units too. A package install keeps its system units (User=vi-mcp) — also when a user without sudo asks `embed status`."""
+    return system() == "linux" and os.geteuid() != 0 and not PACKAGE_DIR.exists()
+
+
+def _systemctl(*args: str) -> list[str]:
+    return ["systemctl", "--user", *args] if user_install() else ["systemctl", *args]
+
+
+def unit_path(name: str) -> Path:
+    if user_install():
+        return Path("~/.config/systemd/user").expanduser() / f"{name}.service"
+    return Path(f"/etc/systemd/system/{name}.service")
+
+
 def parse_nvidia_smi(text: str) -> list[dict]:
     """`nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits` → one dict per card."""
     out = []
@@ -411,30 +431,38 @@ def command(exe: Path, model: Path, port: int, args: list[str] | None = None) ->
     return [str(exe), "-m", str(model), "--host", "127.0.0.1", "--port", str(port), *(SERVER_ARGS if args is None else args)]
 
 
-def _service_linux(exe: Path, model: Path, port: int, name: str = SERVICE, args: list[str] | None = None) -> None:
+def unit_text(exe: Path, model: Path, port: int, name: str = SERVICE, args: list[str] | None = None, user: bool = False) -> str:
+    """The systemd unit of an embedding service. user=True: a user unit for a user install (no User=/Group=, the files lie under
+    ~/.local/share, so ProtectHome would hide them; WantedBy=default.target)."""
     what = "reranker" if name == RERANK_SERVICE else "embedding service"
-    unit = f"""[Unit]
+    head = f"""[Unit]
 Description={name} — {what} of vi-mcp (llama.cpp {LLAMA_TAG}, {model.name}) on 127.0.0.1:{port}
 After=network.target
 
 [Service]
-User=vi-mcp
-Group=vi-mcp
-SupplementaryGroups=render video
-Environment=LD_LIBRARY_PATH={exe.parent}
+"""
+    run = f"""Environment=LD_LIBRARY_PATH={exe.parent}
 ExecStart={" ".join(command(exe, model, port, args))}
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
-ProtectSystem=strict
+"""
+    if user:
+        return head + run + "UMask=0077\n\n[Install]\nWantedBy=default.target\n"
+    return head + "User=vi-mcp\nGroup=vi-mcp\nSupplementaryGroups=render video\n" + run + f"""ProtectSystem=strict
 ProtectHome=yes
 ReadOnlyPaths={exe.parent.parent} {model.parent}
 
 [Install]
 WantedBy=multi-user.target
 """
-    Path(f"/etc/systemd/system/{name}.service").write_text(unit)
-    for c in (["systemctl", "daemon-reload"], ["systemctl", "enable", name], ["systemctl", "restart", name]):
+
+
+def _service_linux(exe: Path, model: Path, port: int, name: str = SERVICE, args: list[str] | None = None) -> None:
+    path = unit_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(unit_text(exe, model, port, name, args, user=user_install()))
+    for c in (_systemctl("daemon-reload"), _systemctl("enable", name), _systemctl("restart", name)):
         subprocess.run(c, check=True, capture_output=True, timeout=60)
 
 
@@ -654,7 +682,7 @@ def compare(port: int = DEFAULT_PORT, sample: int = 30) -> dict:
 
 def _service_state(name: str) -> str:
     if system() == "linux":
-        r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, **config.CONSOLE_TEXT)
+        r = subprocess.run(_systemctl("is-active", name), capture_output=True, text=True, **config.CONSOLE_TEXT)
         return r.stdout.strip() or r.stderr.strip()
     r = subprocess.run(["schtasks", "/Query", "/TN", name], capture_output=True, text=True, **config.CONSOLE_TEXT)
     return "registered" if r.returncode == 0 else "not registered"
@@ -682,13 +710,13 @@ def remove() -> dict:
     """Stop and remove both services and their files; embed.url / rerank.url are cleared only if they pointed to these services."""
     for name in (SERVICE, RERANK_SERVICE):
         if system() == "linux":
-            subprocess.run(["systemctl", "disable", "--now", name], capture_output=True, timeout=60)
-            Path(f"/etc/systemd/system/{name}.service").unlink(missing_ok=True)
+            subprocess.run(_systemctl("disable", "--now", name), capture_output=True, timeout=60)
+            unit_path(name).unlink(missing_ok=True)
         else:
             subprocess.run(["schtasks", "/End", "/TN", name], capture_output=True)
             subprocess.run(["schtasks", "/Delete", "/TN", name, "/F"], capture_output=True)
     if system() == "linux":
-        subprocess.run(["systemctl", "daemon-reload"], capture_output=True, timeout=60)
+        subprocess.run(_systemctl("daemon-reload"), capture_output=True, timeout=60)
     shutil.rmtree(home(), ignore_errors=True)
     k = config.load()
     out: dict = {"removed": True}
