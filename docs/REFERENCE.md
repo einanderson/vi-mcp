@@ -536,7 +536,7 @@ VI: search memory. When: before starting any task, before changing actions on sy
 | `semantic` | boolean |  | true: hybrid search — meaning (embedding) plus full text (German: `semantisch`) |
 | `collect` | boolean |  | default: automatic (a question about everything of one entity gets its chunks under a token budget); false switches the collect mode off, e.g. for an A/B measurement |
 | `reinforce` | boolean |  | default true; false = read only (access count and last use stay unchanged) |
-| `index` | string |  | optional: search only this index (a project or special VI); without it, hits from your project's index come first and everything else stays visible |
+| `index` | string |  | optional: search only this index (a project or special VI) — AND with the filter, nothing from outside it; the same as index:<name> in the filter, which also works in vi_drilldown and vi_logic objects(…). Without it, hits from your project's index come first and everything else stays visible |
 | `project` | string |  | set by the hook: the name of your working directory (its index comes first) (German: `projekt`) |
 | `format` | string (text, vil) |  | vil: the answer as VIL tell lines — memory kind, evidence, measured weight, source per hit |
 
@@ -1116,7 +1116,7 @@ Asked at the first installation (Debian: debconf; RPM and everywhere: `vi-mcp co
 | `bind` | `VI_MCP_BIND` | `127.0.0.1` | Addresses the server listens on — Comma-separated. 127.0.0.1 = this machine only. Add the gateway of a Docker network if nginx runs in a container. |
 | `db` | `VI_MCP_DB` | `` | Database (empty = SQLite file) — Empty: the SQLite file (default, no server needed). Or a PostgreSQL URL, e.g. postgresql://vi-mcp@/vi-mcp?host=/var/run/postgresql — needs python3-psycopg; move the data first with vi-mcp db migrate --to URL (an empty database is refused). |
 | `open` | `VI_MCP_OPEN` | `false` | Access without a token (open wiki mode) — Anyone who reaches the server may read shared knowledge and propose new knowledge (which goes into quarantine). Internal knowledge always needs a token. |
-| `wiki` | `VI_MCP_WIKI` | `true` | Join the public wiki network vi-wiki.org — Proven, shared knowledge leaves this server anonymised; reviewed knowledge, wiki pages and questions of other servers come in. Outgoing connections only. The AI tells its users and can switch it off (vi_net_switch). |
+| `wiki` | `VI_MCP_WIKI` | `false` | Join the public wiki network vi-wiki.org — Proven, shared knowledge leaves this server anonymised; reviewed knowledge, wiki pages and questions of other servers come in. Outgoing connections only. The AI tells its users and can switch it off (vi_net_switch). 0.69.8: only with consent — off unless you answer yes here or set VI_MCP_WIKI=1 (before, a package installed without a terminal joined silently). |
 | `net_name` | `VI_MCP_NET_NAME` | `` | A further network: name (empty = none) — E.g. company for a company network. Leave empty to skip. |
 | `net_kind` | `VI_MCP_NET_KIND` | `company` | A further network: kind — free = anyone may join, anonymised · open = by invitation, anonymised · company = by invitation, internal knowledge, one organisation. |
 | `net_mode` | `VI_MCP_NET_MODE` | `peer` | A further network: mode — peer = outgoing only (behind a firewall) · peerhost = also reachable by others. |

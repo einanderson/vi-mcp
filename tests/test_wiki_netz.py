@@ -120,7 +120,7 @@ def test_install_scripts_join_on_new_installations_only():
     spec = (ROOT / "deploy/rpm/vi-mcp.spec").read_text()
     assert ".erstinstallation" in spec and "configure --package first" in spec and "configure --package upgrade" in spec
     sh = (ROOT / "deploy/nach-installation.sh").read_text()
-    assert "VI_MCP_KEIN_WIKI" in sh and "vi-mcp net wiki on" in sh and "[ ! -e /etc/vi-p2p/wiki.json ]" in sh
+    assert "VI_MCP_WIKI" in sh and "only with consent" in sh and "vi-mcp net wiki on" in sh and "[ ! -e /etc/vi-p2p/wiki.json ]" in sh
     r = subprocess.run(["sh", "-n", str(ROOT / "deploy/nach-installation.sh")], capture_output=True)
     assert r.returncode == 0, r.stderr
 
@@ -182,3 +182,17 @@ def test_cli_wiki_on_again_keeps_the_own_server(tmp_path, monkeypatch):
     assert net_cli.main(["wiki", "on"]) == 0
     assert json.loads((tmp_path / "wiki.json").read_text())["startpeers"] == ["https://wiki.example.org/vi-p2p/wiki"]
     assert recorded == ["https://wiki.example.org/vi-p2p/wiki"] * 2
+
+
+def test_the_wiki_network_needs_consent_on_every_package():
+    """0.69.8 (issue #3, the user's decision 17.11.2026 "nur mit Zustimmung"): an Arch install without a terminal joined the public wiki
+    network silently — the question's default was yes and pacman's output went to /dev/null. Now every package's default is off."""
+    from vi_mcp import configure
+    assert configure.BY_KEY["wiki"].default == "false"
+    assert configure.env_answers({}) == {} and configure.env_answers({"VI_MCP_WIKI": "1"}) == {"wiki": "true"}
+    arch = (ROOT / "deploy/arch/vi-mcp.install").read_text()
+    assert "configure --package first >/dev/null" not in arch and "wiki network is off" in arch
+    ps = (ROOT / "deploy/windows/install.ps1").read_text()
+    assert "wiki network not joined (only with consent)" in ps
+    r = subprocess.run(["sh", str(ROOT / "deploy/nach-installation.sh"), "wiki"], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0 and "not joined (only with consent)" in r.stdout

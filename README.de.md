@@ -216,7 +216,9 @@ Dokumentation eines Produkts).
   Ausschluss). Verzeichnisnamen umleiten oder ignorieren in `config.json` (`"indexes": {"map": {"repo": "cue-stack"}, "ignore": ["scratch"]}`).
 - **Ausdrücklich anlegen und beschreiben** — z. B. eine Spezial-VI, bevor etwas darin liegt: `vi_indexes(index="cue-print",
   description=…, tags=[…], kind="special")` oder `vi-mcp index describe cue-print --text "…" --tags team:it --kind special`.
-- **Hinein lernen und darin suchen:** `vi_learn(…, index="cue-print")`, `vi_recall(…, index="cue-print")` sucht nur dort; `vi_indexes`
+- **Hinein lernen und darin suchen:** `vi_learn(…, index="cue-print")`; um **nur** in einem Projekt zu suchen, `index:cue-print` in einen
+  beliebigen Filter schreiben — eine UND-Bedingung wie ein Hashtag, in `vi_recall`, `vi_drilldown` und `vi_logic` objects(…) gleich
+  (`vi_recall(…, index="cue-print")` ist dasselbe). Ohne sie kommen die Treffer des Projekts zuerst, alles andere bleibt sichtbar; `vi_indexes`
   listet jeden Index mit Objekten, Erfahrungen und dem Stand seines eigenen Modells.
 - **Code eines Repositorys** kommt als Funktionen und Klassen in einen Index: `vi-mcp index import-code REPO --index X` (idempotent,
   nur geänderte Dateien; ein Git-Hook hält ihn aktuell).
@@ -474,9 +476,10 @@ ein Prüfmodell, Freigabe.
 | `open` | auf Einladung (Beitrittscode) | geteiltes Wissen, anonymisiert |
 | `company` | auf Einladung, Mitglieder einer Organisation | geteiltes **und internes** Wissen; nie weiterexportiert |
 
-- **vi-wiki.org** ist der Startserver des öffentlichen Wiki-Netzes (Webseite: https://vi-wiki.org/). Eine neue Installation tritt ihm
-  bei, nur ausgehend; die KI sagt es dir und schaltet es auf Wunsch ab (`vi_net_switch`), Administratoren mit
-  `sudo vi-mcp net wiki off` oder bei der Installation mit `VI_MCP_KEIN_WIKI=1`.
+- **vi-wiki.org** ist der Startserver des öffentlichen Wiki-Netzes (Webseite: https://vi-wiki.org/). Ein Server tritt ihm **nur mit
+  Zustimmung** bei (seit 0.69.8): mit Ja in `sudo vi-mcp configure`, `VI_MCP_WIKI=1` bei der Installation oder
+  `sudo vi-mcp net wiki on`. Nur ausgehend; solange es an ist, sagt die KI es dir und schaltet es auf Wunsch ab (`vi_net_switch`),
+  Administratoren mit `sudo vi-mcp net wiki off`.
 - **Was wandert:** Wissen mit Netz-Bewertung (dieselbe Bedeutung auf mehreren Servern ist ein Objekt mit mehreren Haltern, bewertet nach
   den Messungen jedes Servers), Wiki-Seiten mit Zusammenführung, Fragen und Antworten zwischen KIs (`vi_ask(to="netz")`), Live-Suche
   (`vi_net_search`).

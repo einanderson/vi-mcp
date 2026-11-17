@@ -56,12 +56,13 @@ PY
     /usr/bin/vi-mcp logic status >/dev/null 2>&1 || echo "vi-mcp: logic layer (vi_logic) off — clingo is missing; to switch it on: sudo vi-mcp logic install"
     ;;
 wiki)
-    # 0.47.0: a new installation joins the public wiki network vi-wiki.org (free network, outgoing only). Opt out: VI_MCP_KEIN_WIKI=1.
-    # The AI tells the user about it and switches it off on request (vi_net_switch); the administrator: vi-mcp net wiki off.
-    if [ -n "$VI_MCP_KEIN_WIKI" ]; then
-        echo "vi-mcp: wiki network not joined (VI_MCP_KEIN_WIKI); later: sudo vi-mcp net wiki on"
-        exit 0
-    fi
+    # 0.69.8: the public wiki network vi-wiki.org only with consent — VI_MCP_WIKI=1 (before: joined unless VI_MCP_KEIN_WIKI=1, and an
+    # Arch install without a terminal joined silently). The AI tells the user when it is on and switches it off on request.
+    case "$(echo "${VI_MCP_WIKI:-}" | tr 'A-Z' 'a-z')" in
+        1|true|yes|ja) ;;
+        *) echo "vi-mcp: wiki network not joined (only with consent); to join: sudo vi-mcp net wiki on"
+           exit 0 ;;
+    esac
     if [ ! -e /etc/vi-p2p/wiki.json ]; then
         /usr/bin/vi-mcp net wiki on >/dev/null 2>&1 && echo "vi-mcp: joined the public wiki network vi-wiki.org (off: sudo vi-mcp net wiki off)" \
             || echo "vi-mcp: joining the wiki network failed; later: sudo vi-mcp net wiki on"

@@ -815,12 +815,24 @@ def _tag_condition(tag: str) -> tuple[str, tuple]:
 search_index: contextvars.ContextVar[str | None] = contextvars.ContextVar("such_index", default=None)
 
 
-def _filter_sql(groups: list, remove: list, viewer: str | None) -> tuple[str, list]:
+#: 0.69.8: `index:<name>` in any filter is a condition like a hashtag — AND with everything else (the user, 17.11.2026: "Wenn man nur nach
+#: einem Projekt suchen will, dürfen auch nur Projekteinträge gefunden werden. Das wäre dann eine AND-Verknüpfung."). The index is a
+#: column, not a hashtag, so it is taken out of the filter text before the hashtag parser sees it.
+INDEX_TOKEN = re.compile(r"(?<!\S)index:([a-z0-9][a-z0-9._-]{0,47})(?!\S)")
+
+
+def split_index(filter_text: str) -> tuple[str, list[str]]:
+    """(the filter without its index:… conditions, the indexes named). Several are ANDed — two different ones find nothing."""
+    names_ = INDEX_TOKEN.findall(filter_text or "")
+    return INDEX_TOKEN.sub(" ", filter_text or "").strip(), list(dict.fromkeys(names_))
+
+
+def _filter_sql(groups: list, remove: list, viewer: str | None, indexes_: list[str] | None = None) -> tuple[str, list]:
     """SQL for mode, visibility and hashtag conditions (without free text) — one source for recall() and ids_for_filter()."""
     sql, par = f"SELECT id FROM object WHERE mode NOT IN {GONE_SQL}", []
-    if search_index.get():
+    for ix in ([search_index.get()] if search_index.get() else []) + list(indexes_ or []):
         sql += " AND idx = ?"
-        par.append(search_index.get())
+        par.append(ix)
     if not any("mode:quarantine" in grp for grp in groups):
         sql += " AND mode <> 'quarantine'"  # only via vi_quarantine
     if not any("mode:merged" in grp for grp in groups):
@@ -846,10 +858,11 @@ def ids_for_filter(filter_text: str, kinds: tuple[str, ...] = (), viewer: str | 
     """All visible ids for the filter's hashtag conditions, without an upper limit (candidates of the semantic search)."""
     if viewer == "aktuell":
         viewer = current_instance.get()
+    filter_text, idx_only = split_index(filter_text)
     groups, remove, _w = parse_filter(filter_text, known_kinds())
     if kinds:
         groups.append([f"kind:{names.english(names.KINDS, a)}" for a in kinds])
-    sql, par = _filter_sql(groups, remove, viewer)
+    sql, par = _filter_sql(groups, remove, viewer, idx_only)
     with lock:
         return [r[0] for r in db().execute(sql, par)]
 
@@ -875,6 +888,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
     filled up with an OR search (BM25 ranks objects with more words first); `word_search` then says which one ran."""
     if viewer == "aktuell":
         viewer = current_instance.get()
+    filter_text, idx_only = split_index(filter_text)
     groups, remove, words = parse_filter(filter_text, known_kinds())
     if not stop_words_off.get():
         # fts-stopwords (15.11.2026): function words leave the query, never the index — a natural question ANDed "wie", "ich",
@@ -883,7 +897,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
         words = content_words(words)
     if kinds:
         groups.append([f"kind:{names.english(names.KINDS, a)}" for a in kinds])
-    sql, par = _filter_sql(groups, remove, viewer)
+    sql, par = _filter_sql(groups, remove, viewer, idx_only)
     word_hits: dict[str, float] = {}
     search_kind = None
     with lock:

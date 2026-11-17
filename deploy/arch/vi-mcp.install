@@ -4,10 +4,11 @@ post_install() {
     # pacman runs this before the sysusers hook at the end of the transaction: create the users now, the directories need them
     systemd-sysusers /usr/lib/sysusers.d/vi-mcp.conf
     VI_MCP_NO_ENABLE=1 /usr/share/vi-mcp/nach-installation.sh system
-    /usr/bin/vi-mcp configure --package first >/dev/null 2>&1 || echo "vi-mcp: configuration with defaults; change it with: sudo vi-mcp configure"
+    # 0.69.8: what configure did is shown, not swallowed (issue #3: the wiki network was joined silently; now it needs VI_MCP_WIKI=1)
+    /usr/bin/vi-mcp configure --package first 2>&1 | sed 's/^/vi-mcp: /' || echo "vi-mcp: configuration with defaults; change it with: sudo vi-mcp configure"
     echo "vi-mcp: start the memory server:      sudo systemctl enable --now vi-mcp.service"
     echo "vi-mcp: then set up Claude Code, Codex and Hermes:  sudo vi-mcp setup"
-    echo "vi-mcp: the public wiki network (optional):          sudo vi-mcp net wiki on"
+    echo "vi-mcp: the public wiki network is off; to join it:   sudo vi-mcp net wiki on"
 }
 
 post_upgrade() {

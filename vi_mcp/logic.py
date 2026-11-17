@@ -262,8 +262,9 @@ def object_data(filters: list[str], viewer: str | None, edges: bool = True) -> d
 
     per, not_visible = [], 0
     for f in filters:
-        groups, _remove, _words = g.parse_filter(f, g.known_kinds())
-        if not groups:
+        rest, idx_only = g.split_index(f)  # 0.69.8: index:<name> is a set of its own (a project), ANDed with the rest
+        groups, _remove, _words = g.parse_filter(rest, g.known_kinds())
+        if not groups and not idx_only:
             raise LogicError(f"objects({_quote(f)}) needs at least one kind:value condition that exists in memory (e.g. kind:skill, "
                              "host:web1*) — free words are no set; vi_vocabulary lists the kinds")
         vis = g.ids_for_filter(f, viewer=viewer)

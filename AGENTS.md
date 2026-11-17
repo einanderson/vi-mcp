@@ -53,8 +53,9 @@ signed entries to its own logbook, the network service (`vi-p2p`, `vi-p2p@<netz>
 - Peers behind firewalls (0.52.0): a long poll at the peerhost (`/netz/warten`, `NetService.wait_loop`) brings news in seconds instead of
   at the 300 s round, and the peerhost relays live searches to its waiting peers (`relay_search`, one hop, hits signed by their authors).
 - Everything foreign counts only after review (fixed rules → quarantine → reviewer → release); `vi_stats` section W counts all of it.
-- Default wiki network (0.47.0): a new installation joins the free network `wiki` (start `https://vi-wiki.org/vi-p2p/wiki`,
-  `p2p.WIKI_*`, `deploy/nach-installation.sh wiki`, opt-out `VI_MCP_KEIN_WIKI=1`). The instructions name every public network that is
+- Wiki network (0.47.0; only with consent since 0.69.8 — issue #3: an Arch install without a terminal joined silently): the free
+  network `wiki` (start `https://vi-wiki.org/vi-p2p/wiki`, `p2p.WIKI_*`) is joined only when the person says yes in `vi-mcp configure`,
+  sets `VI_MCP_WIKI=1` at installation or runs `vi-mcp net wiki on`; every package's default is off. The instructions name every public network that is
   on (`p2p.notice`); the AI tells the user and switches on request with `vi_net_switch` (memory-side switch `netz_schalter`: off = no
   outbox, no inbox, no live search, the service pauses, the web page hides it).
 - Web page (`web`, 0.46.0, config `web`, off by default; `vi-mcp web on --base PATH`): read-only HTML under `/web` — search, wiki, forum,

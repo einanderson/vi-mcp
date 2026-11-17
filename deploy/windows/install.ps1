@@ -9,7 +9,7 @@ param(
     [string]$Proxy = "",
     [string]$Port = "",  # empty: keep the port of an existing configuration, 8765 for a new one
     [string]$Embed = "", # 1: local embedding service and reranker (vi-mcp embed auto; GPU detected); 0: none. Empty: as before, new: 1 (0.60.0)
-    [string]$Wiki = "",   # the wiki network: empty = as before (a new installation joins vi-wiki.org, as the Linux packages); 1 = vi-wiki.org;
+    [string]$Wiki = "",   # the wiki network: empty = as before (0.69.8: a new installation does NOT join - only with consent); 1 = vi-wiki.org;
                           # 0 = not in the wiki network (an update switches it off); a host name or https://... = that wiki server (0.54.1)
     # From the MSI: all options in ONE argument "server=1;port=;embed=;proxy=...". Windows PowerShell 5.1 drops empty arguments of -File
     # (-Port "" became -Port -Embed ..., the binding failed and the MSI ended with error 1722 - found in a Windows 11 test VM, 10.11.2026).
@@ -235,6 +235,9 @@ try {
             } elseif (-not $wikiExists) {
                 Log "wiki network not joined (WIKI=0); later, in an elevated shell: vi-mcp net wiki on [--start SERVER]"
             }
+        } elseif (-not $wikiExists -and -not $Wiki) {
+            # 0.69.8: only with consent - a new installation without WIKI=1 (or a server) stays out of the public wiki network
+            Log "wiki network not joined (only with consent); to join: WIKI=1, or later in an elevated shell: vi-mcp net wiki on"
         } elseif (-not $wikiExists -or -not $wikiTask -or ($wikiGiven -and $Wiki -ne "1") -or $wikiRepair) {
             # $wikiRepair: net wiki on without --start drops start addresses that name no host (vi-wiki.org if none is left)
             $netArgs = @("-I", "-X", "utf8", "-m", "vi_mcp", "net", "wiki", "on")

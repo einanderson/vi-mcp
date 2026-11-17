@@ -436,7 +436,7 @@ TOOLS = [
                              "semantic": {"type": "boolean"},
                              "collect": {"type": "boolean", "description": "default: automatic (a question about everything of one entity gets its chunks under a token budget); false switches the collect mode off, e.g. for an A/B measurement"},
                              "reinforce": {"type": "boolean", "description": "default true; false = read only (access count and last use stay unchanged)"},
-                             "index": {"type": "string", "description": "optional: search only this index (a project or special VI); without it, hits from your project's index come first and everything else stays visible"},
+                             "index": {"type": "string", "description": "optional: search only this index (a project or special VI) — AND with the filter, nothing from outside it; the same as index:<name> in the filter, which also works in vi_drilldown and vi_logic objects(…). Without it, hits from your project's index come first and everything else stays visible"},
                              "project": {"type": "string", "description": "set by the hook: the name of your working directory (its index comes first)"},
                              "format": {"type": "string", "enum": ["text", "vil"], "description": "vil: the answer as VIL tell lines — memory kind, evidence, measured weight, source per hit"}}, ["filter"])},
     {"name": "vi_object",

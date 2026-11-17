@@ -114,7 +114,8 @@ QUESTIONS = [
       "always needs a token.", "false"),
     Q("wiki", "Networks", "boolean", "Join the public wiki network vi-wiki.org",
       "Proven, shared knowledge leaves this server anonymised; reviewed knowledge, wiki pages and questions of other servers come in. "
-      "Outgoing connections only. The AI tells its users and can switch it off (vi_net_switch).", "true", priority="high"),
+      "Outgoing connections only. The AI tells its users and can switch it off (vi_net_switch). 0.69.8: only with consent — off unless "
+      "you answer yes here or set VI_MCP_WIKI=1 (before, a package installed without a terminal joined silently).", "false", priority="high"),
     Q("net_name", "Networks", "string", "A further network: name (empty = none)",
       "E.g. company for a company network. Leave empty to skip.", "", check=_net_name_or_empty, once=True),
     Q("net_kind", "Networks", "select", "A further network: kind",

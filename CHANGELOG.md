@@ -5,6 +5,25 @@ Linked from [README.md](README.md).
 
 ## 0.69.8 — 2026-11-17
 
+### What has changed: the public wiki network only with consent (issue #3)
+
+- An Arch/CachyOS install joined the public wiki network vi-wiki.org on first install, silently: pacman runs without a terminal, the
+  configuration took the question's default (yes) and its output went to /dev/null, so `vi-p2p@wiki` was enabled and started without
+  the user being told (reported by the author of PR #2). The user's decision (17.11.2026): only with consent, on every package. The
+  question's default is now no; a server joins only when the person answers yes in `vi-mcp configure`, sets `VI_MCP_WIKI=1` at
+  installation or runs `vi-mcp net wiki on`. The Arch package shows what its configuration did; the Windows installer no longer joins
+  a new installation unless WIKI=1 or a server is given. Servers already in the network stay in it. Evidence:
+  `tests/test_wiki_netz.py::test_the_wiki_network_needs_consent_on_every_package`, `tests/test_configure.py` (no join without consent,
+  a join with VI_MCP_WIKI=1).
+
+### What has changed: searching only one project finds only that project
+
+- The user (17.11.2026): "Wenn man nur nach einem Projekt suchen will, dürfen auch nur Projekteinträge gefunden werden. Das wäre dann eine
+  AND-Verknüpfung." `index:<name>` in any filter is now a condition ANDed with the rest — in `vi_recall`, `vi_drilldown`, the
+  candidates of the semantic search and `vi_logic` objects(…) (a project alone is a set there). Before, only `vi_recall(index=…)`
+  restricted; elsewhere `index:x` was searched as text. Without it, the project still comes first and the rest stays visible.
+  Evidence: `tests/test_index_and_filter.py` (3 tests).
+
 ### What has changed: the README explains projects, skills and philosophies
 
 - The user (17.11.2026): "Hast du in der README eigentlich gesagt, dass man Projekte anlegen kann? Oder wie es mit der Philosophie

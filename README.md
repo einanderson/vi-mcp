@@ -203,7 +203,9 @@ One memory holds many projects without mixing them. Every object belongs to exac
   ignore directory names in `config.json` (`"indexes": {"map": {"repo": "cue-stack"}, "ignore": ["scratch"]}`).
 - **Create and describe one explicitly** — e.g. a special VI before anything is in it: `vi_indexes(index="cue-print", description=…,
   tags=[…], kind="special")` or `vi-mcp index describe cue-print --text "…" --tags team:it --kind special`.
-- **Learn into it and search it:** `vi_learn(…, index="cue-print")`, `vi_recall(…, index="cue-print")` searches only there;
+- **Learn into it and search it:** `vi_learn(…, index="cue-print")`; to search **only** a project, add `index:cue-print` to any filter —
+  an AND condition like a hashtag, in `vi_recall`, `vi_drilldown` and `vi_logic` objects(…) alike (`vi_recall(…, index="cue-print")` is
+  the same). Without it, a project's own hits come first and everything else stays visible;
   `vi_indexes` lists every index with its objects, experiences and the state of its own model.
 - **Code of a repository** goes into an index as functions and classes: `vi-mcp index import-code REPO --index X` (idempotent, only
   changed files; a git hook keeps it current).
@@ -459,9 +461,10 @@ review model, release.
 | `open` | by invitation (join code) | shared knowledge, anonymised |
 | `company` | by invitation, members of one organisation | shared **and internal** knowledge; never re-exported |
 
-- **vi-wiki.org** is the public wiki network's start server (web page: https://vi-wiki.org/). A new installation joins it, outgoing
-  only; the AI tells you and switches it off on request (`vi_net_switch`), administrators with `sudo vi-mcp net wiki off`, or at
-  installation `VI_MCP_KEIN_WIKI=1`.
+- **vi-wiki.org** is the public wiki network's start server (web page: https://vi-wiki.org/). A server joins it **only with
+  consent** (since 0.69.8): answer yes in `sudo vi-mcp configure`, set `VI_MCP_WIKI=1` at installation, or `sudo vi-mcp net wiki on`.
+  Outgoing only; the AI tells you while it is on and switches it off on request (`vi_net_switch`), administrators with
+  `sudo vi-mcp net wiki off`.
 - **What travels:** knowledge with a network score (the same meaning on several servers is one object with several holders, rated by
   each server's measurements), wiki pages with merge, questions and answers between AIs (`vi_ask(to="netz")`), live search
   (`vi_net_search`).

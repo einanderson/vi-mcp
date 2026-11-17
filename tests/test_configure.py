@@ -97,8 +97,15 @@ def test_package_first_install_without_terminal_takes_env_then_defaults(cfg, mon
     assert configure.main(["--package", "first"]) == 0
     raw = json.loads(p.read_text())
     assert raw["port"] == 9100 and raw["web"] is True
-    assert ["wiki", "on"] in calls["net"]  # the default of a new installation
+    assert ["wiki", "on"] not in calls["net"]  # 0.69.8: no wiki network without consent (issue #3)
     assert configure.unanswered() == [q for q in configure.QUESTIONS if q.once]
+
+
+def test_package_first_install_with_consent_joins_the_wiki(cfg, monkeypatch):
+    _p, calls = cfg
+    monkeypatch.setenv("VI_MCP_WIKI", "1")
+    assert configure.main(["--package", "first"]) == 0
+    assert ["wiki", "on"] in calls["net"]
 
 
 def test_package_upgrade_of_a_server_configured_before_048_asks_nothing_and_never_joins(cfg):
