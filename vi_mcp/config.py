@@ -139,6 +139,8 @@ class Instance:
     #: 0.33.0: model family (e.g. claude, gpt, qwen). Confirmations and refutations of one family count as ONE line — instances of the
     #: same model are not independent witnesses (Condorcet). None = undeclared: the instance counts as its own line.
     family: str | None = None
+    #: 0.69.0: may import documentation (vi_doc_sync) — an importer's own access, not an agent's (vi-mcp instance NAME --import)
+    importer: bool = False
 
 
 @dataclass
@@ -223,11 +225,12 @@ def load(p: Path | None = None) -> Config:
     k.web_internal_base = "/" + str(raw.get("web_internal_base") or "/intern").strip("/")
     for n, d in (raw.get("instances") or {}).items():
         k.instances[n] = Instance(n, d["token_sha256"], bool(d.get("reflexes", False)), bool(d.get("release", False)), bool(d.get("human", False)),
-                                  (d.get("family") or None))
+                                  (d.get("family") or None), bool(d.get("import", False)))
     return k
 
 
-def create_instance(name: str, reflexes: bool = False, p: Path | None = None, release: bool = False, human: bool = False) -> str:
+def create_instance(name: str, reflexes: bool = False, p: Path | None = None, release: bool = False, human: bool = False,
+                    importer: bool = False) -> str:
     """Create an instance or renew its token. Returns the new token (visible only this once)."""
     if not name or not all(c.isalnum() or c in "-_." for c in name):
         raise ValueError("instance name: letters, digits, - _ .")
@@ -236,7 +239,8 @@ def create_instance(name: str, reflexes: bool = False, p: Path | None = None, re
     p = p or fpath()
     raw = read_raw(p)
     token = secrets.token_urlsafe(32)
-    raw.setdefault("instances", {})[name] = {"token_sha256": hashlib.sha256(token.encode()).hexdigest(), "reflexes": reflexes, "release": release, "human": human}
+    raw.setdefault("instances", {})[name] = {"token_sha256": hashlib.sha256(token.encode()).hexdigest(), "reflexes": reflexes, "release": release, "human": human,
+                                              **({"import": True} if importer else {})}
     _save_raw(raw, p)
     return token
 

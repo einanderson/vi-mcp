@@ -37,6 +37,7 @@ PARAM_ALIASES: dict[str, str] = {
 #: English parameter → {accepted value: stored value}. The tool schemas show the English values; German values of older clients map to the
 #: same stored value (0.67.0: stored values are English, except the reflex kinds werkzeug/vorher/nachher until their data step).
 STORED_VALUES: dict[str, dict[str, str]] = {
+    "knowledge_kind": {"company-docs": "company-docs", "external-docs": "external-docs", "manual": "manual"},  # 0.69.0 vi_doc_sync
     "area": {"values": "values", "goals": "goals", "style": "style", "limits": "limits",
              "werte": "values", "ziele": "goals", "stil": "style", "grenzen": "limits"},
     "action": {"approve": "freigeben", "discard": "verwerfen", "state": "state", "sync": "sync",

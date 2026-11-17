@@ -362,6 +362,22 @@ TOOLS = [
                              "files": {"type": "array", "items": {"type": "object"}, "description": "changed files: {path, sha, lang, chunks: [{symbol, art, von, bis, code, signatur}], struktur: structure facts of a Python file (vi_mcp.code_facts)}"},
                              "removed": {"type": "array", "items": {"type": "string"}, "description": "paths removed from the repository (their pieces are archived)"}},
                             ["action", "index", "repo"])},
+    {"name": "vi_doc_sync",
+     "description": "VI, the documentation import access (0.69.0; for `vi-mcp docs import`, guide docs/IMPORT.md) — only for an instance "
+                    "created with --import, never needed by an agent: vi_recall finds the pages. action state: which pages (content sha256) "
+                    "the memory holds of a source; action sync: up to 50 pages, each ONE object with its whole Markdown (fixed id per source "
+                    "and page, unchanged pages skipped), hashtags at once (source_kind, knowledge_kind, page, space, area, the source's labels "
+                    "and service, and host:/topic: triggers derived like sleep step 6b), edges for links between pages; the old shape of the "
+                    "same source and page (section parts, older imports) and pages listed as removed go to the long-term archive with a reason.",
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["state", "sync"], "description": "state: what the memory holds of the source; sync: send pages"},
+                             "source": {"type": "string", "description": "the source's short name, e.g. confluence-it, cue-docs (a-z 0-9 . _ -); also its source_kind: tag"},
+                             "index": {"type": "string", "description": "optional: the index the pages belong to (a special VI is created if missing); default global"},
+                             "knowledge_kind": {"type": "string", "enum": ["company-docs", "external-docs", "manual"], "description": "company-docs (own wiki), external-docs (a vendor's), manual"},
+                             "label": {"type": "string", "description": "optional: how the source is named in each page's key statement, e.g. \"Confluence IT\""},
+                             "pages": {"type": "array", "items": {"type": "object"}, "description": "up to 50: {page_id, title, markdown, url, version, space, area, labels: [], service, links: [page_id], tags: [kind:value]}"},
+                             "removed": {"type": "array", "items": {"type": "string"}, "description": "page ids the source no longer has (archived with a reason)"},
+                             "old_source_kind": {"type": "string", "description": "optional: the source_kind: value an older import filed these pages under, when it differs from source — its objects of the same page are the old shape that is archived"}},
+                            ["action", "source"])},
     {"name": "vi_context",
      "description": "VI, for hooks: note that the next vi_learn/vi_recall of this instance comes from the project of this session (its working "
                     "directory). Called by the Claude Code hook right before those tools; an agent does not need it.",
@@ -1069,7 +1085,8 @@ def _archive_superseded(new: "g.MemoryObject", ids: list[str], instance: str) ->
     return done
 
 
-def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, release_permission: bool = False, family: str | None = None) -> str:
+def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, release_permission: bool = False, family: str | None = None,
+              import_permission: bool = False) -> str:
     """Run a tool. Returns text; a domain refusal as Rejected(reason).
     Name and arguments may be English (public since 0.22.0) or German (alias) — translated to the internal form here."""
     name = api_en.canonical_name(name)
@@ -1522,6 +1539,25 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
                 + (f" · {images.summary(o)} (sha256 {o.data['image']['sha'][:12]}…)" if o.data.get("image") else "")
                 + (" · visibility internal (instances with a token only; never an open network, only a company network)" if o.visibility == "internal" else "")
                 + sup_line)
+    if name == "vi_doc_sync":  # 0.69.0
+        from . import doc_import
+        if not import_permission:
+            raise Rejected("vi_doc_sync needs an instance with the import right (vi-mcp instance NAME --import) — an agent does not import; "
+                           "vi_recall finds the pages")
+        source = str(args.get("source") or "").strip().lower()
+        try:
+            if args.get("action") == "state":
+                return json.dumps(doc_import.server_state(source), ensure_ascii=False)
+            if args.get("action") != "sync":
+                raise ValueError("action must be state or sync")
+            r = doc_import.server_sync(source, list(args.get("pages") or []), [str(p) for p in args.get("removed") or []], instance,
+                                       args.get("index"), str(args.get("knowledge_kind") or "company-docs"), args.get("label"),
+                                       (str(args.get("old_source_kind") or "").strip().lower() or None))
+        except ValueError as e:
+            raise Rejected(str(e)) from e
+        from . import on_demand
+        on_demand.nudge("documentation imported")
+        return json.dumps(r, ensure_ascii=False)
     if name == "vi_code_sync":  # 0.61.0
         from . import code_import, indexes
         if instance == config.OPEN:

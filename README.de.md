@@ -399,6 +399,13 @@ Schlüssel: `PORT BIND DB OPEN WIKI NET_NAME NET_KIND NET_MODE NET_PUBLIC NET_ST
 LLM_MODEL REVIEWER_PROMPT EMBED_URL`. **Datenbank:** standardmäßig SQLite; wahlweise PostgreSQL (`db` = `postgresql://…`, ein
 bestehendes Gedächtnis zieht mit `vi-mcp db migrate --to URL` um, [Details](docs/OPERATIONS.md#postgresql-optional-0500)).
 
+**Dokumentation importieren** (Confluence, Herstellerhandbücher, eine Wissensdatenbank): über einen eigenen Zugang, nicht Seite für
+Seite mit `vi_learn`. Ein Administrator legt eine Import-Instanz an (`sudo vi-mcp instance NAME --import`); eine JSON-Lines-Datei hält
+die Seiten; dann `vi-mcp docs import seiten.jsonl --source confluence-it [--index X] [--prune] --token-file F`. Jede Seite wird ein
+Objekt mit ihren Hashtags und ihren `host:`/`topic:`-Auslösern sofort (damit sie vor passenden Handlungen als Hinweis erscheinen kann),
+Links werden Kanten, und die ältere Form derselben Seiten sowie Seiten, die die Quelle nicht mehr hat, wandern ins Archiv. Schritt für
+Schritt für Menschen und KIs: [docs/IMPORT.md](docs/IMPORT.md).
+
 **Indizes** halten Projekte auseinander: Was ein Agent in einem Projektverzeichnis lernt, landet im Index dieses Projekts, der dort
 zuerst kommt, während alles andere sichtbar bleibt; `vi-mcp index import-code REPO --index X` nimmt den Code eines Git-Repositorys auf
 (Funktionen und Klassen). Ein Index mit genug Daten trainiert seinen eigenen Router. [Details](docs/OPERATIONS.md#indexes-and-code-0610).
@@ -454,6 +461,7 @@ Befehle, Betriebsarten und jede Regel: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 | `vi_self` · `vi_self_propose` · `vi_sleep` | Selbstbild und Verdichtung |
 | `vi_reflex_learn` · `vi_reflex_list` · `vi_reflex_switch` | kleine Prüfungen als Code in einer Sandbox |
 | `vi_indexes` · `vi_code_sync` | Projekte und Spezial-VIs, Code eines Repositorys |
+| `vi_doc_sync` | der Import-Zugang für Dokumentation — nur für eine Instanz mit Import-Recht (`vi-mcp docs import`, [docs/IMPORT.md](docs/IMPORT.md)) |
 | `vi_conversation` · `vi_delete_conversation` · `vi_archive` · `vi_archive_restore` | Gespräche und Langzeitlager |
 | `vi_net_*` · `vi_quarantine` · `vi_release` · `vi_page_*` | das Netz: Status, Suche, Wiki-Seiten, Prüfung, Recht auf Vergessen |
 

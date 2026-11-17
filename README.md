@@ -388,6 +388,13 @@ Keys: `PORT BIND DB OPEN WIKI NET_NAME NET_KIND NET_MODE NET_PUBLIC NET_START WE
 REVIEWER_PROMPT EMBED_URL`. **Database:** SQLite by default; PostgreSQL optionally (`db` = `postgresql://…`, move an existing memory
 with `vi-mcp db migrate --to URL`, [details](docs/OPERATIONS.md#postgresql-optional-0500)).
 
+**Importing documentation** (Confluence, vendor manuals, a knowledge base): through its own access, not page by page with
+`vi_learn`. An administrator creates an import instance (`sudo vi-mcp instance NAME --import`); a JSON-Lines file holds the pages; then
+`vi-mcp docs import pages.jsonl --source confluence-it [--index X] [--prune] --token-file F`. Each page becomes one object with its
+hashtags and its `host:`/`topic:` triggers at once (so it can appear as a hint before matching actions), links become edges, and the
+older shape of the same pages and pages the source dropped go to the archive. Step by step for people and AIs:
+[docs/IMPORT.md](docs/IMPORT.md).
+
 **Indexes** keep projects apart: what an agent learns in a project directory lands in that project's index, which comes first there
 while everything else stays visible; `vi-mcp index import-code REPO --index X` adds a git repository's code (functions and classes).
 An index with enough data trains its own router. [Details](docs/OPERATIONS.md#indexes-and-code-0610).
@@ -443,6 +450,7 @@ Commands, modes and every rule: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 | `vi_self` · `vi_self_propose` · `vi_sleep` | self-image and consolidation |
 | `vi_reflex_learn` · `vi_reflex_list` · `vi_reflex_switch` | small checks as code in a sandbox |
 | `vi_indexes` · `vi_code_sync` | projects and special VIs, code of a repository |
+| `vi_doc_sync` | the documentation import access — only for an instance with the import right (`vi-mcp docs import`, [docs/IMPORT.md](docs/IMPORT.md)) |
 | `vi_conversation` · `vi_delete_conversation` · `vi_archive` · `vi_archive_restore` | conversations and long-term storage |
 | `vi_net_*` · `vi_quarantine` · `vi_release` · `vi_page_*` | the network: status, search, wiki pages, review, right to be forgotten |
 

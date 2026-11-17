@@ -95,6 +95,7 @@ def run(batch: int = BATCH) -> dict:
             too_common_t = {x for x, n in tdf.items() if n > THEMA_DF_MAX * len(rows)}
         names = {k: v for k, v in names.items() if v not in too_common_h}
         themen = themen - too_common_t
+        _last_common[:] = sorted(too_common_h | too_common_t)
     report = {"geprueft": 0, "mit_host": 0, "mit_thema": 0, "hashtags_neu": 0, "bekannte_hosts": len(set(names.values())), "themen": len(themen),
               "zu_haeufig": sorted(too_common_h | too_common_t)[:20]}
     for oid in ids:
@@ -115,6 +116,15 @@ def run(batch: int = BATCH) -> dict:
         g.save(o)  # without link_similar: no new edges
     report["offen"] = _remaining()
     return report
+
+
+#: 0.69.0: what the last run found too common to be a specific trigger — the import (doc_import) leaves it out as well
+_last_common: list[str] = []
+
+
+def too_common() -> list[str]:
+    """Hosts and topics the last sleep step found in too much of the documentation (empty until it ran in this process)."""
+    return list(_last_common)
 
 
 def _remaining() -> int:

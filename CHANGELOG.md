@@ -3,7 +3,39 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
-## 0.68.2 — 2026-11-17
+## 0.69.0 — 2026-11-17
+
+### What is new: an import access for documentation — `vi_doc_sync` and `vi-mcp docs import`
+
+- **Its own right and tool** (the user, 17.11.2026: "gibt es einen eigenen import api zugang? Das wäre doch sinnvoll. Und für die KI
+  dokumentieren"): an instance created with `vi-mcp instance NAME --import` (config `"import": true`) may call `vi_doc_sync`; an agent's
+  token is refused. Before, documentation went in page by page through `vi_learn` with an agent's token — one call per page, the old shape
+  retirable only by its own instance, old ids read from the database, removed pages left behind.
+- **One object per page**, fixed id per source and page (any import instance updates the same object; unchanged pages skipped by content
+  hash), whole Markdown (the server chunks it), parts only above 200,000 characters (a shorter later version archives leftover parts).
+- **Hashtags and triggers at once** (the user: "aber beim import werden doch keine tags vergeben oder?" — measured on the 1,688 pages
+  imported earlier that day: only administrative tags, 2 with a `host:`, none with derived triggers): `source_kind`, `knowledge_kind`,
+  `page`, `space`, `area`, the source's labels (`label:`) and service (`service:`), and `host:`/`topic:` derived exactly as sleep step 6b
+  does (`doc_triggers.derive`, known hosts and topics only, at most 5 each) — a page can appear as a hint from the first moment.
+- **Links between pages** of the same source become edges ("doc link"), also when the target arrives in a later batch (at most 20 per
+  page). **The old shape is retired by the server**: active objects of the same `source_kind:`/`page:` the import did not write go to the
+  archive with a reason naming the new object, and their `host:`, `topic:`, `area:`, `label:` and `service:` hashtags move to the new page
+  object (on production e.g. `topic:dns` on 274 Confluence parts); `--old-source-kind` names an older import's `source_kind:` when the
+  source got a new name (CUE and DC-X were imported together as `stibodx`). Pages listed as removed (`--prune`) are archived; secrets are
+  replaced and counted (the change check uses the hash of the page as sent, so such a page is not re-sent on every run).
+- **End to end** (17.11.2026, a local server with the 0.69.0 code, 5 DC-X pages from the AIKB export): an agent token refused; dry run
+  `to_send 5`; import `new 5`; a second run `to_send 0` after the hash fix; `--prune` with 3 of the 5 pages archived 2; `docs state` 3.
+  The AIKB adapter `aikb_export.py` (outside this repository) writes the pages files for Confluence IT, CUE and DC-X.
+- **Client** `vi-mcp docs import FILE.jsonl --source S [--index X] [--kind …] [--label …] [--prune] [--pause S] [--dry-run]` and
+  `vi-mcp docs state`: asks the server what it holds, sends changed pages in batches of 50. **Guide for people and AIs:**
+  [docs/IMPORT.md](docs/IMPORT.md) (when to import and when not, the pages file, dry run, import, checks, limits); AGENTS.md and the
+  READMEs point to it; the tool's own description says an agent never calls it.
+- Evidence: `tests/test_doc_import.py` (agent token refused; one object with source tags, labels, service, derived host and topic;
+  unchanged skipped, changed updated in place by another import instance; the old shape of a page archived whoever wrote it, other pages
+  untouched; removed pages archived, links as edges in both orders; split and leftover parts; secrets replaced, limits; the client sends
+  only changed pages and prunes; the import right stored and read).
+- **Migration:** none for existing data. The config key `"import"` is new and optional; instances without it have no import right. The
+  first import of a source archives its older objects (restorable with `vi_archive_restore`).
 
 ### What was fixed: the first archive access after a server start failed
 

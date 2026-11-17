@@ -1,6 +1,6 @@
 """Usage (German command names are accepted as aliases):
   python3 -m vi_mcp                       start the server (configuration: $VI_MCP_CONFIG or ~/.config/vi-mcp/config.json)
-  python3 -m vi_mcp instance NAME [--reflexes] [--release] [--human]
+  python3 -m vi_mcp instance NAME [--reflexes] [--release] [--human] [--import]
                                           create an instance or renew its token; prints the token ONCE
   python3 -m vi_mcp net …                 network: setup, invite, exclude, invitation, join, run, peers, id, status
   python3 -m vi_mcp setup [--help]        register vi-mcp in Claude Code, Codex CLI and Hermes Agent (ANSI menu)
@@ -264,9 +264,11 @@ def _cli(argv: list[str]) -> int:
     if command == "instance" and len(argv) >= 2:
         opts = argv[2:]
         reflexes = "--reflexes" in opts or "--reflexe" in opts
+        importer = "--import" in opts  # 0.69.0: the documentation import access (vi_doc_sync)
         token = config.create_instance(argv[1], reflexes=reflexes, release="--release" in opts or "--freigabe" in opts,
-                                       human="--human" in opts or "--mensch" in opts)
-        print(f"Instance {argv[1]} created in {config.fpath()} (reflex right: {'yes' if reflexes else 'no'}).")
+                                       human="--human" in opts or "--mensch" in opts, importer=importer)
+        print(f"Instance {argv[1]} created in {config.fpath()} (reflex right: {'yes' if reflexes else 'no'}"
+              f"{'; import right: yes — for vi-mcp docs import, docs/IMPORT.md' if importer else ''}).")
         print(f"Token (not stored, only its SHA-256):\n{token}")
         return 0
     if command == "p2p-key" and len(argv) == 2:
@@ -296,6 +298,9 @@ def _cli(argv: list[str]) -> int:
     if command == "embed":
         from . import embed_service
         return embed_service.main(argv[1:])
+    if command == "docs":  # 0.69.0: documentation import (docs/IMPORT.md)
+        from . import doc_import
+        return doc_import.main(argv[1:])
     if command == "index":  # 0.61.0
         from . import indexes
         return indexes.main(argv[1:])

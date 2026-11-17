@@ -1,12 +1,12 @@
 # vi-mcp reference
 
-Generated from the code of vi-mcp 0.68.2 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
+Generated from the code of vi-mcp 0.69.0 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
 
 Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server configuration](#server-configuration-configjson) · [Network service configuration](#network-service-configuration-etcvi-p2pnetworkjson) · [Configuration catalogue](#configuration-catalogue-debconf-vi-mcp-configure-vi_mcp_key) · [Environment variables](#environment-variables) · [HTTP endpoints](#http-endpoints) · [Modules](#modules-vi_mcp)
 
 ## MCP tools
 
-65 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
+66 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
 
 ### `vi_before`
 
@@ -466,6 +466,21 @@ VI, for `vi-mcp index import-code`: the code of a git repository in an index. ac
 | `files` | array of object |  | changed files: {path, sha, lang, chunks: [{symbol, art, von, bis, code, signatur}], struktur: structure facts of a Python file (vi_mcp.code_facts)} |
 | `removed` | array of string |  | paths removed from the repository (their pieces are archived) |
 
+### `vi_doc_sync`
+
+VI, the documentation import access (0.69.0; for `vi-mcp docs import`, guide docs/IMPORT.md) — only for an instance created with --import, never needed by an agent: vi_recall finds the pages. action state: which pages (content sha256) the memory holds of a source; action sync: up to 50 pages, each ONE object with its whole Markdown (fixed id per source and page, unchanged pages skipped), hashtags at once (source_kind, knowledge_kind, page, space, area, the source's labels and service, and host:/topic: triggers derived like sleep step 6b), edges for links between pages; the old shape of the same source and page (section parts, older imports) and pages listed as removed go to the long-term archive with a reason.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | string (state, sync) | yes | state: what the memory holds of the source; sync: send pages (German: `aktion`) |
+| `source` | string | yes | the source's short name, e.g. confluence-it, cue-docs (a-z 0-9 . _ -); also its source_kind: tag (German: `quelle`) |
+| `index` | string |  | optional: the index the pages belong to (a special VI is created if missing); default global |
+| `knowledge_kind` | string (company-docs, external-docs, manual) |  | company-docs (own wiki), external-docs (a vendor's), manual |
+| `label` | string |  | optional: how the source is named in each page's key statement, e.g. "Confluence IT" |
+| `pages` | array of object |  | up to 50: {page_id, title, markdown, url, version, space, area, labels: [], service, links: [page_id], tags: [kind:value]} |
+| `removed` | array of string |  | page ids the source no longer has (archived with a reason) |
+| `old_source_kind` | string |  | optional: the source_kind: value an older import filed these pages under, when it differs from source — its objects of the same page are the old shape that is archived |
+
 ### `vi_context`
 
 VI, for hooks: note that the next vi_learn/vi_recall of this instance comes from the project of this session (its working directory). Called by the Claude Code hook right before those tools; an agent does not need it.
@@ -669,7 +684,7 @@ VI: mode of a reflex — test (hint only), active (takes effect), off. test rese
 ```text
 Usage (German command names are accepted as aliases):
 python3 -m vi_mcp                       start the server (configuration: $VI_MCP_CONFIG or ~/.config/vi-mcp/config.json)
-python3 -m vi_mcp instance NAME [--reflexes] [--release] [--human]
+python3 -m vi_mcp instance NAME [--reflexes] [--release] [--human] [--import]
                                         create an instance or renew its token; prints the token ONCE
 python3 -m vi_mcp net …                 network: setup, invite, exclude, invitation, join, run, peers, id, status
 python3 -m vi_mcp setup [--help]        register vi-mcp in Claude Code, Codex CLI and Hermes Agent (ANSI menu)
@@ -1165,6 +1180,7 @@ First line of each module's docstring.
 | `dataset` | Training data from the memory (0.62.0) — the goal: a VI that comes out of the incubator fine-tunes an AI. |
 | `db` | Database access: SQLite (default, standard library) or PostgreSQL (optional, psycopg 3). |
 | `db_migrate` | Move a SQLite database to PostgreSQL (0.50.0): `vi-mcp db migrate`, `vi-mcp db status`. |
+| `doc_import` | Documentation import (0.69.0): pages of an outside source (Confluence, a vendor manual, a knowledge base) into the memory — the |
 | `doc_triggers` | Triggers for documentation (0.26.0): imported documentation gets host: and topic: hashtags so it can appear before matching actions. |
 | `embed_service` | Own embedding service (0.28.0) and reranker (0.60.0): `vi-mcp embed setup\|auto\|compare\|status\|remove` — vectors without a foreign stack. |
 | `evaluation` | Evaluation (0.55.0) — a fixed measuring instrument for the search, so every change to it is measured before it stays. |
