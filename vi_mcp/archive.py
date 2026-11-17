@@ -229,14 +229,28 @@ def cleanup() -> dict:
     return {"eingelagert": n, "je_art": counter, "rohverlaeufe": r, "verdichtet": v}
 
 
-def hint(triggers: list[str]) -> list[str]:
-    """One line for `vi_before` if archived knowledge fits the action."""
+def hint(triggers: list[str], instance: str | None = None) -> tuple[list[str], list[str]]:
+    """One line for `vi_before` if archived knowledge fits the action, and the ids shown (0.69.5: recorded on the action as archive_shown,
+    so vi_feedback can book them). The caller passes only the specific triggers — before a shell command not the tool and generic words
+    (0.69.5: a Confluence page tagged topic:grep was shown before nearly every grep, the user reported it as wrong). An entry this
+    instance reported as wrong is not shown to it again."""
     if not triggers:
-        return []
-    hits = [o for _, o, _g in g.recall("(" + " OR ".join(triggers) + ") mode:archived", limit=3, kinds=KNOWLEDGE)]
+        return [], []
+    hits = [o for _, o, _g in g.recall("(" + " OR ".join(triggers) + ") mode:archived", limit=6, kinds=KNOWLEDGE)
+            if not (instance and instance in ((o.data.get("archive_feedback") or {}).get("wrong") or []))][:3]
     if not hits:
-        return []
-    return ["Matching in the long-term archive: " + "; ".join(f"[{o.id}] {o.text[:80]}" for o in hits) + " — vi_archive_restore(id, reason) brings an entry back"]
+        return [], []
+    return (["Matching in the long-term archive: " + "; ".join(f"[{o.id}] {o.text[:80]}" for o in hits)
+             + " — vi_archive_restore(id, reason) brings an entry back"], [o.id for o in hits])
+
+
+def archive_feedback(oid: str, instance: str, value: int) -> None:
+    """0.69.5: a reported archive hint — wrong: not shown to this instance again; helped: counted."""
+    def change(d):
+        fb = d.setdefault("archive_feedback", {})
+        key = "wrong" if value < 0 else "helped"
+        fb[key] = sorted(set(fb.get(key) or []) | {instance})
+    g.update_data(oid, change)
 
 
 def progress() -> dict:

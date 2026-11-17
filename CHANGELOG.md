@@ -3,6 +3,23 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.69.5 — 2026-11-17
+
+### What was fixed: archive hints before shell commands, and feedback on them
+
+- **An archived page was offered before nearly every grep.** The user (17.11.2026): "Der Hinweis zum Exchange-Virus Hafnium hatte nichts
+  damit zu tun. Ich habe ihn als falsch gemeldet, die VI hat die Meldung aber nicht verbucht." Two causes, both in the line "Matching
+  in the long-term archive" (`archive.hint`, called by `intuition.before`):
+  - it searched with all triggers of the action, including the tool and generic shell words (`tool:Bash`, `topic:grep`, `topic:sed`).
+    Ordinary hints have ignored those before a shell command since 0.49.0; the archive line did not, so a Confluence page tagged
+    `topic:grep` matched every grep. Now it uses only the specific triggers (a host, a program, an error), the same set as ordinary hints.
+  - the entries it showed were not recorded on the action, so `vi_feedback(wrong=[id])` answered "not shown in the last N minutes" although
+    it had been shown many times. Now they are recorded (`before.archive_shown`); feedback on one is booked on the action and on the
+    archived entry (`data.archive_feedback`), and an entry an instance reported as wrong is not offered to that instance again.
+- Evidence: `tests/test_hint_quality.py::test_archive_hints_need_specific_triggers_and_feedback_on_them_is_booked` — it fails on 0.69.4
+  at the first assertion (the archive line before a plain grep) and passes now. **Migration:** none. Reports given before this version
+  were not recorded and cannot be booked afterwards; with the filter the page no longer appears before a plain grep.
+
 ## 0.69.4 — 2026-11-17
 
 ### What is new: skills live in the server, extensible, and every AI inherits them

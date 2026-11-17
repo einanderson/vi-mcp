@@ -215,3 +215,27 @@ def test_opening_a_hint_the_hook_showed_in_another_session_counts(gd):
     with session.on_behalf(other):
         tools.call_tool("vi_object", {"id": k.id}, "b", False)
     assert usage_stats.data(1)["regeln"]["geoeffnet"] == 1
+
+
+def test_archive_hints_need_specific_triggers_and_feedback_on_them_is_booked(gd):
+    """0.69.5 (production 17.11.2026): an archived Confluence page tagged topic:grep was offered before nearly every grep, and the
+    user's vi_feedback(wrong=[it]) was not booked — archive hints were never recorded as shown."""
+    from vi_mcp import archive
+    noise = _k("Exchange incident 2021: commands used on the mail server", ["topic:grep", "topic:exchange"])
+    fit = _k("web1 rotates its logs at 03:00 with logrotate", ["host:web1.example", "topic:logrotate"])
+    for o in (noise, fit):
+        archive.store_in_archive(g.load(o.id), "test: unused")
+    v = intuition.before("Bash", {"command": "grep -n foo vi_mcp/web.py"}, "a", False)
+    assert not any("long-term archive" in h for h in v["hinweise"]) and "archive_shown" not in v["zugriff"]
+    s = session.begin("a", "t")
+    with session.on_behalf(s):
+        v = intuition.before("Bash", {"command": "ssh web1.example grep -c rotate /var/log/syslog"}, "a", False)
+        intuition.after("Bash", {"command": "ssh web1.example"}, True, 5, None, None, v["vorher_id"], "a", False)
+    assert any(fit.id in h and "long-term archive" in h for h in v["hinweise"]) and v["zugriff"]["archive_shown"] == [fit.id]
+    out = tools.call_tool("vi_feedback", {"wrong": [fit.id]}, "a", False)
+    assert "feedback recorded for 1 hint(s)" in out
+    assert g.load(fit.id).data["archive_feedback"] == {"wrong": ["a"]}
+    v = intuition.before("Bash", {"command": "ssh web1.example uptime"}, "a", False)
+    assert not any(fit.id in h for h in v["hinweise"])  # reported wrong: not offered to this instance again
+    v = intuition.before("Bash", {"command": "ssh web1.example uptime"}, "b", False)
+    assert any(fit.id in h for h in v["hinweise"])  # another instance still sees it

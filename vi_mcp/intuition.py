@@ -432,7 +432,8 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
         if line:
             hints.append(line)
     from . import archive
-    hints += archive.hint(search_triggers)
+    archive_lines, archive_shown = archive.hint(sorted(matching) if general else search_triggers, instance)  # 0.69.5: specific only
+    hints += archive_lines
     answer, age_s, ttl = None, None, None
     from .config import OPEN
     if read_only(tool, is_read_only) and instance != OPEN and not state_dependent(tool):  # without a token all share one instance: no remembered answers
@@ -449,7 +450,8 @@ def before(tool: str, args: dict, instance: str | None = None, is_read_only: boo
                **({"idx": project_idx, "idx_priority": sum(1 for o in shown_obj if indexes.first(o, project_idx)),
                   "idx_priority_off": sum(1 for o in shown_obj if o.idx == project_idx and o.data.get("priority_off"))} if project_idx else {}),
                **({"code_datei": code_file} if code_file else {}),
-               "repeat_suppressed": [o.id for o in repeated], **({"nudge": nudge} if nudge else {})})
+               "repeat_suppressed": [o.id for o in repeated], **({"nudge": nudge} if nudge else {}),
+               **({"archive_shown": archive_shown} if archive_shown else {})})
     before_id = secrets.token_hex(8)
     if answer is not None:
         experience(tool, args, True, 0, None, answer, access, instance, is_read_only)
@@ -559,6 +561,13 @@ def feedback(instance: str, hint_id: str, value: int, before_id: str | None = No
                                   (instance, since)).fetchall()
     for (eid,) in rows:
         e = g.load(eid)
+        if e and hint_id in ((e.data.get("before") or {}).get("archive_shown") or []):  # 0.69.5: an archive hint — booked on the entry
+            from . import archive
+            archive.archive_feedback(hint_id, instance, value)
+            e.data.setdefault("feedback", {})[hint_id] = 1 if value > 0 else -1
+            e.change(f"ki@{instance}", "feedback on the archive hint", f"{hint_id}: {'helped' if value > 0 else 'was wrong'}")
+            g.save(e)
+            return eid
         if e and hint_id in ((e.data.get("before") or {}).get("shown") or []):
             e.data.setdefault("feedback", {})[hint_id] = 1 if value > 0 else -1
             e.change(f"ki@{instance}", "feedback on the hint", f"{hint_id}: {'helped' if value > 0 else 'was wrong'}")
