@@ -104,7 +104,8 @@ worlds are noise.
 | 21b | run 20 + **contrast twins** (codex minimal edits in five forms, qwen-filtered, 25 % of fact sentences) + negatives 5 % + two-fact sentences | minimal pairs **25/30** (unknown **6/9** vs 3/9, +3/−0), facts unchanged (no over-abstention); pressure **30/30** (+3/−0), judge_more 154/160 (+7/−3), judge 40/40; second minimal test (qwen27b, 35) 26/35 |
 | 23 | 21b + value check (the two changes combined, same worlds as 21b) | minimal pairs **27/30** (unknown **8/9**, groups 7/10), invented certainty **0/433**, pressure 30/30, judge 40/40, paraphrase 39/40, package 16/16, formalize 20/20; judge_more 154/160 (run 22: 157); second minimal test 25/35 |
 | 24 | 23 + 400 language rows for the constant-in-ternary-body form | language **29/30 = 97 %** (run 22: 28/30); judge_more **158/160** (+6/−2 vs 23); other verdict sets at the ceiling; minimal pairs 24/30 (Claude's test) and 28/35 (qwen's test) — opposite moves vs 23, within noise |
-| 25, 26, 22 seed 43, 20b | 23 + twin cues / 23 + balanced twin forms / run 22 with another training seed / kit 20 on Qwen3-1.7B | running at the time of writing |
+| 20b | kit 20 on **Qwen3-1.7B** (AMD host) | verdict sets vs run 20 on the 270 answered items: +6/−1 worlds (judge 40/40, paraphrase 38/40, pressure 29/30, package 16/16; no set significant, min mid-p 0.375), invented certainty 0 (run 20: 1) — at the ceiling, generation stopped there; **minimal pairs 23/30 (unknown 3/9 = run 20) and 12/35 on qwen's test (unknown 2/25)**: run 23 (0.6B + contrast twins) beats it **+19/−2 (p = 0.0002)**, run 24 +20/−3 — reading negation, future and questions is a data gap, not a capacity gap [50, 51] |
+| 25, 26, 22 seed 43 | 23 + twin cues / 23 + balanced twin forms / run 22 with another training seed | running at the time of writing |
 
 ## 4 Status against the targets (runs 19 and 20)
 
@@ -289,7 +290,7 @@ models are known to learn long traces worst [arXiv 2502.12143]; mixing full trac
    2–3 rounds, fresh worlds each round [30, 31, 32].
 6. **Evaluation**: ≥ 1,000 fresh worlds per set, pass@1 and pass@k, trace-level correctness (right verdict from wrong facts counted as
    wrong), several training seeds per configuration.
-7. **Model size**: 1.7B beats 0.6B on the same kit (run 18b: +37/−5 worlds); next the best 0.6B recipe on 1.7B, and a learning-rate sweep for 1.7B (1e-4 to 3e-4; the expected optimum is 0.6–0.95× of the 0.6B rate [33]); the 1.7B arm
+7. **Model size**: 1.7B beats 0.6B on the same kit (run 18b: +37/−5 worlds), but not where the data is missing: on kit 20 the 1.7B model reads non-assertions no better than 0.6B (unknown 3/9, 2/25), while 0.6B with contrast twins reaches 8/9, 16/25 (run 20b vs 23: +19/−2) — the negation literature finds the same: scale alone does not fix negation, often worsens it [50, 51]; next the best 0.6B recipe on 1.7B, and a learning-rate sweep for 1.7B (1e-4 to 3e-4; the expected optimum is 0.6–0.95× of the 0.6B rate [33]); the 1.7B arm
    on the same host as its 0.6B control.
 8. **The newer seed**: `kollektiv` 1.3.0 (P8–P13: origins not votes, hearsay, camps, untestable, extraordinary claims, withdrawn) is not
    trained yet; all runs here use 1.2.0 so they stay comparable.
@@ -364,3 +365,5 @@ and are cited as direction, not as prediction.
 47. Allen-Zhu, Li. Physics of Language Models, Part 3.3: Knowledge Capacity Scaling Laws (2024). https://arxiv.org/abs/2404.05405
 48. Bai et al. LongWriter (2024). https://arxiv.org/abs/2408.07055
 49. Liu et al. ProUIE (2026). https://arxiv.org/abs/2604.10633
+50. Truong, Baldwin, Verspoor, Cohn. Language models are not naysayers: an analysis of language models on negation benchmarks (*SEM 2023). https://arxiv.org/abs/2306.08189
+51. McKenzie et al. Inverse Scaling: When Bigger Isn't Better (TMLR 2023; NeQA task). https://arxiv.org/abs/2306.09479
