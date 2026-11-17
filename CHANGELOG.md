@@ -3,6 +3,24 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What was fixed: vi_feedback booked nothing for prompt hints and error hints ("not shown … in the last 60 min")
+
+- On a fresh user install every `vi_feedback` answered `feedback recorded for 0 hint(s); not shown to <instance> in the last 60 min`
+  for the ids the hook's Stop request had just listed. `intuition.feedback()` looks for an id only in `before.shown` of the instance's
+  actions, but the hints shown for a user prompt (`vi_prompt_context`, UserPromptSubmit) are recorded nowhere on the server, and error
+  hints only in `data.error_hints`. On that install 0 of 273 actions ever had an id in `before.shown`, so these two kinds were the only
+  hints shown at all — and no feedback on them could land. The 60 minutes were never the cause.
+- Now prompt hints are remembered per instance for `FEEDBACK_MIN` (in memory; a restart forgets them) and feedback on one is booked on
+  the instance's latest action (`data.prompt_shown` + `data.feedback`); feedback on an error hint is booked on its action (not when it
+  was held back). The bandit counts these hints only where explicit feedback exists, so no guessed labels enter it. The router is
+  unchanged.
+- Evidence: `tests/test_feedback_prompt_hints.py` — on 0.69.7 the prompt-hint and the error-hint test fail with exactly the message above;
+  with the fix all 4 pass. Related tests (bandit, hints, feedback, scorer, prompt context, holdback): 125 of 126 pass; the one failure
+  (`test_hints::test_stats_count_rules_only_while_calls_are_recorded_and_show_projects`) fails on unmodified 0.69.7 the same way in
+  that run and passes alone. **Migration:** none.
+
 ## 0.69.7 — 2026-11-17
 
 ### What was fixed: installing a philosophy failed with "No module named 'clingo'" on a server whose clingo is in the logic layer

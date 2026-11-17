@@ -59,6 +59,9 @@ def _observations(since: str | None = None):
         if lab is None or not tool:
             continue
         shown = [h for h in v.get("shown", []) if h.startswith(HINT_KINDS)]
+        # 17.11.2026: prompt and error hints count only where they got explicit feedback (vi_feedback) — no guessed labels
+        fb = d.get("feedback") or {}
+        shown += [h for h in (d.get("prompt_shown") or []) + (d.get("error_hints") or []) if h in fb and h not in shown and h.startswith(HINT_KINDS)]
         per = {h: scorer.label(d, ok_tag, serial, grades, hint=h)[:2] for h in shown}
         yield tool, bool(lab[0]), shown, per
 
