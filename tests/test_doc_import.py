@@ -63,6 +63,10 @@ def test_the_old_shape_of_the_page_is_archived_whoever_wrote_it(gd):
     assert g.load(other_page.id).mode == "active"
     tags = g.load(new).hashtags
     assert "topic:dns1" in tags and "topic:dns2" in tags and "area:it-kassel" in tags  # what the old shape carried stays
+    # 0.69.2: and it stays when the page changes later (production 17.11.2026: an update dropped topic:stibo-doku)
+    _call("vi_doc_sync", {"action": "sync", "source": "wiki", "pages": [_page("55", body="## Steps\nchanged later")]})
+    tags = g.load(new).hashtags
+    assert "topic:dns1" in tags and "topic:dns2" in tags and "area:it-kassel" in tags
 
 
 def test_removed_pages_are_archived_and_links_become_edges_in_both_orders(gd):

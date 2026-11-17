@@ -222,6 +222,11 @@ def server_sync(source: str, pages: list[dict], removed: list[str], instance: st
                                    "links": [str(x) for x in (page.get("links") or [])][:200]}}
             oid = object_id(source, pid, i)
             o = g.load(oid)
+            if o is not None:  # 0.69.2: hashtags carried over from the old shape at the first import stay on every update
+                kept = [t for t in (o.data.get("doc_import") or {}).get("carried") or [] if not (
+                    t.startswith("topic:") and t[6:] in doc_triggers.STOPWORDS)]
+                tags = list(dict.fromkeys(tags + kept))
+                data["doc_import"]["carried"] = kept
             if o is None:
                 o = g.new_object("insight", text, tags, data, who=who, reason="doc import", oid=oid, instance=instance,
                                  visibility="internal", index=idx, link=False)
@@ -249,8 +254,9 @@ def server_sync(source: str, pages: list[dict], removed: list[str], instance: st
                    and not (t.startswith("topic:") and t[6:] in doc_triggers.STOPWORDS)}  # no filler word comes along
         carried -= {t for t in carried if t.startswith("area:") and any(x.startswith("area:") for x in first.hashtags)}
         gained = sorted(carried - set(first.hashtags))
-        if gained:  # what people or sleep had added to the old shape stays with the page
+        if gained:  # what people or sleep had added to the old shape stays with the page — recorded, so later updates keep it
             first.hashtags = sorted(set(first.hashtags) | carried)
+            first.data["doc_import"]["carried"] = sorted(set(first.data["doc_import"].get("carried") or []) | set(gained))
             first.change(who, "hashtags of the old shape kept: " + " ".join(gained), "doc import")
             g.save(first)
             out["tags_carried"] = out.get("tags_carried", 0) + 1

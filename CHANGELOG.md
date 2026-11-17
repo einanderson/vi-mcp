@@ -3,6 +3,18 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## Unreleased
+
+### What was fixed: hashtags carried over from the old shape survive later updates
+
+- **A page updated by a later import run lost the hashtags its first import had carried over from the old shape** (`host:`, `topic:`,
+  `area:`, `label:`, `service:`): the update rebuilt the hashtags from the page alone, and the old shape was archived by then
+  (production 17.11.2026: the re-tag run of the DC-X pages dropped `topic:stibo-doku`; for the Confluence pages it would have dropped
+  e.g. `topic:dns` at their first change). The carried hashtags are now recorded in `data.doc_import.carried` and kept on every update
+  (filler-word topics excepted). Evidence: `tests/test_doc_import.py::test_the_old_shape_of_the_page_is_archived_whoever_wrote_it` —
+  its new update step fails on 0.69.1 and passes now. Pages updated by 0.69.0/0.69.1 before this fix keep what they have now; their
+  dropped carried tags are in the archived old objects (`vi_archive`).
+
 ## 0.69.1 — 2026-11-17
 
 ### What was fixed: imported documentation got filler words as topic triggers
