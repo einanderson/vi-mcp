@@ -3,6 +3,67 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.69.3 — 2026-11-17
+
+### What is new: storing, tagging and qualifying are one step — done by the AI that has the text in context
+
+- **`vi_learn` qualifies in the same call** (the user, 17.11.2026: "wenn eine KI etwas speichert, wird der Eintrag auch getagt und
+  qualifiziert, mit Antwortpaaren"). Optional `pairs` (~5 grounded question/answer pairs) and `answers` + `memory` (the two labels)
+  next to the hashtags. The pairs pass the same fixed rules as the server's (`qa_pairs.select`: self-contained question, not copied,
+  every name and number of the answer in the text); one kept pair becomes a never-trained probe; the record names the agent
+  (`version.model agent:<family>`). Without them the answer to `vi_learn` asks for them at once (`QUALIFY …`), while the text is still
+  in the agent's context. The rule LEARN in every client's instructions says so.
+- **`vi_qualify`** (`vi_mcp/agent_qualify.py`): what an agent reads with `vi_object` and lacks pairs, labels or any
+  `host:`/`service:`/`topic:`/`tool:`/`product:` trigger ends with a short request (once per object, caller and day); the agent sends
+  pairs, labels and tags in one call. Fixed kinds (`instance:`, `mode:` …) and malformed tags are refused one by one and named. Why:
+  the server's model writes pairs for a few objects per night (~40 s each on a shared model); an agent that just read the object
+  spends ~300 output tokens. Agent pairs count as current — sleep step 8i does not redo them.
+- Evidence: `tests/test_agent_qualify.py` (5 tests: read → request once → checked pairs, probe, labels; invented name and number
+  rejected; tags in the same call with `instance:evil` and `no-colon` refused; `vi_learn` with pairs and labels in one call; `vi_learn`
+  without them asks). A bug found by the last test and fixed before release: on a fresh memory the pairs queue table did not exist yet
+  and storing agent pairs failed with `no such table: pairs_queue`.
+
+### What has changed: an AI may check its own work — it counts, at half weight
+
+- The user, 17.11.2026: "wir haben in unserem Umfeld nur Claude, also muss die KI auch ihre eigene Arbeit überprüfen können"; chosen
+  option "zählt, aber schwächer". Until 0.69.2 confirmations counted per model family (0.33.0) and the author's own confirmation
+  counted nothing — with only Claude in use, every confirmation was the same single line and no object could ever be refuted.
+- **Lines per instance** (`memory.MemoryObject._line_weights`, `memory.refuted_mode`): each other instance counts 1; a confirmation of
+  one's own object counts `SELF_WEIGHT` = 0.5 and is marked in the history `self-review, weight 0.5`; the server (`vi`) and a
+  confirmation citing the object's own source count nothing. The search bonus is `0.2 × weighted lines` (max 0.6). Two other
+  instances refuting → refuted (before: two model families); the author refuting → withdrawn, as before. `vi_object` shows
+  `self-reviewed` next to the independent lines.
+- **`vi_rate`**: an agent rates a conversation of its own instance — grade 0–1, a reason of at least 20 characters, turn numbers,
+  certainty. Stored as an agent grade (`scorer:agent`, `review:self`), never as a human grade; weight × 0.5 of a model grade and, like
+  the model stage, × 0.3 until agent grades agree with human grades (`scorer.calibration("agent")`); a human grade of the same
+  conversation wins. Another instance's conversation is refused. `vi_scorer` reports agent self-reviews and their agreement.
+- Unchanged: quarantine releases stay with a human or the release right; human grades only via the hook's signal.
+- Evidence: `tests/test_self_review.py` (7 tests); `tests/test_independence.py` rewritten for lines per instance (its three family
+  tests fail on purpose against the new rule — the decision changed, not the code by accident).
+- **Migration:** none. Stored entries keep their `family`; existing objects are re-weighted on the next read. Objects that two
+  instances of one family refuted before stay `disputed` until a new refutation recomputes their mode.
+
+### What is new: credentials in documentation are found in more forms and swept everywhere
+
+- `anonymize.strip_credentials` (check version 2) also replaces: a table row `account | secret` with a single `|`, "Frage … Antwort:"
+  answers, "Kennwort Xy…" without a separator, an account name followed by a secret. Ordinary text with the same words stays
+  (password policies, phone lists, version tables).
+- `vi_mcp/secret_sweep.py`: each documentation object is checked once per check version — at import, before `vi_object` shows it,
+  in the new sleep step `6c_secret_sweep`, and in the long-term archive (`vi-mcp secrets sweep`). Only the count goes into the
+  history, never a value.
+- Evidence: `tests/test_secret_sweep.py` (6 tests, all values invented).
+
+### What has changed: training pairs by time, accessed objects first
+
+- Sleep step 8i works by time (`classify.pairs_seconds`, default 1800 s; `pairs_per_sleep` default 200, before 5) and stores per
+  round; objects that were searched for or read go first (`pairs_queue`). The model's name is taken from the URL path when the
+  configuration names none (`classify.model_name`). Evidence: `tests/test_secret_sweep.py` (queue and budget; model name).
+
+### What is still missing
+
+- Agent grades have no human grades to calibrate against yet; until there are 20 matching pairs (`scorer.CAL_MIN`) in enough agreement they count at 0.3 × 0.5.
+- The ~92 stale Confluence objects of the old import shape and the MYC space are not cleaned up or imported yet.
+
 ## 0.69.2 — 2026-11-17
 
 ### What is new: objects are completed when they are searched for or read

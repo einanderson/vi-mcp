@@ -39,7 +39,7 @@ ASK (vi_recall with free text — meaning and full text, hybrid by default — o
 4. For questions about internal systems, processes and responsibilities: the VI first, then other sources. If vi_recall finds nothing, vi_net_search asks the members of a network live (unreviewed hits; take one to have it reviewed).
 If a question stays open and the hits on the topic come mostly from another instance ("from <instance>"): ask that instance with vi_ask (to, text, triggers) instead of guessing — it answers from its own context; the answer appears before your next action or via vi_questions. If nobody here knows it: vi_ask(to="net") asks the AIs of the other servers in the network; confirm the answer that helped (vi_confirm), refute a wrong one.
 Not needed for general programming knowledge or files you have in front of you. Hints "[VI memory …]" (older hooks: "[VI-Gedächtnis …]") before an action are already hits: read and follow them, or contradict them with a reason.
-LEARN (vi_learn: text = one concrete key statement; content = complete, with commands and code; hashtags host:/tool:/skill:/thema:/fehler:; source = command, host and time, or URL):
+LEARN (vi_learn: text = one concrete key statement; content = complete, with commands and code; hashtags host:/tool:/skill:/thema:/fehler:; source = command, host and time, or URL; in the same call pairs = ~5 grounded question/answer pairs, answers + memory = its two labels — stored, tagged and qualified in one step while the text is in your context):
 5. A problem is solved whose solution was not obvious (more than one attempt, troubleshooting): cause, solution, evidence — the working code, script or commands of the solution unabridged in content. Found on the web or in documentation: vi_solved with the URL in the instructions — it becomes a hint for every agent.
 6. The user states a rule, requirement or decision that applies beyond this session — with the hashtag topic:requirement: those are listed in the index every session receives.
 7. A reusable fact about a system was looked up or measured (path, port, version, peculiarity, access route without secrets).
@@ -215,6 +215,9 @@ TOOLS = [
                     "hashtags are linked.",
      "inputSchema": _schema({"content": {"type": "string", "description": "complete knowledge: code, API tables, commands, unabridged"}, "text": _S, "hashtags": _TAGS, "source": {"type": "string", "description": "source: command, host and time, or URL (for vi_ask: why you ask)"}, "importance": {"type": "integer", "description": "0–3 (default 1)"}, "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "shared (default): everyone, also without a token, and the networks. internal: only instances with a token — never an open network, only a company network (members of the same organisation) — for company knowledge"}, "outcome": {"type": "string", "enum": ["good", "bad"], "description": "optional: does the insight describe a working or a broken state? Sleep compares new experiences with it."}, "key": {"type": "string", "description": "optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1."}, "supersedes": {"type": "array", "items": {"type": "string"}, "description": "optional (0.68.1): ids of this instance's own knowledge objects the new one replaces — e.g. a page re-imported as one object instead of section parts. Each is moved to the long-term archive with a reason naming the new object (vi_archive shows it, vi_archive_restore brings it back) and linked to it; another instance's object, an unknown id or more than 200 ids refuse the whole call before anything is stored."},
                             "index": {"type": "string", "description": "optional: the index the knowledge belongs to — a project or special VI (e.g. cue-print, ansible); default: the project of your working directory, else global"},
+                            "pairs": {"type": "array", "items": {"type": "object"}, "description": "optional (0.69.3), qualifies the object in the same call: about 5 [{question, answer}] in English, grounded in text/content (each question names its subject; every name and number of an answer occurs in it) — training pairs and one never-trained probe, checked by fixed rules"},
+                            "answers": {"type": "string", "enum": ["how", "why", "what", "who", "where", "rule"], "description": "optional (0.69.3, with memory): what question the knowledge answers"},
+                            "memory": {"type": "string", "enum": ["fact", "procedure", "episode", "rule"], "description": "optional (0.69.3, with answers): what kind of memory it is"},
                             "project": {"type": "string", "description": "set by the hook: the name of your working directory (mapped to an index by the server)"},
                             "image": {"type": "string", "description": "optional: an image as base64 — stored as a memory of its own kind (kind:image); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F]"},
                             "regions": {"type": "array", "description": "optional, with image: what is where, in the output format of SAM 3 (Segment Anything with Concepts) — one entry per instance found",
@@ -378,6 +381,29 @@ TOOLS = [
                              "removed": {"type": "array", "items": {"type": "string"}, "description": "page ids the source no longer has (archived with a reason)"},
                              "old_source_kind": {"type": "string", "description": "optional: the source_kind: value an older import filed these pages under, when it differs from source — its objects of the same page are the old shape that is archived"}},
                             ["action", "source"])},
+    {"name": "vi_qualify",
+     "description": "VI: qualify an object you just read with vi_object, when its answer asks for it (0.69.3) — the text is in your context, so "
+                    "this costs a few hundred tokens: pairs = grounded question/answer pairs in English (each question names its subject; every "
+                    "name and number of an answer occurs in the object's text), answers = what question it answers, memory = what kind of memory "
+                    "it is, tags = kind:value for its hosts, services, products and topics — tagging and qualifying in one call. Fixed rules "
+                    "check the pairs and tags (rejected ones are named); one kept pair becomes a never-trained probe. Review stays with "
+                    "vi_confirm / vi_refute (your own objects count half), rating your conversation with vi_rate.",
+     "inputSchema": _schema({"id": {"type": "string", "description": "the object you read"},
+                             "pairs": {"type": "array", "items": {"type": "object"}, "description": "[{question, answer}], about 5"},
+                             "answers": {"type": "string", "enum": ["how", "why", "what", "who", "where", "rule"], "description": "what question the object answers"},
+                             "memory": {"type": "string", "enum": ["fact", "procedure", "episode", "rule"], "description": "what kind of memory it is"},
+                             "tags": {"type": "array", "items": {"type": "string"}, "description": "up to 10 kind:value, e.g. host:web1.example.org, topic:backup"}},
+                            ["id"])},
+    {"name": "vi_rate",
+     "description": "VI: rate your own conversation (0.69.3, a self-review) — grade 0–1, a reason with turn numbers, certainty. It is stored "
+                    "as an agent grade marked review:self, never as a human grade, and weighs half a model grade; it counts for learning "
+                    "only once agent grades agree with the user's grades. Only conversations of your own instance; default: this one.",
+     "inputSchema": _schema({"grade": {"type": "number", "description": "0 = failed, 1 = fully done and checked"},
+                             "reason": {"type": "string", "description": "what went well or wrong and why (at least 20 characters)"},
+                             "evidence": {"type": "array", "items": {"type": "integer"}, "description": "optional: turn numbers that show it"},
+                             "certainty": {"type": "string", "enum": ["low", "medium", "high"], "description": "how sure you are (default medium)"},
+                             "serial": {"type": "string", "description": "optional: another conversation of your instance"}},
+                            ["grade", "reason"])},
     {"name": "vi_context",
      "description": "VI, for hooks: note that the next vi_learn/vi_recall of this instance comes from the project of this session (its working "
                     "directory). Called by the Claude Code hook right before those tools; an agent does not need it.",
@@ -418,8 +444,9 @@ TOOLS = [
                                            "exactly on it (needed when several agents share one instance in parallel)"}})},
     {"name": "vi_confirm",
      "description": "VI: confirm an object (it becomes more important) — with a reason. Counts as feedback if it was just shown as a "
-                    "hint. Weight comes from independent lines: confirmations of one model family count once, and a confirmation citing the "
-                    "object's own source counts as none — name your own source if you checked it elsewhere.",
+                    "hint. Weight comes from lines: each other instance counts 1, your own object counts half (a self-review, marked "
+                    "self — check your own work when you have new evidence), and a confirmation citing the object's own source counts as none "
+                    "— name your own source if you checked it elsewhere.",
      "inputSchema": _schema({"id": _S, "reason": _S, "source": {"type": "string", "description": "optional: where you checked it (command, host, time or URL)"}},
                             ["id", "reason"])},
     {"name": "vi_refute",
@@ -1472,6 +1499,10 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         try:
             if args.get("outcome") not in (None, "gut", "schlecht"):
                 raise ValueError("outcome must be good or bad")
+            from . import agent_qualify, classify
+            if (args.get("answers") is not None or args.get("memory") is not None) and (
+                    args.get("answers") not in classify.ANSWERS or args.get("memory") not in classify.MEMORY):
+                raise ValueError(f"answers must be one of {classify.ANSWERS} and memory one of {classify.MEMORY} (both, or neither)")
             text, content = args["text"].strip(), (args.get("content") or "").strip()
             if len(text) > TEXT_MAX and content:
                 raise ValueError(f"text may have at most {TEXT_MAX} characters when content is given")
@@ -1530,15 +1561,47 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         archived = _archive_superseded(o, superseded, instance)
         from . import on_demand
         on_demand.nudge("knowledge learned")
+        # 0.69.3: stored = tagged and qualified in one step (the user, 17.11.2026) — the author's pairs and labels, else a request for them
+        q = {k: args[k] for k in ("pairs", "answers", "memory") if args.get(k) is not None}
+        qual_line = ""
+        if q and agent_qualify._eligible(o):
+            r = agent_qualify.apply(o.id, q, instance, family)
+            o = g.load(o.id) or o
+            qual_line = (" · qualified: " + ", ".join(
+                ([f"{r['pairs']['kept']} pairs" + (" + probe" if r["pairs"].get("probe") else "")] if "pairs" in r else [])
+                + ([f"answers:{r['labels']['answers']} memory:{r['labels']['memory']}"] if "labels" in r else []))
+                + (f" (rejected: {r['pairs']['rejected']})" if r.get("pairs", {}).get("rejected") else ""))
+        elif not q and (req := agent_qualify.request(o, instance)):
+            qual_line = "\n" + req
         sup_line = (f" · superseded {len(archived)} object(s), now in the long-term archive: {', '.join(archived[:5])}"
                     + (" …" if len(archived) > 5 else "")) if archived else ""
         if prev:
             return (f"updated {o.id} (key {key!r}, {o.data['repeats']}×) — the previous text is in its history ({len(o.data.get('history') or [])} entries); "
-                    "no new object" + sup_line)
+                    "no new object" + sup_line + qual_line)
         return (f"learned {o.id} with {', '.join(o.hashtags)} — {len(o.edges())} edges to objects with shared hashtags"
                 + (f" · {images.summary(o)} (sha256 {o.data['image']['sha'][:12]}…)" if o.data.get("image") else "")
                 + (" · visibility internal (instances with a token only; never an open network, only a company network)" if o.visibility == "internal" else "")
-                + sup_line)
+                + sup_line + qual_line)
+    if name == "vi_rate":  # 0.69.3: self-review of one's own conversation
+        if instance == config.OPEN:
+            raise Rejected("vi_rate needs a token")
+        s = session.current()
+        serial = str(args.get("serial") or (s.serial if s else "") or g.current_conversation.get() or "")
+        if not serial:
+            raise Rejected("no conversation: name serial")
+        try:
+            o = scorer.agent(serial, instance, args.get("grade"), args.get("reason"), args.get("evidence"), args.get("certainty") or "medium")
+        except ValueError as e:
+            raise Rejected(str(e)) from e
+        return f"rated {serial}: {o.data['note']:.2f} as a self-review ({o.id}) — " + scorer.line()
+    if name == "vi_qualify":  # 0.69.3: the agent qualifies what it read
+        from . import agent_qualify
+        if instance == config.OPEN:
+            raise Rejected("vi_qualify needs a token")
+        try:
+            return json.dumps(agent_qualify.apply(str(args.get("id") or ""), args, instance, family), ensure_ascii=False)
+        except ValueError as e:
+            raise Rejected(str(e)) from e
     if name == "vi_doc_sync":  # 0.69.0
         from . import doc_import
         if not import_permission:
@@ -1668,7 +1731,8 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         from . import evaluation
         evaluation.log_open(instance, o.id)  # 0.57.0: a search hit opened → click with its rank (suche_log)
         z = [_line(o), f"  author {o.instance} · index {o.idx} · visibility {o.visibility} · importance {o.importance} · confirmed {o.confirmed} "
-                        f"(independent lines: {o.foreign_confirmations()} — one per model family, not from the object's own source) · refuted {o.refuted} · accesses {o.accesses} · "
+                        f"(independent lines: {o.foreign_confirmations()} — one per other instance, not from the object's own source"
+                        + (f"; self-reviewed, weight {g.SELF_WEIGHT}" if o.self_reviewed() else "") + f") · refuted {o.refuted} · accesses {o.accesses} · "
                         f"last {o.last_at[:16]} · conversation {o.conversation or '—'}"]
         if o.kind in ("insight", "rule", "search", "image"):
             z.append(f"  as a hint: {bandit.line(o)}")
@@ -1698,6 +1762,10 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         if o.data.get("changes_trimmed"):
             z.append(f"  ({o.data['changes_trimmed']} older changes truncated — the history keeps {g.HISTORY_MAX} entries)")
         z += [f"  change {a['ts'][:16]} {a['who']}: {a['what']} — {a['reason']}" for a in o.changes[-10:]]
+        if o.mode != "quarantine":  # 0.69.3: the reader qualifies what it has in context (agent_qualify)
+            from . import agent_qualify
+            if (req := agent_qualify.request(o, instance)):
+                z.append(req)
         return WithImages(held_note + "\n".join(z), pics) if pics else held_note + "\n".join(z)
     if name in ("vi_tag", "vi_confirm", "vi_refute"):
         o = _visible(args.get("id"), instance)

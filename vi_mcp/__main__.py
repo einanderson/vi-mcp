@@ -298,6 +298,9 @@ def _cli(argv: list[str]) -> int:
     if command == "embed":
         from . import embed_service
         return embed_service.main(argv[1:])
+    if command == "secrets":  # 0.69.3: credentials in documentation and the archive checked again
+        from . import secret_sweep
+        return secret_sweep.main(argv[1:])
     if command == "docs":  # 0.69.0: documentation import (docs/IMPORT.md)
         from . import doc_import
         return doc_import.main(argv[1:])

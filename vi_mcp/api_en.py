@@ -38,6 +38,9 @@ PARAM_ALIASES: dict[str, str] = {
 #: same stored value (0.67.0: stored values are English, except the reflex kinds werkzeug/vorher/nachher until their data step).
 STORED_VALUES: dict[str, dict[str, str]] = {
     "knowledge_kind": {"company-docs": "company-docs", "external-docs": "external-docs", "manual": "manual"},  # 0.69.0 vi_doc_sync
+    "answers": {v: v for v in ("how", "why", "what", "who", "where", "rule")},  # 0.69.3 vi_qualify
+    "certainty": {v: v for v in ("low", "medium", "high")},  # 0.69.3 vi_rate
+    "memory": {v: v for v in ("fact", "procedure", "episode", "rule")},
     "area": {"values": "values", "goals": "goals", "style": "style", "limits": "limits",
              "werte": "values", "ziele": "goals", "stil": "style", "grenzen": "limits"},
     "action": {"approve": "freigeben", "discard": "verwerfen", "state": "state", "sync": "sync",

@@ -238,9 +238,23 @@ def _value_after(line: str, m: re.Match) -> tuple[int, int] | None:
     return m.end() + w.start(1), m.end() + w.end(1)
 
 
+#: 0.69.3: the version of strip_credentials — documentation objects record which version checked them (data.secrets_checked)
+CREDENTIALS_VERSION = 2
+#: a token that looks like a password or a PIN: no blank, 6–64 characters, digits mixed with letters or symbols, or ≥ 6 digits only
+_SECRETISH = re.compile(r"^(?=.{6,64}$)(?:(?=.*\d)(?=.*[^\W\d_])\S+|(?=.*\d)(?=.*[^\w\s])\S+|\d{6,})$")
+#: a security question's answer ("Frage: Kennwort Antwort: …") on a line that names a credential or a question
+_ANSWER = re.compile(r"\b(?:antwort|answer)\s*[:=]\s*", re.I)
+#: an account followed by its secret ("feste-ip/kunde@provider.example 99887766" after "Zugang"/"Login"/"Benutzer")
+_ACCOUNT_WORDS = re.compile(r"\b(?:zugang\w*|login|logon|anmeldung|benutzer(?:name)?|user(?:name)?|konto|account)\b", re.I)
+
+
 def strip_credentials(text: str) -> tuple[str, int]:
     """For knowledge from documents and transcripts: values after password words, password columns in tables and the value in the line
-    after "Passwort:" become <geheimnis>. Returns (text, count). Pure. Code expressions like `lese_token()` or ${PW} stay."""
+    after "Passwort:" become <geheimnis>. Returns (text, count). Pure. Code expressions like `lese_token()` or ${PW} stay.
+    0.69.3 (production 17.11.2026, an imported Confluence page with recovery answers and access data in clear text): also tables with a
+    single "|" per line, the answer of a security question on a line naming a credential or a question, a password-like token right
+    after a password word without a separator ("Kennwort Xy7!kp2Q"), and the password-like token that follows an account on a line
+    naming an access ("Zugang: kunde@provider 99887766")."""
     text, n = text or "", 0
     for i, pattern in enumerate(_SECRET_CONTEXT):
         if i != _CONTEXT_KEYS:  # the coarse keyword pattern also replaces references; here _value_after decides more precisely
@@ -248,7 +262,7 @@ def strip_credentials(text: str) -> tuple[str, int]:
             n += k
     lines, column, upcoming = text.split("\n"), None, False
     for i, z in enumerate(lines):
-        cells = z.split("|") if z.count("|") >= 2 else None
+        cells = z.split("|") if z.count("|") >= 1 and len([c for c in z.split("|") if c.strip()]) >= 2 else None
         if cells and column is None and any(_SECRET_KEY_WORDS.search(c) for c in cells) and not any(_SEPARATOR.fullmatch(c.strip() or "x") for c in cells):
             column = next(j for j, c in enumerate(cells) if _SECRET_KEY_WORDS.search(c))
             continue
@@ -267,6 +281,20 @@ def strip_credentials(text: str) -> tuple[str, int]:
         for m in reversed(list(_SECRET_KEY_WORDS.finditer(z))):
             if (pos := _value_after(z, m)):
                 z, n = z[:pos[0]] + "<geheimnis>" + z[pos[1]:], n + 1
+            else:  # 0.69.3: "Kennwort Xy7!kp2Q" — no separator, but the next token looks like a secret
+                nxt = re.match(r"\s+[\"'`„“]?([^\s\"'`„“|,;]+)", z[m.end():])
+                if nxt and _SECRETISH.match(nxt.group(1)) and not _NO_VALUE.match(nxt.group(1)) and not _EXPRESSION.search(nxt.group(1)):
+                    a_, b_ = m.end() + nxt.start(1), m.end() + nxt.end(1)
+                    z, n = z[:a_] + "<geheimnis>" + z[b_:], n + 1
+        if _SECRET_KEY_WORDS.search(z) or re.search(r"\b(?:frage|question)\b", z, re.I):  # 0.69.3: a security question's answer
+            for m in reversed(list(_ANSWER.finditer(z))):
+                v = _VALUE.match(z, m.end())
+                if v and not _NO_VALUE.match(v.group(1)) and v.group(1) != "<geheimnis>":
+                    z, n = z[:v.start(1)] + "<geheimnis>" + z[v.end(1):], n + 1
+        if _ACCOUNT_WORDS.search(z):  # 0.69.3: an account followed by a password-like token
+            for m in reversed(list(re.finditer(r"(\S*@\S+|\S+/\S+)\s+([^\s|,;]+)", z))):
+                if _SECRETISH.match(m.group(2)) and m.group(2) != "<geheimnis>" and not _EXPRESSION.search(m.group(2)):
+                    z, n = z[:m.start(2)] + "<geheimnis>" + z[m.end(2):], n + 1
         if re.search(_SECRET_KEY_WORDS.pattern + r"\s*:?\s*$", z, re.I):
             upcoming = True
         lines[i] = z

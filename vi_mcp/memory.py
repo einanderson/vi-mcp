@@ -51,9 +51,12 @@ VISIBILITY_PER_KIND = {"experience": "private", "answer": "private", "insight": 
                 "conversation": "shared", "search": "shared", "question": "shared", "self": "shared", "sleep": "shared", "model": "shared", "skill": "shared", "rating": "private", "image": "shared", "page": "shared", "proposal": "internal", "machine": "private"}
 #: author of objects the server creates itself (loop) — a named instance, not NULL
 SERVER_INSTANCE = "vi"
-#: weight bonus per different FOREIGN instance that confirmed (self-confirmation does not count as evidence)
+#: weight bonus per confirming line (0.69.3: one line per instance; the author's own instance counts SELF_WEIGHT, the server never)
 BONUS_PER_INSTANCE = 0.2
 BONUS_MAX = 0.6
+#: 0.69.3 (the user's decision, 17.11.2026: "in our environment there is only Claude, so the AI must be able to check its own work"):
+#: an instance's review of its own object counts, marked "self", at half the weight of another instance's
+SELF_WEIGHT = 0.5
 #: change history per object; older entries are trimmed and counted (daten.aenderungen_gekuerzt)
 HISTORY_MAX = 50
 DATA_MAX = 400_000
@@ -167,12 +170,13 @@ def backend() -> str:
 
 
 def refuted_mode(author: str, mode: str, data: dict, latest: str | None = None) -> str:
-    """The mode after a refutation (one definition for refute() and the migration): ≥ 2 foreign families → refuted; the author
-    refuted (now or before) → withdrawn; else disputed. Families as in MemoryObject._lines (author and server excluded)."""
+    """The mode after a refutation (one definition for refute() and the migration): ≥ 2 foreign instances → refuted; the author
+    refuted (now or before) → withdrawn; else disputed. Lines as in MemoryObject._line_weights (0.69.3: per instance, before per
+    model family — in an environment with one model family no object could ever be refuted; author and server excluded)."""
     own = (author, SERVER_INSTANCE)
     entries = data.get("refutations") or []
     covered = {e.get("instance") for e in entries}
-    lines = {e.get("family") or e.get("instance") for e in entries if e.get("instance") not in own}
+    lines = {e.get("instance") for e in entries if e.get("instance") not in own}
     lines |= {i for i in (data.get("refuted_by") or {}) if i not in own and i not in covered}
     if len(lines) >= 2:
         return "refuted"
@@ -336,7 +340,8 @@ class MemoryObject:
         return save(self)
 
     def confirm(self, who: str, reason: str, instance: str | None = None, family: str | None = None, source: str | None = None) -> "Objekt":
-        """Confirm. Counts per instance (daten.bestaetigt_von); weight bonus only for independent lines (0.33.0, see independent_lines)."""
+        """Confirm. Counts per instance (data.confirmed_by); the weight comes from the lines (see _line_weights): another instance 1,
+        the author's own instance SELF_WEIGHT as a self-review (0.69.3; before: none), the object's own source none."""
         self._require_reason(reason)  # check first, then change — a rejection leaves the object unchanged
         i = instance or SERVER_INSTANCE
         from_ = dict(self.data.get("confirmed_by") or {})
@@ -348,16 +353,17 @@ class MemoryObject:
         self.confirmed += 1
         if self.mode == "disputed" and i != self.instance:
             self.mode = "active"  # a foreign confirmation settles the dispute — with history
-        note = (" (self-confirmation, no weight bonus)" if i == self.instance else
-                " (same source as the object — not an independent line)" if same_source else "")
+        note = (" (same source as the object — not an independent line)" if same_source else
+                f" (self-review, weight {SELF_WEIGHT})" if i == self.instance else
+                " (by the server — no weight)" if i == SERVER_INSTANCE else "")
         self.change(who, "confirmed" + note, reason)
         return save(self)
 
     def refute(self, who: str, reason: str, instance: str | None = None, family: str | None = None) -> "Objekt":
-        """Refute. ≥ 2 different foreign families → widerlegt; the author itself → zurueckgezogen (withdrawn: the claim is taken back,
-        the opposite is not proven — 0.67.0, before both were widerlegt); both vanish from searches. Otherwise strittig (stays visible,
-        with a note) — one family alone does not erase the knowledge of another (0.33.0: before, two instances, even of the same model).
-        A withdrawn object stays withdrawn when one foreign family refutes it too; two foreign families make it widerlegt."""
+        """Refute. ≥ 2 different foreign instances → refuted; the author itself → withdrawn (the claim is taken back, the opposite is not
+        proven — 0.67.0, before both were refuted); both vanish from searches. Otherwise disputed (stays visible, with a note) — one
+        instance alone does not erase the knowledge of another. 0.69.3: lines per instance, from 0.33.0 to 0.69.2 per model family.
+        A withdrawn object stays withdrawn when one foreign instance refutes it too; two foreign instances make it refuted."""
         self._require_reason(reason)
         i = instance or SERVER_INSTANCE
         from_ = dict(self.data.get("refuted_by") or {})
@@ -369,28 +375,43 @@ class MemoryObject:
         self.change(who, self.mode, reason)
         return save(self)
 
-    def _lines(self, entries_key: str, legacy_key: str, skip_same_source: bool = False) -> set[str]:
-        """Families of foreign instances (author and server excluded). Entries before 0.33.0 have no family: each instance is its own."""
-        own = (self.instance, SERVER_INSTANCE)
+    def _line_weights(self, entries_key: str, legacy_key: str, skip_same_source: bool = False) -> dict[str, float]:
+        """{instance: weight} of the lines behind confirmations or refutations. 0.69.3: one line per instance (before 0.69.3 one per
+        model family — with only Claude in use every confirmation was the same line). Another instance weighs 1, the author's own
+        instance SELF_WEIGHT (a self-review, marked "self"), the server (`vi`, sleep) nothing — an automatic confirmation must not raise
+        the weight. A confirmation citing the object's own source is no line (a common cause, Condorcet's independence condition)."""
         src = _norm_source(self.data.get("source"))
-        lines, covered = set(), set()
+        w, covered = {}, set()
         for e in self.data.get(entries_key) or []:
-            covered.add(e.get("instance"))
-            if e.get("instance") in own or (skip_same_source and e.get("source") and _norm_source(e["source"]) == src):
+            i = e.get("instance")
+            covered.add(i)
+            if i == SERVER_INSTANCE or (skip_same_source and e.get("source") and _norm_source(e["source"]) == src):
                 continue
-            lines.add(e.get("family") or e.get("instance"))
-        lines |= {i for i in (self.data.get(legacy_key) or {}) if i not in own and i not in covered}
-        return lines
+            w[i] = SELF_WEIGHT if i == self.instance else 1.0
+        for i in self.data.get(legacy_key) or {}:  # stored before 0.33.0: no entry, the instance alone
+            if i not in covered and i != SERVER_INSTANCE:
+                w[i] = SELF_WEIGHT if i == self.instance else 1.0
+        return w
+
+    def _lines(self, entries_key: str, legacy_key: str, skip_same_source: bool = False) -> set[str]:
+        """Foreign instances among the lines (author and server excluded)."""
+        return {i for i in self._line_weights(entries_key, legacy_key, skip_same_source) if i != self.instance}
 
     def independent_lines(self) -> set[str]:
-        """0.33.0 (Condorcet's independence condition): foreign confirmations grouped by model family; a confirmation citing the object's
-        own source is no independent line (a common cause). What counts as one family is declared per instance (config "familie")."""
+        """Foreign instances that confirmed, not from the object's own source."""
         return self._lines("confirmations", "confirmed_by", skip_same_source=True)
 
     def foreign_confirmations(self) -> int:
-        """Independent lines that confirmed (0.33.0; before: different foreign instances). The server (`vi`, sleep) never counts —
-        an automatic confirmation must not raise the weight (no self-confirmation of the system)."""
+        """Number of foreign instances that confirmed (each its own line since 0.69.3)."""
         return len(self.independent_lines())
+
+    def self_reviewed(self) -> bool:
+        """The author's own instance confirmed it (a self-review, 0.69.3)."""
+        return self.instance in self._line_weights("confirmations", "confirmed_by", skip_same_source=True)
+
+    def confirmation_weight(self) -> float:
+        """Weighted confirming lines: foreign instances 1 each, a self-review SELF_WEIGHT — the basis of the search bonus."""
+        return sum(self._line_weights("confirmations", "confirmed_by", skip_same_source=True).values())
 
     def link(self, other_id: str, reason: str) -> None:
         with lock:
@@ -925,7 +946,7 @@ def recall(filter_text: str, limit: int = 10, kinds: tuple[str, ...] = (), viewe
             continue
         hours = max(0.0, (now_dt - datetime.fromisoformat(o.last_at)).total_seconds() / 3600)
         recency = (1.0 + hours) ** (-DECAY_D)
-        bonus = min(BONUS_MAX, BONUS_PER_INSTANCE * o.foreign_confirmations())
+        bonus = min(BONUS_MAX, BONUS_PER_INSTANCE * o.confirmation_weight())
         importance = min(1.0, o.importance / 3 * 0.6 + math.log1p(o.confirmed * 2 + o.accesses) / 6 - o.refuted * 0.5) + bonus
         relevance = (word_hits.get(oid, 0.0) / top_word) if words else 1.0
         rated.append((relevance + recency + importance, o, {"relevanz": round(relevance, 2), "aktualitaet": round(recency, 2),

@@ -184,7 +184,8 @@ def server_sync(source: str, pages: list[dict], removed: list[str], instance: st
         if not pid or len(md) < 20:
             out["rejected"].append(f"{pid or '?'}: page_id and markdown (≥ 20 characters) are required")
             continue
-        clean = anonymize.without_secrets(md)
+        stripped, n_cred = anonymize.strip_credentials(md)  # 0.69.3: the check for documents (password columns, answers, …)
+        clean = anonymize.without_secrets(stripped)
         out["secrets_replaced"] += clean != md
         sha = content_sha(md)  # of the page as the source sent it — the client compares with that; the stored content is the clean one
         held = {o.data["doc_import"].get("part", 1): o for o in _doc_objects(source, pid)}
@@ -203,7 +204,7 @@ def server_sync(source: str, pages: list[dict], removed: list[str], instance: st
             text = f"{lbl}: {title or pid}{part} — {lead}"[:TEXT_MAX]
             tags, trig = _tags_for(source, knowledge_kind, page, f"{title} {text}", content)
             data = {"source": f"{page.get('url') or pid} · version {page.get('version', '?')} · import {source}, {time.strftime('%d.%m.%Y')}"[:500],
-                    "content": content, "derived_triggers": trig,
+                    "content": content, "derived_triggers": trig, "secrets_checked": anonymize.CREDENTIALS_VERSION,
                     "doc_import": {"source": source, "page_id": pid, "part": i, "parts": len(parts), "page_sha256": sha, "tagger": TAGGER_VERSION,
                                    "url": page.get("url"), "version": page.get("version"), "updated": page.get("updated"),
                                    "links": [str(x) for x in (page.get("links") or [])][:200]}}

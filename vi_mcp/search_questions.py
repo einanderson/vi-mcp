@@ -183,7 +183,7 @@ def run(limit: int | None = None, who: str = "sleep") -> dict:
     model, _dim = query_adapter._model()
     out = {"objects": 0, "kept": 0, "rejected": {}, "failed": 0, "style_examples": len(examples), "covered_before": covered(),
            "mode": "new and changed only" if recent_only else f"filling up to {TARGET_OBJECTS} objects"}
-    version_model = classify._config().get("model") or "?"
+    version_model = classify.model_name()
     for o in pending(limit, recent_only):
         if time.monotonic() - t0 > budget:
             out["stopped"] = f"time budget {int(budget)} s"

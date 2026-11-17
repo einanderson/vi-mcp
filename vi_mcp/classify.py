@@ -86,6 +86,17 @@ def _config() -> dict:
     return raw.get("classify") or reflection.config or {}
 
 
+def model_name() -> str:
+    """0.69.3: the classify model's name for the version records — config model, else the path segment of its URL before /v1
+    (".../qwen27b/v1/chat/completions" → qwen27b). Production configs name only the URL, so every record said "?"."""
+    import re as _re
+    c = _config()
+    if c.get("model"):
+        return str(c["model"])
+    m = _re.search(r"/([^/]+)/v1/", str(c.get("url") or ""))
+    return m.group(1) if m else "?"
+
+
 def configured() -> bool:
     """An explicit classify model in the config (sleep labels only then; `vi-mcp classify` also uses the server's llm)."""
     from . import config
@@ -162,7 +173,7 @@ def label(o: g.MemoryObject) -> dict:
     """Both variants for one object → the label (pure apart from the model calls)."""
     a, why_a = _one("A", o)
     b, why_b = _one("B", o)
-    version = {"modell": _config().get("model") or "?", "prompt": prompt_hash(), "schema": SCHEMA_VERSION}
+    version = {"modell": model_name(), "prompt": prompt_hash(), "schema": SCHEMA_VERSION}
     if a is None or b is None:
         return {"zustand": "fehler", "grund": why_a or why_b, "version": version}
     agree = a["primary"] == b["primary"]
@@ -563,13 +574,61 @@ def truth_check(humans: set[str] | None = None) -> dict:
 PAIRS_RETRY_AFTER_S = 86400  # a failed generation (model down, no JSON) is retried after a day, not at every sleep
 
 
+PAIRS_SECONDS = 1800  # 0.69.3: a sleep spends this much time on training pairs (config classify.pairs_seconds)
+
+
 def pairs_per_sleep() -> int:
-    """Objects per sleep that get training pairs (config classify.pairs_per_sleep, default 5: one call each, ~40 s measured)."""
+    """At most this many objects per sleep get training pairs (config classify.pairs_per_sleep, default 200 since 0.69.3, before 5) —
+    the time budget pairs_seconds() usually ends first (~40 s per object measured on a shared model)."""
     from . import config
     try:
-        return max(0, min(int((config.read_raw(config.fpath()).get("classify") or {}).get("pairs_per_sleep", 5)), 500))
+        return max(0, min(int((config.read_raw(config.fpath()).get("classify") or {}).get("pairs_per_sleep", 200)), 2000))
     except Exception:  # noqa: BLE001
-        return 5
+        return 200
+
+
+def pairs_seconds() -> float:
+    """0.69.3 (the user, 17.11.2026, after the import of ~16,000 documentation pages: "mehr pro Schlaf"): the time a sleep spends on
+    training pairs — config classify.pairs_seconds, default 1,800 s (~45 objects at 40 s; 5 before, ~3 min)."""
+    from . import config
+    try:
+        return max(0.0, min(float((config.read_raw(config.fpath()).get("classify") or {}).get("pairs_seconds", PAIRS_SECONDS)), 14400.0))
+    except Exception:  # noqa: BLE001
+        return float(PAIRS_SECONDS)
+
+
+def _pairs_queue_table() -> None:
+    with g.lock:
+        g.db().execute("CREATE TABLE IF NOT EXISTS pairs_queue (id TEXT PRIMARY KEY, ts TEXT NOT NULL)")
+        g.db().commit()
+
+
+def pairs_queued() -> int:
+    _pairs_queue_table()
+    with g.lock:
+        return g.db().execute("SELECT COUNT(*) FROM pairs_queue").fetchone()[0]
+
+
+def queue_pairs(objs) -> int:
+    """0.69.3 (the user: what agents search for and read is qualified first): knowledge without current training pairs that was just
+    accessed goes in front of sleep step 8i. No model call here. At most QUEUE_MAX waiting."""
+    from . import qa_pairs
+    ph = qa_pairs.prompt_sha256()
+    todo = [o.id for o in objs if o is not None and o.kind in ("insight", "rule", "skill") and o.visibility != "private"
+            and o.mode not in ("quarantine", "refuted", "withdrawn", "merged", "archived") and "knowledge_kind:code" not in o.hashtags
+            and ((o.data.get("qa") or {}).get("version") or {}).get("prompt") not in (ph, "agent-v1")]  # 0.69.3: agent pairs are current
+    if not todo:
+        return 0
+    _pairs_queue_table()
+    n = 0
+    with g.lock:
+        waiting = g.db().execute("SELECT COUNT(*) FROM pairs_queue").fetchone()[0]
+        for oid in todo:
+            if waiting + n >= QUEUE_MAX:
+                break
+            n += g.db().execute("INSERT OR IGNORE INTO pairs_queue (id, ts) VALUES (?, ?)", (oid, g.now())).rowcount
+        g.db().commit()
+    return n
 
 
 def document_of(o: g.MemoryObject) -> str:
@@ -583,7 +642,7 @@ def make_pairs(o: g.MemoryObject) -> dict:
     """Ask the classify model once for grounded pairs and keep only what qa_pairs.select admits (pure apart from the model call)."""
     from . import qa_pairs
     doc = document_of(o)
-    version = {"model": _config().get("model") or "?", "prompt": qa_pairs.prompt_sha256(), "schema": qa_pairs.SCHEMA_VERSION}
+    version = {"model": model_name(), "prompt": qa_pairs.prompt_sha256(), "schema": qa_pairs.SCHEMA_VERSION}
     # named, not silent: a long page gets pairs only from its first DOC_CHARS characters (anchored chunks are the next step)
     base = {"content_sha256": qa_pairs.content_sha256(doc), "version": version, "truncated": len(doc) > qa_pairs.DOC_CHARS,
             "chars": len(doc)}
@@ -641,11 +700,25 @@ def pairs_pending(limit: int = 20, stale: bool = False, sample: int = 0) -> list
             "AND t.tag = 'knowledge_kind:code') ")
     from datetime import datetime, timedelta, timezone
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=PAIRS_RETRY_AFTER_S)).isoformat(timespec="milliseconds")
+    _pairs_queue_table()
+    with g.lock:  # 0.69.3: what was searched for or read comes first (queue_pairs), oldest request first
+        queued = [r[0] for r in g.db().execute("SELECT id FROM pairs_queue ORDER BY ts LIMIT ?", (int(limit) * 4,))]
+    out = []
+    for oid in queued:
+        o = g.load(oid)
+        if o is None or ((o.data.get("qa") or {}).get("version") or {}).get("prompt") in (ph, "agent-v1") or o.mode in ("archived", "merged", "refuted", "withdrawn"):
+            with g.lock:
+                g.db().execute("DELETE FROM pairs_queue WHERE id = ?", (oid,))
+                g.db().commit()
+            continue
+        out.append(oid)
+        if len(out) >= limit:
+            return out
     with g.lock:
-        rows = g.db().execute(live + "AND (json_extract(data, '$.qa.version.prompt') IS NULL OR json_extract(data, '$.qa.version.prompt') <> ? "
+        rows = g.db().execute(live + "AND (json_extract(data, '$.qa.version.prompt') IS NULL OR json_extract(data, '$.qa.version.prompt') NOT IN (?, 'agent-v1') "
                               "OR (json_extract(data, '$.qa.state') = 'error' AND json_extract(data, '$.qa.time') < ?)) ORDER BY ts DESC LIMIT ?",
                               (ph, cutoff, int(limit))).fetchall()
-    out = [r[0] for r in rows]
+    out += [r[0] for r in rows if r[0] not in set(out)][:max(0, int(limit) - len(out))]
     if (stale or sample) and len(out) < limit:
         q = live + "AND json_extract(data, '$.qa.state') IN ('ok', 'empty') AND json_extract(data, '$.qa.version.prompt') = ? "
         with g.lock:
@@ -660,26 +733,41 @@ def pairs_pending(limit: int = 20, stale: bool = False, sample: int = 0) -> list
     return out
 
 
-def run_pairs(limit: int = 20, who: str = "sleep", workers: int = 1, stale: bool = False, sample: int = 0) -> dict:
-    """Training pairs for up to `limit` pending objects (sleep step 8i, or `vi-mcp classify --pairs`). Counts per state."""
+def run_pairs(limit: int = 20, who: str = "sleep", workers: int = 1, stale: bool = False, sample: int = 0, budget_s: float | None = None) -> dict:
+    """Training pairs for up to `limit` pending objects (sleep step 8i, or `vi-mcp classify --pairs`). Counts per state. budget_s
+    (0.69.3): no new object is started after that many seconds (the sleep passes pairs_seconds())."""
     import concurrent.futures as cf
+    import time as _time
+    t0 = _time.monotonic()
     if not available():
         return {"zustand": "uebersprungen", "grund": "no language model for training pairs (config classify or llm)"}
     out = {"ok": 0, "empty": 0, "error": 0, "pairs": 0, "probes": 0, "changed_meanwhile": 0, "truncated": 0, "rejected": {}, "reasons": {}}
     objs = [o for o in (g.load(i) for i in pairs_pending(limit, stale, sample)) if o is not None]
-    with cf.ThreadPoolExecutor(max(1, int(workers))) as pool:
-        for o, res in zip(objs, pool.map(make_pairs, objs)):  # model calls in parallel, database writes here, one at a time
-            if not store_pairs(o, res, who):
-                out["changed_meanwhile"] += 1
-                continue
-            out[res["state"]] += 1
-            out["truncated"] += 1 if res.get("truncated") else 0
-            out["pairs"] += len(res["pairs"])
-            out["probes"] += 1 if res.get("probe") else 0
-            for k, v in res["rejected"].items():
-                out["rejected"][k] = out["rejected"].get(k, 0) + v
-            if res["state"] == "error":
-                out["reasons"][res["reason"][:80]] = out["reasons"].get(res["reason"][:80], 0) + 1
+    w = max(1, int(workers))
+    _pairs_queue_table()
+    n_done = 0
+    with cf.ThreadPoolExecutor(w) as pool:
+        for k in range(0, len(objs), w):  # in rounds of `workers`: a time budget ends between rounds, each round is stored at once
+            if budget_s is not None and _time.monotonic() - t0 > budget_s:
+                out["stopped"] = f"time budget {int(budget_s)} s after {n_done} objects"
+                break
+            chunk = objs[k:k + w]
+            for o, res in zip(chunk, pool.map(make_pairs, chunk)):  # model calls in parallel, database writes here, one at a time
+                n_done += 1
+                with g.lock:
+                    g.db().execute("DELETE FROM pairs_queue WHERE id = ?", (o.id,))
+                    g.db().commit()
+                if not store_pairs(o, res, who):
+                    out["changed_meanwhile"] += 1
+                    continue
+                out[res["state"]] += 1
+                out["truncated"] += 1 if res.get("truncated") else 0
+                out["pairs"] += len(res["pairs"])
+                out["probes"] += 1 if res.get("probe") else 0
+                for kk, v in res["rejected"].items():
+                    out["rejected"][kk] = out["rejected"].get(kk, 0) + v
+                if res["state"] == "error":
+                    out["reasons"][res["reason"][:80]] = out["reasons"].get(res["reason"][:80], 0) + 1
     return out
 
 

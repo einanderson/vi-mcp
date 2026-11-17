@@ -1,12 +1,12 @@
 # vi-mcp reference
 
-Generated from the code of vi-mcp 0.69.2 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
+Generated from the code of vi-mcp 0.69.3 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
 
 Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server configuration](#server-configuration-configjson) · [Network service configuration](#network-service-configuration-etcvi-p2pnetworkjson) · [Configuration catalogue](#configuration-catalogue-debconf-vi-mcp-configure-vi_mcp_key) · [Environment variables](#environment-variables) · [HTTP endpoints](#http-endpoints) · [Modules](#modules-vi_mcp)
 
 ## MCP tools
 
-66 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
+68 tools. German names (before 0.22.0) remain valid as aliases (`vi_mcp/api_en.py`). `OPEN` = usable without a token (open wiki mode).
 
 ### `vi_before`
 
@@ -335,6 +335,9 @@ VI: store knowledge as an object. When: a non-obvious problem was solved, a last
 | `key` | string |  | optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1. |
 | `supersedes` | array of string |  | optional (0.68.1): ids of this instance's own knowledge objects the new one replaces — e.g. a page re-imported as one object instead of section parts. Each is moved to the long-term archive with a reason naming the new object (vi_archive shows it, vi_archive_restore brings it back) and linked to it; another instance's object, an unknown id or more than 200 ids refuse the whole call before anything is stored. |
 | `index` | string |  | optional: the index the knowledge belongs to — a project or special VI (e.g. cue-print, ansible); default: the project of your working directory, else global |
+| `pairs` | array of object |  | optional (0.69.3), qualifies the object in the same call: about 5 [{question, answer}] in English, grounded in text/content (each question names its subject; every name and number of an answer occurs in it) — training pairs and one never-trained probe, checked by fixed rules |
+| `answers` | string (how, why, what, who, where, rule) |  | optional (0.69.3, with memory): what question the knowledge answers |
+| `memory` | string (fact, procedure, episode, rule) |  | optional (0.69.3, with answers): what kind of memory it is |
 | `project` | string |  | set by the hook: the name of your working directory (mapped to an index by the server) (German: `projekt`) |
 | `image` | string |  | optional: an image as base64 — stored as a memory of its own kind (kind:image); e.g. a screenshot (png, jpeg, gif or webp, at most 5 MiB; a data: URL is fine). text = what it shows in one sentence, content = the complete description. For a file use the command line instead of pasting base64: vi-mcp image FILE --text … --hashtags … --source … [--content-file F] [--regions F] |
 | `regions` | array of object |  | optional, with image: what is where, in the output format of SAM 3 (Segment Anything with Concepts) — one entry per instance found |
@@ -481,6 +484,30 @@ VI, the documentation import access (0.69.0; for `vi-mcp docs import`, guide doc
 | `removed` | array of string |  | page ids the source no longer has (archived with a reason) |
 | `old_source_kind` | string |  | optional: the source_kind: value an older import filed these pages under, when it differs from source — its objects of the same page are the old shape that is archived |
 
+### `vi_qualify`
+
+VI: qualify an object you just read with vi_object, when its answer asks for it (0.69.3) — the text is in your context, so this costs a few hundred tokens: pairs = grounded question/answer pairs in English (each question names its subject; every name and number of an answer occurs in the object's text), answers = what question it answers, memory = what kind of memory it is, tags = kind:value for its hosts, services, products and topics — tagging and qualifying in one call. Fixed rules check the pairs and tags (rejected ones are named); one kept pair becomes a never-trained probe. Review stays with vi_confirm / vi_refute (your own objects count half), rating your conversation with vi_rate.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | the object you read |
+| `pairs` | array of object |  | [{question, answer}], about 5 |
+| `answers` | string (how, why, what, who, where, rule) |  | what question the object answers |
+| `memory` | string (fact, procedure, episode, rule) |  | what kind of memory it is |
+| `tags` | array of string |  | up to 10 kind:value, e.g. host:web1.example.org, topic:backup |
+
+### `vi_rate`
+
+VI: rate your own conversation (0.69.3, a self-review) — grade 0–1, a reason with turn numbers, certainty. It is stored as an agent grade marked review:self, never as a human grade, and weighs half a model grade; it counts for learning only once agent grades agree with the user's grades. Only conversations of your own instance; default: this one.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `grade` | number | yes | 0 = failed, 1 = fully done and checked |
+| `reason` | string | yes | what went well or wrong and why (at least 20 characters) (German: `grund`) |
+| `evidence` | array of integer |  | optional: turn numbers that show it (German: `belege`) |
+| `certainty` | string (low, medium, high) |  | how sure you are (default medium) |
+| `serial` | string |  | optional: another conversation of your instance |
+
 ### `vi_context`
 
 VI, for hooks: note that the next vi_learn/vi_recall of this instance comes from the project of this session (its working directory). Called by the Claude Code hook right before those tools; an agent does not need it.
@@ -541,7 +568,7 @@ VI: tell the memory which of the hints shown to you helped and which misled you 
 
 ### `vi_confirm`
 
-VI: confirm an object (it becomes more important) — with a reason. Counts as feedback if it was just shown as a hint. Weight comes from independent lines: confirmations of one model family count once, and a confirmation citing the object's own source counts as none — name your own source if you checked it elsewhere. · German alias `vi_bestaetige`
+VI: confirm an object (it becomes more important) — with a reason. Counts as feedback if it was just shown as a hint. Weight comes from lines: each other instance counts 1, your own object counts half (a self-review, marked self — check your own work when you have new evidence), and a confirmation citing the object's own source counts as none — name your own source if you checked it elsewhere. · German alias `vi_bestaetige`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1162,6 +1189,7 @@ First line of each module's docstring.
 | Module | Purpose |
 |---|---|
 | `__main__` | Usage (German command names are accepted as aliases): |
+| `agent_qualify` | The AI that uses the VI qualifies what it reads (0.69.3). |
 | `anonymize` | Anonymisation — what leaves the network or comes from it carries no IPs, internal names, credentials, user names, proxy details. |
 | `api_en` | German aliases of the MCP interface (English since 0.22.0). |
 | `archive` | Long-term archive — housekeeping: entries no longer used leave the active store without vanishing. |
@@ -1232,6 +1260,7 @@ First line of each module's docstring.
 | `sandbox` | Sandbox — reflex code runs in its own process, never in the server. |
 | `scorer` | Scorer — rates whether work succeeded. "The tool did not crash" is not enough for that (measured: 63 of 64). |
 | `search_questions` | Search questions per object (0.68.0) — labels for the query adapter, written by the classify model while the VI sleeps. |
+| `secret_sweep` | Credentials in documentation, checked again (0.69.3). |
 | `self_model` | The self — an object every session loads and that changes only with reason, evidence and confirmation. |
 | `server` | MCP over Streamable HTTP — ONE process, many sessions. |
 | `session` | Sessions and conversations — the time slice. |

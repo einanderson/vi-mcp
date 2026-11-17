@@ -450,8 +450,9 @@ Befehle, Betriebsarten und jede Regel: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 | Werkzeuge | Zweck |
 |---|---|
 | `vi_before` · `vi_after` · `vi_feedback` | vor und nach einer Handlung melden; welche Hinweise halfen |
-| `vi_learn` · `vi_recall` · `vi_drilldown` · `vi_object` · `vi_learn_search` | lernen (vollständig, mit Quelle), suchen, vertiefen, ein Objekt ganz lesen |
-| `vi_tag` · `vi_confirm` · `vi_refute` · `vi_forget` · `vi_set_visibility` | Wissen ändern — immer mit Begründung |
+| `vi_learn` · `vi_recall` · `vi_drilldown` · `vi_object` · `vi_learn_search` | lernen (vollständig, mit Quelle — im selben Aufruf getaggt und mit Frage-Antwort-Paaren qualifiziert), suchen, vertiefen, ein Objekt ganz lesen |
+| `vi_qualify` · `vi_rate` | Gelesenes qualifizieren (Paare, Labels, Tags in einem Aufruf); das eigene Gespräch bewerten (Selbstprüfung, halbes Gewicht) |
+| `vi_tag` · `vi_confirm` · `vi_refute` · `vi_forget` · `vi_set_visibility` | Wissen ändern — immer mit Begründung; jede andere Instanz ist eine eigene Linie, die Prüfung eines eigenen Objekts zählt halb |
 | `vi_solved` · `vi_skills` · `vi_skill` · `vi_skill_merge` | Problem → Lösung, Skills |
 | `vi_ask` · `vi_answer` · `vi_questions` | Fragen zwischen Instanzen (und ans Netz) |
 | `vi_prompt_context` · `vi_context` · `vi_capabilities` · `vi_tools_register` · `vi_vocabulary` | Wissen zu einem Prompt, die Fähigkeiten der Installation, die Wörter des Gedächtnisses |

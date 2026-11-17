@@ -439,8 +439,9 @@ Commands, modes and every rule: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 | Tools | Purpose |
 |---|---|
 | `vi_before` · `vi_after` · `vi_feedback` | report before and after an action; which hints helped |
-| `vi_learn` · `vi_recall` · `vi_drilldown` · `vi_object` · `vi_learn_search` | learn (in full, with source), search, drill down, read one object completely |
-| `vi_tag` · `vi_confirm` · `vi_refute` · `vi_forget` · `vi_set_visibility` | change knowledge — always with a reason |
+| `vi_learn` · `vi_recall` · `vi_drilldown` · `vi_object` · `vi_learn_search` | learn (in full, with source — tagged and qualified with question/answer pairs in the same call), search, drill down, read one object completely |
+| `vi_qualify` · `vi_rate` | qualify what you just read (pairs, labels, tags in one call); rate your own conversation (a self-review, half weight) |
+| `vi_tag` · `vi_confirm` · `vi_refute` · `vi_forget` · `vi_set_visibility` | change knowledge — always with a reason; each other instance is a line of its own, a review of your own object counts half |
 | `vi_solved` · `vi_skills` · `vi_skill` · `vi_skill_merge` | problem → solution, skills |
 | `vi_ask` · `vi_answer` · `vi_questions` | questions between instances (and to the network) |
 | `vi_prompt_context` · `vi_context` · `vi_capabilities` · `vi_tools_register` · `vi_vocabulary` | knowledge for a prompt, the installation's skills, the memory's words |

@@ -187,6 +187,7 @@ def _run(reason: str) -> g.MemoryObject:
     step("5b_pruefer", lambda: _reviewer())
     step("6_selbst_ist", lambda: _self_actual())
     step("6b_doc_triggers", lambda: _doc_triggers())  # 0.26.0
+    step("6c_secret_sweep", lambda: __import__("vi_mcp.secret_sweep", fromlist=["run"]).run())  # 0.69.3: credentials in documentation
     from . import on_demand
     with on_demand.TRAINING:  # never at the same time as on-demand training (same model, same vectors)
         step("7_vektoren", lambda: _vectors())
@@ -208,7 +209,8 @@ def _run(reason: str) -> g.MemoryObject:
             step("8f_klassifizieren", lambda: {"schueler_training": {k: v for k, v in classify.train_student("sleep").items() if k in ("zustand", "n", "grund")},
                                                **classify.run_with_student(classify.per_sleep(), "sleep")})
             # 0.65.0: knowledge becomes training-ready while the VI sleeps — grounded pairs and a probe question on the object
-            step("8i_trainingspaare", lambda: classify.run_pairs(classify.pairs_per_sleep(), "sleep", sample=classify.STALE_SAMPLE))
+            step("8i_trainingspaare", lambda: classify.run_pairs(classify.pairs_per_sleep(), "sleep", sample=classify.STALE_SAMPLE,
+                                                                 budget_s=classify.pairs_seconds()))  # 0.69.3: by time, accessed first
             from . import relevance  # 0.62.0: the label the search lacked — a language model grades real searches (UMBRELA), measured only
             step("8h_relevanz", lambda: relevance.run(relevance.per_sleep(), "sleep"))
             from . import hint_judge  # 0.68.0: did the agent use the hint? a language model judges from the actions — labels, measured

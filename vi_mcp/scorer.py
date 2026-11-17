@@ -5,9 +5,13 @@ Three stages following Anthropic's pattern ("Demystifying evals for AI agents"):
           Result in `erfahrung.daten.score` = {note 0–1, merkmale, version}.
   Model   the local language model rates finished conversations on a fixed scale, with turn numbers as evidence. Object `bewertung`.
           Counts for learning only once it is calibrated against human grades (CAL_MIN, CAL_RATIO); before that display only.
-  Human   the user's grade via the hook (#gut, #schlecht, #note 0.8). Object `bewertung`, calibrates the model scorer.
-No instance rates itself: there is no MCP tool for setting a grade. Human signals come via
-POST /signal with a token of their own (right `mensch`). The user's text never leaves the session, only the result.
+  Agent   0.69.3: the AI that did the work rates its own conversation with vi_rate — grade, reason, turn numbers as evidence, certainty.
+          A self-review (the user, 17.11.2026: "in our environment there is only Claude, so the AI must be able to check its own
+          work"): a model grade, never a human one, at SELF_WEIGHT of a model grade; counts for learning only once calibrated against
+          human grades like the model stage. Only conversations of the caller's own instance.
+  Human   the user's grade via the hook (#gut, #schlecht, #note 0.8). Object `bewertung`, calibrates the model and agent scorers.
+Human signals come only via POST /signal with a token of their own (right `mensch`); no MCP tool sets a human grade.
+The user's text never leaves the session, only the result.
 """
 from __future__ import annotations
 
@@ -227,9 +231,9 @@ def _grades(scorer: str) -> dict[str, float]:
     return {z: n for z, n in lines}
 
 
-def calibration() -> dict:
-    """How well does the model match the human grades? Purely from the database."""
-    m, k = _grades("human"), _grades("model")
+def calibration(scorer: str = "model") -> dict:
+    """How well does a scorer (model, or agent since 0.69.3) match the human grades? Purely from the database."""
+    m, k = _grades("human"), _grades(scorer)
     pairs = [(m[s], k[s]) for s in m if s in k]
     hits = sum(1 for a, b in pairs if abs(a - b) <= CAL_GAP)
     ratio = hits / len(pairs) if pairs else None
@@ -239,7 +243,7 @@ def calibration() -> dict:
 #: 0.55.0: the weight of a label by its source (scikit-learn sample_weight). A human grade outweighs everything; direct feedback on a
 #: hint is a direct statement; code-stage and ok tag are the plentiful base. An uncalibrated model grade counts a little instead of not
 #: at all (human grades are optional — the user, 12.11.2026); its certainty scales it.
-WEIGHT = {"human": 3.0, "rueckmeldung": 2.0, "genutzt": 1.5, "model": 1.0, "judge": 1.0, "code": 1.0, "ok": 1.0}
+WEIGHT = {"human": 3.0, "rueckmeldung": 2.0, "genutzt": 1.5, "model": 1.0, "agent": 1.0, "judge": 1.0, "code": 1.0, "ok": 1.0}
 CERTAINTY = {"low": 0.3, "medium": 0.6, "high": 1.0}
 UNCALIBRATED = 0.3
 
@@ -250,12 +254,14 @@ def grade_details() -> dict[str, dict]:
     with g.lock:
         rows = g.db().execute("SELECT json_extract(data, '$.target'), CAST(json_extract(data, '$.note') AS REAL), json_extract(data, '$.scorer'), "
                               "json_extract(data, '$.certainty') FROM object WHERE kind = 'rating' ORDER BY ts").fetchall()
-    calibrated = calibration()["geeicht"]
+    calibrated = {"model": calibration()["geeicht"], "agent": calibration("agent")["geeicht"]}
+    from .memory import SELF_WEIGHT
     out: dict[str, dict] = {}
     for serial, note, who, certainty in rows:
-        if who == "model" and out.get(serial, {}).get("quelle") != "human":
-            out[serial] = {"note": note, "quelle": "model",
-                           "gewicht": round(WEIGHT["model"] * CERTAINTY.get(certainty or "", 0.6) * (1.0 if calibrated else UNCALIBRATED), 3)}
+        if who in ("model", "agent") and out.get(serial, {}).get("quelle") != "human":
+            out[serial] = {"note": note, "quelle": who,
+                           "gewicht": round(WEIGHT[who] * CERTAINTY.get(certainty or "", 0.6) * (1.0 if calibrated[who] else UNCALIBRATED)
+                                            * (SELF_WEIGHT if who == "agent" else 1.0), 3)}
         elif who == "human":
             out[serial] = {"note": note, "quelle": "human", "gewicht": WEIGHT["human"]}
     from . import hint_judge  # 0.68.0: the weight of a judge label — small until the judge agrees with the agents' own feedback
@@ -294,8 +300,34 @@ def label(data: dict, ok_tag: bool | None, serial: str | None, grades: dict[str,
 
 
 def conversation_grades() -> dict[str, float]:
-    """Conversation grades that count for learning: human always, model only when calibrated."""
-    return {**(_grades("model") if calibration()["geeicht"] else {}), **_grades("human")}
+    """Conversation grades that count for learning: human always, model and agent only when calibrated."""
+    return {**(_grades("model") if calibration()["geeicht"] else {}), **(_grades("agent") if calibration("agent")["geeicht"] else {}),
+            **_grades("human")}
+
+
+AGENT_REASON_MIN = 20
+
+
+def agent(serial: str, instance: str, grade, reason: str, evidence=None, certainty: str = "medium") -> g.MemoryObject:
+    """0.69.3: an agent rates a conversation of its own instance (a self-review, marked review:self). The newest grade counts."""
+    if not isinstance(grade, (int, float)) or isinstance(grade, bool) or not 0 <= grade <= 1:
+        raise ValueError("grade must be a number between 0 and 1")
+    reason = str(reason or "").strip()
+    if len(reason) < AGENT_REASON_MIN:
+        raise ValueError(f"reason needed (at least {AGENT_REASON_MIN} characters): what went well or wrong, with turn numbers")
+    if certainty not in CERTAINTY:
+        raise ValueError(f"certainty must be one of {sorted(CERTAINTY)}")
+    conv = g.load_keyed("conversation", serial)
+    if not conv or conv.kind != "conversation":
+        raise ValueError(f"no conversation {serial}")
+    if conv.instance != instance:
+        raise ValueError(f"conversation {serial} belongs to instance {conv.instance} — an agent rates only its own instance's conversations "
+                         "(other work: vi_confirm / vi_refute with a reason)")
+    ev = [int(t) for t in (evidence or []) if isinstance(t, (int, float)) and not isinstance(t, bool)][:20]
+    o = _create_rating("agent", 1, serial, instance, round(float(grade), 2), reason, {"evidence": ev, "certainty": certainty, "review": "self"},
+                       names.new_id("rating", f"agent-{serial}-{int(time.time() * 1000)}"), f"ki@{instance}")
+    o.hashtags = sorted(set(o.hashtags) | {"review:self"})
+    return g.save(o)
 
 
 def line() -> str:
@@ -320,4 +352,10 @@ def report() -> str:
     z.append("Features: " + (", ".join(f"{m} {n}" for m, n in features) or "—"))
     for _, o, _g in g.recall("kind:rating scorer:model", limit=5, viewer=None):
         z.append(f"  {o.data['target']}: {o.data['note']:.2f} ({o.data.get('certainty')}) — {o.data['justification'][:140]}")
+    ka = calibration("agent")
+    z.append(f"Agent self-reviews (vi_rate, weight ×{g.SELF_WEIGHT}): {len(_grades('agent'))} conversations · "
+             + ("calibrated" if ka["geeicht"] else "not calibrated, counts a little") + f" · agreement with humans "
+             + ("—" if ka["quote"] is None else f"{ka['quote'] * 100:.0f} %") + f" from {ka['paare']} pairs")
+    for _, o, _g in g.recall("kind:rating scorer:agent", limit=5, viewer=None):
+        z.append(f"  {o.data['target']} (self, {o.instance}): {o.data['note']:.2f} ({o.data.get('certainty')}) — {o.data['justification'][:140]}")
     return "\n".join(z)

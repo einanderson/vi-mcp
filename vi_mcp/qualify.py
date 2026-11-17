@@ -18,6 +18,11 @@ from __future__ import annotations
 PER_CALL = 10
 
 
+def g_load(o):
+    from . import memory as g
+    return g.load(o.id) or o
+
+
 def on_access(objs, who: str = "vi", how: str = "search") -> dict:
     from . import classify, doc_triggers
     out = {"labels": {}, "triggers_refreshed": 0, "tags_changed": 0}
@@ -26,6 +31,18 @@ def on_access(objs, who: str = "vi", how: str = "search") -> dict:
         out["labels"] = classify.on_search(objs)
     except Exception:  # noqa: BLE001
         pass
+    try:  # 0.69.3: knowledge without current training pairs goes in front of sleep step 8i
+        out["pairs_queued"] = classify.queue_pairs(objs)
+    except Exception:  # noqa: BLE001
+        pass
+    from . import secret_sweep
+    for o in objs:  # 0.69.3: documentation is checked for credentials before anyone reads further
+        try:
+            if doc_triggers.is_doc(o) and o.mode != "archived":
+                out["credentials_replaced"] = out.get("credentials_replaced", 0) + secret_sweep.check(o, who, f"on {how}")
+        except Exception:  # noqa: BLE001
+            pass
+    objs = [g_load(o) for o in objs]
     for o in objs:
         try:
             if o.visibility != "private" and o.mode not in ("quarantine", "refuted", "withdrawn", "archived") and doc_triggers.stale(o):
