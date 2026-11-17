@@ -3,6 +3,37 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.69.6 — 2026-11-17
+
+### What is new: a philosophy is handed over MCP, and the VI learns which philosophy fits which situation
+
+- **Hand it over, read it back** (the user, 17.11.2026: "Per MCP akzeptiert vi_philosophy install nur eingebaute Pakete oder ein
+  Serververzeichnis. Man soll eine Philosophie ablegen und lesen können."). `vi_philosophy(action="install", package={manifest, seed,
+  worlds})` takes the three parts of a package (philosophy.json, seed.co, worlds as a list or the text of worlds.jsonl) and decides it
+  with the same checks; `export` gives a whole package back. Before, an installed philosophy could not even be read or bound by its
+  name unless it was built in — `show`, `check`, `evaluate`, `explain` and `use` now find it (`philosophy.resolve`: built in → installed →
+  server directory). Names of built-in philosophies are reserved; a name belongs to the instance that installed it first.
+  Checked with the real package bewusstsein 0.1.0: installed over the tool with the hash recorded for it (1162f697a87c0be8…).
+- **Which philosophy when** ("In verschiedenen Situationen sind verschiedene Philosophien nützlich. Also muss auch trainiert werden,
+  wann eine Philosophie sinnvoll ist"; `vi_mcp/philosophy_fit.py`). A package may declare its situations as hashtags (manifest
+  `situations`, checked as kind:value); the server declares them for its built-in philosophies outside their packages (their hashes
+  and bindings stay). Every application is rated with `vi_philosophy(action="rate", name, tags, helped, reason)` and counted per
+  (philosophy, situation tag); `suggest` ranks the philosophies for a situation by Thompson sampling over declared (a head start) and
+  measured (the decision), and names the counts. `philosophy_fit.pairs()` turns the measured choices into training data (per situation
+  the philosophy that measurably helped most, from at least 3 ratings).
+- **When a philosophy is applied** (the user's decision, 17.11.2026: "Vorschlag im Kontext"). Not automatically: when the situation of a
+  prompt fits a philosophy, the prompt context carries one line `[Philosophy] This situation fits the philosophy X …` with its reason
+  and the steps — read its vocabulary, translate the situation into its facts, `evaluate`, act by the verdict, `rate` — at most once
+  per conversation. The initial skill philosophy (docs/PHILOSOPHY.md) explains it.
+- Evidence: `tests/test_philosophy_package_mcp.py` (5 tests: install from parts, export round trip, bind by name, jsonl worlds, the
+  checks still refuse, owned names; declared then measured — after 8 ratings each the helping philosophy leads in at least 18 of 20
+  draws; the context line once per conversation; malformed situations refused). **Migration:** none.
+
+### What is still missing
+
+- A finetune kit does not yet include the measured choices (`philosophy_fit.pairs()` provides them).
+- Facts are written by the AI that applies a philosophy; nothing checks that they describe the situation truly.
+
 ## 0.69.5 — 2026-11-17
 
 ### What was fixed: archive hints before shell commands, and feedback on them

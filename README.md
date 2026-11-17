@@ -445,7 +445,7 @@ Commands, modes and every rule: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 | `vi_solved` · `vi_skills` · `vi_skill` · `vi_skill_merge` | problem → solution, skills |
 | `vi_ask` · `vi_answer` · `vi_questions` | questions between instances (and to the network) |
 | `vi_prompt_context` · `vi_context` · `vi_capabilities` · `vi_tools_register` · `vi_vocabulary` | knowledge for a prompt, the installation's skills (knowledge_kind:skill, extensible with vi_learn; initial: clingo, finetune, philosophy), the memory's words |
-| `vi_finetune` · `vi_incubator` · `vi_philosophy` | train a model from the memory: maturity, kit, runbook, philosophy packages |
+| `vi_finetune` · `vi_incubator` · `vi_philosophy` | train a model from the memory: maturity, kit, runbook; philosophy packages — handed over MCP, suggested for the situation that fits, rated after use |
 | `vi_logic` · `vi_machine` | clingo-object logic over the memory; persistent VIL machines |
 | `vi_model` · `vi_why` · `vi_feature_propose` · `vi_scorer` · `vi_stats` · `vi_status` · `vi_experience` | the learned model, why a hint was shown, proposals for it, scores and measurements |
 | `vi_self` · `vi_self_propose` · `vi_sleep` | self-image and consolidation |

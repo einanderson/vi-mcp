@@ -170,6 +170,40 @@ def load(ref: str) -> dict:
     return pkg
 
 
+#: 0.69.6: the largest package accepted from its parts (manifest + seed + worlds as JSON characters)
+MAX_PACKAGE_CHARS = 400_000
+
+
+def from_parts(manifest, seed, worlds) -> dict:
+    """A package from its three parts — what philosophy.json, seed.co and worlds.jsonl hold — as text or data, without a directory
+    (0.69.6: a philosophy can be handed over MCP). The same package `load` reads from a directory; `check` decides whether it is valid."""
+    try:
+        m = json.loads(manifest) if isinstance(manifest, str) else dict(manifest or {})
+    except (ValueError, TypeError) as e:
+        raise PackageError(f"manifest: the content of philosophy.json, a JSON object ({e})") from e
+    if not isinstance(m, dict) or not m.get("name"):
+        raise PackageError("manifest: the content of philosophy.json — an object with at least name, version, format")
+    if not isinstance(seed, str) or not seed.strip():
+        raise PackageError("seed: the content of seed.co (the rule set, blocks marked # P1 …)")
+    if isinstance(worlds, str):
+        try:
+            worlds = [json.loads(x) for x in worlds.splitlines() if x.strip()]
+        except ValueError as e:
+            raise PackageError(f"worlds: the lines of worlds.jsonl, one JSON object per line ({e})") from e
+    if not isinstance(worlds, list) or not all(isinstance(w, dict) for w in worlds):
+        raise PackageError("worlds: the test worlds — a list of objects, or the text of worlds.jsonl")
+    pkg = {**{k: v for k, v in m.items() if k not in ("seed", "worlds")}, "seed": seed, "worlds": worlds}
+    if len(json.dumps(pkg, ensure_ascii=False)) > MAX_PACKAGE_CHARS:
+        raise PackageError(f"package larger than {MAX_PACKAGE_CHARS} characters")
+    return pkg
+
+
+def to_parts(pkg: dict) -> dict:
+    """The three parts of a package, as from_parts takes them (export)."""
+    return {"manifest": {k: v for k, v in pkg.items() if k not in ("seed", "worlds") + UNHASHED},
+            "seed": pkg["seed"], "worlds": list(pkg.get("worlds") or [])}
+
+
 def package_hash(pkg: dict) -> str:
     """sha256 over the package (never over a derived translation); with a priority profile also over the profile's rules — they run
     with the seed. A philosophy-v1 package that still carries prose principles keeps them in its hash, so an installed v1 object still
@@ -282,6 +316,9 @@ def check(pkg: dict) -> dict:
             errors.append(f"missing field {key}")
     if errors:
         return {"ok": False, "errors": errors, "warnings": warnings, "worlds": [], "coverage": {}, "hash": None}
+    sits = pkg.get("situations")  # 0.69.6: optional — the situations the author meant the philosophy for, as kind:value hashtags
+    if sits is not None and (not isinstance(sits, list) or not all(isinstance(t, str) and re.fullmatch(r"[a-z][a-z0-9_-]*:[^\s:]\S{0,80}", t) for t in sits)):
+        errors.append("situations: a list of kind:value hashtags, e.g. [\"topic:incident\", \"task:judge-claims\"]")
     if pkg.get("format", FORMAT) != FORMAT:
         errors.append(f"format {pkg.get('format')} — this engine reads {FORMAT}"
                       + (" (v1 stored prose principles; v2 stores only the seed: remove principles, keep the markers '# P1' in the seed, "
@@ -583,9 +620,31 @@ suppressions and invalid groups under `priority`. `messung` uses it; its worlds 
 - One semantics profile (`fde-signed-v1`) and one priority profile (`maximal-candidates-v1`): no reinstatement of a candidate whose
   defeater is itself defeated, no preferred-answer-set semantics, no priorities between norms of different groups.
 - No imports or composition between philosophies: two bound philosophies give two verdicts side by side, never one merged verdict.
-- A binding is visible through `vi_philosophy` (`bound`, `list`, `evaluate`); it does not yet reach a session's instructions, and no
-  server path evaluates a bound philosophy automatically before an action.
+- A binding is visible through `vi_philosophy` (`bound`, `list`, `evaluate`); no server path evaluates a philosophy automatically
+  before an action — the AI applies it (next section).
 - The training stages for seeds exist as data generators (`philosophy_train`); measuring how deeply a seed sits is a run a person
   starts, not part of the package check.
 - A round-trip number is bounded by the back-translator: read it next to the control, never alone.
+
+## Handing a philosophy over, and when to apply which one (vi-mcp 0.69.6)
+
+**Hand it over MCP.** `vi_philosophy(action="install", package={manifest, seed, worlds})` — manifest = the content of philosophy.json,
+seed = the content of seed.co, worlds = the test worlds (a list, or the text of worlds.jsonl). The same checks decide; the names of the
+built-in philosophies are reserved, and a name belongs to the instance that installed it first. `export` gives the whole package back;
+`show`, `check`, `evaluate`, `explain` and `use` find an installed philosophy by its name.
+
+**Declare its situations.** The manifest may name what the philosophy is for, as hashtags: `"situations": ["topic:incident",
+"task:judge-claims"]`. That is the author's intent, the starting point — not proof that it helps.
+
+**When it is applied.** Not automatically. When the situation of a prompt fits a philosophy (declared for it, or measured to have
+helped more often than not), the prompt context carries one line `[Philosophy] This situation fits the philosophy X …`, at most once
+per conversation. Then:
+1. Read its vocabulary: `vi_philosophy(action="show", name=X)`.
+2. Translate the situation into its facts, one per line, only with that vocabulary — what you do not know stays out (it is not false).
+3. `vi_philosophy(action="evaluate", name=X, facts=…)` gives its verdict and duties; act by them, and say that the verdict is the
+   philosophy's (evidence inferred).
+4. Afterwards: `vi_philosophy(action="rate", name=X, tags=[the situation tags], helped=true|false, reason=…)`.
+`vi_philosophy(action="suggest", situation=…, tags=[…])` asks the same at any time. The ranking is Thompson sampling over what was
+declared (a head start) and what was rated (the decision); every line names its counts. Rated choices are also training data
+(`philosophy_fit.pairs()`: per situation the philosophy that measurably helped most, from at least 3 ratings).
 """

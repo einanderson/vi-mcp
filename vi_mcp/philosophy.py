@@ -6,6 +6,7 @@ Philosophie-Technik muss als Skill vorhanden sein, damit man eine KI mit irgende
 from __future__ import annotations
 
 import json
+import re
 
 from clingo_object import philosophy as ph
 
@@ -109,10 +110,35 @@ def installed() -> list[g.MemoryObject]:
     return sorted(newest.values(), key=lambda o: o.data["philosophy"]["name"])
 
 
-def install(ref: str, instance: str, who: str | None = None, visibility: str | None = None) -> g.MemoryObject:
-    """Check, then store as a rule set object (vi_logic runs it) carrying the manifest and hash. Refused with the reasons if any check fails."""
+def resolve(ref: str, viewer: str | None = None) -> dict:
+    """0.69.6: a philosophy by name — built in, else the newest installed one the viewer may see, else a package directory on the server
+    (administrators). Before 0.69.6 an installed philosophy could not be read or bound by its name unless it was built in."""
+    if ref in ph.BUILTIN:
+        return ph.load(ref)
+    inst = [o for o in installed() if o.data["philosophy"]["name"] == ref and (viewer is None or g.visible_to(o, viewer))]
+    if inst:
+        return _package_of(inst[0])
+    try:
+        return ph.load(ref)
+    except ph.PackageError as e:
+        raise ph.PackageError(f"{ref}: neither built in ({', '.join(sorted(ph.BUILTIN))}) nor installed in this VI — install it with "
+                              "vi_philosophy(action=\"install\", package={manifest, seed, worlds})") from e
+
+
+def install(ref: str | None, instance: str, who: str | None = None, visibility: str | None = None, pkg: dict | None = None) -> g.MemoryObject:
+    """Check, then store as a rule set object (vi_logic runs it) carrying the manifest and hash. Refused with the reasons if any check fails.
+    pkg (0.69.6): a package handed over whole (from_parts) instead of a name. The names of the built-in philosophies are the package's;
+    a name installed by another instance is that instance's — it publishes the new versions."""
     from . import logic
-    pkg = ph.load(ref)
+    if pkg is None:
+        pkg = ph.load(ref or "")
+    elif pkg.get("name") in ph.BUILTIN:
+        raise ValueError(f"{pkg['name']} is a built-in philosophy — install yours under another name")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,50}", str(pkg.get("name") or "")):  # it becomes the rule set philosophie-<name>
+        raise ValueError("the package's name: lower case, digits, - and _ (at most 51), e.g. bewusstsein")
+    owner = next((o.instance for o in _installed_all(pkg["name"])), None)
+    if owner and owner != instance and pkg["name"] not in ph.BUILTIN:
+        raise ValueError(f"the philosophy {pkg['name']} was installed by {owner} — only {owner} installs its new versions")
     r = ph.check(pkg)
     if not r["ok"]:
         raise ValueError("package refused: " + "; ".join(r["errors"][:5]))
@@ -239,12 +265,28 @@ def tool(args: dict, instance: str) -> str:
     if action == "bound":
         return "\n".join([f"Philosophies that apply to instance {instance}" + (f" and index {args['index']}" if args.get("index") else "") + ":"]
                          + binding_lines(bindings(instance, args.get("index"))))
+    if action in ("suggest", "rate"):  # 0.69.6: which philosophy fits which situation — declared, measured, learned
+        from . import philosophy_fit as pf
+        if action == "suggest":
+            return "\n".join(pf.lines(pf.suggest(str(args.get("situation") or ""), args.get("tags"), instance)))
+        if not isinstance(args.get("helped"), bool):
+            raise ValueError("rate needs helped: true or false")
+        return json.dumps(pf.rate(str(args.get("name") or ""), args.get("tags"), args["helped"], instance, str(args.get("reason") or "")),
+                          ensure_ascii=False)
     if action == "evaluate" and not args.get("name"):
         return json.dumps(evaluate_bound(str(args.get("facts") or ""), instance, args.get("index")), ensure_ascii=False, indent=1)
+    if action == "install" and args.get("package") is not None:  # 0.69.6: a philosophy handed over MCP
+        p = args["package"] if isinstance(args["package"], dict) else {}
+        pkg = ph.from_parts(p.get("manifest"), p.get("seed"), p.get("worlds"))
+        o = install(None, instance, None, args.get("visibility") or "internal", pkg=pkg)
+        return f"installed {o.id} — philosophy {pkg['name']} {pkg['version']}, hash {o.data['philosophy']['hash'][:16]}…"
     ref = str(args.get("name") or "")
     if not ref:
-        raise ValueError(f"{action} needs name — a built-in philosophy ({', '.join(sorted(ph.BUILTIN))}) or a package directory on the server")
-    pkg = ph.load(ref)
+        raise ValueError(f"{action} needs name — a built-in philosophy ({', '.join(sorted(ph.BUILTIN))}), an installed one, or for "
+                         "install a package={manifest, seed, worlds}")
+    pkg = resolve(ref, instance)
+    if action == "export":  # 0.69.6: the whole package, as install takes it
+        return json.dumps(ph.to_parts(pkg), ensure_ascii=False, indent=1)
     if action == "show":
         return "\n".join(show_lines(pkg, stored_translation(pkg["name"])))
     if action == "explain":

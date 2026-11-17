@@ -278,12 +278,21 @@ TOOLS = [
                     "and back with an independent model (judge_url, judge_model), agreement on the package's and random worlds per block, "
                     "store: keep it as a derived translation; "
                     "evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per "
-                    "philosophy); install: check and store it in the VI as a rule set; use: bind an installed philosophy (its hash) to "
+                    "philosophy); install: check and store it in the VI as a rule set — name a built-in one, or hand a package over (0.69.6: package = "
+                    "{manifest: the content of philosophy.json, seed: the content of seed.co, worlds: the test worlds}); export: the whole "
+                    "package of a built-in or installed philosophy, as install takes it; suggest: which philosophies fit a situation (declared by the "
+                    "package, measured from rated use — a suggestion, not a decision); rate: you applied one in a situation, did it help "
+                    "(the VI learns from it which philosophy fits when; a fitting one is also suggested in the prompt context); use: bind an installed philosophy (its hash) to "
                     "yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes "
                     "visibility, review or tool rights.",
-     "inputSchema": _schema({"action": {"type": "string", "enum": ["guide", "list", "show", "check", "evaluate", "install", "use", "bound", "explain"],
-                                        "description": "guide (default), list, show, check, evaluate, install, use, bound or explain"},
-                             "name": {"type": "string", "description": "a built-in philosophy (e.g. kollektiv, messung) or a package directory on the server"},
+     "inputSchema": _schema({"action": {"type": "string", "enum": ["guide", "list", "show", "check", "evaluate", "install", "use", "bound", "explain", "export", "suggest", "rate"],
+                                        "description": "guide (default), list, show, check, evaluate, install, use, bound, explain, export, suggest or rate"},
+                             "situation": {"type": "string", "description": "suggest: the situation in words (the task, the question)"},
+                             "tags": {"type": "array", "items": {"type": "string"}, "description": "suggest/rate: the situation as kind:value hashtags, e.g. topic:incident"},
+                             "helped": {"type": "boolean", "description": "rate: did applying the philosophy help in this situation?"},
+                             "reason": {"type": "string", "description": "rate: what the philosophy decided and why it helped or not"},
+                             "name": {"type": "string", "description": "a built-in philosophy (e.g. kollektiv, messung), an installed one, or a package directory on the server"},
+                             "package": {"type": "object", "description": "install (0.69.6): {manifest: object (philosophy.json), seed: string (seed.co), worlds: list of objects or the text of worlds.jsonl}"},
                              "facts": {"type": "string", "description": "evaluate: facts in clingo-object notation, one per line"},
                              "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "install: default internal"},
                              "instance": {"type": "string", "description": "use: only yourself (others are bound by an administrator on the server)"},

@@ -119,9 +119,30 @@ suppressions and invalid groups under `priority`. `messung` uses it; its worlds 
 - One semantics profile (`fde-signed-v1`) and one priority profile (`maximal-candidates-v1`): no reinstatement of a candidate whose
   defeater is itself defeated, no preferred-answer-set semantics, no priorities between norms of different groups.
 - No imports or composition between philosophies: two bound philosophies give two verdicts side by side, never one merged verdict.
-- A binding is visible through `vi_philosophy` (`bound`, `list`, `evaluate`); it does not yet reach a session's instructions, and no
-  server path evaluates a bound philosophy automatically before an action.
+- A binding is visible through `vi_philosophy` (`bound`, `list`, `evaluate`); no server path evaluates a philosophy automatically
+  before an action — the AI applies it (next section).
 - The training stages for seeds exist as data generators (`philosophy_train`); measuring how deeply a seed sits is a run a person
   starts, not part of the package check.
 - A round-trip number is bounded by the back-translator: read it next to the control, never alone.
 
+## Handing a philosophy over, and when to apply which one (vi-mcp 0.69.6)
+
+**Hand it over MCP.** `vi_philosophy(action="install", package={manifest, seed, worlds})` — manifest = the content of philosophy.json,
+seed = the content of seed.co, worlds = the test worlds (a list, or the text of worlds.jsonl). The same checks decide; the names of the
+built-in philosophies are reserved, and a name belongs to the instance that installed it first. `export` gives the whole package back;
+`show`, `check`, `evaluate`, `explain` and `use` find an installed philosophy by its name.
+
+**Declare its situations.** The manifest may name what the philosophy is for, as hashtags: `"situations": ["topic:incident",
+"task:judge-claims"]`. That is the author's intent, the starting point — not proof that it helps.
+
+**When it is applied.** Not automatically. When the situation of a prompt fits a philosophy (declared for it, or measured to have
+helped more often than not), the prompt context carries one line `[Philosophy] This situation fits the philosophy X …`, at most once
+per conversation. Then:
+1. Read its vocabulary: `vi_philosophy(action="show", name=X)`.
+2. Translate the situation into its facts, one per line, only with that vocabulary — what you do not know stays out (it is not false).
+3. `vi_philosophy(action="evaluate", name=X, facts=…)` gives its verdict and duties; act by them, and say that the verdict is the
+   philosophy's (evidence inferred).
+4. Afterwards: `vi_philosophy(action="rate", name=X, tags=[the situation tags], helped=true|false, reason=…)`.
+`vi_philosophy(action="suggest", situation=…, tags=[…])` asks the same at any time. The ranking is Thompson sampling over what was
+declared (a head start) and what was rated (the decision); every line names its counts. Rated choices are also training data
+(`philosophy_fit.pairs()`: per situation the philosophy that measurably helped most, from at least 3 ratings).

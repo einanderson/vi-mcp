@@ -1,6 +1,6 @@
 # vi-mcp reference
 
-Generated from the code of vi-mcp 0.69.5 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
+Generated from the code of vi-mcp 0.69.6 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
 
 Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server configuration](#server-configuration-configjson) · [Network service configuration](#network-service-configuration-etcvi-p2pnetworkjson) · [Configuration catalogue](#configuration-catalogue-debconf-vi-mcp-configure-vi_mcp_key) · [Environment variables](#environment-variables) · [HTTP endpoints](#http-endpoints) · [Modules](#modules-vi_mcp)
 
@@ -386,12 +386,17 @@ VI: propose FEATURE RULES for the router that chooses hints — you read its wei
 
 ### `vi_philosophy`
 
-VI: equip an AI with a philosophy. A philosophy is a package that stores only a clingo-object rule set (the seed, in blocks marked # P1), proven by test worlds; prose is a translation, checked by its round trip. action guide (default): the technique step by step; list: built-in and installed philosophies; show: seed, inputs, answers and the latest derived translation of one; check: every rule of the format (vocabulary, no default negation outside closure, every rule in a marked block, worlds, coverage, counterfactuals); explain: translate the seed into prose (url, model) and back with an independent model (judge_url, judge_model), agreement on the package's and random worlds per block, store: keep it as a derived translation; evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per philosophy); install: check and store it in the VI as a rule set; use: bind an installed philosophy (its hash) to yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes visibility, review or tool rights.
+VI: equip an AI with a philosophy. A philosophy is a package that stores only a clingo-object rule set (the seed, in blocks marked # P1), proven by test worlds; prose is a translation, checked by its round trip. action guide (default): the technique step by step; list: built-in and installed philosophies; show: seed, inputs, answers and the latest derived translation of one; check: every rule of the format (vocabulary, no default negation outside closure, every rule in a marked block, worlds, coverage, counterfactuals); explain: translate the seed into prose (url, model) and back with an independent model (judge_url, judge_model), agreement on the package's and random worlds per block, store: keep it as a derived translation; evaluate: the seed's verdict on facts (without name: the verdict of every philosophy bound to you, kept apart per philosophy); install: check and store it in the VI as a rule set — name a built-in one, or hand a package over (0.69.6: package = {manifest: the content of philosophy.json, seed: the content of seed.co, worlds: the test worlds}); export: the whole package of a built-in or installed philosophy, as install takes it; suggest: which philosophies fit a situation (declared by the package, measured from rated use — a suggestion, not a decision); rate: you applied one in a situation, did it help (the VI learns from it which philosophy fits when; a fitting one is also suggested in the prompt context); use: bind an installed philosophy (its hash) to yourself or an index (off: end it); bound: which philosophies and hashes apply to you. A philosophy never changes visibility, review or tool rights.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string (guide, list, show, check, evaluate, install, use, bound, explain) |  | guide (default), list, show, check, evaluate, install, use, bound or explain (German: `aktion`) |
-| `name` | string |  | a built-in philosophy (e.g. kollektiv, messung) or a package directory on the server |
+| `action` | string (guide, list, show, check, evaluate, install, use, bound, explain, export, suggest, rate) |  | guide (default), list, show, check, evaluate, install, use, bound, explain, export, suggest or rate (German: `aktion`) |
+| `situation` | string |  | suggest: the situation in words (the task, the question) |
+| `tags` | array of string |  | suggest/rate: the situation as kind:value hashtags, e.g. topic:incident |
+| `helped` | boolean |  | rate: did applying the philosophy help in this situation? |
+| `reason` | string |  | rate: what the philosophy decided and why it helped or not (German: `grund`) |
+| `name` | string |  | a built-in philosophy (e.g. kollektiv, messung), an installed one, or a package directory on the server |
+| `package` | object |  | install (0.69.6): {manifest: object (philosophy.json), seed: string (seed.co), worlds: list of objects or the text of worlds.jsonl} |
 | `facts` | string |  | evaluate: facts in clingo-object notation, one per line |
 | `visibility` | string (shared, internal) |  | install: default internal (German: `sicht`) |
 | `instance` | string |  | use: only yourself (others are bound by an administrator on the server) |
@@ -1249,6 +1254,7 @@ First line of each module's docstring.
 | `on_demand` | Training on demand (since 0.20.0) — instead of only in the nightly sleep. |
 | `p2p` | The memory on the network: anonymous outbox, checked inbox, quarantine, right to be forgotten, value per publisher. |
 | `philosophy` | vi-mcp side of philosophy packages (0.66.0): the command line, installing a checked package into the VI, the tool vi_philosophy. |
+| `philosophy_fit` | Which philosophy fits which situation (0.69.6) — declared by the package, learned from rated use. |
 | `philosophy_provenance` | Provenance adapter: the evidence about a knowledge object as input facts of kollektiv 1.3.0 — shadow mode only (0.67.0). |
 | `qa_pairs` | Grounded question-answer pairs for knowledge — the training form of a VI's knowledge (0.65.0). |
 | `qualify` | Qualification on access (0.69.2): an object that is searched for or read and whose hashtags are incomplete is completed at that |

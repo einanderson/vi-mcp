@@ -859,4 +859,13 @@ def prompt_hints(text: str, instance: str | None, shown: list[str] | None = None
                                          f"[Source: {str(o.data.get('source', '—'))[:120]}]"})
         if len(out) >= PROMPT_HINTS:
             break
-    return {"hinweise": [h["zeile"] for h in out], "ids": [h["id"] for h in out], "woerter": len(words)}
+    lines_, ids_ = [h["zeile"] for h in out], [h["id"] for h in out]
+    try:  # 0.69.6: a philosophy that fits this situation is suggested in the context (the user's decision, 17.11.2026)
+        from . import philosophy_fit
+        pl, pid = philosophy_fit.context_line(text, instance, shown)
+        if pl:
+            lines_.append(pl)
+            ids_.append(pid)
+    except Exception:  # noqa: BLE001 — a suggestion must never stop the context
+        pass
+    return {"hinweise": lines_, "ids": ids_, "woerter": len(words)}
