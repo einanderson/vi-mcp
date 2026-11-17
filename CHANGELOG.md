@@ -5,6 +5,19 @@ Linked from [README.md](README.md).
 
 ## Unreleased
 
+### What is new: objects are completed when they are searched for or read
+
+- **Qualification on access** (`vi_mcp/qualify.py`; the user, 17.11.2026: "wir sollten Datensätze, die unvollständige Tags haben, beim
+  Aufrufen und Lesen dann noch Tags vergeben, so dass die DB-Objekte on the fly qualifiziert werden"). What `vi_recall`, `vi_object`
+  and the internal web search return is completed at that moment instead of waiting for sleep: the labels `answers:`/`memory:` as
+  before (classify.on_search, 0.62.0), and now also the `host:`/`topic:` triggers of documentation objects whose `derived_triggers` are
+  missing or of an older version — derived with the rules of sleep step 6b (`doc_triggers.refresh`, one definition for sleep, import
+  and access; filler-word topics taken off). At most 10 objects per access, no language model in the request, a measurement
+  (`reinforce: false`) reads only. Why: sleep step 6b reaches at most 3,000 documents per sleep; after the import of ~16,000 pages the
+  ones agents actually use should not wait for it. Evidence: `tests/test_qualify.py` (a read document gets host and topic at once; a
+  searched one is completed and loses a filler topic; a measurement does not qualify, a current object is not redone, only
+  documentation gets derived triggers) — two of its three tests fail on the code before. **Migration:** none.
+
 ### What was fixed: hashtags carried over from the old shape survive later updates
 
 - **A page updated by a later import run lost the hashtags its first import had carried over from the old shape** (`host:`, `topic:`,

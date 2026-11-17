@@ -947,8 +947,8 @@ def _recall(args: dict, instance: str, only: str | None, first: str | None) -> s
     hits, f, kind_used = search(args, only, first)
     as_text = g.as_text_tokens(args.get("filter") or "")  # 0.26.0: named in the answer instead of emptying the search silently
     if args.get("reinforce", True) is not False:  # 0.62.0: what a real search returns unlabelled migrates first (classify.on_search)
-        from . import classify
-        classify.on_search([o for _s, o, _w in hits])
+        from . import qualify  # 0.69.2: and documentation it returns gets its missing host:/topic: triggers now (qualify.on_access)
+        qualify.on_access([o for _s, o, _w in hits], f"vi@{instance}", "search")
     # 0.31.0: a measurement must not change what it measures — a benchmark of 49 questions reinforced 733 objects once each
     # (10.11.2026), making them look more used and more recent than real use justifies. reinforce=false only reads.
     reinforce = args.get("reinforce", True) is not False
@@ -1661,6 +1661,10 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
         # hints in its own MCP session and the agent opens them over another connection; opened() links by instance and the recent
         # experiences in which the hint was shown (production: 0 opens counted in 7 days with 1503 vi_object calls).
         intuition.opened(instance, o.id)
+        if o.mode != "quarantine":  # 0.69.2: an object that is read is completed now (labels, documentation triggers)
+            from . import qualify
+            qualify.on_access([o], f"vi@{instance}", "read")
+            o = g.load(o.id) or o
         from . import evaluation
         evaluation.log_open(instance, o.id)  # 0.57.0: a search hit opened → click with its rank (suche_log)
         z = [_line(o), f"  author {o.instance} · index {o.idx} · visibility {o.visibility} · importance {o.importance} · confirmed {o.confirmed} "

@@ -140,6 +140,46 @@ def run(batch: int = BATCH) -> dict:
     return report
 
 
+_cache: dict = {"at": 0.0, "db": None, "names": {}, "topics": set()}
+
+
+def cached_vocabulary(max_age: float = 3600.0) -> tuple[dict[str, str], set[str]]:
+    """vocabulary() without the hosts and topics too common in the documentation (common_sets), kept for an hour per database — for the
+    paths that tag one object at a time: the documentation import (0.69.0) and the qualification on access (0.69.2)."""
+    import time
+    now = time.monotonic()
+    if _cache["db"] is not g.db() or now - _cache["at"] > max_age:
+        names, themen = vocabulary()
+        common_h, common_t = common_sets(names, themen)
+        _cache.update(at=now, db=g.db(), names={k: v for k, v in names.items() if v not in common_h}, topics=themen - common_t)
+    return _cache["names"], _cache["topics"]
+
+
+def is_doc(o) -> bool:
+    return any(t in o.hashtags for t in DOC_TAGS)
+
+
+def stale(o) -> bool:
+    """A documentation object whose triggers were derived by an older version (or never)."""
+    return is_doc(o) and float(((o.data.get("derived_triggers") or {}).get("version")) or 0) < VERSION
+
+
+def refresh(o, who: str = "vi", why: str = "on access") -> list[str]:
+    """Derive the triggers of one documentation object now (the rules of run(), the cached vocabulary): add host:/topic:, take filler
+    topics an earlier version derived off again, record data.derived_triggers. Returns the hashtags added (and "-tag" for removed)."""
+    names, themen = cached_vocabulary()
+    hosts, topics = derive(o.text, str(o.data.get("content") or ""), names, themen)
+    removed = [f"topic:{t}" for t in ((o.data.get("derived_triggers") or {}).get("topic") or []) if t in STOPWORDS]
+    removed = [t for t in removed if t in o.hashtags]
+    new = [t for t in [f"host:{h}" for h in hosts] + [f"topic:{t}" for t in topics] if t not in o.hashtags and g.TAG.match(t)]
+    o.hashtags = sorted((set(o.hashtags) - set(removed)) | set(new))
+    o.data["derived_triggers"] = {"version": VERSION, "host": hosts, "topic": topics, "at": why}
+    if new or removed:
+        o.change(who, "derived triggers: " + " ".join([f"+{t}" for t in new] + [f"-{t}" for t in removed]), f"{why}: doc_triggers v{VERSION}")
+    g.save(o)
+    return new + [f"-{t}" for t in removed]
+
+
 #: 0.69.0: what the last run found too common to be a specific trigger — the import (doc_import) leaves it out as well
 _last_common: list[str] = []
 

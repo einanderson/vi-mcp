@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from vi_mcp import archive, config, doc_import, memory as g, tools
+from vi_mcp import archive, config, doc_import, doc_triggers, memory as g, tools
 from vi_mcp.tools import Rejected
 
 
@@ -24,7 +24,7 @@ def test_a_page_becomes_one_object_with_source_tags_and_triggers_at_once(gd):
     known = g.new_object("insight", "web1 runs nginx", ["host:web1.example.org", "topic:nginx"], {"source": "test"}, instance="a")
     for i in range(3):  # topic:deploy is a topic learned knowledge uses (doc_triggers.THEMA_MIN)
         g.new_object("insight", f"deploy fact {i}", ["topic:deploy"], {"source": "t"}, instance="a")
-    doc_import._vocab["at"] = 0.0
+    doc_triggers._cache["at"] = 0.0
     r = _call("vi_doc_sync", {"action": "sync", "source": "wiki", "label": "Wiki IT", "knowledge_kind": "company-docs",
                               "pages": [_page("101", title="Deploy the web cluster", labels=["Runbook", "Web"], service="web-cluster",
                                               space="IT", area="it-muenchen")]})
@@ -138,7 +138,7 @@ def test_topics_come_from_the_title_without_filler_words_and_old_tagging_is_redo
     for t in ("for", "old", "error", "deadlocks", "nginx"):
         for i in range(3):
             g.new_object("insight", f"{t} fact {i}", [f"topic:{t}"], {"source": "t"}, instance="a")
-    doc_import._vocab["at"] = 0.0
+    doc_triggers._cache["at"] = 0.0
     p = _page("31", title="Coping with deadlocks", body="## Why\nDeadlocks happen for old error reasons, behind nginx too.")
     _call("vi_doc_sync", {"action": "sync", "source": "wiki", "pages": [p]})
     tags = g.load(doc_import.object_id("wiki", "31", 1)).hashtags

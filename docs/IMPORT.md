@@ -100,6 +100,12 @@ that their old objects are recognised as the old shape and archived. It prints t
 Run the same command again whenever the source changed (a nightly job is fine): unchanged pages cost one hash comparison, changed ones
 are updated in place, and with `--prune` pages deleted at the source are archived.
 
+## After the import
+
+Pages that are searched for or read are completed on access (0.69.2): if their triggers come from an older version, `vi_recall` and
+`vi_object` derive them again at once, and the labels `answers:`/`memory:` are set or queued — what agents use is qualified first,
+the rest by sleep step 6b over the following nights.
+
 ## Limits
 
 - `topic:` triggers come from the title only (the body names too much); `tool:` triggers are never derived.

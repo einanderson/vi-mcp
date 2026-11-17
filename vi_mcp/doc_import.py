@@ -129,21 +129,8 @@ def server_state(source: str) -> dict:
     return {"source": source, "pages": pages, "objects": n, "indexes": sorted(i for i in idx if i)}
 
 
-_vocab: dict = {"at": 0.0, "db": None, "names": {}, "topics": set()}
 #: 0.69.1: the version of how an import derives hashtags — a page imported with another version is re-tagged even if its text is the same
 TAGGER_VERSION = 2
-
-
-def _triggers_vocabulary() -> tuple[dict, set]:
-    """doc_triggers.vocabulary() without the documentation-wide frequency filter's full scan on every call: cached for 10 minutes.
-    Hosts and topics that sleep step 6b found too common are left out here too (its last report), so import and sleep agree."""
-    from . import doc_triggers
-    now = time.monotonic()
-    if _vocab["db"] is not g.db() or now - _vocab["at"] > 3600:
-        names, topics = doc_triggers.vocabulary()
-        common_h, common_t = doc_triggers.common_sets(names, topics)  # 0.69.1: computed here, not only after a sleep ran
-        _vocab.update(at=now, db=g.db(), names={k: v for k, v in names.items() if v not in common_h}, topics=topics - common_t)
-    return _vocab["names"], _vocab["topics"]
 
 
 def _tags_for(source: str, kk: str, page: dict, text: str, md: str) -> tuple[list[str], dict]:
@@ -162,7 +149,7 @@ def _tags_for(source: str, kk: str, page: dict, text: str, md: str) -> tuple[lis
         t = str(t).strip()
         if g.TAG.match(t) and t.split(":", 1)[0] not in _FIXED_KINDS:
             tags.append(t)
-    names, topics = _triggers_vocabulary()
+    names, topics = doc_triggers.cached_vocabulary()
     # 0.69.1: topics from the TITLE only (the key statement carries the body's first 300 characters: topic:for, topic:old …);
     # hosts from title, key statement and the whole page
     hosts, tops = doc_triggers.derive(str(page.get("title") or ""), f"{text}\n{md}", names, topics)
