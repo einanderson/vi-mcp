@@ -1120,7 +1120,13 @@ def philosophy_stage(d: Path, name: str, prompts: int = PHILOSOPHY_PROMPTS, seed
     from clingo_object import clingo_prose as cp
     from clingo_object import philosophy as ph
     from clingo_object import philosophy_train as pt
-    pkg = ph.load(name)
+    try:  # 0.69.8: an installed philosophy (handed over MCP) too — built in → installed → package directory
+        from . import philosophy as vph
+        pkg = vph.resolve(name)
+    except ph.PackageError:
+        raise
+    except Exception:  # noqa: BLE001 — no memory open (a kit from a directory only): the package loader alone
+        pkg = ph.load(name)
     r = ph.check(pkg)
     if not r["ok"]:
         raise ValueError(f"philosophy {name} refused: " + "; ".join(r["errors"][:3]))
@@ -1298,7 +1304,7 @@ def main(argv: list[str]) -> int:
         x.add_argument("--base")
     k.add_argument("directory")
     k.add_argument("--force", action="store_true", help="also for a VI still in the incubator (the datasheet names the open criteria)")
-    k.add_argument("--philosophy", help="also write GRPO prompts for this philosophy (built-in name or package directory): train.py --stage grpo")
+    k.add_argument("--philosophy", help="also write GRPO prompts for this philosophy (built-in, installed in this VI, or a package directory): train.py --stage grpo")
     k.add_argument("--philosophy-prompts", type=int, default=PHILOSOPHY_PROMPTS, help="how many GRPO prompts (default %(default)s)")
     k.add_argument("--language-rows", type=int, default=LANGUAGE_ROWS, help="rows of the clingo-object language stage (default %(default)s)")
     k.add_argument("--philosophy-rows", type=int, default=PHILOSOPHY_ROWS, help="rows of the seed SFT stage (default %(default)s)")

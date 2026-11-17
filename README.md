@@ -140,10 +140,8 @@ Fine-tuning is a person's explicit decision; vi-mcp prepares and measures it, th
 
 From zero, with every command: [docs/FINETUNING.md](docs/FINETUNING.md).
 
-**Philosophy packages** equip an AI with principles: a checked [clingo-object](#logic-over-the-memory-clingo-object) rule set (the
-seed) with test worlds; prose is only a translation checked by its round trip (`vi-mcp philosophy`, `vi_philosophy`,
-[docs/PHILOSOPHY.md](docs/PHILOSOPHY.md)). The first package, `kollektiv`, says how a member of an AI collective holds something
-true and what it must do. How a 0.6B model learns such a seed, run by run and scored by the solver:
+**Philosophy packages** equip an AI with principles ([Philosophies](#philosophies--principles-an-ai-works-by-and-when-to-apply-which));
+a kit with `--philosophy NAME` trains a model on one. How a 0.6B model learns such a seed, run by run and scored by the solver:
 [docs/FINETUNING_PAPER.md](docs/FINETUNING_PAPER.md).
 
 ## Logic over the memory: clingo-object
@@ -194,6 +192,58 @@ exactly; the same model with searches alone 2 of 16. Details: [docs/PAPER.md](do
 an instance's private, mutable world with snapshots and forks ([docs/VIRTUAL_MACHINE.md](docs/VIRTUAL_MACHINE.md),
 [docs/INSTANCE_RUNTIME.md](docs/INSTANCE_RUNTIME.md)); an optional [kNN-LM backend](docs/KNN_LM.md) lets token prediction draw on a
 mutable datastore while the model's weights stay fixed.
+
+## Projects and special VIs (indexes)
+
+One memory holds many projects without mixing them. Every object belongs to exactly one **index**: `global`, a **project** or a
+**special VI** (a body of knowledge you want to search, train or hand on as a unit, e.g. a product's documentation).
+
+- **A project needs no set-up.** The hook sends the name of the working directory; what an agent learns there lands in that project's
+  index, and there its knowledge comes first in search and hints — everything else stays visible (precedence, not exclusion). Map or
+  ignore directory names in `config.json` (`"indexes": {"map": {"repo": "cue-stack"}, "ignore": ["scratch"]}`).
+- **Create and describe one explicitly** — e.g. a special VI before anything is in it: `vi_indexes(index="cue-print", description=…,
+  tags=[…], kind="special")` or `vi-mcp index describe cue-print --text "…" --tags team:it --kind special`.
+- **Learn into it and search it:** `vi_learn(…, index="cue-print")`, `vi_recall(…, index="cue-print")` searches only there;
+  `vi_indexes` lists every index with its objects, experiences and the state of its own model.
+- **Code of a repository** goes into an index as functions and classes: `vi-mcp index import-code REPO --index X` (idempotent, only
+  changed files; a git hook keeps it current).
+- **An index with enough data trains its own router** and uses it for its project only while it beats the shared one.
+- **Move, rename, merge, export:** `vi-mcp index move|rename|backfill|export|import|compare` — [docs/OPERATIONS.md](docs/OPERATIONS.md#indexes-and-code-0610).
+
+## Skills — what an AI can do here, kept in the server
+
+A skill is knowledge of the kind `knowledge_kind:skill`: the whole how-to (steps, commands, examples) with the hashtag `docs:<name>`.
+Every AI of the server inherits them: `vi_capabilities` lists them, and the hook puts that list into the first prompt of every session;
+`vi_object` reads one whole.
+
+- **Add or update one** with the ordinary `vi_learn`: hashtags `knowledge_kind:skill` and `docs:<name>`, `key="skill:<name>"` — a later
+  vi_learn with the same key updates it with history.
+- **A whole skills folder** (`<name>/SKILL.md` with a front matter) comes in with `vi-mcp skill import DIR --instance NAME`.
+- **Initial skills** come with the package and are refreshed with every update: `clingo` (how to write and read logic programs with
+  `vi_logic`, every example checked against the engine), `finetune` (fine-tune any open model, step by step) and `philosophy`.
+
+## Philosophies — principles an AI works by, and when to apply which
+
+A philosophy is a checked [clingo-object](#logic-over-the-memory-clingo-object) rule set (the **seed**) with test worlds that prove it:
+when an AI holds a statement true, what it may say, what it must do. Prose is only a translation, checked by its round trip. Built in:
+`kollektiv` (how a member of an AI collective holds something true — no self-confirmation, support and opposition apart, a reason for
+every value), `messung` (only an applicable measurement admits a statement) and `code` (architecture rules over code facts).
+
+1. **Hand one over** — `vi_philosophy(action="install", package={manifest, seed, worlds})` (the contents of philosophy.json, seed.co and
+   worlds.jsonl). The same checks decide: vocabulary, no default negation outside a closed view, every rule in a marked block, the
+   test worlds. `export` gives a package back whole; `list`, `show` and `check` read them.
+2. **Say what it is for** — the manifest may declare its situations as hashtags: `"situations": ["topic:incident", "task:judge-claims"]`.
+3. **When it is applied** — not automatically. When the situation of a prompt fits a philosophy (declared for it, or measured to have
+   helped there), the prompt context carries one line `[Philosophy] This situation fits the philosophy X …`. The AI then translates the
+   situation into the philosophy's facts, gets its verdict with `vi_philosophy(action="evaluate", name=X, facts=…)`, acts by it and
+   says so — the verdict is evidence *inferred*.
+4. **Which one fits when is learned** — afterwards the AI rates it: `vi_philosophy(action="rate", name=X, tags=[…], helped=true|false,
+   reason=…)`. `vi_philosophy(action="suggest", situation=…)` ranks the philosophies for a situation from what is declared (a head
+   start) and what was rated (the decision), with the counts.
+5. **Bind** one to an instance or an index (`use`); **train** a model on it (the training section above, `vi-mcp finetune kit …
+   --philosophy NAME`). A philosophy never changes visibility, review or tool rights.
+
+Step by step: [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) (also the initial skill `philosophy`).
 
 ## Install
 
@@ -395,9 +445,7 @@ hashtags and its `host:`/`topic:` triggers at once (so it can appear as a hint b
 older shape of the same pages and pages the source dropped go to the archive. Step by step for people and AIs:
 [docs/IMPORT.md](docs/IMPORT.md).
 
-**Indexes** keep projects apart: what an agent learns in a project directory lands in that project's index, which comes first there
-while everything else stays visible; `vi-mcp index import-code REPO --index X` adds a git repository's code (functions and classes).
-An index with enough data trains its own router. [Details](docs/OPERATIONS.md#indexes-and-code-0610).
+**Indexes** keep projects apart — see [Projects and special VIs](#projects-and-special-vis-indexes).
 
 ## The network (optional)
 

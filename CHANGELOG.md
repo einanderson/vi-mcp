@@ -3,6 +3,22 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.69.8 — 2026-11-17
+
+### What has changed: the README explains projects, skills and philosophies
+
+- The user (17.11.2026): "Hast du in der README eigentlich gesagt, dass man Projekte anlegen kann? Oder wie es mit der Philosophie
+  funktioniert?" — both were there only as a few lines. README.md and README.de.md now have their own sections: **Projects and special
+  VIs** (a project needs no set-up, how to create and describe one, learn into it, search it, code, its own router), **Skills**
+  (knowledge_kind:skill, add with vi_learn, the initial skills) and **Philosophies** (hand one over, declare its situations, when it is
+  applied, how the VI learns which fits when, bind and train).
+
+### What was fixed
+
+- `vi-mcp finetune kit DIR --philosophy NAME` loaded only built-in names or a package directory — a philosophy handed over MCP could not
+  be trained. The kit now resolves the name like vi_philosophy (built in → installed → directory). Evidence:
+  `tests/test_philosophy_package_mcp.py::test_a_finetune_kit_takes_a_philosophy_installed_over_mcp`.
+
 ## 0.69.7 — 2026-11-17
 
 ### What was fixed: installing a philosophy failed with "No module named 'clingo'" on a server whose clingo is in the logic layer

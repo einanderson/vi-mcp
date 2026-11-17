@@ -93,3 +93,15 @@ def test_a_philosophy_that_must_run_its_seed_asks_the_logic_layer_first(gd, monk
     with pytest.raises(tools.Rejected, match="logic layer is off on this server"):
         tools.call_tool("vi_philosophy", {"action": "install", "package": _copy("x")}, "a", False)
     assert calls and "Built in" in tools.call_tool("vi_philosophy", {"action": "list"}, "a", False)  # listing needs no solver
+
+
+def test_a_finetune_kit_takes_a_philosophy_installed_over_mcp(gd, tmp_path):
+    """0.69.8: finetune kit --philosophy NAME loaded only built-in names or a directory; a philosophy handed over MCP could not be trained."""
+    from clingo_object import philosophy as ph
+    from vi_mcp import finetune
+    parts = json.loads(tools.call_tool("vi_philosophy", {"action": "export", "name": "kollektiv"}, "a", False))
+    parts["manifest"]["name"] = "kollektiv-eigen"
+    tools.call_tool("vi_philosophy", {"action": "install", "package": parts}, "a", False)
+    (tmp_path / "split").mkdir()
+    meta = finetune.philosophy_stage(tmp_path, "kollektiv-eigen", 20)
+    assert meta["hash"] == ph.package_hash(ph.load(str(tmp_path / "philosophy"))) and meta["prompts"] >= 20
