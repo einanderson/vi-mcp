@@ -3,6 +3,18 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.68.2 — 2026-11-17
+
+### What was fixed: the first archive access after a server start failed
+
+- **"no such column: data"** at the first archive access of every server process since 0.67.0: the name check of the 0.67 migration
+  asked the archive's object table for a `data` column that only the memory's object table has. The exception came after the
+  connection was cached, so later calls worked — the first one (here: archiving the first superseded page of a re-import on production,
+  17.11.2026) failed, and sleep's archive step could fail the same way after a restart. The check now looks for the column first, and a
+  failed migration no longer leaves a half-opened archive behind. Evidence: `tests/test_supersedes.py::
+  test_the_archive_opens_cleanly_when_its_object_table_has_no_data_column` fails with exactly "no such column: data" on the 0.68.1 code
+  and passes now. Migration: none.
+
 ## 0.68.1 — 2026-11-17
 
 ### What is new: a re-import retires its old shape — `vi_learn(supersedes=[…])`

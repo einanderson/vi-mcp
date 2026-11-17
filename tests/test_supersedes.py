@@ -54,3 +54,16 @@ def test_an_already_archived_part_is_skipped_and_a_keyed_update_can_supersede(gd
     same, out = _learn("a", "Page Y: whole page", key="wiki:y", supersedes=[p1, p2])
     assert same == new and "updated" in out and "superseded 1 object(s)" in out
     assert g.load(p1).mode == "archived" and g.load(new).data["supersedes"] == [p1]
+
+
+def test_the_archive_opens_cleanly_when_its_object_table_has_no_data_column(gd):
+    """0.68.2: the 0.67 name check asked the archive's object table for a data column it never has — the first archive access after
+    every server start failed with "no such column: data" (17.11.2026, production)."""
+    archive.close_db()
+    with g.lock:
+        con = archive.db()  # the archive's object table exists (English) and is empty, as on production after 0.67.0
+    assert "data" not in [r[1] for r in con.execute("PRAGMA table_info(object)")]
+    archive.close_db()
+    p, _ = _learn("a", "Page Z (part 1/1): some text")
+    new, out = _learn("a", "Page Z: the whole page", supersedes=[p])  # the first archive access of a fresh process
+    assert "superseded 1 object(s)" in out and g.load(p).mode == "archived"

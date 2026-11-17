@@ -371,7 +371,9 @@ def _value_pending(con: Any, columns) -> bool:
         old = [k for k, v in m.items() if k != v]
         if con.execute(f"SELECT 1 FROM {table} WHERE {col} IN ({','.join('?' * len(old))}) LIMIT 1", old).fetchone():
             return True
-    if "object" in present and con.execute("SELECT 1 FROM object WHERE kind IN ('self', 'selbst') AND (data LIKE '%\"werte\"%' "
+    # 0.68.2: only the memory's object table has data — the archive's object table has none, and asking it raised "no such column: data"
+    # at the first archive access after every server start (17.11.2026, the first superseded page of a re-import stayed active)
+    if "object" in present and "data" in _columns(con, "object") and con.execute("SELECT 1 FROM object WHERE kind IN ('self', 'selbst') AND (data LIKE '%\"werte\"%' "
                                            "OR data LIKE '%\"stil\"%' OR data LIKE '%\"ziele\"%' OR data LIKE '%\"grenzen\"%') LIMIT 1").fetchone():
         return True
     if "tag" in present:

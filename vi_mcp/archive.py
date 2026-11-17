@@ -60,10 +60,16 @@ def db():
             finally:
                 os.umask(old_umask_value)
             os.chmod(g.archive_path, 0o600)
-        _fpath = g.archive_path
         from . import names
-        names.migrate_db(_con, {"objekt": "object", "gespraech_roh": "conversation_raw"}, g.archive_path, "archive")  # 0.67.0: English names
-        _con.commit()
+        try:
+            names.migrate_db(_con, {"objekt": "object", "gespraech_roh": "conversation_raw"}, g.archive_path, "archive")  # 0.67.0: English names
+            _con.commit()
+        except Exception:
+            # 0.68.2: never leave a half-opened archive behind — the next call opens and migrates again instead of skipping the check
+            _con.close()
+            _con = None
+            raise
+        _fpath = g.archive_path
         _con.executescript("""
             CREATE TABLE IF NOT EXISTS object (id TEXT PRIMARY KEY, kind TEXT NOT NULL, instance TEXT NOT NULL, visibility TEXT NOT NULL,
                 archived TEXT NOT NULL, mode_before TEXT NOT NULL, reason TEXT NOT NULL, raw BLOB NOT NULL);
