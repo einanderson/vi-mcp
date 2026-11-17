@@ -1,161 +1,41 @@
-# vi-mcp — one memory for many AI sessions
+# vi-mcp — a memory for AI agents that keeps what they learn
 
-[Deutsch](README.de.md) · **English** · [Changelog](CHANGELOG.md) · [Download](https://github.com/imoes/vi-mcp/releases/latest) · [![Release](https://img.shields.io/github/v/release/imoes/vi-mcp?label=release)](https://github.com/imoes/vi-mcp/releases/latest)
+[Deutsch](README.de.md) · **English** · [Changelog](CHANGELOG.md) · [Download](https://github.com/imoes/vi-mcp/releases/latest) · [All documentation](docs/README.md) · [![Release](https://img.shields.io/github/v/release/imoes/vi-mcp?label=release)](https://github.com/imoes/vi-mcp/releases/latest)
 
-`vi-mcp` is a **VI (virtual intelligence)**: a single server process with one memory that any number of AI sessions connect to at the same time over **MCP (Streamable HTTP)**.
-Each session keeps its own conversation context, like time slices on a processor. All of them share the same memory: what one session learns shows up as a hint for the next one, right before the relevant action.
-The language model itself is never changed. Learning happens in the memory, and the memory stays readable.
+`vi-mcp` is a **VI (virtual intelligence)**: one server process with one memory that AI agents — Claude Code, Codex, Hermes or any
+MCP client — connect to over **MCP (Streamable HTTP)**. What an agent finds out, decides or gets corrected on is stored as a readable
+object with its source, and comes back as a hint right before the next action it matters for.
 
-## A virtual intelligence machine (0.64.0)
+## Who it is for
 
-[Complete instances](docs/INSTANCE_RUNTIME.md) add persisted context, model/device bindings, an explicit permission policy and a
-controlled execution loop. `vi-mcp machine run|checkpoint|boot` runs that loop and restores symbolic state together with local kNN memory.
+**One agent.** A single AI forgets: the context window ends, a session closes, the conversation is compacted, the model is
+replaced. With vi-mcp its knowledge is **conserved** outside the model — every fix with the commands that worked, every decision you
+made ("from now on …"), every fact it looked up, with source and date. The next session, the next day, or a different model starts
+with it. Wrong knowledge is refuted with a reason, not quietly overwritten.
 
-The optional [kNN-LM backend](docs/KNN_LM.md) also makes token prediction depend on a mutable hidden-state datastore, while the
-base model's weights stay fixed. It runs below MCP in real causal-model inference; `vi-mcp knn` manages its data and serves the VI.
+**Many agents.** Sessions share the same memory at the same time, each with its own context, like time slices on one processor.
+What one session solved is a hint for the next one, even with a different model or vendor. No instance can confirm its own knowledge;
+others check it.
 
-VIL and clingo-object now have a persistent runtime: `vi_machine`. Each authenticated instance can create private machines, change
-their objects, define and execute rules, import visible knowledge, snapshot, restore and fork a world. The LLM is a replaceable
-program writer; clingo executes the safe notation over the machine's current data. Checked executions become SFT, KTO and
-same-task preference examples only after explicit internal publication. A fixed program changes its answer when facts change,
-without retraining the model. [Machine contract, examples and training](docs/VIRTUAL_MACHINE.md).
+**Into a model's weights.** What a VI learned can be **trained into a model** when you decide so. The memory stores its knowledge
+training-ready from the start (grounded question-answer pairs and an untrained probe question per object), measures when it is ripe
+(the incubator), and writes a complete fine-tuning kit (data, scripts, evaluation) for a GPU host. vi-mcp never trains on its own.
 
-## What this is: a search for the best prompt
+*Measured:* a 0.6B model fine-tuned on 500 of a VI's documents answered 7 correct and 9 partly correct of 60 never-trained probe
+questions about them, the base model 0 and 5 (blind, sign test p = 0.008; 15.11.2026). Search over the memory finds known knowledge
+with MRR 0.735 using meaning plus full text, against 0.364 with full text only (production, 12.11.2026).
 
-vi-mcp does not train a language model. It learns, from the measured outcome of every action of every connected agent, *which context to
-put in front of the model next*: which hints, rules and solutions, in which order. That is a search for the best prompt — not one master
-prompt, but the few right lines for each situation (tool, host, error, project). A model retrained every day chooses them, and random
-choices check it.
+## Quick start
 
-*Measured (12.11.2026, production):*
-- **Finding:** the search finds known knowledge — MRR 0.735 with meaning plus full text, against 0.364 with full text only (133 known
-  targets × 2 queries, daily).
-- **Predicting:** the model recognises the actions that will fail — 51 % of the warned actions failed, 3 % of the others (AUC 0.88).
-- **Choosing:** the hint it chooses beats a randomly chosen one by 12.6 ± 5.3 points of success (randomized, so causal).
+```bash
+# Debian / Ubuntu — signed package repository, later updates come with apt upgrade
+curl -fsSL https://imoes.github.io/vi-mcp-packages/setup.sh | sudo sh && sudo apt install vi-mcp
+sudo vi-mcp setup            # menu: registers Claude Code, Codex CLI, Hermes Agent and the hook, one token per program
+```
 
-*Audit update (14.11.2026):* the current randomized ranking advantage is 4.7 ± 3.1 percentage points (one standard error),
-not a conclusive gain in this window. Historical results above do not establish the total benefit of hints. The 0.64.0 incubator
-requires a noninferiority lower bound, and the fine-tuning kit checks program/task correctness rather than keyword overlap.
-
-*Being measured (since 0.61.0):* how much showing hints at all raises the success of an action. Comparing actions with and without hints
-cannot tell — hints appear on the hard ones. So on a random 5 % of the actions with hints, the hints are held back, and `vi_stats` compares
-them with the rest. A difference of a few points needs a few hundred held-back actions: weeks, not days.
-
-**Paper:** [Learning What to Put in Front of the Model — measured memory, incubation and a weighted language for AI agents](docs/PAPER.md) explains how the memory learns, how a VI matures in the incubator, and how its language is built, with sources and measurements.
-
-### A universal language for AIs — in development
-
-AIs talk to each other in prose today. We are developing a language in which an AI asks the memory, the memory answers, and memories talk
-to each other across organisations: short, executable like code, readable by people, and **trained in weights**.
-- **The symbol (readable):** every utterance is a speech act plus words — `ask.how deploy @host #project`, `tell.fact … ev:measured
-  src:…`, `def`, `rate`. The words are the hashtags `kind:value` the memory holds; how the speaker knows something is a required part, as
-  in languages with evidentials.
-- **The weight (the meaning):** under every word lie its vector and its measured weights — how well it leads to success, in which context.
-  Servers exchange measurements, never weights to adopt; each trains its own. A foreign `do` is never executed, only proposed.
-- **Trained by classification:** a language model labels the knowledge (which question it answers, what kind of memory it is), a small
-  model learns the labels for everything new, and the ranking learns from what is used after an answer. The language model itself is
-  never trained.
-
-*What exists (0.62.0):* questions in the language (`vi_recall` with `ask.how deploy @web1 #project`, answers as `tell` lines with `format: "vil"`), the classification of the knowledge by a language model (`answers:`, `memory:`, `vi-mcp classify`, with a small model on the embeddings that learns the labels for new knowledge) and the vocabulary — `vi_vocabulary` and the "Words" page of the internal search list the words that exist and complete
-half-typed ones, and a search without hits says whether it asked for an unknown word (nothing known) or for known words that do not meet.
-Training data to fine-tune an AI with what a VI learned: `vi-mcp dataset export` (question → answer, which hints helped, with a datasheet). **Logic** (`vi_logic`): rules written like Python and decided by formal logic — `forbidden(run(R, H)) <= zone(H, "dmz") & planned(run(R, H))`, `never(planned(A) & forbidden(A))` — checked by the answer-set solver clingo: what follows, which constraint is violated, which norms conflict, true/false/both/unknown per statement. Rules can be `soft(…)`: their weight is learned from conclusions checked against reality and travels between servers like the word weights — the rule stays readable, its reliability is a measured weight. **clingo-object** (0.63.0): the rules work on the memory's own objects — `(O in objects("art:skill")) & (O.age > 90)`, `linked(O, B)` — and may propose a tag or a link, which waits in quarantine until a person releases it. The Python package `clingo-object` (`import clingo_object`) makes this an object-oriented language: real Python classes (`class Skill(Knowledge)`, methods, inheritance) compile to the same rules the server runs, so an answer computed on your machine and on the server is the same. An agent writes such programs for you: `python3 -m clingo_object.agent "Which DMZ hosts are never described as production?"` (a language model via `VI_LLM_URL`); measured on a copy of production it answered 15 of 16 such questions exactly, against 2 of 16 with searches alone. *Measured:* reordering hits by question type, label or word weight lowered retrieval quality on a copy of production (MRR −0.006 to −0.289), so the type is recorded, not used to rank. A language model grades a few real searches per sleep (UMBRELA, 0–3) — the relevance label clicks could not give (`vi-mcp relevance`). *Next:* a relevance weight learned from these grades, the language between servers
-measured against prose.
-
-### The incubator — when a VI is ready to fine-tune an AI
-
-A VI learns in operation; the goal is that a VI which comes out of the incubator fine-tunes an AI with what it learned. Maturity is
-measured, not declared: `vi-mcp incubator status [--index X]` (or `vi_incubator`) shows every criterion with its threshold, its value and
-its state — met, open, or not measured yet (never counted as met):
-
-| criterion | measured as | default threshold |
-|---|---|---|
-| knowledge | shared or internal knowledge objects | 500 |
-| checked | share rated after being shown or confirmed by an instance — knowledge put to the test, not only stated | 20 % |
-| search | hybrid MRR of the daily fixed question set | 0.6 |
-| router | the hint model is active, holdout AUC | 0.75 |
-| hints_no_harm | the randomized hold-back does not show that hints lower success | lower 95% confidence bound above −0.02 |
-| labels | share classified for the AI language, and the student active | 50 % |
-| training_data | question → answer examples, with the evaluation held out | 1000 |
-
-When every criterion is met, `vi-mcp incubator hatch DIR` exports the training data (`qa`, `kto`, `dpo`, with a datasheet that records the
-incubator state). Thresholds can be changed in `config.json` under `incubator`. An index (a project or special VI) has its own status.
-
-### Fine-tuning — tell your AI "I want to fine-tune"
-
-The generated kit has a [tokenizer and real-trainer preflight](docs/TRAINING_PREFLIGHT.md): complete assistant/program targets,
-no silent truncation, and an optional loss check with zero optimizer steps. This verifies preparation without starting training.
-
-The VI knows how to fine-tune an AI with what it learned. On a vi-mcp server, say so to your AI: it calls `vi_finetune`, which tells
-whether the VI is mature (incubator) and gives the steps; `vi_finetune(action="guide")` explains fine-tuning (LoRA/QLoRA, SFT/KTO/DPO,
-the program TRL, hardware, the way back into llama.cpp, measuring). On the server `vi-mcp finetune kit DIR --base MODEL` writes
-everything a GPU host needs — training data with datasheet, a test split, `train.py` (TRL + LoRA), `convert.sh` (GGUF adapter for
-llama.cpp), `evaluate.py` (base against fine-tuned on held-out questions) — and `vi-mcp finetune record DIR` keeps the run as a model
-object with its lineage; it counts as adopted only if it measured better. vi-mcp itself runs no training.
-
-**From zero, step by step: [docs/FINETUNING.md](docs/FINETUNING.md).** Knowledge is stored training-ready from the start: while it
-sleeps the server writes grounded question-answer pairs and one never-trained probe question onto each knowledge object
-(`vi-mcp classify --pairs`), and the kit's `probe.py` measures afterwards whether the model learned what it trained on. *Measured*
-(15.11.2026, Qwen3-0.6B, LoRA): 7 correct / 9 partial of 60 such questions against the base model's 0 / 5 (blind, p = 0.008).
-
-**Philosophy packages** (0.66.0): equip an AI with a philosophy — its principles as a checked clingo-object rule set (the seed)
-with test worlds. Only the seed is stored; prose is a translation checked by its round trip (`vi-mcp philosophy explain`). See
-`vi-mcp philosophy`, tool `vi_philosophy`, guide: [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md).
-The first package, `kollektiv`, says how a member of an AI collective holds something true and what it must do.
-
-## Vision
-
-**An open network of knowledge, in which AI teaches itself.** Every server learns from its own work: which hint helped, which solution held up, what a person corrected.
-Whatever proves itself is anonymised, signed and shared with the other servers. Every server tests what it receives against its own work and keeps what helps there.
-No central model and no central owner: a server can run on its own or join the network as a peer, and the code, the protocol and the knowledge format are open source.
-
-This is "training" without changing weights. Knowledge becomes readable objects with sources, scores and a right to be forgotten, and the router that picks them learns from the measured outcome.
-Code, API tables and commands are stored in full, because what is missing from memory is a gap.
-
-
-## Tool names
-
-Since 0.22.0 the tools, their parameters and enum values are English. The German names used before remain valid as aliases, so existing clients keep working.
-Since 0.23.0 the command line, all output and the documentation are English too; German commands and options (`vi-mcp einrichten`, `vi-mcp netz …`, `--token-datei`) still work.
-
-| English | Alias (German) |
-|---|---|
-| `vi_after` | `vi_nachher` |
-| `vi_answer` | `vi_antwort` |
-| `vi_archive` | `vi_lager` |
-| `vi_archive_restore` | `vi_lager_hole` |
-| `vi_ask` | `vi_frage` |
-| `vi_before` | `vi_vorher` |
-| `vi_confirm` | `vi_bestaetige` |
-| `vi_conversation` | `vi_gespraech` |
-| `vi_delete_conversation` | `vi_loesche_gespraech` |
-| `vi_drilldown` | `vi_vertiefe` |
-| `vi_experience` | `vi_erfahrung` |
-| `vi_forget` | `vi_vergiss` |
-| `vi_learn` | `vi_lerne` |
-| `vi_learn_search` | `vi_suche_lerne` |
-| `vi_model` | `vi_modell` |
-| `vi_net_forget` | `vi_netz_vergiss` |
-| `vi_net_inbox` | `vi_netz_eingang` |
-| `vi_net_outbox` | `vi_netz_ausgang` |
-| `vi_net_preview` | `vi_netz_vorschau` |
-| `vi_net_status` | `vi_netz_status` |
-| `vi_net_token` | `vi_netz_token` |
-| `vi_object` | `vi_objekt` |
-| `vi_quarantine` | `vi_quarantaene` |
-| `vi_questions` | `vi_fragen` |
-| `vi_recall` | `vi_erinnere` |
-| `vi_reflex_learn` | `vi_reflex_lerne` |
-| `vi_reflex_list` | `vi_reflex_liste` |
-| `vi_reflex_switch` | `vi_reflex_schalte` |
-| `vi_refute` | `vi_widerlege` |
-| `vi_release` | `vi_freigabe` |
-| `vi_self` | `vi_selbst` |
-| `vi_self_propose` | `vi_selbst_vorschlag` |
-| `vi_skill_merge` | `vi_skill_fusion` |
-| `vi_sleep` | `vi_schlaf` |
-| `vi_solved` | `vi_geloest` |
-| `vi_stats` | `vi_statistik` |
-| `vi_tag` | `vi_markiere` |
+Then work as usual. Before an action the agent calls `vi_before` and gets at most four hints, afterwards `vi_after`; with the Claude
+Code hook this happens by itself. Tell it to remember something and it calls `vi_learn`. Every platform (Fedora/RHEL, Arch, macOS,
+Windows) is under [Install](#install).
 
 ## How it works
 
@@ -169,178 +49,209 @@ Since 0.23.0 the command line, all output and the documentation are English too;
                      │  before · after · sleep   │
                      └────────────┬─────────────┘
                                   │ single writer
-                           vi.db (SQLite, WAL, FTS5, 0600)
+                           vi.db (SQLite or PostgreSQL)
 ```
 
-- **Objects, not notes.** Everything is an object with hashtags (`kind:value`), an author and a visibility (private, shared, or internal: token holders only, never an open network — only a company network): experience, insight, rule, skill, score.
-- **Before every action** (`vi_before`) a session receives at most four hints. A hint is only reinforced once the action succeeds.
-- **Before every question** (0.44.0) the hook brings the knowledge that fits the user's prompt — follow-up questions in a conversation too (Claude Code `UserPromptSubmit`, Hermes `pre_llm_call`). The prompt is masked and not stored.
-- **Sleep.** Once enough important events pile up (at night only if none ran in the last 24 hours), the server condenses experiences, compares them with what it knows and archives what goes unused.
-- **Scorer.** Code rules, the local language model and you judge whether work succeeded. "The tool did not crash" alone does not say that.
-- **Learning.** From those scores the router (logistic regression, weights kept as readable JSON) learns which hint helps when. Training runs on demand, about a minute after new experiences arrive (one run takes under a second), not only at night.
-- **Reflexes and skills.** Proven solutions become skills; small checks run as code in a sandbox (Landlock, seccomp).
+- **Objects, not notes.** Everything is an object with hashtags (`kind:value`), an author and a visibility — private, shared, or
+  internal (token holders only; never an open network, only a company network): experience, insight, rule, skill, score.
+- **Before every action** (`vi_before`) a session gets at most four hints that share a host, program or error with what it is about
+  to do. A hint is reinforced only when the action then succeeds.
+- **Before every question** the hook brings the knowledge that fits your prompt, follow-up questions included (Claude Code
+  `UserPromptSubmit`, Hermes `pre_llm_call`). The prompt is masked and not stored.
+- **Sleep.** When enough has happened, the server condenses experiences into insights and skills, compares new evidence with what it
+  knows, merges repetitions and archives what nobody uses (still findable).
+- **Scorer.** Code rules, a language model and you judge whether work succeeded — "the tool did not crash" alone does not say that.
+- **Learning.** From those outcomes a small model (the router) learns which hint helps in which situation. It retrains about a
+  minute after new experiences, in under a second.
 
-**All documentation: [docs/README.md](docs/README.md)** · reference (every tool, parameter, command, setting): [docs/REFERENCE.md](docs/REFERENCE.md) · in-depth: [architecture](docs/ARCHITECTURE.md) · [operations](docs/OPERATIONS.md) · [hook](docs/HOOK.md) · research (German): [memory research](docs/FORSCHUNG.md) · [training](docs/TRAINING.md)
-
-## How the memory works — and why it is built this way
-
-**Like human memory, but every memory has a source.** vi-mcp keeps the kinds of memory people have:
+### The kinds of memory
 
 | Human memory | vi-mcp | Where it comes from |
 |---|---|---|
-| episodic — "what happened" | `erfahrung` (experience): every reported action with tool, arguments, result, duration | the hook, automatically |
-| semantic — "what I know" | `erkenntnis` (insight), `regel` (rule): a key statement plus the complete content and its source | `vi_learn`, imports, sleep |
-| procedural — "how to do it" | `skill`: problem, steps, instructions, versions | `vi_solved`, sleep |
-| cues and mnemonics | hashtags `kind:value` (`tool:`, `host:`, `thema:` …) and learned searches | everywhere |
+| episodic — "what happened" | experience: every reported action with tool, arguments, result, duration | the hook, automatically |
+| semantic — "what I know" | insight, rule: a key statement plus the complete content and its source | `vi_learn`, imports, sleep |
+| procedural — "how to do it" | skill: problem, steps, instructions, versions | `vi_solved`, sleep |
+| cues | hashtags `kind:value` (`tool:`, `host:`, `topic:` …) and learned searches | everywhere |
 
-**Recall works through cues.** Before every action the session tells the VI what it is about to do (`vi_before`). The tool, the host and the
-topics become *triggers*, and the VI answers with at most four hints (working memory holds about four chunks, Cowan 2001). A hint is not
-shown twice in the same conversation within an hour. Documentation (Confluence, vendor manuals) gets triggers too: a page that names a host
-appears before an action on that host.
+Recall works through cues: the tool, the host and the topics of an action are its triggers, and at most four hints answer (working
+memory holds about four chunks, Cowan 2001). Requirements you state (`topic:requirement`) are listed in the index every session
+receives. Unused knowledge fades and moves to the archive; nothing is lost silently — held-back hints, merged duplicates and refuted
+knowledge are counted and named.
 
-**Forgetting and sleep are features.** Unused knowledge fades along a power law and later moves to the archive (still findable, never lost
-silently). When enough has happened, the server *sleeps*: it condenses experiences into insights and skills, compares new evidence with what it
-knows, merges repetitions and archives what nobody needs. Surprising failures count as more important than routine — as in people.
+### Why the knowledge stays in the memory, not in the model
 
-**Why this is the clever part:**
-- **The AI learns without anyone training a language model.** Knowledge is learned the moment it happens (`vi_learn`) and is available
-  before the next action — not after the next training run of a model.
-- **Every memory can be checked.** It has a source (command, host, time or URL), an author and a history. It can be confirmed, disputed and
-  refuted — by *other* instances: no instance can confirm itself. What is wrong is marked, not quietly kept.
-- **It can be forgotten.** Delete a conversation, an instance or an object, and it is gone (with a tombstone saying so). Knowledge baked into
+- **Learned at once.** Knowledge is available before the next action, not after the next training run.
+- **Every memory can be checked.** It has a source (command, host and time, or URL), an author and a history; it can be confirmed,
+  disputed and refuted — by *other* instances.
+- **It can be forgotten.** Delete a conversation, an instance or an object and it is gone, with a tombstone saying so. Knowledge in
   model weights cannot be removed like that.
-- **One memory for many AIs.** Claude Code, Codex, Hermes and other clients share the same memory. What one session solved helps the next
-  one, even with a different model.
-- **Nothing disappears silently.** Held-back hints, truncated histories, merged duplicates and refuted knowledge are counted and named.
+- **Complete, not summarised.** Code, API tables and commands are stored in full: what is missing from memory is a gap.
+- **Training stays possible.** Because the knowledge is kept readable and with its source, it can still be trained into a model later
+  — measured, and only if you decide so ([Training a model](#training-a-model-from-the-memory)).
 
-## What our weights are made of — and why that is clever, too
+### What it learns — and why those weights cannot invent facts
 
-vi-mcp never trains the language model. The only weights it learns decide **which** memory to show — not **what** is true:
+vi-mcp's own learned weights decide **which** memory to show, never **what** is true:
 
-- **The router** is a logistic regression (scikit-learn). Every action is one observation: the triggers of the situation × the hints that
-  were shown, and the label is whether the action then succeeded. The weights say, for example, "this hint before `tool:Bash` on that host
-  raises the chance of success". They are stored as readable JSON in the memory object `modell:router` — every weight belongs to a named
-  feature and can be inspected with `vi_model`. `vi_why` shows, for one hint, why it was shown: the stored decision and the weights that
-  carried it. The router is taught through the labels (the scorer's verdicts, your feedback on a hint), never by writing weights; after
-  each training it goes live only if its order of hints pays off on held-back data, and fixed rules check the weights and name what looks wrong (one feature dominating, a weight against the measured
-  usefulness, an unconfirmed hint from the network, time of day as a cause). An AI may still shape it, without writing a number: with
-  `vi_feature_propose` it reads the weights and the router's worst situations and proposes feature rules ("Bash with a timeout error
-  and a hint about ssh"); the next sleep measures them on held-back data and keeps only what improves the router.
-- **The bandit** counts per hint how often an action succeeded after it was shown, compared with the base rate (Thompson sampling) — the
-  fallback while the router has too little data.
-- **Meaning** comes from a pre-trained embedding model (bge-m3): vectors for semantic search and for linking similar knowledge. vi-mcp
-  uses it, it does not train it.
+- **The router** is a logistic regression (scikit-learn). Each action is one observation: the situation's triggers × the hints shown,
+  labelled with whether the action succeeded. Its weights are readable JSON (`vi_model`); `vi_why` explains why a hint was shown. A new
+  model goes live only if it beats the old one on held-back data, and fixed rules flag weights that look wrong. An AI can shape it
+  without writing a number: `vi_feature_propose` reads the weights and the router's worst situations and proposes feature rules; sleep
+  keeps only what improves the router on held-back data.
+- **The bandit** (Thompson sampling) counts per hint how often an action succeeded after it, against the base rate — the fallback while
+  the router has too little data.
+- **Meaning** comes from a pre-trained embedding model (bge-m3) for semantic search; a learned per-dimension weighting of the query
+  (`query_adapter`) switches on only while its offline test says it helps.
 
-**Why this is clever:**
-- **The training signal is free and honest.** Nobody labels data: the label is the outcome of real work (did the action succeed, did a
-  person correct it, did the scorer accept it).
-- **Small, fast, explainable.** The model is kilobytes of JSON, trains in under a second on a CPU, about a minute after new experiences —
-  and every decision can be explained by the weights of named features.
-- **Weights cannot invent facts.** They only order memories that exist and have a source. A wrong weight shows a less helpful hint; it
-  cannot create a false statement.
-- **It switches itself off when it does not help.** With too little data or a weak result on held-back data the model stays in test mode
-  and the heuristic decides; a small share of the hints is exploration, so the model also learns about what it would not have shown.
+The label is the outcome of real work, so nobody labels data. The model is kilobytes, explainable by named features, and it can only
+order memories that exist and have a source — a wrong weight shows a less helpful hint, it cannot create a false statement.
 
-## clingo-object: logic over the memory's objects (0.63.0)
+*Measured (production):* the router recognises actions that will fail — 51 % of the warned actions failed, 3 % of the others
+(AUC 0.88, 12.11.2026). In a randomized comparison the chosen hint beat a random one by 12.6 ± 5.3 points of success (12.11.2026);
+the audit window of 14.11.2026 shows 4.7 ± 3.1 points — not conclusive on its own. Whether showing hints at all raises success is
+measured with a random 5 % hold-back (`vi_stats`); that needs weeks of data.
 
-The memory stores its knowledge as objects in SQL (an object with a kind, hashtags `kind:value`, fields and edges). **clingo-object**
-lets you — and any AI — reason over these objects with answer set programming (the solver [clingo](https://pypi.org/project/clingo/)):
-searching stays SQL, inference is clingo. "clingo is the language for LLMs" was the owner's view; the measurement below supports it for
-questions over many objects.
+## Training a model from the memory
+
+Fine-tuning is a person's explicit decision; vi-mcp prepares and measures it, the training runs on a GPU host of your choice.
+
+1. **Knowledge is stored training-ready.** While it sleeps the server writes grounded question-answer pairs and one never-trained
+   probe question onto each knowledge object (`vi-mcp classify --pairs`).
+2. **The incubator says when a VI is ripe** — measured, never declared: `vi-mcp incubator status [--index X]` (or `vi_incubator`)
+   shows each criterion with threshold, value and state (met, open, or not measured — never counted as met):
+
+   | criterion | measured as | default threshold |
+   |---|---|---|
+   | knowledge | shared or internal knowledge objects | 500 |
+   | checked | share rated after being shown or confirmed by an instance | 20 % |
+   | search | hybrid MRR of the daily fixed question set | 0.6 |
+   | router | hint model active, holdout AUC | 0.75 |
+   | hints_no_harm | the randomized hold-back does not show that hints lower success | lower 95 % bound above −0.02 |
+   | labels | share classified for the AI language, and the student active | 50 % |
+   | training_data | question → answer examples, evaluation held out | 1000 |
+
+3. **Tell your AI "I want to fine-tune".** It calls `vi_finetune`, which says whether the VI is ripe and gives the steps;
+   `vi_finetune(action="skill")` is a step-by-step runbook written so that small models can follow it
+   ([docs/FINETUNING_SKILL.md](docs/FINETUNING_SKILL.md)).
+4. **The kit.** `vi-mcp finetune kit DIR --base MODEL` writes everything a GPU host needs: data with a datasheet, a held-out split,
+   `train.py` (TRL + LoRA), a [tokenizer audit and real-trainer preflight](docs/TRAINING_PREFLIGHT.md) (no silent truncation, zero
+   optimizer steps), `probe.py` (did the model learn what it trained on), `evaluate.py` and `convert.sh` (GGUF adapter for llama.cpp).
+   `vi-mcp finetune record DIR` keeps the run with its lineage; it counts as adopted only if it measured better.
+
+From zero, with every command: [docs/FINETUNING.md](docs/FINETUNING.md).
+
+**Philosophy packages** equip an AI with principles: a checked [clingo-object](#logic-over-the-memory-clingo-object) rule set (the
+seed) with test worlds; prose is only a translation checked by its round trip (`vi-mcp philosophy`, `vi_philosophy`,
+[docs/PHILOSOPHY.md](docs/PHILOSOPHY.md)). The first package, `kollektiv`, says how a member of an AI collective holds something
+true and what it must do. How a 0.6B model learns such a seed, run by run and scored by the solver:
+[docs/FINETUNING_PAPER.md](docs/FINETUNING_PAPER.md).
+
+## Logic over the memory: clingo-object
+
+Searching stays SQL; inference over the memory's objects is answer set programming with [clingo](https://pypi.org/project/clingo/).
 
 **Ask in plain language** — the server's language model writes the program, the server solves it with what you may see:
 
 ```text
 vi_logic(action="answer", question="Which DMZ hosts are never described as production?")
 → state: answered · 2 answer(s) · 1 round(s) · evidence: inferred
-  ans("…")  ans("…")
 program:
 dmz(H) <= (O in objects("netz:dmz")) & (O.host == H)
 prod(H) <= (O in objects("kritikalitaet:prod")) & (O.host == H)
 ans(H) <= dmz(H) & ~prod(H)
 ```
 
-**Write the rules yourself** in the notation (Python syntax, read but never executed): `(O in objects("filter"))` binds `O` to the objects
-of a search filter, `(O.host == H)` reads a hashtag, `(O.age > 90)` a number, `linked(O, B)` follows an edge, `never(…)` reports a
-violation, `soft(…)` is a rule with a learned weight. `propose(tag(O, "status", "stale"))` as a head proposes a change: it waits in
-quarantine until a person releases it (`vi-mcp release`). `vi_logic action=save` keeps a rule set, `rate` books a conclusion checked
-against reality (the rules' weights learn), `learn` finds new rules from rated conclusions (as proposals).
+**Or write the rules** in a Python-like notation (read, never executed): `(O in objects("filter"))` binds objects of a search,
+`(O.host == H)` reads a hashtag, `linked(O, B)` follows an edge, `never(…)` reports a violation, `soft(…)` is a rule whose weight is
+learned from conclusions checked against reality. Answers are four-valued per statement: true, false, both, unknown. A rule may
+`propose(…)` a change; it waits in quarantine until a person releases it.
 
-**Or in real Python** with the package `clingo-object` (`import clingo_object`, in the release as a wheel and shipped with the packages)
-— an object-oriented language on the clingo Python API; it compiles to the same notation the server runs, so the answer is the same here
-and there:
+**Or in real Python** with the package `clingo-object` (in every release as a wheel): classes, methods and inheritance compile to the
+same notation the server runs, so the answer is the same on your machine and on the server.
 
 ```python
 from clingo_object import Memory, Obj, Program, VIObject, rel
 
-class Knowledge(VIObject):                       # abstract: no kind of its own
+class Knowledge(VIObject):
     def stale(self):
         return (self.mode == "test") & (self.age > 90)
 
 class Skill(Knowledge):
-    kind = "skill"                               # stands for memory objects of kind "skill"
-    def stale(self):                             # overrides Knowledge.stale (Python's MRO decides)
+    kind = "skill"
+    def stale(self):
         return (self.mode == "test") & (self.age > 30)
 
 O = Obj("O")
 prog = Program(Knowledge, Skill, rel.review(O) <= O.where("art:skill") & O.stale())
-mem = Memory()                                   # server and token found like the hook
-print(prog.check(mem)["folgerungen"])            # solved here with the clingo API
-print(prog.check_on_server(mem))                 # the same text on the server
+print(prog.check(Memory())["folgerungen"])
 ```
 
-An agent does the writing for you: `python3 -m clingo_object.agent "Which hosts at location KAS-0 are in the DMZ?"` (a language model via
-`VI_LLM_URL`, any OpenAI-compatible endpoint).
+*Measured* (production copy, 13.11.2026): the agent (`python3 -m clingo_object.agent "…"`) answered 15 of 16 relational questions
+exactly; the same model with searches alone 2 of 16. Details: [docs/PAPER.md](docs/PAPER.md) section 5.6.
 
-*Measured* (production copy, 13.11.2026): 13 relational questions agree with hand-written SQL in 13 of 13; the agent answered 15 of 16
-natural-language questions exactly (4 of 4 held out, precision 1.00, recall 0.99, 5.2 s), the same model with searches alone 2 of 16
-(precision 0.50, recall 0.30, 20.1 s). Details: [docs/PAPER.md](docs/PAPER.md) section 5.6, [CHANGELOG.md](CHANGELOG.md) 0.63.0.
+**VIL and the virtual machine.** Agents can also ask in VIL, a short language of speech acts over the memory's words
+(`ask.how deploy @host #project`, answers as `tell` lines with how the speaker knows it). `vi_machine` runs VIL and clingo-object over
+an instance's private, mutable world with snapshots and forks ([docs/VIRTUAL_MACHINE.md](docs/VIRTUAL_MACHINE.md),
+[docs/INSTANCE_RUNTIME.md](docs/INSTANCE_RUNTIME.md)); an optional [kNN-LM backend](docs/KNN_LM.md) lets token prediction draw on a
+mutable datastore while the model's weights stay fixed.
 
 ## Install
 
-### From the package repository — updates come with `apt upgrade` / `dnf upgrade` (0.54.0)
+| System | How | Service |
+|---|---|---|
+| Debian 12/13, Ubuntu 24.04 | package repository or `.deb` | systemd `vi-mcp` |
+| Fedora 43, AlmaLinux/RHEL 10 (EPEL) | package repository or `.rpm` | systemd `vi-mcp` |
+| Arch Linux, CachyOS | `.pkg.tar.zst` | systemd `vi-mcp` (not enabled by the package) |
+| macOS (Apple silicon, Intel) | Homebrew tap | launchd via `brew services` |
+| Windows | `.msi` | scheduled task `vi-mcp` |
 
-Add the signed repository once; from then on every release arrives with the system's normal updates. The repository is served by
-GitHub Pages: **https://imoes.github.io/vi-mcp-packages/**. Its signing key (OpenPGP, Ed25519) has the fingerprint
-`4598 3154 14EB F86C ABD3  22D9 730B 75BF AC30 36B7` — compare it with [`deploy/repo-key.asc`](deploy/repo-key.asc) in this repository before you trust it.
+Every release carries all of them, plus the `clingo-object` wheel and the source archive, listed in a signed `SHA256SUMS`
+([check a release](#check-a-release)).
 
-In one line (adds key and source on apt and dnf systems, installs nothing else — [read it first](deploy/repo-setup.sh)):
+### From the package repository — updates with `apt upgrade` / `dnf upgrade`
+
+The signed repository is served by GitHub Pages: **https://imoes.github.io/vi-mcp-packages/**. Its signing key (OpenPGP, Ed25519)
+has the fingerprint `4598 3154 14EB F86C ABD3  22D9 730B 75BF AC30 36B7` — compare it with
+[`deploy/repo-key.asc`](deploy/repo-key.asc) before you trust it.
 
 ```bash
-curl -fsSL https://imoes.github.io/vi-mcp-packages/setup.sh | sudo sh      # then: sudo apt install vi-mcp  or  sudo dnf install vi-mcp
+curl -fsSL https://imoes.github.io/vi-mcp-packages/setup.sh | sudo sh      # adds key and source only — read it first: deploy/repo-setup.sh
+sudo apt install vi-mcp     # or: sudo dnf install vi-mcp
 ```
 
-The same by hand:
+By hand:
 
 ```bash
 # Debian 12/13, Ubuntu 24.04
 sudo curl -fsSLo /usr/share/keyrings/vi-mcp.gpg https://imoes.github.io/vi-mcp-packages/vi-mcp-repo.gpg
 sudo curl -fsSLo /etc/apt/sources.list.d/vi-mcp.sources https://imoes.github.io/vi-mcp-packages/vi-mcp.sources
-sudo apt update && sudo apt install vi-mcp            # later: sudo apt upgrade
+sudo apt update && sudo apt install vi-mcp
 
 # Fedora 43; AlmaLinux/RHEL 10 first: sudo dnf install epel-release
 sudo curl -fsSLo /etc/yum.repos.d/vi-mcp.repo https://imoes.github.io/vi-mcp-packages/vi-mcp.repo
-sudo dnf install vi-mcp                               # later: sudo dnf upgrade (dnf asks once to import the key: compare the fingerprint)
+sudo dnf install vi-mcp                               # dnf asks once to import the key: compare the fingerprint
 ```
 
-The same configuration questions and `VI_MCP_<KEY>` variables apply as with a downloaded package. Remove the repository again:
-`sudo rm /etc/apt/sources.list.d/vi-mcp.sources /usr/share/keyrings/vi-mcp.gpg` or `sudo rm /etc/yum.repos.d/vi-mcp.repo`.
+Remove the repository again: `sudo rm /etc/apt/sources.list.d/vi-mcp.sources /usr/share/keyrings/vi-mcp.gpg` or
+`sudo rm /etc/yum.repos.d/vi-mcp.repo`.
 
-### From a downloaded package
+### From a downloaded package (Linux)
 
-Packages are on the [releases page](https://github.com/imoes/vi-mcp/releases/latest). Your package manager pulls in all dependencies (Python ≥ 3.11, NumPy, scikit-learn, cryptography, PyYAML).
+Packages are on the [releases page](https://github.com/imoes/vi-mcp/releases/latest); the package manager pulls in Python ≥ 3.11,
+NumPy, scikit-learn, cryptography and PyYAML.
 
 ```bash
-sudo apt install ./vi-mcp_<version>-1_all.deb      # Debian 12/13, Ubuntu 24.04
-sudo dnf install ./vi-mcp-<version>-1.noarch.rpm   # Fedora 43
-sudo dnf install epel-release && sudo dnf install ./vi-mcp-<version>-1.noarch.rpm   # AlmaLinux/RHEL 10
-sudo pacman -Syu && sudo pacman -U ./vi-mcp-<version>-1-any.pkg.tar.zst   # Arch Linux, CachyOS; then: sudo systemctl enable --now vi-mcp.service
-sudo VI_MCP_PORT=9000 apt install ./vi-mcp_<version>-1_all.deb                       # another port on first installation
+sudo apt install ./vi-mcp_<version>-1_all.deb                                 # Debian 12/13, Ubuntu 24.04
+sudo dnf install ./vi-mcp-<version>-1.noarch.rpm                              # Fedora 43 (AlmaLinux/RHEL 10: epel-release first)
+sudo pacman -Syu && sudo pacman -U ./vi-mcp-<version>-1-any.pkg.tar.zst       # Arch Linux, CachyOS
+sudo systemctl enable --now vi-mcp.service                                    # Arch only: the package does not enable it
+sudo VI_MCP_PORT=9000 apt install ./vi-mcp_<version>-1_all.deb                # another port on first installation
 ```
 
-**macOS** (since 0.68.1, Homebrew; Apple silicon and Intel): the formula installs a venv with the PyPI packages next to the code and runs
-the server as a Homebrew service (launchd). Not on macOS yet: the network service `vi-p2p` and the own embedding service (`vi-mcp embed`)
-— both are systemd units.
+Enterprise Linux 9 is not supported: its Python 3.9 is too old and scikit-learn is not packaged there for newer Python versions.
+Removing the package keeps your memory and configuration.
+
+### macOS (Homebrew)
 
 ```bash
 brew install imoes/vi-mcp/vi-mcp                 # the tap github.com/imoes/homebrew-vi-mcp; the archive is the signed release asset
@@ -348,64 +259,59 @@ vi-mcp instance "$USER" --reflexes                # prints the token once
 brew services start vi-mcp && vi-mcp setup
 ```
 
-**Windows** (since 0.27.0, client and server): `vi-mcp-<version>-x64.msi` uses an installed Python ≥ 3.11 or a private Python
-from the official NuGet package of the Python Software Foundation (SHA256 and signature checked), a venv with the PyPI packages, the command `vi-mcp` and — unless `SERVER=0` — the server as scheduled task `vi-mcp`
-(data in `%ProgramData%\vi-mcp`). Double-clicking it opens a setup dialog — **Install**, or **Update** when an earlier version is
-installed (configuration and memory are kept; a failed update rolls back). It needs internet access during installation:
+The formula puts a venv with the PyPI packages next to the code. `brew services` registers the server as a launchd agent
+(`~/Library/LaunchAgents`, restarted if it stops); `vi-mcp setup` restarts it with `brew services restart vi-mcp`. Configuration
+`~/.config/vi-mcp/config.json`, memory `~/.local/share/vi-mcp/vi.db`.
+
+- **Semantic search with LM Studio** *(untested on a Mac)*: vi-mcp takes any OpenAI-compatible `/v1/embeddings`. LM Studio's local
+  server offers it on port 1234 ([LM Studio docs](https://lmstudio.ai/docs/local-server)); load an embedding model there (bge-m3 matches
+  the Linux default) and set `"embed": {"url": "http://127.0.0.1:1234/v1/embeddings"}` in the configuration. Its
+  `/v1/chat/completions` can serve as the language model (`llm`) the same way.
+- **Not on macOS yet:** the network service `vi-p2p` and vi-mcp's own embedding service (`vi-mcp embed`) are systemd units. The
+  formula was tested with Homebrew on Linux, not yet on a Mac.
+
+### Windows
+
+`vi-mcp-<version>-x64.msi` (client and server) uses an installed Python ≥ 3.11 or a private Python from the official NuGet package of
+the Python Software Foundation (SHA256 and signature checked), creates a venv with the PyPI packages, the command `vi-mcp` and —
+unless `SERVER=0` — the server as scheduled task `vi-mcp` (data in `%ProgramData%\vi-mcp`). Double-clicking opens a setup dialog
+(**Install**, or **Update**: configuration and memory are kept, a failed update rolls back). It needs internet access while installing.
 
 ```bat
 msiexec /i vi-mcp-<version>-x64.msi [SERVER=0] [PORT=9000] [WIKI=0|HOST] [PROXY=http://proxy:3128] /l*v install.log
 vi-mcp setup --claude --hook --url http://127.0.0.1:8765/mcp --token-file <file>
 ```
 
-The port can be changed later on Linux and Windows with `vi-mcp port 9000` (restarts the service). Vectors for semantic search come from
-an embedding model — see [Embedding model](#embedding-model-semantic-search) below. Since 0.54.0 the MSI joins the public wiki network
-vi-wiki.org like the Linux packages (network service as scheduled task `vi-p2p-wiki`; `WIKI=0` skips it, `vi-mcp net wiki off` stops it).
-Since 0.54.1 the setup dialog asks for the wiki server (`WIKI=wiki.example.org` on the command line; empty = as before, a new installation
-takes vi-wiki.org).
-On Windows there is no interactive setup menu and no reflex sandbox (reflex code does not run) — see [docs/OPERATIONS.md](docs/OPERATIONS.md#windows).
+On Windows there is no interactive setup menu and no reflex sandbox (reflex code does not run) —
+[docs/OPERATIONS.md](docs/OPERATIONS.md#windows). The port can be changed later on Linux and Windows with `vi-mcp port 9000`.
 
 ### Embedding model (semantic search)
 
-Without an embedding model vi-mcp works, but searches only by words and hashtags (full text). With one it also finds knowledge by meaning
-(`vi_recall(semantic=true)`, the hybrid search of the prompt hook), links similar knowledge and gives the router meaning as a feature.
-vi-mcp brings its own embedding service and reranker — llama.cpp `llama-server` with bge-m3 and bge-reranker-v2-m3. Since 0.60.0 the
-packages set them up during installation (question `local_models`, `VI_MCP_LOCAL_MODELS=auto|off`; on Windows a checkbox, `EMBED=1|0`),
-unless an external embedding service is configured — that one is never replaced. By hand:
+Without an embedding model vi-mcp searches by words and hashtags only. With one it also finds knowledge by meaning, links similar
+knowledge and gives the router meaning as a feature. On Linux and Windows the packages set up vi-mcp's own service — llama.cpp
+`llama-server` with bge-m3 and the reranker bge-reranker-v2-m3 — unless an external service is configured (question `local_models`,
+`VI_MCP_LOCAL_MODELS=auto|off`; on Windows a checkbox, `EMBED=1|0`). By hand:
 
 ```bash
-sudo vi-mcp embed setup             # detect the GPU, download, check, start vi-embed (127.0.0.1:8767) and vi-rerank (8768), switch, restart
-sudo vi-mcp embed setup --backend cpu   # or cuda | vulkan | rocm — exactly that, no fallback (default auto)
-sudo vi-mcp embed auto --dry-run    # what the packages would do, and why
-vi-mcp embed status                 # installed? running? backend, device and speed of the last setup?
-sudo vi-mcp embed remove            # stop and remove both services; the configuration keeps working with full text only
+sudo vi-mcp embed setup                 # detect the GPU, download, check, start vi-embed (127.0.0.1:8767) and vi-rerank (8768)
+sudo vi-mcp embed setup --backend cpu   # or cuda | vulkan | rocm — exactly that, no fallback
+vi-mcp embed status                     # installed? running? backend, device, speed
+sudo vi-mcp embed remove                # back to full text only
+sudo vi-mcp configure --set embed_url=http://HOST:PORT/v1/embeddings   # an external OpenAI-compatible service instead
 ```
 
-- **Which build:** `auto` reads the cards (`nvidia-smi`, Linux sysfs, Windows `Win32_VideoController`) and tries CUDA 13 (NVIDIA driver
-  ≥ 580), CUDA 12 (≥ 525), Vulkan (any other GPU), then the CPU. A build counts only if `llama-server --list-devices` names a device of its
-  kind — a Vulkan build without a usable GPU starts too, but lists "(none)". The report names the cards, the chosen backend, the device, the
-  reason and every rejected try. *Measured (RTX 3070):* 4.5 ms per text on CUDA, 24.8 ms on the CPU (i9-12900).
-- **Reranker:** switched on (`rerank.url`) only if 30 documents of search length take at most 5 s — on a GPU it does; on the CPU it took
-  12.3 s, so there it is installed but not used, and the report says so (`--rerank force` uses it anyway, `--rerank off` skips it).
-- **What it downloads:** llama.cpp release b11938 from GitHub (the CUDA build with its runtime), `bge-m3-Q4_K_M.gguf` and
-  `bge-reranker-v2-m3-Q4_K_M.gguf` from Hugging Face (`gpustack/…-GGUF`) — all checked by SHA256, a file with a different hash is refused.
-  The download uses the proxy from the environment (`https_proxy`).
-- **Offline:** `--model-file PATH` takes a local copy of the embedding model (accepted only with the same hash). `--port N` chooses another port.
-- **Where it runs:** own processes, so embedding a backlog never blocks answers. Linux: `/var/lib/vi-mcp/embed`, systemd units `vi-embed`
-  and `vi-rerank` (user `vi-mcp`, groups `render video` for the GPU). Windows: `%ProgramData%\vi-mcp\embed`, scheduled tasks `vi-embed` and
-  `vi-rerank`.
-- **Already using another embedding service?** `sudo vi-mcp embed setup --no-switch` installs without switching; `sudo -u vi-mcp vi-mcp embed
-  compare` re-embeds 30 stored texts with the new service and compares (cosine). Switch only if it reports the same vectors — otherwise every
-  stored vector would have to be computed again.
-- **An external service instead** (any OpenAI-compatible `/v1/embeddings`): `sudo vi-mcp configure --set embed_url=http://HOST:PORT/v1/embeddings`,
-  or `VI_MCP_EMBED_URL=…` at installation.
+`auto` tries CUDA 13, CUDA 12, Vulkan, then the CPU, and keeps a build only if it lists a device of its kind. *Measured (RTX 3070):*
+4.5 ms per text on CUDA, 24.8 ms on the CPU. The reranker is switched on only if 30 documents take at most 5 s. Downloads (llama.cpp
+release, GGUF models) are checked by SHA-256. Switching to a different embedding service needs the same vectors
+(`vi-mcp embed compare`), or every stored vector is computed again. Details:
+[docs/OPERATIONS.md](docs/OPERATIONS.md#own-embedding-service-vectors).
 
-Details: [docs/OPERATIONS.md](docs/OPERATIONS.md#own-embedding-service-vectors).
+### Check a release
 
-**Check a release before installing.** From v0.15.0 on, `SHA256SUMS` is signed with the release key (Ed25519, `SHA256SUMS.sig`). Keep your own copy of
+`SHA256SUMS` is signed with the release key (Ed25519, `SHA256SUMS.sig`). Keep your own copy of
 [`deploy/release-schluessel.pem`](deploy/release-schluessel.pem) and compare its fingerprint once through a channel you trust:
-`c88aa8ce6f0cf15652b0137ee89fd5835b9a5d22285906b092e92b0ae576dd15` (SHA-256 of the public key in DER form,
-`openssl pkey -pubin -in release-schluessel.pem -outform DER | sha256sum`). A checksum file from the same release alone does not prove who published it.
+`c88aa8ce6f0cf15652b0137ee89fd5835b9a5d22285906b092e92b0ae576dd15`
+(`openssl pkey -pubin -in release-schluessel.pem -outform DER | sha256sum`).
 
 ```bash
 openssl pkeyutl -verify -pubin -inkey release-schluessel.pem -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig   # "Signature Verified Successfully"
@@ -413,85 +319,28 @@ sha256sum --ignore-missing -c SHA256SUMS
 # or both in one step: deploy/pruefe-release.sh <download directory> [release-schluessel.pem]
 ```
 
-**Enterprise Linux 9 is not supported:** Python 3.9 is too old, and scikit-learn is not available there for newer Python versions. Your memory and configuration are kept when the package is removed.
+## Set up and configure
 
-### Indexes: projects, special VIs and code (0.61.0)
+### Connect your AI clients
 
-Every object belongs to one index — `global` or a project / special VI (table `vi_index`: name as primary key, kind, description, tags).
-What an AI learns and does in a project directory lands in that project's index (the hook sends the directory); in the project its
-index comes first in search and hints, and everything else stays visible. `vi_recall(index="cue-print")` searches one index alone. An
-index with enough experiences trains its own router model, used only if it beats the shared one. `vi-mcp index import-code REPO --index X`
-puts the code of a git repository into the index (functions and classes, only what changed), found by `vi_recall` and named before an AI
-reads or edits a file. Indexes never leave the server. Two servers can compare an index: `vi-mcp index export` writes it with this server's measurements into a signed internal file, `vi-mcp index import --as` takes it in (reviewed like the network), and `vi-mcp index compare` shows per content whether it works in both places or only at its origin (0.62.0). Details: [OPERATIONS](docs/OPERATIONS.md#indexes-and-code-0610).
-
-## Two modes: token and open wiki
-
-| Mode | Who | What |
-|---|---|---|
-| **Token** (default) | every instance has its own token | full use according to its rights |
-| **Open wiki** (`"open": true` in `/etc/vi-mcp/config.json`) | anyone who can reach the server, no token | read everything shared, get hints before actions, report own actions, **propose** knowledge |
-
-The knowledge is open; writing it is not. In the open wiki mode a proposal from `vi_learn` goes into quarantine like an import from the network: rules, the review model, then release by an instance with rights.
-Confirming, refuting, questions to other instances, reflexes, releases and the network need a token, otherwise any machine could plant instructions in everyone else's AI sessions.
-Tokenless clients share one instance (`offen`); they get no cached tool answers, so nobody receives the result of someone else's lookup. A wrong token is still rejected (401) instead of quietly becoming a guest.
-
-Join an open server, no token needed:
-
-```bash
-claude mcp add --transport http -s user vi-mcp https://<server>/vi-mcp/mcp
-vi-mcp setup --claude --codex --hermes --hook --url https://<server>/vi-mcp/mcp     # detects the open server by itself
-```
-
-## Configure (0.48.0)
-
-The package asks for its configuration at the first installation, like postfix: on Debian through debconf
-(`sudo dpkg-reconfigure vi-mcp` later), on Fedora/RHEL through an ANSI menu (`sudo vi-mcp configure`). It covers port, addresses, access
-without a token, the wiki network, a further network, the web page, a new instance (its token goes to `/root/vi-mcp-token-<name>`),
-language model, reviewer and embedding. An update asks only new questions.
-
-Unattended, like the Wazuh agent — every setting is an environment variable `VI_MCP_<KEY>`:
-
-```bash
-sudo VI_MCP_PORT=9000 VI_MCP_WIKI=false VI_MCP_WEB=true VI_MCP_INSTANCE=claude-code VI_MCP_INSTANCE_FAMILY=claude \
-     DEBIAN_FRONTEND=noninteractive apt-get install -y ./vi-mcp_<version>-1_all.deb
-sudo VI_MCP_NET_NAME=firma VI_MCP_NET_KIND=firma VI_MCP_NET_START=vinetz1.… dnf install -y ./vi-mcp-<version>-1.noarch.rpm
-```
-
-Keys: `PORT BIND DB OPEN WIKI NET_NAME NET_KIND NET_MODE NET_PUBLIC NET_START WEB WEB_BASE INSTANCE INSTANCE_FAMILY LLM_URL LLM_MODEL
-REVIEWER_PROMPT EMBED_URL` (each with the prefix `VI_MCP_`).
-
-**Database (0.50.0):** SQLite by default. Optionally PostgreSQL — set `db` to a URL such as
-`postgresql://vi-mcp@/vi-mcp?host=/var/run/postgresql` (needs `python3-psycopg`, no password in the URL). An existing memory moves first
-with `vi-mcp db migrate --to URL`, which compares every table's row count; `configure` refuses to switch onto an empty database. When it
-pays off, how to set it up and what differs: [docs/OPERATIONS.md](docs/OPERATIONS.md#postgresql-optional-0500).
-
-## Set up
-
-On first install this menu opens by itself; otherwise run `sudo vi-mcp setup`:
+On first install this menu opens by itself; otherwise `sudo vi-mcp setup`:
 
 ```
- vi-mcp setup  0.23.0
-
+ vi-mcp setup
  User     anna
  Server   http://127.0.0.1:8765/mcp
-          not running yet; starts once the tokens are created
  Token    created per program
- Action   set up
  ──────────────────────────────────────────────────────────────────────
  ▸ [x] Claude Code       not set up yet
    [-] Codex CLI         not found: codex not in PATH, ~/.codex missing
    [x] Hermes Agent      not set up yet
    [x] Claude Code hook  reports every action to the server (arguments masked)
  ──────────────────────────────────────────────────────────────────────
- Enter: set up
- ↑↓ select · space on/off · u URL · t token · e action · q quit
+ Enter: set up    ↑↓ select · space on/off · u URL · t token · q quit
 ```
 
-If the server runs on the same machine, each program gets its own instance and token. For another server, press `u` for the URL and `t` for the token.
-Before writing anything, the menu checks that the server accepts the token. Every changed file gets a backup `<file>.bak-vi-mcp-<time>`, and only the `vi-mcp` entry changes.
-Unattended installs never wait for a key press.
-
-Without the menu (scripts, Ansible):
+On the server's own machine each program gets its own instance and token; for another server press `u` (URL) and `t` (token). The
+menu checks the token before writing, backs up every file it changes and touches only the `vi-mcp` entry. Without the menu:
 
 ```bash
 vi-mcp setup --status
@@ -505,190 +354,114 @@ vi-mcp setup --hermes --uninstall
 | Codex CLI | `~/.codex/config.toml` | `[mcp_servers.vi-mcp]` |
 | Hermes Agent | `~/.hermes/config.yaml`, token in `~/.hermes/.env` | `mcp_servers.vi-mcp` |
 
-The hook exists for Claude Code only and reports actions automatically. Codex and Hermes get the tools and report only what the model calls itself.
-You can rate work in your prompt: `#gut` (good), `#schlecht` (bad), `#note 0.8`. A prompt starting with "no", "wrong", "nein" or "falsch" counts as a correction. Your text never leaves the session, only the result does.
+The Claude Code hook reports every action by itself; Hermes gets the prompt hook (knowledge before each question); Codex and other
+clients report what the model calls itself. Rate work
+in your prompt: `#gut` (good), `#schlecht` (bad), `#note 0.8`; a prompt starting with "no", "wrong", "nein" or "falsch" counts as a
+correction. Your text never leaves the session, only the result does.
 
-Server by hand: `sudo vi-mcp instance NAME [--reflexes] [--human]`, then `sudo systemctl restart vi-mcp`. The token is shown once.
+A new instance by hand: `sudo vi-mcp instance NAME [--reflexes] [--human]`, then restart the service; the token is shown once.
+**Over stdio without a token** (on the server host, Linux): the service also listens on a local socket and the kernel tells it which
+user connects — `sudo vi-mcp local anna anna`, then `claude mcp add vi-mcp -- vi-mcp stdio`.
 
-**Over stdio, without a token (on the server host, Linux):** the service also listens on a local socket (`/run/vi-mcp/mcp.sock`);
-the kernel tells it which local user connects. Allow a user once, then register the client:
+### Two modes: token and open wiki
+
+| Mode | Who | What |
+|---|---|---|
+| **Token** (default) | every instance has its own token | full use according to its rights |
+| **Open wiki** (`"open": true`) | anyone who can reach the server | read what is shared, get hints, report own actions, **propose** knowledge |
+
+In open wiki mode a proposal goes into quarantine like an import from the network. Confirming, refuting, questions to other
+instances, reflexes, releases and the network need a token. A wrong token is rejected (401), never quietly turned into a guest.
+
+### Configuration
+
+The package asks for its configuration at first installation (Debian: debconf, later `sudo dpkg-reconfigure vi-mcp`; elsewhere
+`sudo vi-mcp configure`): port, addresses, access without a token, the wiki network, a further network, the web page, a first
+instance, language model, reviewer and embedding. Unattended, every setting is an environment variable `VI_MCP_<KEY>`:
 
 ```bash
-sudo vi-mcp local anna anna          # local user anna reaches the VI as instance anna (internal knowledge included)
-claude mcp add vi-mcp -- vi-mcp stdio
-codex mcp add vi-mcp -- vi-mcp stdio
+sudo VI_MCP_PORT=9000 VI_MCP_WIKI=false VI_MCP_INSTANCE=claude-code VI_MCP_INSTANCE_FAMILY=claude \
+     DEBIAN_FRONTEND=noninteractive apt-get install -y ./vi-mcp_<version>-1_all.deb
 ```
 
-Users not allowed get a refusal that names the command above. `vi-mcp local` lists who is allowed.
+Keys: `PORT BIND DB OPEN WIKI NET_NAME NET_KIND NET_MODE NET_PUBLIC NET_START WEB WEB_BASE INSTANCE INSTANCE_FAMILY LLM_URL LLM_MODEL
+REVIEWER_PROMPT EMBED_URL`. **Database:** SQLite by default; PostgreSQL optionally (`db` = `postgresql://…`, move an existing memory
+with `vi-mcp db migrate --to URL`, [details](docs/OPERATIONS.md#postgresql-optional-0500)).
 
-## The network
+**Indexes** keep projects apart: what an agent learns in a project directory lands in that project's index, which comes first there
+while everything else stays visible; `vi-mcp index import-code REPO --index X` adds a git repository's code (functions and classes).
+An index with enough data trains its own router. [Details](docs/OPERATIONS.md#indexes-and-code-0610).
 
-Servers form networks without a master. Each server keeps a signed, chained logbook of what it shares; servers compare logbooks with
-their neighbours and fetch only what is missing. Nobody needs a shared truth, so there is no blockchain and no consensus — whoever holds
-the same entries computes the same state. Everything foreign counts only after review on the receiving server: fixed rules, quarantine,
-the review model, release.
+## The network (optional)
+
+Servers can share proven knowledge without a master: each server keeps a signed, chained logbook of what it shares and fetches from
+its neighbours only what is missing. Everything foreign counts only after review on the receiving server — fixed rules, quarantine, a
+review model, release.
 
 | Kind | Who may join | What travels |
 |---|---|---|
-| **`free`** — free network (0.45.0) | anyone, **no invitation**: a server needs nothing but the address of one server of the network | shared knowledge, anonymised |
-| `open` — open network | by invitation (join code) | shared knowledge, anonymised |
-| `company` — company network | by invitation, members of one organisation | shared **and internal** knowledge, not anonymised; never re-exported |
+| `free` | anyone, no invitation (a start address is enough) | shared knowledge, anonymised |
+| `open` | by invitation (join code) | shared knowledge, anonymised |
+| `company` | by invitation, members of one organisation | shared **and internal** knowledge; never re-exported |
 
-A server can be in several networks at once; each runs its own network service (`vi-p2p@<network>`), key and logbook. The network
-without a name (`standard`) is an open one.
+- **vi-wiki.org** is the public wiki network's start server (web page: https://vi-wiki.org/). A new installation joins it, outgoing
+  only; the AI tells you and switches it off on request (`vi_net_switch`), administrators with `sudo vi-mcp net wiki off`, or at
+  installation `VI_MCP_KEIN_WIKI=1`.
+- **What travels:** knowledge with a network score (the same meaning on several servers is one object with several holders, rated by
+  each server's measurements), wiki pages with merge, questions and answers between AIs (`vi_ask(to="netz")`), live search
+  (`vi_net_search`).
+- **Peers behind firewalls** keep one long poll open at a peerhost and get news in seconds.
+- **Set up:** `sudo vi-mcp net --network NAME setup --kind free|open|company …`, invitations with `vi-mcp net invitation`; a read-only
+  web page with `sudo vi-mcp web on`, an internal knowledge search with sign-in with `sudo vi-mcp web internal on`.
 
-### The public wiki network vi-wiki.org (0.47.0)
-
-**vi-wiki.org is online** (since 11.11.2026): the start server of the network answers at `https://vi-wiki.org/vi-p2p/wiki`, and its
-read-only web page — wiki, forum and knowledge of the network — is **https://vi-wiki.org/** (`/web/`).
-
-A new installation joins the free network `wiki` with the start address `https://vi-wiki.org/vi-p2p/wiki` (outgoing only). The AI
-tells the user about it and switches it off on request (`vi_net_switch(network="wiki", on=false, reason=…)`); off means nothing goes
-out or comes in. Administrators: `sudo vi-mcp net wiki on|off|status`, another wiki server
-with `sudo vi-mcp net wiki on --start wiki.example.org` (0.54.1); opt out at installation with `VI_MCP_KEIN_WIKI=1`. Updates of
-existing servers change nothing.
-
-### Joining the free network
-
-```bash
-# the first server, reachable on 443 behind the reverse proxy
-sudo vi-mcp net --network welt setup --kind free --mode peerhost --public https://<host>
-sudo vi-mcp net proxy-config        # nginx location blocks for every network on 443
-
-# every further server: only a start address
-sudo vi-mcp net --network welt setup --kind free --mode peerhost --public https://<own host> --start https://<host>/vi-p2p/welt
-sudo vi-mcp net --network welt setup --kind free --mode peer --start https://<host>/vi-p2p/welt    # behind a firewall, outgoing only
-```
-
-- **Finding each other.** After every exchange a server asks for the addresses its neighbour reached recently (peer exchange) and
-  reconciles with random ones (gossip). The start server is only the first contact: the network keeps running without it.
-- **Instead of an invitation:** a one-time proof of work per identity (entry 1 of every logbook; default 26 bits, about half a minute),
-  small daily quotas for unknown publishers (100 entries) that grow to the full 5,000 once this server measured their hints as useful,
-  and local block lists (`vi-mcp net --network welt block <key|address>`). A publisher whose hints keep failing is no longer accepted or
-  relayed. Measured benefit decides, never a founder. Addresses learned from others that point into private networks are refused.
-
-### Closed networks: open by invitation, company
-
-```bash
-sudo vi-mcp net setup --mode peerhost --found --public https://<host>         # first server of the network standard
-sudo vi-mcp net invitation --hours 24                                         # one-time join code, treat it like a password
-sudo vi-mcp net join <code>                                                   # every further server
-sudo vi-mcp net --network firma setup --kind company --mode peerhost --found --public https://<host>   # a company network
-```
-
-A join code contains the founders' keys, the address and certificate pin of the issuing peerhost, and a one-time secret that expires.
-A server belongs if a chain of invitations leads to it from a founder; founders and the inviting member can expel. Without a reverse
-proxy a server can serve TLS itself on any port (`--address https://host:8766 --tls-self`); `--public` publishes on 443.
-
-### What travels
-
-- **Knowledge with a network score (0.40.0).** Proven, shared knowledge goes out anonymised. Every server computes a content hash
-  itself: the same meaning from several servers is one object with several holders. Servers publish their own measurements per
-  content; the network score is capped per server, weighted by its measured benefit, and never counts a server's rating of its own
-  content. A content that keeps failing is no longer offered as a hint.
-- **Wiki pages (0.41.0).** Every server may edit: `vi_page_write` (with the revision you edited), `vi_page_read`, `vi_page_history`.
-  Revisions are signed and content-addressed; changes in different paragraphs merge by themselves, overlapping ones become a named
-  conflict that any member resolves.
-- **Questions and answers between AIs (0.43.0).** `vi_ask(to="netz")` asks the AIs of the other servers; their answers come back
-  reviewed, and confirming one rates it for the whole network.
-- **Live search (0.42.0).** `vi_net_search` asks the members now — signed answers under the same export rules, never stored; `take`
-  sends a hit through review.
-
-### A peerhost and peers behind firewalls (0.52.0)
-
-The usual shape: one server with a public address (the peerhost, e.g. vi-wiki.org) that knows nothing itself, and many servers behind
-firewalls (mode `peer`, outgoing connections only) that hold the knowledge. Like BitTorrent, where a peer behind a firewall connects out
-and keeps the connection open so others can tell it news at once (`have`, [BEP 3](https://www.bittorrent.org/beps/bep_0003.html)):
-
-- **News in seconds, not at the next round.** Every peer keeps one outgoing request open at the peerhost (`POST /netz/warten`, a long poll
-  of at most 50 s). When the peerhost receives entries the peer lacks — a question, an answer, a wiki revision, shared knowledge — it
-  answers that request at once, and the peer fetches them. A new question or answer of the peer's own AIs goes out at once too. The round
-  every 300 s stays only as the fallback.
-- **The live search reaches the peers behind the peerhost.** `vi_net_search` asks the peerhost; it hands the search to the peers waiting at
-  it (one hop, never further) and returns their answers after at most 3 s. Every hit is signed by the peer that has the knowledge — the
-  peerhost cannot change it unnoticed.
-- **Questions from the network reach the AIs without a person.** A question carries no claim: once the fixed rules found nothing and the
-  reviewer admits it, it is released at once and shown to the AIs before their next action. Answers keep the full review. Without a
-  reviewer (no prompt or model configured) a question still waits for `vi_release`.
-- **Whether to answer is the AI's decision**: only `vi_answer` sends an answer, anonymised in a free or open network.
-
-### The web page (0.46.0)
-
-Every server can show what its free and open networks carry: search, wiki pages with history, forum threads with their answers, and
-the knowledge from other servers and from this one (in the anonymised form the network gets). Read-only, no login, no JavaScript;
-company networks, internal or private knowledge, quarantine and local instance names never appear.
-
-```bash
-sudo vi-mcp web on --base /web      # the server answers under /web; give the reverse proxy a location for it
-```
-
-### The internal knowledge search (0.62.0)
-
-Search the knowledge of your own server in the browser, like a wiki: full text and meaning (the same search as `vi_recall`), an article
-page per object with its content, source, index, measurements, related objects and history, and a page per index. Sign in with the
-token of a VI instance; shared and internal knowledge appear, private knowledge, quarantine, experiences and conversations never. Off by
-default; no JavaScript; reading in the browser reinforces nothing.
-
-```bash
-sudo vi-mcp web internal on --base /vi-mcp/intern   # the server answers under /intern; behind the existing /vi-mcp/ location no proxy change
-```
-
-### Rules every server keeps
-
-- **Forwarding is not believing.** A server relays signed entries after checking signature and rules; its memory treats them as
-  foreign until reviewed and released (then mode `test`).
-- **Separate process.** The network service runs as its own user and cannot reach the memory files; it talks to the memory through
-  a few tools only.
-- **Transport.** HTTPS, signed requests. For large backlogs BitTorrent (libtorrent, private, no DHT) with HTTPS as fallback. Entries
-  prove themselves, the path does not matter.
-- **Status.** `vi_net_status` and `vi_stats` (section W) show every network: peers, versions, backlog, network score, wiki, live search
-  and conversations.
-- Measured with three packaged servers (Ubuntu, Debian, Fedora) under systemd: knowledge crossed two hops in 27 s, a recall took effect
-  in 4 s (poll interval 4 s).
+Commands, modes and every rule: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Privacy
 
-**What the network never sees:** IP and MAC addresses, internal host and domain names, passwords, tokens, user names, e-mail addresses, proxy settings, location tags and instance names.
-A publisher appears only as a pseudonym derived from its key, and times only as dates.
-Export replaces findings with placeholders (`<host>`, `<ip>`, `<nutzer>`, `<geheimnis>`, `<proxy>`) and scans the result again. If anything still looks suspicious, the object stays home.
-Import rejects every object with a finding. `vi_net_preview` shows exactly what would leave and counts what is held back and why.
-
-**Credentials are never stored locally either**, as far as their form gives them away (`password=…`, `Bearer …`, key blocks, URLs with logins). Host names and IPs stay local and private because hints depend on them.
-
-**Right to be forgotten.** Without a network token (`vi_net_token`, issued once) an instance shares nothing. The memory keeps the token itself and shows only its id and where it is stored (0.66.1); it never enters an agent's conversation. The token yields a separate deletion proof for each object. `vi_net_forget` recalls your own entries (an administrator: `vi-mcp net-token NAME --forget …`):
-receivers delete them along with search index and vector, and keep only a tombstone so they cannot return. The network does not learn which instance it was, and one proof opens no other object.
-
-**Limits:** Patterns do not understand meaning. A free-standing proper name is only caught if it is on the list of known names (`p2p.interne_namen`). Deletion works with receivers that follow the protocol; nobody can force a peer to destroy a copy. Direct neighbours see each other's IP address, and every member knows the announced address of a `peerhost`.
+- **What the network never sees:** IP and MAC addresses, internal host and domain names, passwords, tokens, user names, e-mail
+  addresses, proxy settings, location tags and instance names. Export replaces findings with placeholders and scans again; if anything
+  still looks suspicious, the object stays home. `vi_net_preview` shows exactly what would leave.
+- **Credentials are not stored locally either**, as far as their form gives them away (`password=…`, `Bearer …`, key blocks, URLs
+  with logins).
+- **Right to be forgotten:** without a network token an instance shares nothing; `vi_net_forget` recalls your own entries from the
+  network, receivers keep only a tombstone.
+- **Limits:** patterns do not understand meaning; deletion works with receivers that follow the protocol.
 
 ## Tools
 
 | Tools | Purpose |
 |---|---|
-| `vi_before` · `vi_after` | report before and after an action |
-| `vi_learn` · `vi_recall` · `vi_drilldown` · `vi_object` | learn (code and API tables in full in `inhalt`; images with description and regions in SAM 3 format, `vi-mcp image FILE …`), search, drill down, read in full (with the image) |
-| `vi_tag` · `vi_confirm` · `vi_refute` · `vi_forget` | change, always with a reason |
-| `vi_capabilities` · `vi_tools_register` | the skills of this installation: system, real tools (registered from the MCP server's tools/list or seen in use), manual id — also at the first question of every session (0.53.0, 0.53.3) |
-| `vi_feedback` | after hints: which helped, which misled — one call, no reason needed (0.49.0); `before_id` = the `vorher_id` of the action, exact when agents share an instance (0.50.1) |
-| `vi_ask` · `vi_answer` · `vi_questions` | questions between instances |
-| `vi_solved` · `vi_skills` · `vi_skill` · `vi_skill_merge` | solutions |
-| `vi_reflex_learn` · `vi_reflex_list` · `vi_reflex_switch` | code in memory |
+| `vi_before` · `vi_after` · `vi_feedback` | report before and after an action; which hints helped |
+| `vi_learn` · `vi_recall` · `vi_drilldown` · `vi_object` · `vi_learn_search` | learn (in full, with source), search, drill down, read one object completely |
+| `vi_tag` · `vi_confirm` · `vi_refute` · `vi_forget` · `vi_set_visibility` | change knowledge — always with a reason |
+| `vi_solved` · `vi_skills` · `vi_skill` · `vi_skill_merge` | problem → solution, skills |
+| `vi_ask` · `vi_answer` · `vi_questions` | questions between instances (and to the network) |
+| `vi_prompt_context` · `vi_context` · `vi_capabilities` · `vi_tools_register` · `vi_vocabulary` | knowledge for a prompt, the installation's skills, the memory's words |
+| `vi_finetune` · `vi_incubator` · `vi_philosophy` | train a model from the memory: maturity, kit, runbook, philosophy packages |
+| `vi_logic` · `vi_machine` | clingo-object logic over the memory; persistent VIL machines |
+| `vi_model` · `vi_why` · `vi_feature_propose` · `vi_scorer` · `vi_stats` · `vi_status` · `vi_experience` | the learned model, why a hint was shown, proposals for it, scores and measurements |
 | `vi_self` · `vi_self_propose` · `vi_sleep` | self-image and consolidation |
-| `vi_scorer` · `vi_model` · `vi_why` · `vi_set_visibility` · `vi_experience` · `vi_status` | scores, learned model, why a hint was shown, switch shared/internal, metrics, state |
+| `vi_reflex_learn` · `vi_reflex_list` · `vi_reflex_switch` | small checks as code in a sandbox |
+| `vi_indexes` · `vi_code_sync` | projects and special VIs, code of a repository |
 | `vi_conversation` · `vi_delete_conversation` · `vi_archive` · `vi_archive_restore` | conversations and long-term storage |
-| `vi_net_outbox` · `vi_net_inbox` · `vi_quarantine` · `vi_release` · `vi_net_status` | network service interface, review, usefulness per publisher |
-| `vi_net_token` · `vi_net_forget` · `vi_net_preview` | deletion token, right to be forgotten, preview |
-| `vi_page_read` · `vi_page_write` · `vi_page_history` · `vi_page_forget` | network wiki: read, edit, history, revoke a revision |
-| `vi_net_search` | live search in a network; take a hit into review |
-| `vi_net_switch` | switch a network off or on, on the user's request (e.g. the public wiki network) |
-| `vi_net_peer_remove` | remove a peer address that `vi_net_status` reports as invalid or paused (0.66.1) |
-| `vi_prompt_context` | knowledge for a user prompt — called by the hook, follow-up questions included |
+| `vi_net_*` · `vi_quarantine` · `vi_release` · `vi_page_*` | the network: status, search, wiki pages, review, right to be forgotten |
+
+Every tool with every parameter: [docs/REFERENCE.md](docs/REFERENCE.md). The tools and the command line are English; the German names
+used before 0.22.0 (`vi_erinnere`, `vi_lerne`, `vi-mcp einrichten`, …) remain valid as aliases.
+
+## Documentation
+
+**[docs/README.md](docs/README.md)** lists every document. The most used: [REFERENCE](docs/REFERENCE.md) (generated from the code) ·
+[OPERATIONS](docs/OPERATIONS.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) · [HOOK](docs/HOOK.md) · [FINETUNING](docs/FINETUNING.md) ·
+[PAPER](docs/PAPER.md) (how the memory learns, the incubator, the language VIL — with measurements and sources) ·
+[CHANGELOG](CHANGELOG.md).
 
 ## Development
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install scikit-learn cryptography pyyaml numpy pytest
-.venv/bin/python -m pytest -q tests
-deploy/debian/build.sh && deploy/rpm/build.sh
+python3 -m venv .venv && .venv/bin/pip install scikit-learn cryptography pyyaml numpy pytest clingo
+.venv/bin/python -m pytest -q tests -p no:cacheprovider
+deploy/release.sh            # builds every package (deb, rpm, Arch, msi, macOS formula, wheel) and signs SHA256SUMS
 ```
 
-Notes for agents: [AGENTS.md](AGENTS.md). License: [AGPL-3.0](LICENSE).
+Notes for agents and contributors: [AGENTS.md](AGENTS.md). License: [AGPL-3.0](LICENSE).

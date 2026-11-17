@@ -21,6 +21,19 @@ Linked from [README.md](README.md).
   passes (imports vi_mcp, clingo, scikit-learn; creates an instance), the server answers `/health`; `tests/test_platform_packages.py`
   (restart through brew services, the release builds, signs and uploads all six artefacts, the formula's placeholders and hook path).
 
+### What has changed: the README is rewritten around who it is for
+
+- **README.md and README.de.md rewritten** (the user, 17.11.2026: "Du musst die readme nochmal ganz überarbeiten … nicht nur für mehrere
+  Agenten, sondern auch für einen einzelnen, dadurch dass Wissen konserviert wird und natürlich auch trainiert werden kann"). They now
+  open with who vi-mcp is for — one agent (knowledge conserved across sessions, context compaction and model changes), many agents (one
+  shared memory), and a model's weights (the memory is training-ready; fine-tuning measured: 7/9 of 60 probe questions against 0/5) —
+  then a quick start, how it works, training a model from the memory, clingo-object, an install table for every platform (with the
+  macOS service explained as a launchd agent and LM Studio as an untested embedding option), setup, the network in short, privacy and a
+  complete tool table (now including `vi_finetune`, `vi_incubator`, `vi_philosophy`, `vi_logic`, `vi_machine`, `vi_feature_propose`,
+  `vi_indexes`, `vi_code_sync`, `vi_vocabulary`, `vi_context`). Version labels in headings and the long German-alias table are gone;
+  network details point to ARCHITECTURE and OPERATIONS. Evidence: every tool name checked against `tools.TOOLS`; no other document
+  links to a removed README anchor (grep over *.md and *.py); the tests that read the READMEs pass.
+
 ### What is still missing (platforms)
 
 - **macOS on a real Mac is untested**: the formula was tested with Homebrew on Linux only (same formula code, Linux wheels, systemd
