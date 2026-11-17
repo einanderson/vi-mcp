@@ -683,7 +683,12 @@ def _restart() -> str | None:
             if r.returncode != 0 and command[1] == "/Run":
                 return f"{' '.join(command)}: {(r.stderr or r.stdout).strip()[:200]}"
         return None
-    command = ["systemctl", "restart", "vi-mcp"] if os.geteuid() == 0 else ["systemctl", "--user", "restart", "vi-mcp"]
+    if sys.platform == "darwin":  # 0.68.1: macOS runs the server as a Homebrew service (deploy/macos, launchd under the hood)
+        if not shutil.which("brew"):
+            return "macOS without Homebrew: restart the server by hand (installed with: brew install imoes/vi-mcp/vi-mcp)"
+        command = ["brew", "services", "restart", "vi-mcp"]
+    else:
+        command = ["systemctl", "restart", "vi-mcp"] if os.geteuid() == 0 else ["systemctl", "--user", "restart", "vi-mcp"]
     try:
         r = subprocess.run(command, capture_output=True, text=True, **config.CONSOLE_TEXT, timeout=45)
     except (OSError, subprocess.TimeoutExpired) as e:

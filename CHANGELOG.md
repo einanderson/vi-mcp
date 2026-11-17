@@ -5,6 +5,29 @@ Linked from [README.md](README.md).
 
 ## Unreleased
 
+### What is new: every release ships every platform — Arch Linux and macOS added
+
+- **The Arch Linux / CachyOS package is a release asset** (`vi-mcp-<version>-1-any.pkg.tar.zst`, in the signed `SHA256SUMS`). It was
+  buildable since 0.67 (`deploy/arch/build.sh`) but `deploy/release.sh` never called it, so no release carried it (the user, 17.11.2026:
+  "Es fehlt noch das Arch Linux Paket und OSX fehlt auch"). Evidence: built from tag v0.68.0, installed with `pacman -U` in a clean
+  `archlinux:base-devel` container: the sysusers user is created, `vi-mcp instance` works, the server answers `/health` with
+  `ok vi-mcp 0.68.0`.
+- **macOS by Homebrew** (`deploy/macos/`): `brew install imoes/vi-mcp/vi-mcp`. The formula installs a venv with the same PyPI packages
+  as the Windows installer (binary wheels for arm64 and x86_64, clingo 5.8.3 included), the code next to it by a `.pth` file, the hook
+  where `vi-mcp setup` looks for it, and the server as a Homebrew service (launchd); `vi-mcp setup` restarts it with
+  `brew services restart vi-mcp`. Its archive `vi-mcp-<version>.tar.gz` is a release asset in `SHA256SUMS`, built reproducibly (sorted,
+  fixed owner, commit time, gzip without a time stamp: two builds, same SHA-256). The release pushes the formula to the tap
+  `imoes/homebrew-vi-mcp`. Evidence: the formula for 0.68.0 installed with Homebrew on Linux (`homebrew/brew` container): `brew test`
+  passes (imports vi_mcp, clingo, scikit-learn; creates an instance), the server answers `/health`; `tests/test_platform_packages.py`
+  (restart through brew services, the release builds, signs and uploads all six artefacts, the formula's placeholders and hook path).
+
+### What is still missing (platforms)
+
+- **macOS on a real Mac is untested**: the formula was tested with Homebrew on Linux only (same formula code, Linux wheels, systemd
+  instead of launchd). The first install on a Mac is the check.
+- **On macOS the network service `vi-p2p` and the own embedding service (`vi-mcp embed`) do not run** — both are systemd units; the
+  server, the clients and everything inside the server do.
+
 ### What is new: external AIs propose feature rules (to-do 1 of 0.68.0)
 
 - **`vi_feature_propose`** (`vi_mcp/feature_writer.py`; the user, 16.11.2026: "mache das To-Do vi_feature_propose"). An instance with a

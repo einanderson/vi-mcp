@@ -338,6 +338,16 @@ sudo pacman -Syu && sudo pacman -U ./vi-mcp-<version>-1-any.pkg.tar.zst   # Arch
 sudo VI_MCP_PORT=9000 apt install ./vi-mcp_<version>-1_all.deb                       # another port on first installation
 ```
 
+**macOS** (since 0.68.1, Homebrew; Apple silicon and Intel): the formula installs a venv with the PyPI packages next to the code and runs
+the server as a Homebrew service (launchd). Not on macOS yet: the network service `vi-p2p` and the own embedding service (`vi-mcp embed`)
+— both are systemd units.
+
+```bash
+brew install imoes/vi-mcp/vi-mcp                 # the tap github.com/imoes/homebrew-vi-mcp; the archive is the signed release asset
+vi-mcp instance "$USER" --reflexes                # prints the token once
+brew services start vi-mcp && vi-mcp setup
+```
+
 **Windows** (since 0.27.0, client and server): `vi-mcp-<version>-x64.msi` uses an installed Python ≥ 3.11 or a private Python
 from the official NuGet package of the Python Software Foundation (SHA256 and signature checked), a venv with the PyPI packages, the command `vi-mcp` and — unless `SERVER=0` — the server as scheduled task `vi-mcp`
 (data in `%ProgramData%\vi-mcp`). Double-clicking it opens a setup dialog — **Install**, or **Update** when an earlier version is
