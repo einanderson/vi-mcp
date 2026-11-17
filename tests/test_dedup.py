@@ -91,3 +91,15 @@ def test_importance_zero_is_kept(gd):
     assert g.load(oid).importance == 0
     oid = _learn("cs", "Default note: no importance given stays at the default").split()[1]
     assert g.load(oid).importance == 1
+
+
+def test_a_repetition_stores_its_hashtags_in_english_like_a_new_object(gd):
+    """17.11.2026: new_object stored thema:x as topic:x, repeat (vi_learn with an existing key) kept thema:x German — and then no
+    filter found the object (the search translates thema:x to topic:x as well) until the next start migrated the tag."""
+    first = _learn("cs", "Known error: web1 asks bad.example", key="host:web1 threat:bad.example", tags=("thema:first", "projekt:lab"))
+    oid = first.split()[1]
+    _learn("cs", "Known error: web1 asks bad.example again", key="host:web1 threat:bad.example", tags=("thema:second", "fehler:dns"))
+    tags = set(g.load(oid).hashtags)
+    assert {"topic:first", "project:lab", "topic:second", "error:dns"} <= tags
+    assert not {t for t in tags if t.split(":", 1)[0] in ("thema", "projekt", "fehler")}
+    assert oid in tools.call_tool("vi_recall", {"filter": "topic:second", "reinforce": False}, "cs", False)
