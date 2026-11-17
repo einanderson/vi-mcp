@@ -3,6 +3,21 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.69.1 — 2026-11-17
+
+### What was fixed: imported documentation got filler words as topic triggers
+
+- **`topic:for`, `topic:old`, `topic:error` on imported pages** (production, the first ~150 DC-X pages of the AIKB import, 17.11.2026,
+  e.g. "MySQL: Coping with deadlocks" with topic:for): the import derived topics from the key statement — title plus the body's first 300
+  characters — instead of the title only, as docs/IMPORT.md says; learned knowledge in the memory carries such words as topics (they came
+  from older automatic tagging), and the frequency filter of sleep step 6b ran at import only after a sleep. Now: topics from the title
+  only; a list of English and German function and filler words (`doc_triggers.STOPWORDS`) is never a topic, also not when carried over
+  from the old shape; the frequency filter is computed at import (kept for an hour); sleep step 6b (version 2) takes filler topics it had
+  derived earlier off again. A page tagged by 0.69.0 reports no hash in `vi_doc_sync state`, so the next import run re-tags it
+  (`TAGGER_VERSION`). Evidence: `tests/test_doc_import.py::test_topics_come_from_the_title_without_filler_words_and_old_tagging_is_redone`
+  fails on the 0.69.0 derivation (topic:nginx from the body) and passes now; `test_sleep_takes_filler_topics_it_derived_earlier_off_again`.
+- **Migration:** none by hand. Sleep re-processes documentation once (step 6b version 2); a re-run of the import re-tags pages from 0.69.0.
+
 ## 0.69.0 — 2026-11-17
 
 ### What is new: an import access for documentation — `vi_doc_sync` and `vi-mcp docs import`

@@ -126,3 +126,34 @@ def test_an_older_source_kind_is_retired_through_old_source_kind(gd):
     assert r["old_shape_archived"] == 0 and g.load(old.id).mode == "active"  # another source_kind: not touched by default
     r = _call("vi_doc_sync", {"action": "sync", "source": "dcx-docs", "old_source_kind": "stibodx", "pages": [_page("900", body="## new\nchanged text")]})
     assert r["old_shape_archived"] == 1 and g.load(old.id).mode == "archived"
+
+
+def test_topics_come_from_the_title_without_filler_words_and_old_tagging_is_redone(gd, monkeypatch):
+    """0.69.1: production 17.11.2026 — topics were taken from the key statement (title + the body's first 300 characters), and learned
+    knowledge carried topic:for / topic:old, so documentation got topic:for, topic:old, topic:error."""
+    for t in ("for", "old", "error", "deadlocks", "nginx"):
+        for i in range(3):
+            g.new_object("insight", f"{t} fact {i}", [f"topic:{t}"], {"source": "t"}, instance="a")
+    doc_import._vocab["at"] = 0.0
+    p = _page("31", title="Coping with deadlocks", body="## Why\nDeadlocks happen for old error reasons, behind nginx too.")
+    _call("vi_doc_sync", {"action": "sync", "source": "wiki", "pages": [p]})
+    tags = g.load(doc_import.object_id("wiki", "31", 1)).hashtags
+    assert "topic:deadlocks" in tags and not {"topic:for", "topic:old", "topic:error"} & set(tags)
+    assert "topic:nginx" not in tags  # a topic named only in the body is no trigger (title only)
+    # a page tagged by an older import version is reported without hash and re-tagged on the next run
+    o = g.load(doc_import.object_id("wiki", "31", 1))
+    o.data["doc_import"]["tagger"] = 1
+    o.hashtags = sorted(set(o.hashtags) | {"topic:for"})
+    g.save(o)
+    assert _call("vi_doc_sync", {"action": "state", "source": "wiki"})["pages"]["31"] is None
+    r = _call("vi_doc_sync", {"action": "sync", "source": "wiki", "pages": [p]})
+    assert r["updated"] == 1 and "topic:for" not in g.load(o.id).hashtags
+
+
+def test_sleep_takes_filler_topics_it_derived_earlier_off_again(gd):
+    from vi_mcp import doc_triggers
+    o = g.new_object("insight", "Confluence IT: for the old page", ["knowledge_kind:company-docs", "topic:for", "topic:dns"],
+                     {"source": "old", "derived_triggers": {"version": 1, "host": [], "topic": ["for", "dns"]}}, instance="x")
+    r = doc_triggers.run()
+    tags = g.load(o.id).hashtags
+    assert "topic:for" not in tags and "topic:dns" in tags and r.get("entfernt") == 1

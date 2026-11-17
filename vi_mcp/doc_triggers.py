@@ -20,7 +20,15 @@ import re
 
 from . import memory as g
 
-VERSION = 1
+VERSION = 2  # 2 (0.69.1): STOPWORDS — function and filler words are never a topic trigger (an import of 17.11.2026 set topic:for,
+#              topic:old, topic:error on documentation because learned knowledge carried them as topics)
+#: words that are no topic however often learned knowledge used them as one (English and German function and filler words)
+STOPWORDS = frozenset("""
+a an and are as at be by for from has have in into is it its new no not of old on or out so the to up use used using was were
+what when where which with error errors info note notes page pages part step steps test tests example examples general other
+der die das den dem des ein eine einer und oder mit von vom zu zur zum im in ist sind für fuer auf aus bei nach über ueber
+unter wie was wer neu alt fehler hinweis seite teil beispiel test allgemein sonstiges
+""".split())
 DOC_TAGS = ("knowledge_kind:company-docs", "knowledge_kind:external-docs", "knowledge_kind:manual")
 HOST_MAX, THEMA_MAX = 5, 5
 THEMA_MIN = 3
@@ -59,14 +67,34 @@ def vocabulary() -> tuple[dict[str, str], set[str]]:
     for first, full in short.items():
         if len(full) == 1 and first not in names:
             names[first] = next(iter(full))
-    return names, {t for t in themen if len(t) >= 3}
+    return names, {t for t in themen if len(t) >= 3 and t not in STOPWORDS}
+
+
+def common_sets(names: dict[str, str], themen: set[str]) -> tuple[set[str], set[str]]:
+    """Hosts and topics found in more than HOST_DF_MAX / THEMA_DF_MAX of all documentation (with at least DF_MIN_DOCS documents) —
+    no specific trigger. Also used by the documentation import (0.69.1), which keeps the result for an hour."""
+    with g.lock:
+        rows = g.db().execute(f"SELECT text, json_extract(data, '$.content') FROM object WHERE id IN ({_doc_ids_sql()})", DOC_TAGS).fetchall()
+    hdf: dict[str, int] = {}
+    tdf: dict[str, int] = {}
+    for text, content in rows:
+        h, t = derive(text or "", content or "", names, themen, limit=False)
+        for x in h:
+            hdf[x] = hdf.get(x, 0) + 1
+        for x in t:
+            tdf[x] = tdf.get(x, 0) + 1
+    if len(rows) < DF_MIN_DOCS:
+        return set(), set()
+    common = ({x for x, n in hdf.items() if n > HOST_DF_MAX * len(rows)}, {x for x, n in tdf.items() if n > THEMA_DF_MAX * len(rows)})
+    _last_common[:] = sorted(common[0] | common[1])
+    return common
 
 
 def derive(text: str, content: str, names: dict[str, str], themen: set[str], limit: bool = True) -> tuple[list[str], list[str]]:
     tokens = set(_TOKEN.findall(_URL.sub(" ", f"{text}\n{content}").lower()))
     hosts = sorted({names[t] for t in tokens if t in names})[:HOST_MAX if limit else None]
     words = set(_WORD.findall(text.lower()))
-    topics = sorted(t for t in themen if t in words)[:THEMA_MAX if limit else None]
+    topics = sorted(t for t in themen if t in words and t not in STOPWORDS)[:THEMA_MAX if limit else None]
     return hosts, topics
 
 
@@ -80,22 +108,9 @@ def run(batch: int = BATCH) -> dict:
     too_common_h: set[str] = set()
     too_common_t: set[str] = set()
     if ids:  # document frequency over all documentation: what fits too much of it is no specific trigger
-        with g.lock:
-            rows = g.db().execute(f"SELECT text, json_extract(data, '$.content') FROM object WHERE id IN ({_doc_ids_sql()})", DOC_TAGS).fetchall()
-        hdf: dict[str, int] = {}
-        tdf: dict[str, int] = {}
-        for text, content in rows:
-            h, t = derive(text or "", content or "", names, themen, limit=False)
-            for x in h:
-                hdf[x] = hdf.get(x, 0) + 1
-            for x in t:
-                tdf[x] = tdf.get(x, 0) + 1
-        if len(rows) >= DF_MIN_DOCS:
-            too_common_h = {x for x, n in hdf.items() if n > HOST_DF_MAX * len(rows)}
-            too_common_t = {x for x, n in tdf.items() if n > THEMA_DF_MAX * len(rows)}
+        too_common_h, too_common_t = common_sets(names, themen)
         names = {k: v for k, v in names.items() if v not in too_common_h}
         themen = themen - too_common_t
-        _last_common[:] = sorted(too_common_h | too_common_t)
     report = {"geprueft": 0, "mit_host": 0, "mit_thema": 0, "hashtags_neu": 0, "bekannte_hosts": len(set(names.values())), "themen": len(themen),
               "zu_haeufig": sorted(too_common_h | too_common_t)[:20]}
     for oid in ids:
@@ -104,6 +119,13 @@ def run(batch: int = BATCH) -> dict:
             continue
         report["geprueft"] += 1
         hosts, topics = derive(o.text, str(o.data.get("content") or ""), names, themen)
+        # 0.69.1: topics an earlier version derived that are filler words now (topic:for, topic:old …) are taken off again
+        stale = [f"topic:{t}" for t in (o.data.get("derived_triggers") or {}).get("topic") or [] if t in STOPWORDS]
+        stale = [t for t in stale if t in o.hashtags]
+        if stale:
+            o.hashtags = [t for t in o.hashtags if t not in stale]
+            o.change("vi", "derived triggers removed: " + " ".join(stale), "sleep: filler words are no topic (doc_triggers.STOPWORDS)")
+            report["entfernt"] = report.get("entfernt", 0) + len(stale)
         new = [f"host:{h}" for h in hosts] + [f"topic:{t}" for t in topics]
         new = [t for t in new if t not in o.hashtags and g.TAG.match(t)]
         o.data["derived_triggers"] = {"version": VERSION, "host": hosts, "topic": topics}

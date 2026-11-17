@@ -122,13 +122,16 @@ def server_state(source: str) -> dict:
     pages, n, idx = {}, 0, set()
     for o in _doc_objects(source):
         d = o.data["doc_import"]
-        pages[d["page_id"]] = d.get("page_sha256")
+        # 0.69.1: a page tagged by an older import version reports no hash, so the client sends it again and it is re-tagged
+        pages[d["page_id"]] = d.get("page_sha256") if d.get("tagger") == TAGGER_VERSION else None
         n += 1
         idx.add(o.idx)
     return {"source": source, "pages": pages, "objects": n, "indexes": sorted(i for i in idx if i)}
 
 
 _vocab: dict = {"at": 0.0, "db": None, "names": {}, "topics": set()}
+#: 0.69.1: the version of how an import derives hashtags — a page imported with another version is re-tagged even if its text is the same
+TAGGER_VERSION = 2
 
 
 def _triggers_vocabulary() -> tuple[dict, set]:
@@ -136,10 +139,10 @@ def _triggers_vocabulary() -> tuple[dict, set]:
     Hosts and topics that sleep step 6b found too common are left out here too (its last report), so import and sleep agree."""
     from . import doc_triggers
     now = time.monotonic()
-    if _vocab["db"] is not g.db() or now - _vocab["at"] > 600:
+    if _vocab["db"] is not g.db() or now - _vocab["at"] > 3600:
         names, topics = doc_triggers.vocabulary()
-        common = set(doc_triggers.too_common())
-        _vocab.update(at=now, db=g.db(), names={k: v for k, v in names.items() if v not in common}, topics=topics - common)
+        common_h, common_t = doc_triggers.common_sets(names, topics)  # 0.69.1: computed here, not only after a sleep ran
+        _vocab.update(at=now, db=g.db(), names={k: v for k, v in names.items() if v not in common_h}, topics=topics - common_t)
     return _vocab["names"], _vocab["topics"]
 
 
@@ -160,7 +163,9 @@ def _tags_for(source: str, kk: str, page: dict, text: str, md: str) -> tuple[lis
         if g.TAG.match(t) and t.split(":", 1)[0] not in _FIXED_KINDS:
             tags.append(t)
     names, topics = _triggers_vocabulary()
-    hosts, tops = doc_triggers.derive(text, md, names, topics)
+    # 0.69.1: topics from the TITLE only (the key statement carries the body's first 300 characters: topic:for, topic:old …);
+    # hosts from title, key statement and the whole page
+    hosts, tops = doc_triggers.derive(str(page.get("title") or ""), f"{text}\n{md}", names, topics)
     tags += [f"host:{h}" for h in hosts] + [f"topic:{t}" for t in tops]
     tags = [t for t in dict.fromkeys(tags) if g.TAG.match(t)]
     return tags, {"version": doc_triggers.VERSION, "host": hosts, "topic": tops, "at": "import"}
@@ -169,7 +174,7 @@ def _tags_for(source: str, kk: str, page: dict, text: str, md: str) -> tuple[lis
 def server_sync(source: str, pages: list[dict], removed: list[str], instance: str, index: str | None = None,
                 knowledge_kind: str = "company-docs", label: str | None = None, old_source_kind: str | None = None) -> dict:
     """Upsert the pages (fixed id per source/page/part), retire the old shape and leftover parts, archive removed pages, link pages."""
-    from . import anonymize, archive, indexes
+    from . import anonymize, archive, doc_triggers, indexes
     if not source or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,40}", source):
         raise ValueError("source: a short name, a-z 0-9 . _ - (e.g. confluence-it, cue-docs)")
     if knowledge_kind not in KNOWLEDGE_KINDS:
@@ -197,7 +202,8 @@ def server_sync(source: str, pages: list[dict], removed: list[str], instance: st
         sha = content_sha(md)  # of the page as the source sent it — the client compares with that; the stored content is the clean one
         held = {o.data["doc_import"].get("part", 1): o for o in _doc_objects(source, pid)}
         parts = parts_of(clean)
-        if held and all(o.data["doc_import"].get("page_sha256") == sha for o in held.values()) and len(held) == len(parts) \
+        if held and all(o.data["doc_import"].get("page_sha256") == sha and o.data["doc_import"].get("tagger") == TAGGER_VERSION
+                        for o in held.values()) and len(held) == len(parts) \
                 and all((o.idx or "global") == (idx or o.idx or "global") for o in held.values()):
             out["unchanged"] += 1
             touched += [(pid, o) for o in held.values()]
@@ -211,7 +217,7 @@ def server_sync(source: str, pages: list[dict], removed: list[str], instance: st
             tags, trig = _tags_for(source, knowledge_kind, page, f"{title} {text}", content)
             data = {"source": f"{page.get('url') or pid} · version {page.get('version', '?')} · import {source}, {time.strftime('%d.%m.%Y')}"[:500],
                     "content": content, "derived_triggers": trig,
-                    "doc_import": {"source": source, "page_id": pid, "part": i, "parts": len(parts), "page_sha256": sha,
+                    "doc_import": {"source": source, "page_id": pid, "part": i, "parts": len(parts), "page_sha256": sha, "tagger": TAGGER_VERSION,
                                    "url": page.get("url"), "version": page.get("version"), "updated": page.get("updated"),
                                    "links": [str(x) for x in (page.get("links") or [])][:200]}}
             oid = object_id(source, pid, i)
@@ -239,7 +245,8 @@ def server_sync(source: str, pages: list[dict], removed: list[str], instance: st
                 archive.store_in_archive(o, f"the page {pid} of {source} now has {len(parts)} part(s); replaced by {first.id}")
                 out["leftover_parts_archived"] += 1
         olds = _old_shape(source, pid, old_source_kind)
-        carried = {t for old in olds for t in old.hashtags if t.split(":", 1)[0] in CARRIED_KINDS}
+        carried = {t for old in olds for t in old.hashtags if t.split(":", 1)[0] in CARRIED_KINDS
+                   and not (t.startswith("topic:") and t[6:] in doc_triggers.STOPWORDS)}  # no filler word comes along
         carried -= {t for t in carried if t.startswith("area:") and any(x.startswith("area:") for x in first.hashtags)}
         gained = sorted(carried - set(first.hashtags))
         if gained:  # what people or sleep had added to the old shape stays with the page
