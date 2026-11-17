@@ -103,7 +103,8 @@ worlds are noise.
 | 22 | run 20 + **value check** (support, opposition, closed → value; solver-checked) | paraphrase **40/40** (+3/−0), judge **40/40**, judge_more **157/160** (+10/−3), package 16/16, pressure 28/30 (+3/−2), formalize 20/20; pooled **+18/−5** worlds (p = 0.011); invented certainty **1/433**; the 3 judge_more errors are duties in the largest worlds (18–19 sentences) |
 | 21b | run 20 + **contrast twins** (codex minimal edits in five forms, qwen-filtered, 25 % of fact sentences) + negatives 5 % + two-fact sentences | minimal pairs **25/30** (unknown **6/9** vs 3/9, +3/−0), facts unchanged (no over-abstention); pressure **30/30** (+3/−0), judge_more 154/160 (+7/−3), judge 40/40; second minimal test (qwen27b, 35) 26/35 |
 | 23 | 21b + value check (the two changes combined, same worlds as 21b) | minimal pairs **27/30** (unknown **8/9**, groups 7/10), invented certainty **0/433**, pressure 30/30, judge 40/40, paraphrase 39/40, package 16/16, formalize 20/20; judge_more 154/160 (run 22: 157); second minimal test 25/35 |
-| 24, 25, 22 seed 43, 20b | 23 + language rows / 23 + twin cues / run 22 with another training seed / kit 20 on Qwen3-1.7B | running at the time of writing |
+| 24 | 23 + 400 language rows for the constant-in-ternary-body form | language **29/30 = 97 %** (run 22: 28/30); judge_more **158/160** (+6/−2 vs 23); other verdict sets at the ceiling; minimal pairs 24/30 (Claude's test) and 28/35 (qwen's test) — opposite moves vs 23, within noise |
+| 25, 26, 22 seed 43, 20b | 23 + twin cues / 23 + balanced twin forms / run 22 with another training seed / kit 20 on Qwen3-1.7B | running at the time of writing |
 
 ## 4 Status against the targets (runs 19 and 20)
 
@@ -117,7 +118,7 @@ worlds are noise.
 | seed in prose, round trip ≥ control | 259/322 = 80 % | 296/322 = 92 % ≥ 74 % (control to be re-measured, §5.15) | **322/322** (run 22) | yes |
 | every explain item perfect (8: whole seed + 7 blocks) | 4/8 | 6/8 (P6 one rule wrong; whole seed 17/46) | 7/8 (run 22: all blocks 46/46; whole seed in one answer 15/46, block by block 46/46) | yes, block-wise |
 | counterfactual programs followed | 3 of 5 | 5 of 5 (46/46 each) | 5 of 5 (46/46 each, run 22) | yes |
-| language (30 held-out rule sets) | 30/30 (runs 10, 13) | not re-measured | 28/30 = 93 % (run 22; both misses a constant inside a ternary body: "sends up X to") | **no** (by one item) |
+| language (30 held-out rule sets) | 30/30 (runs 10, 13) | not re-measured | 28/30 = 93 % (run 22); **29/30 = 97 % (run 24**, the constant-in-body form trained) | yes (run 24) |
 
 Run 19 meets every target but the perfect prose of every item and the re-measured language set. Run 20 keeps every verdict target and
 raises the judge sets (pooled +29/−16 worlds, p = 0.07 — a trend, one seed); it is the first run since 12 with invented certainty above 0
