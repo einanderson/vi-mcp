@@ -108,11 +108,11 @@ def kit(directory: str, days: float = 60) -> dict:
     cut = real[int(len(real) * (1 - TEST_SHARE))]["ts"] if real else None
     for name, data in (("pairs_real.jsonl", real), ("negatives.jsonl", neg),
                        ("hints.jsonl", [{"id": k, "text": v} for k, v in hints.items()])):
-        (d / name).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in data))
-    (d / "split.json").write_text(json.dumps({"test_from": cut, "test_share": TEST_SHARE}, indent=1))
-    (d / "README.md").write_text(README)
+        (d / name).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in data), encoding="utf-8")
+    (d / "split.json").write_text(json.dumps({"test_from": cut, "test_share": TEST_SHARE}, indent=1), encoding="utf-8")
+    (d / "README.md").write_text(README, encoding="utf-8")
     for name, body in SCRIPTS.items():
-        (d / name).write_text(body)
+        (d / name).write_text(body, encoding="utf-8")
     return {"directory": str(d), "real_pairs": len(real), "negatives": len(neg), "hints": len(hints), "test_from": cut,
             "by_label": {k: sum(1 for r in real if r["label"] == k) for k in ("helped", "adopted", "judge_used")}}
 

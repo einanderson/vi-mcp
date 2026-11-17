@@ -183,7 +183,7 @@ class OpenAIProgrammer:
 
     def __call__(self, messages):
         from .agent import chat_post
-        headers = {"Authorization": "Bearer " + self.token_file.read_text().strip()} if self.token_file else {}
+        headers = {"Authorization": "Bearer " + self.token_file.read_text(encoding="utf-8").strip()} if self.token_file else {}
         response = chat_post(self.url, {"model": self.identity["model"], "messages": messages, "temperature": 0,
                                       "chat_template_kwargs": {"enable_thinking": False}}, headers)
         if response.get("model", self.identity["model"]) != self.identity["model"]:
@@ -261,7 +261,7 @@ class Instance:
                         os.fsync(f.fileno())
                 return {"state": "checkpointed", "state_hash": bundle["state_hash"], "snapshot": snapshot}
             except Exception as e:
-                (directory / "incomplete.json").write_text(canonical({"state": "incomplete", "error_class": type(e).__name__}))
+                (directory / "incomplete.json").write_text(canonical({"state": "incomplete", "error_class": type(e).__name__}), encoding="utf-8")
                 raise
 
     @classmethod

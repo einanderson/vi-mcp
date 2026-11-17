@@ -313,7 +313,7 @@ def main(argv=None):
     report = {"stage": o.stage, "training_started": False, "optimizer_steps": 0, "status": "failed", "trainer_verified": False}
     trainer = None
     try:
-        run = json.loads(Path("run.json").read_text())
+        run = json.loads(Path("run.json").read_text(encoding="utf-8"))
         base = o.base or run["base_model"]
         if base != run["base_model"] and not o.preflight:
             raise ValueError("create a new kit to train a different base model")
@@ -326,7 +326,7 @@ def main(argv=None):
             raise ValueError("choose either a parent adapter or a fresh base")
         o.from_adapter = o.from_adapter or DEFAULT_PARENT.get(o.stage, "out/sft")
         parent = Path(o.from_adapter)
-        parent_config = (json.loads((parent / "adapter_config.json").read_text())
+        parent_config = (json.loads((parent / "adapter_config.json").read_text(encoding="utf-8"))
                          if o.stage not in ROOT_STAGES and not o.from_base and (parent / "adapter_config.json").exists() else None)
         if parent_config is not None:
             if parent_config["base_model_name_or_path"] != base:

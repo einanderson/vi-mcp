@@ -34,6 +34,15 @@ Linked from [README.md](README.md).
   network details point to ARCHITECTURE and OPERATIONS. Evidence: every tool name checked against `tools.TOOLS`; no other document
   links to a removed README anchor (grep over *.md and *.py); the tests that read the READMEs pass.
 
+### What was fixed: fine-tuning kits on Windows read their files as UTF-8
+
+- **Every text file a kit reads or writes now names `encoding="utf-8"`** — 50 places: the kit scripts `finetune.py` writes (evaluate,
+  synth_qa, probe, heldout_loss, program_evaluate, phil_answers, phil_score, phil_roundtrip), `training_runtime.py`,
+  `finetune_embed.py` and `clingo_object/runtime.py`. Without it Python on Windows opens text in the ANSI code page (cp1252), so kit
+  files with non-ASCII text were misread; a run on a Windows 11 host with an RTX 3060 (17.11.2026) needed `PYTHONUTF8=1` as a
+  workaround. Evidence: `tests/test_kit_encoding.py` parses the modules and every embedded kit script and finds no text I/O without an
+  encoding; the same check finds 42 such places in the previous `finetune.py`; the kit tests pass.
+
 ### What is still missing (platforms)
 
 - **macOS on a real Mac is untested**: the formula was tested with Homebrew on Linux only (same formula code, Linux wheels, systemd

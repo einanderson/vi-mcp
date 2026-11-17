@@ -188,15 +188,15 @@ a.add_argument("--base", required=True)
 a.add_argument("--tuned", required=True)
 a.add_argument("--judgments", help="JSON list: id, group, base_correct, tuned_correct, reference")
 o = a.parse_args()
-rows = [json.loads(l) for l in open("split/test.jsonl") if l.strip()]
+rows = [json.loads(l) for l in open("split/test.jsonl", encoding="utf-8") if l.strip()]
 evaluation_hash = hashlib.sha256(open("split/test.jsonl", "rb").read()).hexdigest()
 if o.judgments:
-    prediction_file = json.load(open("predictions.json"))
+    prediction_file = json.load(open("predictions.json", encoding="utf-8"))
     if prediction_file.get("evaluation_set_sha256") != evaluation_hash:
         raise ValueError("predictions do not belong to the held-out file")
     predictions = {p["id"]: p for p in prediction_file["predictions"]}
 
-    judgments = json.load(open(o.judgments))
+    judgments = json.load(open(o.judgments, encoding="utf-8"))
     ids = {r["meta"]["id"] + ":" + str(i) for i, r in enumerate(rows)}
     if {r["id"] for r in judgments} != ids or len(judgments) != len(rows):
         raise ValueError("judgments must cover exactly the held-out questions")
@@ -216,7 +216,7 @@ if o.judgments:
     summary["incomplete_predictions"] = incomplete
     summary["predictions_sha256"] = hashlib.sha256(open("predictions.json", "rb").read()).hexdigest()
     summary["evaluation_set_sha256"] = evaluation_hash
-    json.dump(summary, open("eval.json", "w"), indent=2)
+    json.dump(summary, open("eval.json", "w", encoding="utf-8"), indent=2)
     print(json.dumps(summary, indent=2))
 else:
     predictions = []
@@ -229,7 +229,7 @@ else:
             item[name] = choice["message"].get("content") or ""
             item[name + "_complete"] = choice.get("finish_reason") == "stop"
         predictions.append(item)
-    json.dump({"evaluation_set_sha256": evaluation_hash, "predictions": predictions}, open("predictions.json", "w"), indent=2)
+    json.dump({"evaluation_set_sha256": evaluation_hash, "predictions": predictions}, open("predictions.json", "w", encoding="utf-8"), indent=2)
     print("Predictions collected. Supply independent --judgments; no correctness score has been inferred.")
 '''
 
@@ -373,7 +373,7 @@ def main():
                     print(f"{stats['documents']}/{len(todo)} documents, {stats['pairs']} pairs, {round(time.time() - t0)} s", flush=True)
     stats.update(seconds=round(time.time() - t0), generator=o.model, prompt_sha256=psha, pairs_asked=o.pairs,
                  remaining=len([d for d in docs if d["meta"]["id"] not in done]) - (0 if o.more else len(todo)))
-    json.dump(stats, open("synth_report.json", "w"), indent=1)
+    json.dump(stats, open("synth_report.json", "w", encoding="utf-8"), indent=1)
     print(json.dumps(stats, indent=1))
 
 
@@ -424,7 +424,7 @@ def answer(o):
     import torch
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    base = json.load(open("run.json"))["base_model"]
+    base = json.load(open("run.json", encoding="utf-8"))["base_model"]
     device = "cuda" if torch.cuda.is_available() and not o.cpu else "cpu"
     tok = AutoTokenizer.from_pretrained(base)
     model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.float32).to(device)
@@ -444,13 +444,13 @@ def answer(o):
 
     probes = rows("split/probe.jsonl")
     if done:  # resuming: only the same probe file and the same adapter (Codex's review 15.11.2026)
-        prev = json.load(open("probe/answer_run.json")) if os.path.exists("probe/answer_run.json") else {}
+        prev = json.load(open("probe/answer_run.json", encoding="utf-8")) if os.path.exists("probe/answer_run.json") else {}
         if prev.get("probe_sha256") != sha("split/probe.jsonl") or prev.get("adapter_sha256") != sha(os.path.join(o.adapter, "adapter_model.safetensors")):
             raise SystemExit("probe/ holds answers of another probe file or adapter — move it away first")
     else:
         json.dump({"adapter": o.adapter, "adapter_sha256": sha(os.path.join(o.adapter, "adapter_model.safetensors")),
-                   "probe_sha256": sha("split/probe.jsonl")}, open("probe/answer_run.json", "w"), indent=1)
-    blind, keyf, t0 = open("probe/answers_blind.jsonl", "a"), open("probe/ab_key.jsonl", "a"), time.time()
+                   "probe_sha256": sha("split/probe.jsonl")}, open("probe/answer_run.json", "w", encoding="utf-8"), indent=1)
+    blind, keyf, t0 = open("probe/answers_blind.jsonl", "a", encoding="utf-8"), open("probe/ab_key.jsonl", "a", encoding="utf-8"), time.time()
     for i, p in enumerate(probes):
         if p["id"] in done:
             continue
@@ -466,13 +466,13 @@ def answer(o):
         print(f"{i + 1}/{len(probes)} {round(time.time() - t0)} s", flush=True)
     json.dump({"adapter": o.adapter, "adapter_sha256": sha(os.path.join(o.adapter, "adapter_model.safetensors")), "budget": o.budget,
                "base_model": base, "device": device, "system_prompt": SYSTEM, "probe_sha256": sha("split/probe.jsonl")},
-              open("probe/answer_run.json", "w"), indent=1)
+              open("probe/answer_run.json", "w", encoding="utf-8"), indent=1)
 
 
 def judge(o):
     import urllib.request
     done = {r["id"] for r in rows("probe/judgments.jsonl")}
-    out = open("probe/judgments.jsonl", "a")
+    out = open("probe/judgments.jsonl", "a", encoding="utf-8")
     for r in rows("probe/answers_blind.jsonl"):
         if r["id"] in done:
             continue
@@ -502,7 +502,7 @@ def summarize(o):
     if not judged or any(j["id"] not in key or j["id"] not in answers for j in judged):
         raise SystemExit("judgments must belong to probe/answers_blind.jsonl and probe/ab_key.jsonl")
     # The answers must belong to TODAY's probe file (Codex's review 15.11.2026: old judgments were relabelled with the current probe hash)
-    run = json.load(open("probe/answer_run.json")) if os.path.exists("probe/answer_run.json") else {}
+    run = json.load(open("probe/answer_run.json", encoding="utf-8")) if os.path.exists("probe/answer_run.json") else {}
     current = {p["id"] for p in rows("split/probe.jsonl")}
     if run.get("probe_sha256") != sha("split/probe.jsonl") or not set(answers) <= current:
         raise SystemExit("probe/answers_blind.jsonl was made from another split/probe.jsonl — move probe/ away and run probe.py answer again")
@@ -531,7 +531,7 @@ def summarize(o):
     result["decision"] = bool(result["strict"]["decision"])
     if set(result["judges"]) & set(result["generators"]):
         result["warning"] = "the judge is the model that wrote the probe questions: self-preference is possible; a person or another model family should check a sample"
-    json.dump(result, open("probe/probe_eval.json", "w"), indent=2)
+    json.dump(result, open("probe/probe_eval.json", "w", encoding="utf-8"), indent=2)
     print(json.dumps({k: result[k] for k in ("n", "grades", "decision")} | {"strict_p": result["strict"]["p_one_sided"],
                                                                           "lenient_p": result["lenient"]["p_one_sided"]}, indent=2))
 
@@ -570,13 +570,13 @@ echo "serve: llama-server -m BASE.gguf --lora adapter-$STAGE.gguf   (switchable:
 
 def _split(qa_path: Path, out_dir: Path, share: float = TEST_SHARE, seed: int = 7) -> dict:
     """One connected-component split across ALL stages: object, source, duplicate content and program family stay together."""
-    data = {name: [json.loads(s) for s in (qa_path.parent / f"{name}.jsonl").read_text().splitlines() if s.strip()]
+    data = {name: [json.loads(s) for s in (qa_path.parent / f"{name}.jsonl").read_text(encoding="utf-8").splitlines() if s.strip()]
             if (qa_path.parent / f"{name}.jsonl").exists() else [] for name in ("qa", "agentic", "logic", "kto", "dpo")}
     synth = qa_path.parent / "qa_synth.jsonl"  # synth_qa.py output: QA rows like qa.jsonl, split with their source object's group
     if synth.exists():
-        data["qa"] += [json.loads(s) for s in synth.read_text().splitlines() if s.strip()]
+        data["qa"] += [json.loads(s) for s in synth.read_text(encoding="utf-8").splitlines() if s.strip()]
     probes = [json.loads(s) for name in ("probe.jsonl", "probe_synth.jsonl") if (qa_path.parent / name).exists()
-              for s in (qa_path.parent / name).read_text().splitlines() if s.strip()]
+              for s in (qa_path.parent / name).read_text(encoding="utf-8").splitlines() if s.strip()]
     # A probe stays untrained: no training question of its object may come close to it, whatever produced the question (doc2query,
     # stored pairs, synth_qa.py) — the one place every training row passes (Codex's review 15.11.2026).
     from .qa_pairs import HOLD_OUT_JACCARD, jaccard
@@ -689,8 +689,8 @@ a.add_argument("--sequence-length", type=int, default=4096)
 o = a.parse_args()
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32 if (o.fp32 or device == "cpu") else "auto"
-base = json.load(open("run.json"))["base_model"]
-rows = [json.loads(l) for l in open(FILES[o.stage]) if l.strip()]
+base = json.load(open("run.json", encoding="utf-8"))["base_model"]
+rows = [json.loads(l) for l in open(FILES[o.stage], encoding="utf-8") if l.strip()]
 if not rows:
     raise SystemExit(f"{FILES[o.stage]} is empty: no held-out rows for stage {o.stage}")
 random.Random(7).shuffle(rows)
@@ -727,7 +727,7 @@ if not o.base_only:
     tuned_nll, _ = score(PeftModel.from_pretrained(model, adapter))
     out.update(adapter=adapter, tuned_nll=tuned_nll, difference=tuned_nll - base_nll, tuned_perplexity=math.exp(min(700, tuned_nll)))
 out["seconds"] = round(time.time() - t0, 1)
-json.dump(out, open(f"heldout-loss-{o.stage}.json", "w"), indent=1)
+json.dump(out, open(f"heldout-loss-{o.stage}.json", "w", encoding="utf-8"), indent=1)
 print(json.dumps(out, indent=1))
 '''
 
@@ -742,8 +742,8 @@ a.add_argument("--base", required=True, help="base chat completions URL")
 a.add_argument("--tuned", required=True, help="tuned chat completions URL")
 a.add_argument("--predictions", help="optional JSON list: id, base program, tuned program (offline replay)")
 o = a.parse_args()
-cases = [json.loads(l) for l in open("program_eval.jsonl") if l.strip()]
-cached_rows = json.load(open(o.predictions)) if o.predictions else []
+cases = [json.loads(l) for l in open("program_eval.jsonl", encoding="utf-8") if l.strip()]
+cached_rows = json.load(open(o.predictions, encoding="utf-8")) if o.predictions else []
 cached = {r["id"]: r for r in cached_rows}
 if o.predictions and (set(cached) != {r["id"] for r in cases} or len(cached_rows) != len(cases)):
     raise ValueError("cached predictions must cover exactly the held-out tasks")
@@ -769,7 +769,7 @@ for row in cases:
 summary = summarize_judgments(judgments)
 summary["evaluation_set_sha256"] = hashlib.sha256(open("program_eval.jsonl", "rb").read()).hexdigest()
 summary["evaluation_kind"] = "program"
-json.dump({**summary, "details": details}, open("program_eval_result.json", "w"), indent=2)
+json.dump({**summary, "details": details}, open("program_eval_result.json", "w", encoding="utf-8"), indent=2)
 print(json.dumps(summary, indent=2))
 '''
 
@@ -806,14 +806,14 @@ a.add_argument("--adapter", default="out/philosophy")
 a.add_argument("--budget", type=int, default=768)
 a.add_argument("--fp32", action="store_true")
 o = a.parse_args()
-base = json.load(open("run.json"))["base_model"]
+base = json.load(open("run.json", encoding="utf-8"))["base_model"]
 device = "cuda" if torch.cuda.is_available() else "cpu"
 tok = AutoTokenizer.from_pretrained(base)
 model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.float32 if (o.fp32 or device == "cpu") else "auto").to(device)
 model = PeftModel.from_pretrained(model, o.adapter).eval()
-items = [json.loads(l) for l in open("eval/philosophy.jsonl") if l.strip()]
+items = [json.loads(l) for l in open("eval/philosophy.jsonl", encoding="utf-8") if l.strip()]
 try:
-    done = {json.loads(l)["id"] for l in open("eval/philosophy_answers.jsonl") if l.strip()}
+    done = {json.loads(l)["id"] for l in open("eval/philosophy_answers.jsonl", encoding="utf-8") if l.strip()}
 except FileNotFoundError:
     done = set()
 
@@ -828,7 +828,7 @@ def answer(messages):
     return tok.decode(new, skip_special_tokens=True).strip(), "stop" if new and new[-1] == tok.eos_token_id else "budget"
 
 
-f, t0 = open("eval/philosophy_answers.jsonl", "a"), time.time()
+f, t0 = open("eval/philosophy_answers.jsonl", "a", encoding="utf-8"), time.time()
 for i, it in enumerate(items):
     if it["id"] in done:
         continue
@@ -853,12 +853,12 @@ import collections, json
 from clingo_object import philosophy as ph, philosophy_train as pt
 
 pkg = ph.load("philosophy")
-run = json.load(open("run.json"))
+run = json.load(open("run.json", encoding="utf-8"))
 if ph.package_hash(pkg) != (run.get("philosophy") or {}).get("hash"):
     raise SystemExit("philosophy/ differs from the hash in run.json — not the seed this kit was built for")
 firm = pt.firm_values(pkg)
-items = {json.loads(l)["id"]: json.loads(l) for l in open("eval/philosophy.jsonl") if l.strip()}
-answers = [json.loads(l) for l in open("eval/philosophy_answers.jsonl") if l.strip()]
+items = {json.loads(l)["id"]: json.loads(l) for l in open("eval/philosophy.jsonl", encoding="utf-8") if l.strip()}
+answers = [json.loads(l) for l in open("eval/philosophy_answers.jsonl", encoding="utf-8") if l.strip()]
 res = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
 for a in answers:
     it = items[a["id"]]
@@ -914,7 +914,7 @@ for st, whos in res.items():
             row.update(world_exact=f"{c['world_exact']}/{n}", duties_exact=f"{c['duties_exact']}/{n}",
                        invented_certainty=f"{c['invented_certainty']}/{c['uncertain']}")
         out["sets"][st][who] = row
-json.dump(out, open("eval/philosophy_score.json", "w"), indent=1)
+json.dump(out, open("eval/philosophy_score.json", "w", encoding="utf-8"), indent=1)
 print(json.dumps(out, indent=1))
 '''
 
@@ -967,7 +967,7 @@ items_f = o.items or first("eval/philosophy.jsonl", "eval/eval.jsonl")
 answers_f = o.answers or first("eval/philosophy_answers.jsonl", "eval/answers.jsonl")
 if not items_f or not answers_f:
     raise SystemExit("no evaluation items or answers found (eval/philosophy.jsonl + eval/philosophy_answers.jsonl, or eval/eval.jsonl + eval/answers.jsonl)")
-run = json.load(open("run.json")) if Path("run.json").exists() else {}
+run = json.load(open("run.json", encoding="utf-8")) if Path("run.json").exists() else {}
 kit_hash = (run.get("philosophy") or {}).get("hash") or run.get("package_hash")
 if o.package:
     pkg = ph.load(o.package)
@@ -981,9 +981,9 @@ mismatch = bool(kit_hash) and kit_hash != ph.package_hash(pkg)
 if mismatch:
     print(f"grade: the kit was built for hash {kit_hash[:16]}…, scored against {pkg['name']} {pkg['version']} {ph.package_hash(pkg)[:16]}…", file=sys.stderr)
 whos = [w for w in o.who.split(",") if w]
-items = {json.loads(l)["id"]: json.loads(l) for l in open(items_f) if l.strip()}
+items = {json.loads(l)["id"]: json.loads(l) for l in open(items_f, encoding="utf-8") if l.strip()}
 prose_items = {i: it for i, it in items.items() if (it.get("meta") or {}).get("task") in ("explain_seed", "recite")}
-answers = {json.loads(l)["id"]: json.loads(l) for l in open(answers_f) if l.strip()}
+answers = {json.loads(l)["id"]: json.loads(l) for l in open(answers_f, encoding="utf-8") if l.strip()}
 
 
 def block_of(it):
@@ -1033,9 +1033,9 @@ else:
                 control_whole = it["gold_text"]
 t0 = time.time()
 out_rows = Path(o.out + ".jsonl")
-earlier = [json.loads(l) for l in out_rows.read_text().splitlines() if l.strip()] if out_rows.exists() else []
+earlier = [json.loads(l) for l in out_rows.read_text(encoding="utf-8").splitlines() if l.strip()] if out_rows.exists() else []
 done = {(r["id"], r["who"]) for r in earlier}
-f = open(out_rows, "a")
+f = open(out_rows, "a", encoding="utf-8")
 
 
 def control_row(cid, text, block):
@@ -1062,7 +1062,7 @@ for k, (i, w) in enumerate(todo):
     f.flush()
     print(f"{k + 1}/{len(todo)} {i} {w}: {'ran' if r['ran'] else 'did not run'} {r['same']}/{r['worlds']} ({round(time.time() - t0)} s)", flush=True)
 f.close()
-rows = [r for r in (json.loads(l) for l in out_rows.read_text().splitlines() if l.strip()) if r["who"] != "control"]
+rows = [r for r in (json.loads(l) for l in out_rows.read_text(encoding="utf-8").splitlines() if l.strip()) if r["who"] != "control"]
 summary = {"package": pkg["name"], "version": pkg["version"], "hash": ph.package_hash(pkg), "kit_hash": kit_hash, "hash_mismatch": mismatch,
            "back_translator": judge_name, "worlds": {"package": len(pkg["worlds"]), "random": len(facts) - len(pkg["worlds"]),
            "rnd_seed": o.rnd_seed}, "missing_answers": sorted(i for i in prose_items if i not in answers), "control": control, "sets": {}}
@@ -1077,7 +1077,7 @@ for (st, w), rs in sorted(by.items()):
         "agreement_mean_of_ran": round(sum(r["agreement"] for r in ran) / len(ran), 3) if ran else None,
         "exact": sum(r["agreement"] == 1.0 for r in rs),
         "per_item": {r["id"]: f"{r['same']}/{r['worlds']}" + ("" if r["ran"] else " (did not run)") for r in rs}}
-Path(o.out + ".json").write_text(json.dumps(summary, indent=1, ensure_ascii=False) + "\n")
+Path(o.out + ".json").write_text(json.dumps(summary, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 # the blind reading aid: per explain item both models' prose, in a random order, next to the seed's rules
 lines, key = ["# Blind reading: model prose next to the seed's rules", "",
               "Which model wrote which text is in philosophy_blind_key.json — open it only after reading. Judge whether each text says "
@@ -1095,8 +1095,8 @@ for i in sorted(prose_items):
     for n, w in enumerate(order, 1):
         lines += [f"### Text {n}", "", answers[i][w], ""]
     key[i] = {f"Text {n}": w for n, w in enumerate(order, 1)}
-Path("eval/philosophy_blind.md").write_text("\n".join(lines) + "\n")
-Path("eval/philosophy_blind_key.json").write_text(json.dumps(key, indent=1) + "\n")
+Path("eval/philosophy_blind.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+Path("eval/philosophy_blind_key.json").write_text(json.dumps(key, indent=1) + "\n", encoding="utf-8")
 print(json.dumps({k: v for k, v in summary.items() if k != "control"} | {"control": {"whole": (control.get("whole") or {}).get("agreement"),
       "blocks": {b: x["agreement"] for b, x in control["blocks"].items()}}}, indent=1, ensure_ascii=False))
 '''
@@ -1199,7 +1199,7 @@ def kit(directory: str, index: str | None = None, base_model: str | None = None,
     _write(d / "evaluation_core.py", Path(__file__).with_name("training_eval.py").read_text(encoding="utf-8"))
     cases, seen = [], set()
     for stage in ("logic", "kto"):
-        for line in (d / "split" / f"{stage}.test.jsonl").read_text().splitlines():
+        for line in (d / "split" / f"{stage}.test.jsonl").read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
             m = row.get("meta") or {}
             case = m.get("program_eval")
