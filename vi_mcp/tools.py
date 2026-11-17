@@ -45,7 +45,7 @@ LEARN (vi_learn: text = one concrete key statement; content = complete, with com
 7. A reusable fact about a system was looked up or measured (path, port, version, peculiarity, access route without secrets).
 8. Something turns out to be wrong — a hint contradicts what you just measured or read, or the user corrects it: correct it at once, in the same step, not at the end of the session: vi_refute the wrong object (reason with evidence), vi_learn the correction (with source).
 Search before learning: if it is already there, vi_confirm instead of creating it again. After hints: vi_feedback(helped=[ids], wrong=[ids]) — one call, no reason needed; it is how the VI learns which hint to show. If you report your actions yourself with vi_after, name the hints you used there instead: used=[ids] ([] = none). vi_confirm / vi_refute when you checked the knowledge itself.
-Logic: whether something is allowed, forbidden, required or consistent under rules is decided by vi_logic (rules in a Python-like notation, clingo), not by prose reasoning; vi_logic(action="rate") books a conclusion you checked, so the rules' weights learn. A question over many objects (which hosts …, all findings that …) goes to vi_logic(action="answer", question=…): a program over all matching objects, exact where a search shows only its first hits.
+Logic: whether something is allowed, forbidden, required or consistent under rules is decided by vi_logic (rules in a Python-like notation, clingo), not by prose reasoning; before your first program read the skill clingo (vi_object insight:skill-clingo) (notation, the six answers, measured mistakes); vi_logic(action="rate") books a conclusion you checked, so the rules' weights learn. A question over many objects (which hosts …, all findings that …) goes to vi_logic(action="answer", question=…): a program over all matching objects, exact where a search shows only its first hits.
 Philosophy: if the user wants to give an AI principles to work by (a philosophy, a seed of rules), call vi_philosophy — action guide explains the technique, check proves a package; only the clingo-object seed is stored, prose is a translation (action explain, checked by its round trip).
 Fine-tuning: if the user wants to fine-tune (train, adapt) a model with the knowledge of this VI, call vi_finetune — it says whether the VI is mature and gives the steps; vi_finetune(action="guide") explains how fine-tuning works.
 Code: the code of a solution, a fix, a reusable script or a query belongs in content, complete and runnable. Not a copy of a file that lives in a repository: name repository, path and commit instead — the code of a repository comes into its project index through the code import (vi-mcp index import-code), and vi_recall finds it there.
@@ -212,7 +212,8 @@ TOOLS = [
                     "hint before matching actions. content = the complete knowledge: code, API tables, commands, configurations, "
                     "unabridged (up to 200,000 characters). Store it completely and do not point to files that exist on one machine only "
                     "— what is missing here is a gap in memory. vi_object reads it back; full-text search finds it. Objects sharing "
-                    "hashtags are linked.",
+                    "hashtags are linked. A skill — how an AI does something here, for every AI of this server — is knowledge too: hashtags "
+                    "knowledge_kind:skill and docs:<name>, key skill:<name>, the whole skill in content; vi_capabilities lists the skills.",
      "inputSchema": _schema({"content": {"type": "string", "description": "complete knowledge: code, API tables, commands, unabridged"}, "text": _S, "hashtags": _TAGS, "source": {"type": "string", "description": "source: command, host and time, or URL (for vi_ask: why you ask)"}, "importance": {"type": "integer", "description": "0–3 (default 1)"}, "visibility": {"type": "string", "enum": ["shared", "internal"], "description": "shared (default): everyone, also without a token, and the networks. internal: only instances with a token — never an open network, only a company network (members of the same organisation) — for company knowledge"}, "outcome": {"type": "string", "enum": ["good", "bad"], "description": "optional: does the insight describe a working or a broken state? Sleep compares new experiences with it."}, "key": {"type": "string", "description": "optional: identity of a recurring finding (e.g. a detection signature). The same key from the same instance updates that object instead of adding a new one: the new text becomes current, the previous one goes into its history, repeats +1."}, "supersedes": {"type": "array", "items": {"type": "string"}, "description": "optional (0.68.1): ids of this instance's own knowledge objects the new one replaces — e.g. a page re-imported as one object instead of section parts. Each is moved to the long-term archive with a reason naming the new object (vi_archive shows it, vi_archive_restore brings it back) and linked to it; another instance's object, an unknown id or more than 200 ids refuse the whole call before anything is stored."},
                             "index": {"type": "string", "description": "optional: the index the knowledge belongs to — a project or special VI (e.g. cue-print, ansible); default: the project of your working directory, else global"},
                             "pairs": {"type": "array", "items": {"type": "object"}, "description": "optional (0.69.3), qualifies the object in the same call: about 5 [{question, answer}] in English, grounded in text/content (each question names its subject; every name and number of an answer occurs in it) — training pairs and one never-trained probe, checked by fixed rules"},
@@ -335,7 +336,7 @@ TOOLS = [
                     "linked(O, B) follows an edge (objects one edge away are imported too). Comparisons in parentheses. Classes, methods "
                     "and inheritance are real Python in the package clingo-object (import clingo_object), which compiles them to this notation.",
      "inputSchema": _schema({"action": {"type": "string", "enum": ["check", "ask", "rate", "save", "objects", "propose", "learn", "answer", "verify"],
-                                        "description": "default check; objects: the memory objects of filters as JSON (data for clingo-object); "
+                                        "description": "default check (how to write programs: the skill clingo, vi_object insight:skill-clingo); objects: the memory objects of filters as JSON (data for clingo-object); "
                                                        "propose: hold what the rules propose (propose(tag(…)) / propose(link(…))) for review; "
                                                        "learn: learn rules from the rule set's rated conclusions, held for review; "
                                                        "answer: a question in natural language — the server's model writes the program"},
@@ -487,8 +488,9 @@ TOOLS = [
                              "visibility": {"type": "string", "enum": ["shared", "internal"]}, "reason": _S,
                              "apply": {"type": "boolean", "description": "false (default): only count"}}, ["filter", "visibility", "reason"])},
     {"name": "vi_capabilities",
-     "description": "VI: the skills of this installation — one line each: the system it serves, its tools (measured in use) and the id of its "
-                    "manual. Use it before working on a system or when a tool is missing. Read only.",
+     "description": "VI: the skills of this installation (knowledge_kind:skill, plus older skill overviews) — one line each: what it is for, "
+                    "its tools and the id to read it whole with vi_object. Use it before working on a system or when a tool is missing. "
+                    "Add or update a skill with vi_learn (hashtags knowledge_kind:skill docs:<name>, key skill:<name>). Read only.",
      "inputSchema": _schema({})},
     {"name": "vi_tools_register",
      "description": "VI: register the real tool list of an MCP server (the names from its tools/list), replacing the previous list of that "
@@ -1529,6 +1531,8 @@ def call_tool(name: str, args: dict, instance: str, reflex_permission: bool, rel
             if args.get("visibility") not in (None, "shared", "internal"):
                 raise ValueError("visibility must be shared or internal")
             superseded = _superseded(args.get("supersedes"), instance)  # 0.68.1: checked before anything is stored
+            from . import knowledge_skills  # 0.69.4: a skill (knowledge_kind:skill) needs docs:<name> and key skill:<name>
+            knowledge_skills.check_learn(tags, (args.get("key") or "").strip(), instance)
             key = (args.get("key") or "").strip()[:500]
             if len(key) > 0 and len(key) < 3:
                 raise ValueError("key must have at least 3 characters")

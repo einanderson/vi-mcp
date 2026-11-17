@@ -85,7 +85,8 @@ def test_hook_user_prompt_submit_gives_context_once(h):
     ev = {"hook_event_name": "UserPromptSubmit", "session_id": "cc-9", "cwd": "/tmp", "prompt": "und warum hängt ssh am build host? password=geheim123"}
     out = h.process(ev)
     ctx = out["hookSpecificOutput"]["additionalContext"]
-    assert out["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit" and k.id in ctx and ctx.startswith("[VI memory for this question")
+    # 0.69.4: every server has its initial skill manuals, so the first prompt starts with the skill table
+    assert out["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit" and k.id in ctx and "[VI memory for this question" in ctx
     assert h.process(ev) is None  # the same hint is not repeated in this conversation
     assert h.process({**ev, "prompt": "/compact"}) is None
     # a correction without signal token does not cost the context
@@ -182,6 +183,6 @@ def test_first_prompt_of_a_session_carries_the_skill_table_once(h):
                  ["art-wissen:ueberblick", "docs:gitlab-api", "skill:gitlab"], {"source": "skills folder"}, instance="alice")
     ev = {"hook_event_name": "UserPromptSubmit", "session_id": "cc-skills", "cwd": "/tmp", "prompt": "wo liegt das Repo der Web-Komponente?"}
     ctx = h.process(ev)["hookSpecificOutput"]["additionalContext"]
-    assert ctx.startswith("[Skills] 1 skill manuals") and "gitlab-api" in ctx
+    assert ctx.startswith("[Skills] 4 skill manuals") and "gitlab-api" in ctx and "- clingo:" in ctx  # + the 3 initial skills (0.69.4)
     again = h.process({**ev, "prompt": "und die Pipeline dazu?"})
     assert again is None or "[Skills]" not in again["hookSpecificOutput"]["additionalContext"]

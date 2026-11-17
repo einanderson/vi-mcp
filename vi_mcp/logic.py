@@ -143,9 +143,13 @@ def install(target: Path | None = None) -> int:
 
 
 def main(argv: list[str]) -> int:
-    """vi-mcp logic install [--target DIR] | status | check FILE | ask FILE ATOM…"""
+    """vi-mcp logic install [--target DIR] | status | check FILE | ask FILE ATOM… | skill [--file]"""
     import json
     cmd = argv[0] if argv else "status"
+    if cmd == "skill":  # 0.69.4: the clingo skill; --file adds the front matter of a Claude/Codex skill file
+        from . import clingo_skill
+        print((clingo_skill.SKILL_FILE_HEAD if "--file" in argv else "") + clingo_skill.skill(), end="")
+        return 0
     if cmd == "install":
         return install(Path(argv[argv.index("--target") + 1]) if "--target" in argv else None)
     if cmd == "status":

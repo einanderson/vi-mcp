@@ -322,7 +322,7 @@ def _collect(instance: str | None = None, net: str = STANDARD) -> tuple[list[tup
     # internal knowledge only into a company network; private never
     visibilities = ("shared", "internal") if is_company(net) else ("shared",)
     for kind in EXPORT_KINDS:
-        for _, o, _g in g.recall(f"kind:{kind} !origin:p2p", limit=MAX_OBJECTS, viewer=None):
+        for _, o, _g in g.recall(f"kind:{kind} !origin:p2p !origin:builtin", limit=MAX_OBJECTS, viewer=None):
             if o.visibility not in visibilities or o.mode != "active" or o.id in withdrawn or (instance and o.instance != instance):
                 continue
             if not _proven(o):
@@ -410,7 +410,7 @@ def answer_search(net: str, query: str, n: int = LIVE_MAX) -> list[dict]:
     known = _known()
     visibilities = ("shared", "internal") if is_company(net) else ("shared",)
     out = []
-    for _, o, _g in g.recall(" ".join(words) + " !origin:p2p", limit=max(1, min(int(n or LIVE_MAX), LIVE_MAX)) * 4, viewer=None, kinds=EXPORT_KINDS, or_fallback=True):
+    for _, o, _g in g.recall(" ".join(words) + " !origin:p2p !origin:builtin", limit=max(1, min(int(n or LIVE_MAX), LIVE_MAX)) * 4, viewer=None, kinds=EXPORT_KINDS, or_fallback=True):
         if o.visibility not in visibilities or o.mode != "active" or o.id in withdrawn or o.instance not in tokens:
             continue
         raw, _reason = _export_form(o, tokens[o.instance], known, net)

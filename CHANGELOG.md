@@ -3,6 +3,47 @@
 What a user of vi-mcp notices — grouped by effect, every entry with evidence. Entries before 0.22.0 are in German.
 Linked from [README.md](README.md).
 
+## 0.69.4 — 2026-11-17
+
+### What is new: skills live in the server, extensible, and every AI inherits them
+
+- The user (17.11.2026): "Gibt es bereits einen Skill clingo/clingo-object im MCP-Server? … Solche Informationen müssen vererbt werden",
+  "die Skills sollen im MCP-Server stehen und erweiterbar sein. Clingo ist nur einer der initialen Skills" and "warum manual und nicht
+  knowledge_kind?". There was no clingo skill. The skills the VI knew had come in once by hand (08.11.2026, 30 from a skills folder);
+  every skill written later (stoerung, philosophie, finetune, sicherheit-pruefen, ansible-pruefen, config-pipeline, vi-entwickeln) was
+  missing, and the shipped finetune runbook was reachable only through vi_finetune(action="skill").
+- **A skill is knowledge of the kind `knowledge_kind:skill`** with the hashtag `docs:<name>` and the whole skill in `content`
+  (`vi_mcp/knowledge_skills.py`). One way in for everyone: `vi_learn` with `key="skill:<name>"` — a later vi_learn of the same instance
+  updates it with history. `vi_learn` refuses a skill without exactly one `docs:` hashtag, without the matching key, or under the name of
+  an initial skill. `vi-mcp skill import DIR --instance NAME` brings a whole skills folder (`<name>/SKILL.md`, front matter, files next
+  to it appended) in through the same vi_learn call; `vi-mcp skill list|show NAME`.
+- **Initial skills of the package: clingo, finetune, philosophy.** Every server writes them into its own memory at start
+  (`insight:skill-<name>`, instance `vi`, `origin:builtin`) and refreshes them when the package's text changed; their names are
+  reserved, they are listed first and never exported to a network (every server has them from its own package).
+- **vi_capabilities lists the skills** (knowledge_kind:skill, plus the older knowledge_kind:overview ones), with the tools an initial
+  skill names itself; the hook puts that table into the first prompt of every session. Older overviews no longer show their German
+  header ("Vollständige Doku zu X: vi_erinnere doku:X.") as description, but their first sentence.
+- **The initial skill clingo** (`vi_mcp/clingo_skill.py`, docs/CLINGO_SKILL.md): notation, workflow, the six answers of ask, norms,
+  soft rules, rules over memory objects, the Python package — written for small models. Its 9 examples run through the real vi_logic
+  tool in the tests, and its table of 10 measured mistakes (clingo 5.8.3) is checked too, two of them silent: a lower-case variable is a
+  constant, and `gate1` is not `"gate1"`. vi_logic's description and the rules every client receives point to it before the first
+  program.
+- Evidence: `tests/test_clingo_skill.py` (18 tests); `tests/test_prompt_context.py` now expects the 3 initial skills in the first
+  prompt's table. **Migration:** none; the 30 older skill overviews stay listed. Bringing a skills folder in is one command (above).
+
+### What was fixed
+
+- `vi_logic` reported a contradiction as `state: widerspruch` (and a timeout as `zeitlimit`, an unsatisfiable program as
+  `unloesbar`) — German leftovers in the English interface. Shown now as contradiction, timeout, unsatisfiable; the internal result keys
+  are unchanged. Evidence: the example "a-contradiction" in tests/test_clingo_skill.py.
+
+### What is still missing
+
+- The 7 skills missing from the production VI come in once 0.69.4 runs there (vi_learn with knowledge_kind:skill, or the import
+  command on the server).
+- The skill overview of password-depot-api has shown `<geheimnis>` in its key statement since 08.11.2026: the credential check of that
+  day read "password-depot-api: vi_erinnere" as an account and a password. Not changed by 0.69.3; re-importing the skill replaces it.
+
 ## 0.69.3 — 2026-11-17
 
 ### What is new: storing, tagging and qualifying are one step — done by the AI that has the text in context

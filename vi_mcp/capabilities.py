@@ -15,7 +15,7 @@ import time
 
 from . import memory as g
 
-OVERVIEW_TAGS = ("art-wissen:ueberblick", "knowledge_kind:overview")
+OVERVIEW_TAGS = ("art-wissen:ueberblick", "knowledge_kind:overview", "knowledge_kind:skill")  # skill: 0.69.4 (knowledge_skills)
 TOOLS_PER_SKILL = 8
 DESCRIPTION_CHARS = 90
 EXTERNAL_TAG = "knowledge_kind:external-docs"
@@ -26,7 +26,7 @@ _cache: dict = {}
 def _description(text: str, doc: str) -> str:
     """The overview text after its standard opening ("Vollständige Doku zu X: vi_erinnere docs:X."), first sentence, shortened."""
     t = " ".join((text or "").split())
-    t = re.sub(r"^.*?docs:" + re.escape(doc) + r"\.\s*", "", t)
+    t = re.sub(r"^.*?(?:docs|doku):" + re.escape(doc) + r"\.\s*", "", t)  # 0.69.4: the German header of older imports too
     if t.startswith("(Abschnitte:"):  # an overview without a description: its sections say what it covers
         t = "sections: " + t[len("(Abschnitte:"):].strip().rstrip(")")
     else:
@@ -117,9 +117,10 @@ def table(instance: str | None) -> list[dict]:
     rows: dict[str, dict] = {}
     with g.lock:
         ids = list(dict.fromkeys(r[0] for r in g.db().execute(  # DISTINCT with ORDER BY needs the sort column selected (PostgreSQL)
-            "SELECT DISTINCT o.id, o.ts FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag IN (?, ?) AND o.mode IN ('active', 'test') "
+            f"SELECT DISTINCT o.id, o.ts FROM object o JOIN tag t ON t.object_id = o.id WHERE t.tag IN ({', '.join('?' * len(OVERVIEW_TAGS))}) AND o.mode IN ('active', 'test') "
             "ORDER BY o.ts DESC", OVERVIEW_TAGS)))
     objs = g.load_many(ids)
+    ids.sort(key=lambda i: "origin:builtin" not in (objs[i].hashtags if objs.get(i) else []))  # 0.69.4: an initial skill keeps its name
     for oid in ids:
         o = objs.get(oid)
         if not o or not g.visible_to(o, instance):
@@ -128,7 +129,8 @@ def table(instance: str | None) -> list[dict]:
         if not doc or doc in rows:
             continue
         prefix = next((t[6:] for t in o.hashtags if t.startswith("skill:")), None)
-        rows[doc] = {"skill": doc, "doc": f"docs:{doc}", "description": _description(o.text, doc), "tools": _tools(prefix or "", doc), "id": o.id}
+        tools = [str(x) for x in (o.data.get("tools") or [])][:TOOLS_PER_SKILL] or _tools(prefix or "", doc)  # 0.69.4: built-in manuals name theirs
+        rows[doc] = {"skill": doc, "doc": f"docs:{doc}", "description": _description(o.text, doc), "tools": tools, "id": o.id}
     out = sorted(rows.values(), key=lambda r: r["skill"])
     _cache[instance] = (time.monotonic(), out)
     return out

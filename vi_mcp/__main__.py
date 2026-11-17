@@ -399,6 +399,9 @@ def _cli(argv: list[str]) -> int:
     if command == "logic":  # 0.62.0: the logic layer (clingo) — install, status, check a file
         from . import logic
         return logic.main(argv[1:])
+    if command == "skill":  # 0.69.4: skills in the server (knowledge_kind:skill) — list, show, import a skills folder
+        from . import knowledge_skills
+        return knowledge_skills.main(argv[1:])
     if command == "machine":
         from . import machine
         return machine.main(argv[1:])

@@ -551,10 +551,14 @@ def reference_answers(expected, predicate: str = "ans") -> list[str]:
     return sorted(out)
 
 
+#: the displayed English name of a stopping state (the result keys stay as they are — several modules read them)
+STATE_SHOWN = {"zeitlimit": "timeout", "widerspruch": "contradiction", "unloesbar": "unsatisfiable"}
+
+
 def lines(r: dict) -> list[str]:
     """A check result for people and agents."""
-    if r["zustand"] in ("zeitlimit", "widerspruch", "unloesbar"):
-        return [f"state: {r['zustand']} — {r['grund']}"] + [f"  both: {a}" for a in r.get("widersprueche", [])]
+    if r["zustand"] in STATE_SHOWN:
+        return [f"state: {STATE_SHOWN[r['zustand']]} — {r['grund']}"] + [f"  both: {a}" for a in r.get("widersprueche", [])]
     out = [f"state: {'violated' if r['zustand'] == 'verletzt' else 'satisfied'} · {r['aussagen']} statements · stable models: {r['modelle']}"
            + (f" · most probable: {r['wahrscheinlichste']} ({r['wahrscheinlichkeit']})" if "wahrscheinlichste" in r else "")
            + " · evidence: inferred"]

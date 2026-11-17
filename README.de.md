@@ -455,7 +455,7 @@ Befehle, Betriebsarten und jede Regel: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.
 | `vi_tag` · `vi_confirm` · `vi_refute` · `vi_forget` · `vi_set_visibility` | Wissen ändern — immer mit Begründung; jede andere Instanz ist eine eigene Linie, die Prüfung eines eigenen Objekts zählt halb |
 | `vi_solved` · `vi_skills` · `vi_skill` · `vi_skill_merge` | Problem → Lösung, Skills |
 | `vi_ask` · `vi_answer` · `vi_questions` | Fragen zwischen Instanzen (und ans Netz) |
-| `vi_prompt_context` · `vi_context` · `vi_capabilities` · `vi_tools_register` · `vi_vocabulary` | Wissen zu einem Prompt, die Fähigkeiten der Installation, die Wörter des Gedächtnisses |
+| `vi_prompt_context` · `vi_context` · `vi_capabilities` · `vi_tools_register` · `vi_vocabulary` | Wissen zu einem Prompt, die Skills der Installation (knowledge_kind:skill, mit vi_learn erweiterbar; initial: clingo, finetune, philosophy), die Wörter des Gedächtnisses |
 | `vi_finetune` · `vi_incubator` · `vi_philosophy` | ein Modell aus dem Gedächtnis trainieren: Reife, Kit, Runbook, Philosophie-Pakete |
 | `vi_logic` · `vi_machine` | clingo-object-Logik über das Gedächtnis; dauerhafte VIL-Maschinen |
 | `vi_model` · `vi_why` · `vi_feature_propose` · `vi_scorer` · `vi_stats` · `vi_status` · `vi_experience` | das gelernte Modell, warum ein Hinweis kam, Vorschläge dafür, Bewertungen und Messungen |

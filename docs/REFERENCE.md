@@ -1,6 +1,6 @@
 # vi-mcp reference
 
-Generated from the code of vi-mcp 0.69.3 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
+Generated from the code of vi-mcp 0.69.4 by `scripts/gen_reference.py` — do not edit by hand; a test fails when it is out of date. Explanations: [README](../README.md) · design: [ARCHITECTURE](ARCHITECTURE.md) · operations: [OPERATIONS](OPERATIONS.md) · all documents: [docs/README](README.md).
 
 Contents: [MCP tools](#mcp-tools) · [Command line](#command-line) · [Server configuration](#server-configuration-configjson) · [Network service configuration](#network-service-configuration-etcvi-p2pnetworkjson) · [Configuration catalogue](#configuration-catalogue-debconf-vi-mcp-configure-vi_mcp_key) · [Environment variables](#environment-variables) · [HTTP endpoints](#http-endpoints) · [Modules](#modules-vi_mcp)
 
@@ -321,7 +321,7 @@ VI: memory status — objects per kind, experiences 24 h, open conversations, ed
 
 ### `vi_learn`
 
-VI: store knowledge as an object. When: a non-obvious problem was solved, a lasting rule from the user, a looked-up system fact, a correction (rules 5–8); never secrets, search first. With hashtags kind:value (e.g. tool:graylog_search, host:web1.example, topic:timeout) and source (required). text = the key statement, shown as a hint before matching actions. content = the complete knowledge: code, API tables, commands, configurations, unabridged (up to 200,000 characters). Store it completely and do not point to files that exist on one machine only — what is missing here is a gap in memory. vi_object reads it back; full-text search finds it. Objects sharing hashtags are linked. **OPEN** · German alias `vi_lerne`
+VI: store knowledge as an object. When: a non-obvious problem was solved, a lasting rule from the user, a looked-up system fact, a correction (rules 5–8); never secrets, search first. With hashtags kind:value (e.g. tool:graylog_search, host:web1.example, topic:timeout) and source (required). text = the key statement, shown as a hint before matching actions. content = the complete knowledge: code, API tables, commands, configurations, unabridged (up to 200,000 characters). Store it completely and do not point to files that exist on one machine only — what is missing here is a gap in memory. vi_object reads it back; full-text search finds it. Objects sharing hashtags are linked. A skill — how an AI does something here, for every AI of this server — is knowledge too: hashtags knowledge_kind:skill and docs:<name>, key skill:<name>, the whole skill in content; vi_capabilities lists the skills. **OPEN** · German alias `vi_lerne`
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -439,7 +439,7 @@ VI: logical descriptions in a Python-like notation, checked by formal logic (ans
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `action` | string (check, ask, rate, save, objects, propose, learn, answer, verify) |  | default check; objects: the memory objects of filters as JSON (data for clingo-object); propose: hold what the rules propose (propose(tag(…)) / propose(link(…))) for review; learn: learn rules from the rule set's rated conclusions, held for review; answer: a question in natural language — the server's model writes the program (German: `aktion`) |
+| `action` | string (check, ask, rate, save, objects, propose, learn, answer, verify) |  | default check (how to write programs: the skill clingo, vi_object insight:skill-clingo); objects: the memory objects of filters as JSON (data for clingo-object); propose: hold what the rules propose (propose(tag(…)) / propose(link(…))) for review; learn: learn rules from the rule set's rated conclusions, held for review; answer: a question in natural language — the server's model writes the program (German: `aktion`) |
 | `question` | string |  | answer: e.g. which DMZ hosts are never described as production? |
 | `expected_answers` | array of string |  | verify: complete independently checked answer set (empty is valid) |
 | `reference` | string |  | verify: independent oracle or test that produced expected_answers |
@@ -655,7 +655,7 @@ VI: switch objects between shared and internal (e.g. company knowledge learned a
 
 ### `vi_capabilities`
 
-VI: the skills of this installation — one line each: the system it serves, its tools (measured in use) and the id of its manual. Use it before working on a system or when a tool is missing. Read only. **OPEN**
+VI: the skills of this installation (knowledge_kind:skill, plus older skill overviews) — one line each: what it is for, its tools and the id to read it whole with vi_object. Use it before working on a system or when a tool is missing. Add or update a skill with vi_learn (hashtags knowledge_kind:skill docs:<name>, key skill:<name>). Read only. **OPEN**
 
 ### `vi_tools_register`
 
@@ -1198,6 +1198,7 @@ First line of each module's docstring.
 | `checks` | Deterministic check of foreign content — always runs first; only it may reject for good. |
 | `chunking` | Structure-aware chunking of long content: the SEARCH unit of a large document (0.67.0). |
 | `classify` | Classify knowledge for the AI language (0.62.0): which question an object answers, what kind of memory it is. |
+| `clingo_skill` | The clingo skill (0.69.4): how an AI writes, checks and reads logic programs with vi_logic — clingo through the notation clingo-object. |
 | `code_facts` | Structure facts of code (0.66.0): what a Python file defines, calls, imports, writes, raises — read by clingo-object rules. |
 | `code_import` | Code in the index (0.61.0): `vi-mcp index import-code <repo> --index X` puts the code of a git repository into an index. |
 | `collect` | Collect mode of vi_recall (0.67.0): a question that wants many values about one entity ("what hardware does host X have") gets the |
@@ -1228,6 +1229,7 @@ First line of each module's docstring.
 | `intuition` | Intuition — the automatic memory access before and the learning after every action. |
 | `knn_cli` | vi-mcp knn add\|predict\|generate\|forget\|compact\|snapshot\|serve — frozen causal model with mutable next-token memory. |
 | `knn_lm` | kNN-LM below MCP: mutable hidden-state/next-token memory interpolated with frozen-model probabilities. |
+| `knowledge_skills` | Skills in the server (0.69.4): what an AI can do here and how — knowledge of the kind `knowledge_kind:skill`, extensible, inherited. |
 | `learning` | Learning — the router learns from the hint lift instead of us setting its weights (docs/TRAINING.md 4a/4b). |
 | `lexicon` | The domain lexicon of VIL (0.67.0): the entity words of the memory, so VIL is a technical language and not only a query syntax. |
 | `log_output` | Server log output — one line per event on stderr (systemd → journal). |
